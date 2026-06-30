@@ -1,6 +1,6 @@
 # Artifact Registry
 
-> **Status:** Validated in-memory repository implemented; full lifecycle service not started
+> **Status:** Validated repository and reusable creation/approval lifecycle service implemented
 >
 > **Schema:** `runtime/contracts/artifact.schema.json`
 
@@ -66,8 +66,8 @@ Digest mismatch, invalid lineage, missing content, or cross-project ownership re
 
 ## Implementation
 
-`src/founderos_runtime/repositories.py` implements contract validation, immutable identity, defensive reads, and revision-checked replacement for Artifact metadata. Content storage remains external.
+`ArtifactLifecycleService` owns Artifact creation Events and approval-reference attachment. Repositories retain contract validation, immutable identity, defensive reads, and revision-checked replacement. Content storage remains external.
 
 ## Next Step
 
-Implement Founder Brief content persistence and approval lifecycle for the first vertical slice.
+Add audit diagnostics without expanding Artifact behavior.

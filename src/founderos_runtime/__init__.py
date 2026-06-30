@@ -26,12 +26,15 @@ from .runs import AgentRunService, WorkflowRunService
 from .state_machine import StateMachine, TransitionCommand
 from .application import FounderOSApplication
 from .local_store import LocalProjectStore, LocalRuntime, PersistenceHealth
+from .lifecycle import ApprovalLifecycleService, ArtifactLifecycleService, EvaluationLifecycleService
 
 __all__ = [
     "ApprovalRequiredError",
     "AgentRunService",
     "AgentRouter",
     "ArtifactPlanner",
+    "ArtifactLifecycleService",
+    "ApprovalLifecycleService",
     "FounderBriefPreparation",
     "FounderSetupCompletion",
     "FounderSetupService",
@@ -48,6 +51,7 @@ __all__ = [
     "ExecutionContext",
     "ExecutionContextBuilder",
     "ExecutionPlan",
+    "EvaluationLifecycleService",
     "ProjectStateService",
     "Planner",
     "PlanningError",

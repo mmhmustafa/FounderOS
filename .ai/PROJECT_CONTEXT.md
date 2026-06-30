@@ -47,9 +47,10 @@ Runtime:
 - Executable Founder Setup service with human approval and deterministic replay/resume
 - Thin FounderOS CLI and validated local JSON/JSONL persistence
 - Local single-writer protection, stale-write checks, backups, recovery, migration handling, and health reporting
+- Public persistence ports, reusable lifecycle services, restart-safe command idempotency, and guarded stale-lock recovery
 
 ## Current Milestone
-Harden runtime service and persistence adapter boundaries without adding lifecycle modules.
+Add runtime observability and audit diagnostics without external infrastructure.
 
 ## Planned
 - Durable persistence adapters

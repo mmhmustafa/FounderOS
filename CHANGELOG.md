@@ -4,6 +4,12 @@
 
 ### Added
 
+- Added public repository import/export ports so local persistence no longer hydrates through private insertion methods.
+- Added reusable Artifact, Evaluation, and Approval lifecycle services; existing WorkflowRun and AgentRun services remain the run boundaries.
+- Added persistence format v2 with a restart-safe command-result journal and CLI `--idempotency-key` support for `new`, `founder-brief`, and `approve`.
+- Added lock inspection and guarded stale-lock removal requiring an exact PID, a dead owner, and a minimum age.
+- Added write-phase failure injection and eight service-boundary tests covering ports, lifecycle delegation, idempotency, lock policy, and recovery paths.
+
 - Added exclusive local writer locks and optimistic store revisions to reject concurrent and stale writes.
 - Added validated pre-write backups and explicit `founderos recover` restoration.
 - Added `founderos health` for schema, Event replay, content digest, lock, format, and backup checks.

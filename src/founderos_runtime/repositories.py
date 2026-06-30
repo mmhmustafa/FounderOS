@@ -66,6 +66,23 @@ class InMemoryRepository:
         with self.lock:
             return [deepcopy(record) for record in self._records.values()]
 
+    def export_records(self) -> list[dict[str, Any]]:
+        """Public persistence port returning validated defensive snapshots."""
+
+        return self.all()
+
+    def import_records(self, records: Iterable[dict[str, Any]]) -> None:
+        """Public persistence port for hydrating an empty repository."""
+
+        validated = [self.contracts.validate(self.kind, record) for record in records]
+        with self.lock:
+            if self._records:
+                raise ConflictError(f"Cannot import into non-empty {self.kind} repository")
+            identifiers = [record["id"] for record in validated]
+            if len(identifiers) != len(set(identifiers)):
+                raise DuplicateRecordError(f"Duplicate {self.kind} identity in import")
+            self._records = {record["id"]: deepcopy(record) for record in validated}
+
     def replace(self, record: dict[str, Any], *, expected_revision: int | None = None) -> dict[str, Any]:
         validated = self.contracts.validate(self.kind, record)
         with self.lock:
@@ -227,3 +244,34 @@ class RuntimeRepositories:
 
     def resolve_all(self, refs: Iterable[dict[str, Any]], *, project_id: str) -> list[dict[str, Any]]:
         return [self.resolve_reference(ref, project_id=project_id) for ref in refs]
+
+    def export_records(self) -> dict[str, list[dict[str, Any]]]:
+        """Export all non-Event repositories through a stable persistence port."""
+
+        return {
+            kind: self.repository_for_kind(kind).export_records()
+            for kind in (
+                "agent", "workflow", "project", "workflow_run", "agent_run", "artifact",
+                "decision", "evaluation", "approval", "transition",
+            )
+        }
+
+    def import_records(self, records: dict[str, list[dict[str, Any]]]) -> None:
+        """Hydrate all non-Event repositories through public validation ports."""
+
+        for kind in (
+            "agent", "workflow", "project", "workflow_run", "agent_run", "artifact",
+            "decision", "evaluation", "approval", "transition",
+        ):
+            items = records.get(kind, [])
+            if not isinstance(items, list):
+                raise ConflictError(f"Persistence collection must be an array: {kind}")
+            self.repository_for_kind(kind).import_records(items)
+
+    def import_events(self, events: Iterable[dict[str, Any]]) -> None:
+        """Hydrate ordered Events through the append-only public boundary."""
+
+        if self.events.all():
+            raise ConflictError("Cannot import into non-empty event repository")
+        for event in events:
+            self.events.append(event)

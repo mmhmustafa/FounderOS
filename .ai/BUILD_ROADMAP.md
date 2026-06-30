@@ -67,13 +67,22 @@
 - [x] Add format-version migration structure and future-version rejection
 - [x] Add corruption, locking, stale-write, migration, and recovery tests
 
-## Milestone 8 - Runtime Service Boundary Hardening (Next)
+## Milestone 8 - Runtime Service Boundary Hardening
 
-- [ ] Replace persistence hydration through repository internals with explicit import/export ports
-- [ ] Extract Artifact, Evaluation, and Approval lifecycle operations from the Founder Setup coordinator
-- [ ] Persist command idempotency keys independently of in-process service instances
-- [ ] Define stale-lock inspection and authorized lock-break recovery
-- [ ] Add failure-injection coverage across multi-file save phases
+- [x] Replace persistence hydration through repository internals with explicit import/export ports
+- [x] Extract Artifact, Evaluation, and Approval lifecycle operations from the Founder Setup coordinator
+- [x] Retain WorkflowRun and AgentRun services as reusable lifecycle boundaries
+- [x] Persist command idempotency keys independently of in-process service instances
+- [x] Define stale-lock inspection and guarded manual lock removal
+- [x] Add failure-injection coverage across multi-file save phases
+
+## Milestone 9 - Runtime Observability and Audit Diagnostics (Next)
+
+- [ ] Define structured runtime diagnostic records without adding a database
+- [ ] Add command correlation and operation timing summaries
+- [ ] Add inspectable run, transition, approval, and persistence diagnostics
+- [ ] Add redaction rules for diagnostic output
+- [ ] Add end-to-end audit consistency checks
 
 ## Deferred Runtime Hardening
 

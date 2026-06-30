@@ -48,4 +48,4 @@ The format migration registry upgrades older snapshots one version at a time. Mi
 
 ## Next Step
 
-Replace repository-private hydration with explicit persistence ports and add phase-specific failure injection.
+Add structured, redacted runtime diagnostics and end-to-end audit consistency checks.

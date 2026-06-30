@@ -139,3 +139,28 @@ Status: Accepted.
 Decision: Local persistence formats migrate through an ordered registry; missing format metadata is treated as v0 and future versions fail closed.
 Reason: Make compatibility behavior testable and prevent newer data from being guessed at by an older runtime.
 Status: Accepted.
+
+## D-029
+Decision: Runtime repositories expose validated bulk import/export ports; persistence adapters may not call repository-private insertion methods.
+Reason: Keep storage adapters independent from in-memory implementation details.
+Status: Accepted.
+
+## D-030
+Decision: Artifact, Evaluation, Approval, WorkflowRun, and AgentRun mutations belong to reusable lifecycle services rather than vertical-slice coordinators.
+Reason: Preserve one mutation owner per runtime record type and make later workflows reuse proven boundaries.
+Status: Accepted.
+
+## D-031
+Decision: Important CLI mutations accept explicit idempotency keys whose operation and result are persisted in format v2.
+Reason: Retries after ambiguous process or transport failure must not duplicate important effects.
+Status: Accepted.
+
+## D-032
+Decision: Stale locks are never removed automatically; manual removal requires an exact unchanged PID, a confirmed dead owner, and a minimum lock age.
+Reason: A false-positive stale-lock break could permit concurrent writers and corrupt local state.
+Status: Accepted.
+
+## D-033
+Decision: Local-store write phases expose test-only failure injection checkpoints.
+Reason: Recovery guarantees must be exercised at phase boundaries rather than inferred from happy-path tests.
+Status: Accepted.

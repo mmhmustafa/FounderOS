@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from copy import deepcopy
 from typing import Any
 from uuid import uuid4
 
@@ -18,8 +19,12 @@ class FounderOSApplication:
     def __init__(self, root: str | Path = ".founderos") -> None:
         self.store = LocalProjectStore(root)
 
-    def new(self, *, name: str, founder_id: str, founder_name: str, domain: str) -> dict[str, Any]:
+    def new(self, *, name: str, founder_id: str, founder_name: str, domain: str, command_key: str | None = None) -> dict[str, Any]:
         if self.store.exists:
+            runtime = self.store.load()
+            replayed = self._replay_command(runtime, command_key, "new")
+            if replayed is not None:
+                return replayed
             raise VerticalSliceError(f"A FounderOS project already exists at {self.store.root}")
         runtime = self.store.empty_runtime()
         service = FounderSetupService(runtime.repositories, runtime.content)
@@ -28,8 +33,10 @@ class FounderOSApplication:
             name=name, founder_id=founder_id, founder_name=founder_name, domain=domain,
             actor=actor, correlation_id=self._correlation("new"),
         )
+        result = {"project_id": project["id"], "state": project["current_state"], "next_action": project["next_action"]}
+        self._record_command(runtime, command_key, "new", result)
         self.store.save(runtime)
-        return {"project_id": project["id"], "state": project["current_state"], "next_action": project["next_action"]}
+        return result
 
     def status(self) -> dict[str, Any]:
         runtime, project = self._load_project()
@@ -46,8 +53,11 @@ class FounderOSApplication:
         runtime, project = self._load_project()
         return FounderSetupService(runtime.repositories, runtime.content).plan(project["id"]).to_dict()
 
-    def founder_brief(self, content: dict[str, Any]) -> dict[str, Any]:
+    def founder_brief(self, content: dict[str, Any], *, command_key: str | None = None) -> dict[str, Any]:
         runtime, project = self._load_project()
+        replayed = self._replay_command(runtime, command_key, "founder-brief")
+        if replayed is not None:
+            return replayed
         service = FounderSetupService(runtime.repositories, runtime.content)
         actor = self._project_actor(project)
         session = service.start(project["id"], actor=actor, correlation_id=self._correlation("founder-setup"))
@@ -58,15 +68,20 @@ class FounderOSApplication:
             assumptions=self._list(content, "assumptions"), risks=self._list(content, "risks"),
             open_questions=self._list(content, "open_questions"), correlation_id=self._correlation("founder-brief"),
         )
-        self.store.save(runtime)
         artifact = runtime.repositories.artifacts.get(preparation.artifact_id)
-        return {
+        result = {
             "artifact_id": artifact["id"], "artifact_status": artifact["status"],
             "approval_id": preparation.approval_id, "project_state": service.projects.get(project["id"])["current_state"],
         }
+        self._record_command(runtime, command_key, "founder-brief", result)
+        self.store.save(runtime)
+        return result
 
-    def approve(self, *, rationale: str, founder_id: str | None = None, founder_name: str | None = None) -> dict[str, Any]:
+    def approve(self, *, rationale: str, founder_id: str | None = None, founder_name: str | None = None, command_key: str | None = None) -> dict[str, Any]:
         runtime, project = self._load_project()
+        replayed = self._replay_command(runtime, command_key, "approve")
+        if replayed is not None:
+            return replayed
         service = FounderSetupService(runtime.repositories, runtime.content)
         preparation = self._pending_preparation(runtime, project["id"])
         actor = self._human(founder_id or project["founder"]["actor_id"], founder_name or project["founder"]["display_name"])
@@ -78,12 +93,14 @@ class FounderOSApplication:
             raise VerticalSliceError(
                 f"Transition rejected: {completion.transition.get('rejection_code', 'unknown')}"
             )
-        self.store.save(runtime)
-        return {
+        result = {
             "approval_id": approval["id"], "approval_status": approval["status"],
             "transition_id": completion.transition["id"], "transition_status": completion.transition["status"],
             "project_state": completion.project["current_state"],
         }
+        self._record_command(runtime, command_key, "approve", result)
+        self.store.save(runtime)
+        return result
 
     def decisions(self) -> list[dict[str, Any]]:
         runtime, project = self._load_project()
@@ -104,6 +121,27 @@ class FounderOSApplication:
 
     def recover(self) -> dict[str, Any]:
         return self.store.recover().to_dict()
+
+    @staticmethod
+    def _replay_command(runtime: LocalRuntime, command_key: str | None, operation: str) -> dict[str, Any] | None:
+        if command_key is None:
+            return None
+        entry = (runtime.commands or {}).get(command_key)
+        if entry is None:
+            return None
+        if entry.get("operation") != operation:
+            raise VerticalSliceError("Idempotency key was already used for a different command")
+        result = entry.get("result")
+        if not isinstance(result, dict):
+            raise VerticalSliceError("Persisted idempotency result is invalid")
+        return deepcopy(result)
+
+    @staticmethod
+    def _record_command(runtime: LocalRuntime, command_key: str | None, operation: str, result: dict[str, Any]) -> None:
+        if command_key is None:
+            return
+        assert runtime.commands is not None
+        runtime.commands[command_key] = {"operation": operation, "result": deepcopy(result)}
 
     def _load_project(self) -> tuple[LocalRuntime, dict[str, Any]]:
         runtime = self.store.load()

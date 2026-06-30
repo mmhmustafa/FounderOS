@@ -76,6 +76,10 @@ The Master Orchestrator, Workflow Engine, registries, and agents cannot write Pr
 
 Writes require an exclusive lock and matching store revision. A validated pre-write backup supports explicit rollback recovery. The adapter is intentionally single-Project and single-writer; it does not claim database-grade transactions.
 
+## Persistence Ports
+
+Runtime repositories expose validated public import/export operations. The local adapter no longer calls private insertion methods.
+
 ## Next Step
 
-Define stable import/export ports and remove repository-private hydration from the adapter.
+Add structured audit diagnostics while preserving Project State as the authoritative aggregate.

@@ -8,6 +8,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 import shutil
+from datetime import UTC, datetime
 from typing import Any, Callable, Iterator
 
 from .content import InMemoryContentStore
@@ -30,7 +31,17 @@ def _migrate_v0_to_v1(snapshot: dict[str, Any]) -> dict[str, Any]:
     return migrated
 
 
-MIGRATIONS: dict[int, Callable[[dict[str, Any]], dict[str, Any]]] = {0: _migrate_v0_to_v1}
+def _migrate_v1_to_v2(snapshot: dict[str, Any]) -> dict[str, Any]:
+    migrated = dict(snapshot)
+    migrated["format_version"] = 2
+    migrated.setdefault("commands", {})
+    return migrated
+
+
+MIGRATIONS: dict[int, Callable[[dict[str, Any]], dict[str, Any]]] = {
+    0: _migrate_v0_to_v1,
+    1: _migrate_v1_to_v2,
+}
 
 
 @dataclass(frozen=True)
@@ -38,6 +49,7 @@ class LocalRuntime:
     repositories: RuntimeRepositories
     content: InMemoryContentStore
     store_revision: int = 0
+    commands: dict[str, dict[str, Any]] | None = None
 
 
 @dataclass(frozen=True)
@@ -69,15 +81,16 @@ class PersistenceHealth:
 class LocalProjectStore:
     """Persist one validated Project with optimistic single-writer protection."""
 
-    FORMAT_VERSION = 1
+    FORMAT_VERSION = 2
 
-    def __init__(self, root: str | Path = ".founderos") -> None:
+    def __init__(self, root: str | Path = ".founderos", *, failure_injector: Callable[[str], None] | None = None) -> None:
         self.root = Path(root)
         self.state_path = self.root / "project-state.json"
         self.events_path = self.root / "events.jsonl"
         self.artifacts_path = self.root / "artifacts"
         self.backup_path = self.root / "backup"
         self.lock_path = self.root / ".write.lock"
+        self.failure_injector = failure_injector
 
     @property
     def exists(self) -> bool:
@@ -85,14 +98,17 @@ class LocalProjectStore:
 
     def empty_runtime(self) -> LocalRuntime:
         repositories = RuntimeRepositories(ContractRegistry())
-        return LocalRuntime(repositories, InMemoryContentStore(repositories.lock), 0)
+        return LocalRuntime(repositories, InMemoryContentStore(repositories.lock), 0, {})
 
     def load(self) -> LocalRuntime:
         if not self.exists:
             raise RecordNotFoundError(f"No FounderOS project exists at {self.root}")
         snapshot = self._migrate_snapshot(self._read_json(self.state_path))
         runtime = self._hydrate(snapshot)
-        return LocalRuntime(runtime.repositories, runtime.content, snapshot["store_revision"])
+        commands = snapshot.get("commands", {})
+        if not isinstance(commands, dict):
+            raise ConflictError("Persisted command journal must be a JSON object")
+        return LocalRuntime(runtime.repositories, runtime.content, snapshot["store_revision"], commands)
 
     def save(self, runtime: LocalRuntime) -> None:
         projects = runtime.repositories.projects.all()
@@ -108,6 +124,7 @@ class LocalProjectStore:
                 )
             if self.exists:
                 self._create_backup()
+            self._phase("after_backup")
             next_revision = current_revision + 1
             records = {
                 kind: runtime.repositories.repository_for_kind(kind).all() for kind in _RECORD_KINDS
@@ -122,11 +139,20 @@ class LocalProjectStore:
                 path = self.artifacts_path / f"{artifact['id']}.json"
                 expected_files.add(path)
                 self._write_json_atomic(path, runtime.content.get(artifact["content_uri"]))
+            self._phase("after_artifacts")
             self._write_text_atomic(self.events_path, event_text)
+            self._phase("after_events")
+            self._phase("before_state")
             self._write_json_atomic(
                 self.state_path,
-                {"format_version": self.FORMAT_VERSION, "store_revision": next_revision, "records": records},
+                {
+                    "format_version": self.FORMAT_VERSION,
+                    "store_revision": next_revision,
+                    "commands": runtime.commands or {},
+                    "records": records,
+                },
             )
+            self._phase("after_state")
             for path in self.artifacts_path.glob("*.json"):
                 if path not in expected_files:
                     path.unlink()
@@ -143,7 +169,7 @@ class LocalProjectStore:
                 f"FounderOS persistence is locked by another writer: {self.lock_path}"
             ) from error
         try:
-            metadata = json.dumps({"pid": os.getpid()}) + "\n"
+            metadata = json.dumps({"pid": os.getpid(), "created_at": datetime.now(UTC).isoformat()}) + "\n"
             os.write(descriptor, metadata.encode("utf-8"))
             os.close(descriptor)
             descriptor = -1
@@ -213,6 +239,37 @@ class LocalProjectStore:
             raise RecoveryError("Backup restore completed but validation still failed")
         return result
 
+    def inspect_lock(self) -> dict[str, Any] | None:
+        """Return lock metadata and liveness without modifying the lock."""
+
+        if not self.lock_path.is_file():
+            return None
+        metadata = self._read_json(self.lock_path)
+        pid = metadata.get("pid")
+        created_at = metadata.get("created_at")
+        if not isinstance(pid, int) or not isinstance(created_at, str):
+            raise ConflictError("Writer lock metadata is invalid")
+        try:
+            created = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+        except ValueError as error:
+            raise ConflictError("Writer lock timestamp is invalid") from error
+        age_seconds = max(0.0, (datetime.now(UTC) - created).total_seconds())
+        return {"pid": pid, "created_at": created_at, "age_seconds": age_seconds, "owner_alive": self._pid_alive(pid)}
+
+    def clear_stale_lock(self, *, expected_pid: int, minimum_age_seconds: float = 300.0) -> None:
+        """Remove only an old lock whose exact recorded process is no longer alive."""
+
+        info = self.inspect_lock()
+        if info is None:
+            raise PersistenceLockError("No writer lock exists")
+        if info["pid"] != expected_pid:
+            raise PersistenceLockError("Writer lock PID changed; refusing removal")
+        if info["owner_alive"]:
+            raise PersistenceLockError("Writer process is still alive; refusing removal")
+        if info["age_seconds"] < minimum_age_seconds:
+            raise PersistenceLockError("Writer lock is too recent; refusing removal")
+        self.lock_path.unlink()
+
     def _hydrate(self, snapshot: dict[str, Any]) -> LocalRuntime:
         runtime = self.empty_runtime()
         records = snapshot.get("records")
@@ -222,12 +279,10 @@ class LocalProjectStore:
             items = records.get(kind, [])
             if not isinstance(items, list):
                 raise ConflictError(f"Local persistence record collection must be an array: {kind}")
-            repository = runtime.repositories.repository_for_kind(kind)
-            for record in items:
-                validated = runtime.repositories.contracts.validate(kind, record)
-                repository._insert_validated(validated)
+        runtime.repositories.import_records(records)
         if not self.events_path.is_file():
             raise RecordNotFoundError(f"Required local persistence file is missing: {self.events_path}")
+        events: list[dict[str, Any]] = []
         for line_number, line in enumerate(self.events_path.read_text(encoding="utf-8").splitlines(), start=1):
             if not line.strip():
                 continue
@@ -235,7 +290,8 @@ class LocalProjectStore:
                 event = json.loads(line)
             except json.JSONDecodeError as error:
                 raise ConflictError(f"Invalid Event JSON on line {line_number}") from error
-            runtime.repositories.events.append(event)
+            events.append(event)
+        runtime.repositories.import_events(events)
         projects = runtime.repositories.projects.all()
         if len(projects) != 1:
             raise ConflictError("Local FounderOS persistence must contain exactly one Project")
@@ -273,6 +329,10 @@ class LocalProjectStore:
         if not isinstance(revision, int) or revision < 0:
             raise ConflictError("Invalid local persistence store revision")
         migrated["store_revision"] = revision
+        commands = migrated.get("commands", {})
+        if not isinstance(commands, dict):
+            raise ConflictError("Invalid persisted command journal")
+        migrated["commands"] = commands
         return migrated
 
     def _current_store_revision(self) -> int:
@@ -328,3 +388,17 @@ class LocalProjectStore:
         temporary = destination.with_name(destination.name + ".recovery.tmp")
         shutil.copy2(source, temporary)
         temporary.replace(destination)
+
+    def _phase(self, phase: str) -> None:
+        if self.failure_injector is not None:
+            self.failure_injector(phase)
+
+    @staticmethod
+    def _pid_alive(pid: int) -> bool:
+        if pid <= 0:
+            return False
+        try:
+            os.kill(pid, 0)
+            return True
+        except (OSError, PermissionError):
+            return False

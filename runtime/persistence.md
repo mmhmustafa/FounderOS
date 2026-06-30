@@ -17,6 +17,8 @@ Protect the local FounderOS CLI store from simultaneous writers, stale saves, co
 
 The Project revision remains the domain aggregate concurrency token. The store revision independently protects the complete local persistence snapshot.
 
+Persistence format v2 also stores command idempotency results. The adapter hydrates repositories only through public `import_records` and `import_events` ports and exports through defensive public snapshots.
+
 ## Validation and Health
 
 `founderos health` reports whether the primary is valid, whether a backup exists and validates, whether a writer lock is present, supported format and store revisions, detected issues, and whether recovery is recommended.
@@ -31,14 +33,22 @@ Primary validation includes JSON parsing, contract validation, Event sequence en
 
 Snapshots migrate through a registry keyed by their source format version. Each migration must advance the version. Missing version metadata is treated as v0. Future versions and missing migration steps are rejected.
 
+## Stale Locks
+
+Lock inspection reports the recorded PID, timestamp, age, and best-effort process liveness. Locks are never broken automatically. Manual removal requires the exact unchanged PID, a process confirmed dead, and a caller-specified minimum age. Live, changed, malformed, or recent locks fail closed.
+
+## Failure Injection
+
+Tests can inject failures after backup, after Artifact writes, after Event writes, before state commit, and after state commit. Every phase must release the lock and leave either a valid primary or a validated recovery path.
+
 ## Risks
 
 - Lock ownership is recorded by process ID, but stale locks are not broken automatically.
 - File replacement is atomic per file, not across the entire store.
 - Only one rolling backup is retained.
-- Repository hydration still uses internal insertion methods pending explicit persistence ports.
+- Bulk import validates structural contracts but cross-record reference checks still occur through normal runtime use and replay validation.
 - No authentication, encryption, database, or multi-project index exists.
 
 ## Next Step
 
-Introduce explicit repository import/export ports, persisted command idempotency, stale-lock recovery policy, and failure injection for every write phase.
+Add structured observability and audit diagnostics over the established boundaries.

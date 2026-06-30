@@ -8,9 +8,9 @@ from typing import Any
 
 from .content import InMemoryContentStore
 from .errors import ApprovalRequiredError, VerticalSliceError
-from .events import build_event
 from .execution_context import ExecutionContextBuilder
 from .ids import new_id, reference, utc_now
+from .lifecycle import ApprovalLifecycleService, ArtifactLifecycleService, EvaluationLifecycleService
 from .planner import ExecutionPlan, Planner
 from .project_state import ProjectStateService, replay_project_events
 from .repositories import RuntimeRepositories
@@ -58,6 +58,9 @@ class FounderSetupService:
         self.contexts = ExecutionContextBuilder(repositories)
         self.workflow_runs = WorkflowRunService(repositories)
         self.agent_runs = AgentRunService(repositories)
+        self.artifacts = ArtifactLifecycleService(repositories)
+        self.evaluations = EvaluationLifecycleService(repositories)
+        self.approvals = ApprovalLifecycleService(repositories)
 
     def create_project(self, **kwargs: Any) -> dict[str, Any]:
         return self.projects.create_project(**kwargs)
@@ -122,7 +125,7 @@ class FounderSetupService:
         uri = f"memory://projects/{session.project_id}/artifacts/{artifact_id}/1.0.0"
         _, digest = self.content.put(uri, content)
         now = utc_now()
-        artifact = self.repositories.artifacts.create({
+        artifact = self.artifacts.create({
             "id": artifact_id, "version": "1.0.0", "revision": 1,
             "project_ref": reference("project", project), "name": "Founder Brief", "artifact_type": "founder_brief",
             "status": "under_review", "owner_ref": reference("agent", agent, include_version=True),
@@ -130,21 +133,18 @@ class FounderSetupService:
             "input_artifact_refs": [], "output_consumer_refs": [], "confidence_score": 1.0,
             "assumptions": content["assumptions"], "risks": content["risks"], "open_questions": content["open_questions"],
             "decision_refs": [], "evaluation_refs": [], "approval_refs": [], "created_at": now, "updated_at": now,
-        })
-        self._event(session.project_id, "artifact.created", SERVICE_ACTOR, reference("artifact", artifact, include_version=True), f"{correlation_id}:artifact", {"artifact_type": "founder_brief", "status": "under_review"})
-        evaluation = self.repositories.evaluations.create({
+        }, actor=SERVICE_ACTOR, correlation_id=f"{correlation_id}:artifact")
+        evaluation = self.evaluations.create({
             "id": new_id("evaluation"), "project_ref": reference("project", project),
             "target_ref": reference("artifact", artifact, include_version=True), "evaluation_type": "schema", "status": "completed",
             "evaluator": SERVICE_ACTOR, "criteria": [{"criterion_id": "founder_brief_schema", "description": "Founder Brief content matches its contract", "passed": True, "score": 1.0}],
             "outcome": "pass", "confidence_score": 1.0, "summary": "Machine-valid structured Founder Brief", "created_at": now, "completed_at": now,
-        })
-        self._event(session.project_id, "evaluation.completed", SERVICE_ACTOR, reference("evaluation", evaluation), f"{correlation_id}:evaluation", {"outcome": "pass"})
-        approval = self.repositories.approvals.create({
+        }, actor=SERVICE_ACTOR, correlation_id=f"{correlation_id}:evaluation")
+        approval = self.approvals.request({
             "id": new_id("approval"), "revision": 1, "project_ref": reference("project", project),
             "subject_ref": reference("artifact", artifact, include_version=True), "approval_type": "artifact", "status": "pending",
             "requested_by": SERVICE_ACTOR, "required_approver_type": "founder", "requested_at": now,
-        })
-        self._event(session.project_id, "approval.requested", SERVICE_ACTOR, reference("approval", approval), f"{correlation_id}:approval", {"status": "pending"})
+        }, actor=SERVICE_ACTOR, correlation_id=f"{correlation_id}:approval")
         agent_run = self.agent_runs.set_status(agent_run["id"], "succeeded", expected_revision=agent_run["revision"], actor=SERVICE_ACTOR, correlation_id=f"{correlation_id}:agent-complete")
         return FounderBriefPreparation(session.project_id, session.workflow_run_id, agent_run["id"], artifact["id"], evaluation["id"], approval["id"], content)
 
@@ -157,16 +157,16 @@ class FounderSetupService:
                 return approval
             if approval["status"] != "pending":
                 raise VerticalSliceError(f"Approval is {approval['status']}")
-            now = utc_now(); updated = deepcopy(approval)
-            updated.update({"revision": approval["revision"] + 1, "status": "approved", "decided_by": actor, "rationale": rationale, "decided_at": now})
-            updated = self.repositories.approvals.replace(updated, expected_revision=approval["revision"])
-            artifact = self.repositories.artifacts.get(preparation.artifact_id); approved_artifact = deepcopy(artifact)
-            approved_artifact.update({"revision": artifact["revision"] + 1, "status": "approved", "updated_at": now,
-                                      "approval_refs": [reference("approval", updated, include_revision=True)],
-                                      "evaluation_refs": [reference("evaluation", self.repositories.evaluations.get(preparation.evaluation_id))]})
-            self.repositories.artifacts.replace(approved_artifact, expected_revision=artifact["revision"])
-            self._event(preparation.project_id, "approval.decided", actor, reference("approval", updated, include_revision=True), f"{correlation_id}:decision", {"status": "approved"})
-            self._event(preparation.project_id, "artifact.approved", actor, reference("artifact", approved_artifact, include_version=True), f"{correlation_id}:artifact", {"status": "approved"})
+            updated = self.approvals.approve(
+                approval["id"], actor=actor, rationale=rationale,
+                correlation_id=f"{correlation_id}:decision",
+            )
+            self.artifacts.approve_with_references(
+                preparation.artifact_id,
+                approval_ref=reference("approval", updated, include_revision=True),
+                evaluation_refs=[reference("evaluation", self.repositories.evaluations.get(preparation.evaluation_id))],
+                actor=actor, correlation_id=f"{correlation_id}:artifact",
+            )
             return updated
 
     def complete(self, preparation: FounderBriefPreparation, *, actor: dict[str, Any], correlation_id: str, expected_project_revision: int | None = None) -> FounderSetupCompletion:
@@ -226,7 +226,3 @@ class FounderSetupService:
             "failure_policy": {"max_attempts": 1, "terminal_behavior": "request_human", "recovery_action": "Correct founder input and start a new run"},
             "next_workflow_refs": [], "created_at": now, "updated_at": now})
         return agent, workflow
-
-    def _event(self, project_id: str, event_type: str, actor: dict[str, Any], subject_ref: dict[str, Any], correlation_id: str, payload: dict[str, Any]) -> None:
-        event = build_event(self.repositories, project_id=project_id, event_type=event_type, actor=actor, subject_ref=subject_ref, correlation_id=correlation_id, payload=payload)
-        self.repositories.events.append(event)

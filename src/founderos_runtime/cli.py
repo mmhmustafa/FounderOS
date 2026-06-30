@@ -22,17 +22,20 @@ def build_parser() -> argparse.ArgumentParser:
     new.add_argument("--founder-name", required=True)
     new.add_argument("--founder-id", default="founder")
     new.add_argument("--domain", required=True)
+    new.add_argument("--idempotency-key")
 
     subcommands.add_parser("status", help="Show current project status")
     subcommands.add_parser("plan", help="Show the deterministic execution plan")
 
     brief = subcommands.add_parser("founder-brief", help="Create a structured Founder Brief")
     brief.add_argument("--input", required=True, type=Path, help="Path to Founder Brief JSON input")
+    brief.add_argument("--idempotency-key")
 
     approve = subcommands.add_parser("approve", help="Approve the pending Founder Brief and request transition")
     approve.add_argument("--rationale", required=True)
     approve.add_argument("--founder-id")
     approve.add_argument("--founder-name")
+    approve.add_argument("--idempotency-key")
 
     subcommands.add_parser("decisions", help="List recorded decisions")
     subcommands.add_parser("events", help="List ordered project events")
@@ -44,7 +47,7 @@ def build_parser() -> argparse.ArgumentParser:
 def execute(arguments: argparse.Namespace) -> Any:
     app = FounderOSApplication(arguments.project_dir)
     if arguments.command == "new":
-        return app.new(name=arguments.name, founder_id=arguments.founder_id, founder_name=arguments.founder_name, domain=arguments.domain)
+        return app.new(name=arguments.name, founder_id=arguments.founder_id, founder_name=arguments.founder_name, domain=arguments.domain, command_key=arguments.idempotency_key)
     if arguments.command == "status":
         return app.status()
     if arguments.command == "plan":
@@ -56,9 +59,9 @@ def execute(arguments: argparse.Namespace) -> Any:
             raise ValueError(f"Cannot read Founder Brief input: {error}") from error
         if not isinstance(content, dict):
             raise ValueError("Founder Brief input must be a JSON object")
-        return app.founder_brief(content)
+        return app.founder_brief(content, command_key=arguments.idempotency_key)
     if arguments.command == "approve":
-        return app.approve(rationale=arguments.rationale, founder_id=arguments.founder_id, founder_name=arguments.founder_name)
+        return app.approve(rationale=arguments.rationale, founder_id=arguments.founder_id, founder_name=arguments.founder_name, command_key=arguments.idempotency_key)
     if arguments.command == "decisions":
         return app.decisions()
     if arguments.command == "events":

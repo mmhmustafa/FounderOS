@@ -81,4 +81,4 @@ Transient failures create new attempts within policy limits. Input/evidence fail
 
 ## Next Step
 
-Make the existing slice restart-safe through durable storage before expanding workflow execution.
+Add correlated run diagnostics without expanding workflow execution.

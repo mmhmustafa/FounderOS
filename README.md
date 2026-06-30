@@ -27,8 +27,10 @@ Completed foundations:
 - Executable Founder Setup through human approval, guarded completion, and deterministic replay/resume
 - Standard-library CLI with local JSON/JSONL persistence
 - Single-writer locking, optimistic store revisions, validated backups, recovery, migrations, and persistence health checks
+- Public repository import/export ports and reusable Artifact, Evaluation, Approval, WorkflowRun, and AgentRun lifecycle services
+- Restart-safe idempotency keys for important CLI mutations
 
-Next: runtime service-boundary hardening (Milestone 8).
+Next: runtime observability and audit diagnostics (Milestone 9).
 
 Most lifecycle agent, prompt, template, domain, and roadmap files remain explicitly marked as planned placeholders. No web application, Discovery, Validation, or Product module has been implemented.
 
@@ -73,6 +75,8 @@ founderos events
 founderos health
 founderos recover
 ```
+
+Mutation commands accept `--idempotency-key KEY`. Reusing the same key for the same command returns its persisted result without duplicating Projects, Artifacts, Approvals, runs, transitions, or Events. Reusing a key for another command is rejected.
 
 Use `--project-dir PATH` before the command to choose a store other than `.founderos`. CLI output is JSON. Local state uses `.founderos/project-state.json`, `.founderos/events.jsonl`, and `.founderos/artifacts/*.json`; the last validated pre-write state is retained under `.founderos/backup/`.
 
