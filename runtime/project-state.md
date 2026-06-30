@@ -1,6 +1,6 @@
 # Project State
 
-> **Status:** In-memory Runtime Foundation implemented; durable persistence not started
+> **Status:** Runtime Foundation implemented with a local CLI snapshot adapter; production persistence not started
 >
 > **Schema:** `runtime/contracts/project.schema.json`
 
@@ -70,6 +70,12 @@ The Master Orchestrator, Workflow Engine, registries, and agents cannot write Pr
 
 `src/founderos_runtime/project_state.py` and `repositories.py` implement Project creation, guarded detail updates, optimistic revisions, atomic aggregate/Event commits, defensive copies, and replay verification in memory.
 
+## Local CLI Persistence
+
+`LocalProjectStore` serializes validated runtime records to `.founderos/project-state.json`, writes the complete ordered Event stream to `.founderos/events.jsonl`, and stores Artifact content under `.founderos/artifacts/`. Every load validates schemas, Event ordering, and content digests before commands run.
+
+The adapter is intentionally single-Project and single-process. It does not claim database-grade transactions or concurrent writer safety.
+
 ## Next Step
 
-Add a durable Project/Event adapter for the first vertical slice.
+Define stable storage ports and harden concurrency, atomic recovery, and format migration.

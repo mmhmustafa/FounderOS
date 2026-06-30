@@ -1,6 +1,6 @@
 # Founder Setup Vertical Slice
 
-> **Status:** Executable in memory
+> **Status:** Executable through the runtime and local CLI
 
 ## Scope
 
@@ -18,4 +18,4 @@ Only an approved Artifact, passing Evaluation, successful WorkflowRun, and curre
 
 ## Limitations
 
-All records and content remain process-local. Restart-safe persistence, authentication, authorization policy, generalized workflow execution, and lifecycle modules after Founder Setup are not implemented.
+The CLI reloads records and content between invocations, but its file store is single-process and lacks transactional recovery across files. Authentication, production authorization policy, generalized workflow execution, and lifecycle modules after Founder Setup are not implemented.

@@ -104,3 +104,18 @@ Status: Accepted.
 Decision: Milestone 5 stores canonical JSON content immutably in memory and records its SHA-256 digest on the Artifact.
 Reason: Verify content integrity and replay semantics while deferring storage technology to Milestone 6.
 Status: Accepted.
+
+## D-022
+Decision: Milestone 6 uses Python standard-library `argparse` and JSON output for the CLI.
+Reason: Keep the interface testable and dependency-free while the command surface is small.
+Status: Accepted.
+
+## D-023
+Decision: CLI commands delegate to a thin application facade, which delegates all planning, approvals, runs, and transitions to existing runtime services.
+Reason: Prevent presentation code from duplicating or bypassing runtime rules.
+Status: Accepted.
+
+## D-024
+Decision: The initial CLI persists one Project using a validated JSON record snapshot, an ordered JSONL Event stream, and immutable JSON Artifact content files under `.founderos/`.
+Reason: Provide understandable restart-safe local use without introducing a database or claiming production-grade transaction semantics.
+Status: Accepted.

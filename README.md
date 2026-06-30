@@ -8,7 +8,7 @@ v0.1-alpha
 
 ## Current Status
 
-FounderOS now has an executable, in-memory Founder Setup vertical slice. It is not yet a durable or user-facing application.
+FounderOS now has an executable Founder Setup vertical slice and a minimal local CLI. It is not yet a production application.
 
 Completed foundations:
 
@@ -25,10 +25,11 @@ Completed foundations:
 - Deterministic Runtime Planner for workflow, artifact, agent-role, quality-gate, and next-state recommendations
 - Structured Founder Brief content validation and immutable in-memory content storage
 - Executable Founder Setup through human approval, guarded completion, and deterministic replay/resume
+- Standard-library CLI with local JSON/JSONL persistence
 
-Next: durable persistence and restart-safe application composition (Milestone 6).
+Next: persistence hardening and transactional recovery (Milestone 7).
 
-Most lifecycle agent, prompt, template, domain, and roadmap files remain explicitly marked as planned placeholders. No application runtime, CLI, web application, Discovery, Validation, or Product module has been implemented.
+Most lifecycle agent, prompt, template, domain, and roadmap files remain explicitly marked as planned placeholders. No web application, Discovery, Validation, or Product module has been implemented.
 
 ## Runtime Contracts
 
@@ -48,7 +49,29 @@ The runtime can currently validate contracts, create Projects in memory, execute
 
 The read-only Runtime Planner can build an ExecutionContext from repository state and produce a deterministic ExecutionPlan. It recommends workflows and agent roles, identifies missing approved artifacts, exposes allowed transitions and quality gates, and clearly blocks invalid progress without mutating repositories.
 
-It has no durable database, general workflow executor, CLI, web UI, authentication, LLM calls, Discovery content generation, or Validation content generation.
+It has no database, general workflow executor, web UI, authentication, LLM calls, Discovery content generation, or Validation content generation.
+
+## CLI
+
+Install the package in editable mode, then create a project:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -e .
+founderos new --name "My SaaS" --founder-name "Founder" --domain "B2B SaaS"
+founderos status
+founderos plan
+```
+
+Create `founder-brief.json` with `founder_profile`, `startup_context`, and optional `assumptions`, `risks`, and `open_questions`, then run:
+
+```powershell
+founderos founder-brief --input founder-brief.json
+founderos approve --rationale "The brief accurately represents my constraints"
+founderos decisions
+founderos events
+```
+
+Use `--project-dir PATH` before the command to choose a store other than `.founderos`. CLI output is JSON. Local state uses `.founderos/project-state.json`, `.founderos/events.jsonl`, and `.founderos/artifacts/*.json`.
 
 ## AI and Engineering Onboarding
 

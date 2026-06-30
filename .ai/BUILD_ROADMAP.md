@@ -48,17 +48,26 @@
 - [x] Persist run, evaluation, approval, event, artifact, and transition records in memory
 - [x] Verify deterministic replay/resume behavior and idempotent completion
 
-## Milestone 6 - Durable Runtime Persistence (Next)
+## Milestone 6 - FounderOS CLI
 
-- [ ] Define a storage-port boundary for repositories, content, and event streams
-- [ ] Add one transactional durable adapter without changing domain contracts
-- [ ] Rehydrate the application composition root after process restart
-- [ ] Preserve optimistic revisions, event ordering, and idempotency across restarts
-- [ ] Run the Founder Setup end-to-end suite against in-memory and durable adapters
+- [x] Add thin standard-library command parsing
+- [x] Add `new`, `status`, `plan`, `founder-brief`, `approve`, `decisions`, and `events`
+- [x] Persist one local Project as JSON, JSONL Events, and Artifact JSON files
+- [x] Reload and validate runtime records across CLI invocations
+- [x] Preserve Planner, Approval, and State Machine boundaries
+- [x] Add CLI acceptance coverage
+
+## Milestone 7 - Persistence Hardening (Next)
+
+- [ ] Define stable storage ports independent of in-memory repository internals
+- [ ] Add transactional recovery or one atomic durable adapter
+- [ ] Add file locking and concurrent-process conflict handling
+- [ ] Persist command idempotency indexes across restarts
+- [ ] Add corruption, partial-write, migration, and backup recovery tests
 
 ## Deferred Runtime Hardening
 
-- Durable persistence adapters
+- Database-grade persistence adapters
 - Knowledge Entry schema and executable Knowledge Base
 - Authentication and authorization
 - Observability and cost accounting

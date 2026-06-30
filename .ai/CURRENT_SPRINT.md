@@ -1,18 +1,18 @@
 # CURRENT_SPRINT
 
-Sprint: Durable Runtime Persistence (Milestone 6)
+Sprint: Persistence Hardening (Milestone 7)
 
 ## Goal
-Make the completed Founder Setup slice survive process restarts without changing its runtime contracts or adding lifecycle modules.
+Harden the completed local CLI store without changing runtime contracts or adding lifecycle modules.
 
 ## Tasks
-- Define storage ports for records, ordered Events, and artifact content
-- Select one minimal transactional durable adapter
-- Rehydrate idempotency and runtime composition after restart
-- Run Founder Setup acceptance tests against both storage implementations
+- Replace private in-memory hydration dependencies with stable storage ports
+- Add cross-process locking and conflict behavior
+- Define atomic recovery across snapshot, Event, and Artifact files
+- Add format migration, corruption, and backup recovery tests
 
 ## Definition of Done
-Founder Setup resumes after a real process restart with identical Project state, event order, content digest, approvals, and idempotency behavior.
+The CLI store has explicit concurrency, transaction recovery, migration, and corruption semantics with executable tests.
 
 ## Out of Scope
 Authentication
@@ -20,5 +20,5 @@ Discovery Runtime
 Validation Runtime
 Product Runtime
 Web UI
-General-purpose CLI
+Discovery commands
 LLM/AI provider integration

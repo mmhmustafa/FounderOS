@@ -45,9 +45,10 @@ Runtime:
 - Workflow selection, missing-artifact analysis, agent-role routing, and quality-gate planning
 - Founder Brief content contract and immutable in-memory content store
 - Executable Founder Setup service with human approval and deterministic replay/resume
+- Thin FounderOS CLI and validated local JSON/JSONL persistence
 
 ## Current Milestone
-Add durable, restart-safe persistence behind the existing runtime boundaries.
+Harden local persistence, concurrency, and recovery behind stable storage ports.
 
 ## Planned
 - Durable persistence adapters
@@ -56,9 +57,9 @@ Add durable, restart-safe persistence behind the existing runtime boundaries.
 - Knowledge Entry schema and executable Knowledge Base
 - Authorization and observability
 - Discovery, Validation, and Product runtimes
-- Executable application and persistent storage
+- Web application and database persistence
 
-The minimal in-memory Runtime Foundation and first Founder Setup application service are implemented. General orchestration and later lifecycle modules remain planned.
+The minimal Runtime Foundation, Founder Setup service, and local CLI are implemented. General orchestration and later lifecycle modules remain planned.
 
 The Planner remains read-only. Founder Setup consumes its recommendation and coordinates explicit runtime mutations; it does not call models.
 

@@ -21,6 +21,8 @@ from .project_state import ProjectStateService, replay_project_events
 from .repositories import RuntimeRepositories
 from .runs import AgentRunService, WorkflowRunService
 from .state_machine import StateMachine, TransitionCommand
+from .application import FounderOSApplication
+from .local_store import LocalProjectStore, LocalRuntime
 
 __all__ = [
     "ApprovalRequiredError",
@@ -31,7 +33,10 @@ __all__ = [
     "FounderSetupCompletion",
     "FounderSetupService",
     "FounderSetupSession",
+    "FounderOSApplication",
     "InMemoryContentStore",
+    "LocalProjectStore",
+    "LocalRuntime",
     "ConflictError",
     "ContractRegistry",
     "ContractValidationError",

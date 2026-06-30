@@ -743,9 +743,9 @@ Knowledge Base
 
 The State Machine, Master Orchestrator, Project State, Agent Registry, Artifact Registry, Workflow Engine, Decision Engine, and Knowledge Base now have contract-level specifications.
 
-The authoritative machine-valid contracts are in `runtime/contracts/`. No application runtime behavior is implemented yet.
+The authoritative machine-valid contracts are in `runtime/contracts/`. The Runtime Foundation enforces those contracts, the Runtime Planner produces deterministic read-only plans, and the Founder Setup vertical slice executes through a thin local CLI.
 
-The in-memory Runtime Foundation enforces those contracts and acceptance scenarios, and the Runtime Planner now produces deterministic read-only execution plans. The next deliverable is Milestone 5: the first executable Founder Brief vertical slice.
+The CLI uses a simple single-Project file store. Database-grade persistence, generalized workflow execution, AI providers, and later lifecycle modules remain planned.
 
 ---
 
