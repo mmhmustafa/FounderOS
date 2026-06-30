@@ -20,6 +20,8 @@ The CLI is a thin JSON interface over the existing FounderOS application and run
 - `founderos audit` returns the ordered correlated audit view and consistency checks.
 - `founderos runs` lists WorkflowRun and AgentRun diagnostics.
 - `founderos transitions` traces transitions to Approvals and Artifacts.
+- `founderos discovery` creates a deterministic Opportunity Report from local JSON.
+- `founderos approve-opportunity` approves and selects the recommended opportunity.
 
 ## Persistence Layout
 

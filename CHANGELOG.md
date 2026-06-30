@@ -4,6 +4,12 @@
 
 ### Added
 
+- Added deterministic Discovery Workflow v1 with no model, web, or external API calls.
+- Added the Opportunity Report content contract and deterministic six-factor scoring/ranking.
+- Added Discovery runs, quality Evaluation, human Approval, selection Decision, and guarded transitions to `OPPORTUNITY_SELECTED`.
+- Added `founderos discovery` and `founderos approve-opportunity` with local JSON, correlation, persistence, audit, and idempotency.
+- Added 11 Discovery tests covering prerequisites, scoring, approval gating, planner behavior, CLI, audit, redaction, idempotency, and replay.
+
 - Added read-only `RuntimeDiagnostics` summaries for Project state, Events, WorkflowRuns, AgentRuns, Approvals, Evaluations, Transitions, Artifacts, and persistence health.
 - Added `founderos audit`, `founderos runs`, and `founderos transitions` commands.
 - Added one root command correlation across each CLI mutation, application call, runtime records, and child Events.

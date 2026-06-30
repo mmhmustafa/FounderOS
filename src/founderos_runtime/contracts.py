@@ -27,6 +27,7 @@ SCHEMA_FILES = {
     "approval": "approval.schema.json",
     "event": "event.schema.json",
     "founder_brief_content": "founder-brief-content.schema.json",
+    "opportunity_report_content": "opportunity-report-content.schema.json",
 }
 
 

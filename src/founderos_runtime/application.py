@@ -12,6 +12,7 @@ from .execution_context import ExecutionContextBuilder
 from .founder_setup import FounderBriefPreparation, FounderSetupService
 from .local_store import LocalProjectStore, LocalRuntime
 from .diagnostics import RuntimeDiagnostics
+from .discovery import DiscoveryPreparation, DiscoveryWorkflowService
 
 
 class FounderOSApplication:
@@ -141,6 +142,51 @@ class FounderOSApplication:
         runtime, project = self._load_project()
         return RuntimeDiagnostics(runtime.repositories, runtime.content, self.store).transitions(project["id"])
 
+    def discovery(self, candidates: list[dict[str, Any]], *, command_key: str | None = None) -> dict[str, Any]:
+        runtime, project = self._load_project()
+        replayed = self._replay_command(runtime, command_key, "discovery")
+        if replayed is not None:
+            return replayed
+        correlation_id = self._command_correlation("discovery", command_key)
+        service = DiscoveryWorkflowService(runtime.repositories, runtime.content)
+        preparation = service.discover(
+            project["id"], candidates, actor=self._project_actor(project), correlation_id=correlation_id,
+        )
+        result = {
+            "artifact_id": preparation.artifact_id, "approval_id": preparation.approval_id,
+            "workflow_run_id": preparation.workflow_run_id,
+            "project_state": service.projects.get(project["id"])["current_state"],
+            "recommended_candidate": preparation.content["candidates"][0],
+            "command_correlation_id": correlation_id,
+        }
+        self._record_command(runtime, command_key, "discovery", result)
+        self.store.save(runtime)
+        return result
+
+    def approve_opportunity(self, *, rationale: str, command_key: str | None = None) -> dict[str, Any]:
+        runtime, project = self._load_project()
+        replayed = self._replay_command(runtime, command_key, "approve-opportunity")
+        if replayed is not None:
+            return replayed
+        preparation = self._pending_discovery_preparation(runtime, project["id"])
+        correlation_id = self._command_correlation("approve-opportunity", command_key)
+        service = DiscoveryWorkflowService(runtime.repositories, runtime.content)
+        completion = service.approve_opportunity(
+            preparation, actor=self._project_actor(project), rationale=rationale, correlation_id=correlation_id,
+        )
+        if completion.transition["status"] != "applied":
+            raise VerticalSliceError(
+                f"Opportunity transition rejected: {completion.transition.get('rejection_code', 'unknown')}"
+            )
+        result = {
+            "approval_id": preparation.approval_id, "decision_id": completion.decision["id"],
+            "transition_id": completion.transition["id"], "transition_status": completion.transition["status"],
+            "project_state": completion.project["current_state"], "command_correlation_id": correlation_id,
+        }
+        self._record_command(runtime, command_key, "approve-opportunity", result)
+        self.store.save(runtime)
+        return result
+
     @staticmethod
     def _replay_command(runtime: LocalRuntime, command_key: str | None, operation: str) -> dict[str, Any] | None:
         if command_key is None:
@@ -189,6 +235,34 @@ class FounderOSApplication:
             project_id, workflow_runs[-1]["id"], artifact["produced_by_run_ref"]["id"], artifact["id"],
             evaluations[-1]["id"], approval["id"], runtime.content.get(artifact["content_uri"]),
         )
+
+    @staticmethod
+    def _pending_discovery_preparation(runtime: LocalRuntime, project_id: str) -> DiscoveryPreparation:
+        approvals = [
+            item for item in runtime.repositories.approvals.all()
+            if item["project_ref"]["id"] == project_id and item["status"] == "pending"
+            and item["approval_type"] == "artifact"
+        ]
+        for approval in reversed(approvals):
+            artifact = runtime.repositories.artifacts.get(approval["subject_ref"]["id"])
+            if artifact["artifact_type"] != "opportunity_report":
+                continue
+            evaluations = [
+                item for item in runtime.repositories.evaluations.all()
+                if item["target_ref"]["id"] == artifact["id"]
+            ]
+            workflow_runs = [
+                item for item in runtime.repositories.workflow_runs.all()
+                if item["project_ref"]["id"] == project_id and item["status"] == "running"
+                and runtime.repositories.workflows.get(item["workflow_ref"]["id"])["name"] == "Discovery Workflow"
+            ]
+            if evaluations and workflow_runs and artifact.get("produced_by_run_ref"):
+                return DiscoveryPreparation(
+                    project_id, workflow_runs[-1]["id"], artifact["produced_by_run_ref"]["id"],
+                    artifact["id"], evaluations[-1]["id"], approval["id"],
+                    runtime.content.get(artifact["content_uri"]),
+                )
+        raise ApprovalRequiredError("No pending Opportunity Report approval exists")
 
     @staticmethod
     def _project_actor(project: dict[str, Any]) -> dict[str, str]:

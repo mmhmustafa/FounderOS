@@ -85,7 +85,16 @@
 - [x] Add end-to-end audit consistency checks
 - [x] Add read-only audit, runs, and transitions CLI commands
 
-## Milestone 10 - Authorization Policy Foundation (Next)
+## Milestone 10 - Discovery Workflow v1
+
+- [x] Add deterministic Discovery service and static candidate input
+- [x] Define Opportunity Report and Candidate contracts
+- [x] Compute and rank six-factor scores deterministically
+- [x] Persist runs, Artifact, Evaluation, Approval, and selection Decision
+- [x] Apply guarded transitions through `DISCOVERY_RUNNING` to `OPPORTUNITY_SELECTED`
+- [x] Add CLI, audit traceability, replay, and acceptance tests
+
+## Milestone 11 - Authorization Policy Foundation (Next)
 
 - [ ] Define actor capabilities for Project, Approval, Artifact, and Transition operations
 - [ ] Enforce founder ownership at application and runtime service boundaries

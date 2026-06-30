@@ -30,8 +30,9 @@ Completed foundations:
 - Public repository import/export ports and reusable Artifact, Evaluation, Approval, WorkflowRun, and AgentRun lifecycle services
 - Restart-safe idempotency keys for important CLI mutations
 - Read-only correlated audit diagnostics with default sensitive-field redaction
+- Deterministic local Discovery Workflow v1 producing an approved Opportunity Report and selection Decision
 
-Next: authorization policy foundation (Milestone 10).
+Next: authorization policy foundation (Milestone 11).
 
 Most lifecycle agent, prompt, template, domain, and roadmap files remain explicitly marked as planned placeholders. No web application, Discovery, Validation, or Product module has been implemented.
 
@@ -79,6 +80,15 @@ founderos audit
 founderos runs
 founderos transitions
 ```
+
+After Founder Setup reaches `FOUNDER_BRIEF_COMPLETE`:
+
+```powershell
+founderos discovery --input opportunities.json --idempotency-key discovery-1
+founderos approve-opportunity --rationale "Highest deterministic score" --idempotency-key select-1
+```
+
+Discovery input is either a candidate array or `{ "candidates": [...] }`. Each candidate supplies a problem, target user, six integer scores from 0–10, assumptions, and risks. `total_score` is the deterministic unweighted sum.
 
 Mutation commands accept `--idempotency-key KEY`. Reusing the same key for the same command returns its persisted result without duplicating Projects, Artifacts, Approvals, runs, transitions, or Events. Reusing a key for another command is rejected.
 

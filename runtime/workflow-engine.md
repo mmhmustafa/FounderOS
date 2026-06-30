@@ -79,6 +79,8 @@ Transient failures create new attempts within policy limits. Input/evidence fail
 
 `FounderSetupService` coordinates the five Founder Setup steps directly through existing services. This is deliberately not a general workflow interpreter.
 
+`DiscoveryWorkflowService` coordinates deterministic Discovery v1 through the same run, lifecycle, Approval, Decision, and State Machine boundaries.
+
 ## Next Step
 
-Add correlated run diagnostics without expanding workflow execution.
+Define authorization policy before implementing Validation.

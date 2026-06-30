@@ -1,6 +1,6 @@
 # CURRENT_SPRINT
 
-Sprint: Authorization Policy Foundation (Milestone 10)
+Sprint: Authorization Policy Foundation (Milestone 11)
 
 ## Goal
 Define and enforce local runtime authorization policy without adding external authentication or lifecycle modules.
@@ -17,9 +17,7 @@ Unauthorized actors cannot mutate protected records or advance state, while auth
 
 ## Out of Scope
 Authentication
-Discovery Runtime
 Validation Runtime
 Product Runtime
 Web UI
-Discovery commands
 LLM/AI provider integration

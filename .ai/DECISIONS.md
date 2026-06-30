@@ -184,3 +184,23 @@ Status: Accepted.
 Decision: Audit consistency checks verify Event order, deterministic Project replay, and transition Event resolution without writing repair data.
 Reason: Diagnostics must detect inconsistency while remaining strictly read-only.
 Status: Accepted.
+
+## D-038
+Decision: Discovery v1 accepts only local structured input and makes no LLM, web, or external API calls.
+Reason: Validate lifecycle, evidence, scoring, approval, and audit behavior before nondeterministic research.
+Status: Accepted.
+
+## D-039
+Decision: Opportunity total score is the unweighted sum of six integer component scores bounded from 0 to 10.
+Reason: Keep v1 scoring transparent and reproducible.
+Status: Accepted.
+
+## D-040
+Decision: Founder Brief Approval authorizes Discovery start; Opportunity Report Approval and an approved selection Decision authorize `OPPORTUNITY_SELECTED`.
+Reason: Satisfy existing State Machine guards without implied consent.
+Status: Accepted.
+
+## D-041
+Decision: Equal totals are ordered by problem and target-user text.
+Reason: Guarantee deterministic ranking independent of input order.
+Status: Accepted.

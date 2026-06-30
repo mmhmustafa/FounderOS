@@ -26,8 +26,9 @@ from .runs import AgentRunService, WorkflowRunService
 from .state_machine import StateMachine, TransitionCommand
 from .application import FounderOSApplication
 from .local_store import LocalProjectStore, LocalRuntime, PersistenceHealth
-from .lifecycle import ApprovalLifecycleService, ArtifactLifecycleService, EvaluationLifecycleService
+from .lifecycle import ApprovalLifecycleService, ArtifactLifecycleService, DecisionLifecycleService, EvaluationLifecycleService
 from .diagnostics import REDACTED, RuntimeDiagnostics, command_correlation, redact
+from .discovery import DiscoveryCompletion, DiscoveryPreparation, DiscoveryWorkflowService, score_candidates
 
 __all__ = [
     "ApprovalRequiredError",
@@ -49,10 +50,14 @@ __all__ = [
     "ContractRegistry",
     "ContractValidationError",
     "DuplicateRecordError",
+    "DiscoveryCompletion",
+    "DiscoveryPreparation",
+    "DiscoveryWorkflowService",
     "ExecutionContext",
     "ExecutionContextBuilder",
     "ExecutionPlan",
     "EvaluationLifecycleService",
+    "DecisionLifecycleService",
     "ProjectStateService",
     "Planner",
     "PlanningError",
@@ -75,5 +80,6 @@ __all__ = [
     "new_id",
     "replay_project_events",
     "redact",
+    "score_candidates",
     "utc_now",
 ]

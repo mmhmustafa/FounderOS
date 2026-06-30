@@ -87,6 +87,7 @@ class RuntimeDiagnostics:
                 "subject_ref": item["subject_ref"], "requested_by": item["requested_by"],
                 "decided_by": item.get("decided_by"), "rationale": item.get("rationale"),
                 "requested_at": item["requested_at"], "decided_at": item.get("decided_at"),
+                "command_correlation_id": command_correlation(item.get("metadata", {}).get("correlation_id", "")),
             }, include_sensitive=include_sensitive)
             for item in self.repositories.approvals.all() if item["project_ref"]["id"] == project_id
         ]
@@ -97,6 +98,7 @@ class RuntimeDiagnostics:
                 "id": item["id"], "target_ref": item["target_ref"], "type": item["evaluation_type"],
                 "status": item["status"], "outcome": item["outcome"],
                 "confidence_score": item.get("confidence_score"), "completed_at": item["completed_at"],
+                "command_correlation_id": command_correlation(item.get("metadata", {}).get("correlation_id", "")),
             }
             for item in self.repositories.evaluations.all() if item["project_ref"]["id"] == project_id
         ]
@@ -133,6 +135,9 @@ class RuntimeDiagnostics:
                 "id": item["id"], "artifact_type": item["artifact_type"], "status": item["status"],
                 "version": item["version"], "content_digest": item["content_digest"],
                 "approval_refs": item.get("approval_refs", []), "evaluation_refs": item.get("evaluation_refs", []),
+                "produced_by_run_ref": item.get("produced_by_run_ref"),
+                "input_artifact_refs": item.get("input_artifact_refs", []),
+                "command_correlation_id": command_correlation(item.get("metadata", {}).get("correlation_id", "")),
             }
             if include_sensitive:
                 summary["content"] = self.content.get(item["content_uri"])

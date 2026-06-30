@@ -30,7 +30,7 @@ class ContractAcceptanceTests(unittest.TestCase):
         self.assertIsInstance(validated["revision"], int)
 
     def test_all_required_schemas_load_and_meta_validate(self) -> None:
-        self.assertEqual(len(self.fx.contracts.schema_names), 14)
+        self.assertEqual(len(self.fx.contracts.schema_names), 15)
 
     def test_ac02_unknown_and_malformed_data_rejected(self) -> None:
         malformed = deepcopy(self.fx.project)

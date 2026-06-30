@@ -45,6 +45,12 @@ def build_parser() -> argparse.ArgumentParser:
     audit.add_argument("--include-sensitive", action="store_true", help="Include Artifact content and sensitive fields")
     subcommands.add_parser("runs", help="List WorkflowRun and AgentRun diagnostics")
     subcommands.add_parser("transitions", help="List transition and approval trace diagnostics")
+    discovery = subcommands.add_parser("discovery", help="Run deterministic Discovery v1 from local JSON")
+    discovery.add_argument("--input", required=True, type=Path, help="Path to Opportunity Candidate JSON")
+    discovery.add_argument("--idempotency-key")
+    opportunity = subcommands.add_parser("approve-opportunity", help="Approve the recommended opportunity")
+    opportunity.add_argument("--rationale", required=True)
+    opportunity.add_argument("--idempotency-key")
     return parser
 
 
@@ -80,6 +86,19 @@ def execute(arguments: argparse.Namespace) -> Any:
         return app.runs()
     if arguments.command == "transitions":
         return app.transitions()
+    if arguments.command == "discovery":
+        try:
+            value = json.loads(arguments.input.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as error:
+            raise ValueError(f"Cannot read Discovery input: {error}") from error
+        candidates = value.get("candidates") if isinstance(value, dict) else value
+        if not isinstance(candidates, list):
+            raise ValueError("Discovery input must be a candidate array or an object containing candidates")
+        return app.discovery(candidates, command_key=arguments.idempotency_key)
+    if arguments.command == "approve-opportunity":
+        return app.approve_opportunity(
+            rationale=arguments.rationale, command_key=arguments.idempotency_key
+        )
     raise ValueError(f"Unknown command: {arguments.command}")
 
 

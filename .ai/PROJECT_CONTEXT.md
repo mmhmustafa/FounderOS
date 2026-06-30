@@ -49,9 +49,10 @@ Runtime:
 - Local single-writer protection, stale-write checks, backups, recovery, migration handling, and health reporting
 - Public persistence ports, reusable lifecycle services, restart-safe command idempotency, and guarded stale-lock recovery
 - Correlated read-only runtime diagnostics, audit traceability, consistency checks, and default redaction
+- Deterministic Discovery Workflow v1 through approved Opportunity selection
 
 ## Current Milestone
-Define local authorization policy without external authentication infrastructure.
+Define local authorization policy without external authentication infrastructure after Discovery v1.
 
 ## Planned
 - Durable persistence adapters
@@ -59,10 +60,10 @@ Define local authorization policy without external authentication infrastructure
 - Artifact, Decision, Evaluation, and Approval lifecycle services beyond repository boundaries
 - Knowledge Entry schema and executable Knowledge Base
 - Authorization and observability
-- Discovery, Validation, and Product runtimes
+- Validation and Product runtimes
 - Web application and database persistence
 
-The minimal Runtime Foundation, Founder Setup service, and local CLI are implemented. General orchestration and later lifecycle modules remain planned.
+The Runtime Foundation, Founder Setup, deterministic Discovery v1, and local CLI are implemented. General orchestration and later lifecycle modules remain planned.
 
 The Planner remains read-only. Founder Setup consumes its recommendation and coordinates explicit runtime mutations; it does not call models.
 

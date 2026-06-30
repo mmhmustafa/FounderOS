@@ -18,6 +18,8 @@ Each CLI mutation receives one root identifier in the form `cli:<operation>:<tok
 
 Transitions expose their WorkflowRun, Approval references, and Artifacts targeted by those Approvals. The ordered timeline retains Event subject, actor, sequence, correlation, timestamp, and redacted payload.
 
+Discovery retains the correlation chain from command to WorkflowRun, AgentRun, Opportunity Report, Evaluation, Approval, selection Decision, and Transition.
+
 ## Redaction
 
 Founder Brief content is omitted by default. Approval rationale and known sensitive fields are replaced with `[REDACTED]`. Explicit `--include-sensitive` output includes Artifact content and sensitive fields; callers are responsible for handling it securely.

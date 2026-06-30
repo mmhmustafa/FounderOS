@@ -37,6 +37,7 @@ This folder is the machine-valid boundary between the FounderOS architecture and
 ### Executable artifact content contracts
 
 - `founder-brief-content.schema.json` — structured, versioned Founder Brief content
+- `opportunity-report-content.schema.json` — deterministic Opportunity Report candidates and scoring
 
 ### Semantic contracts
 

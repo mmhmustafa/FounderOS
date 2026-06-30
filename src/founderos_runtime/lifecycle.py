@@ -98,3 +98,16 @@ class ApprovalLifecycleService(_LifecycleService):
             payload={"status": "approved"},
         )
         return updated
+
+
+class DecisionLifecycleService(_LifecycleService):
+    def create(self, record: dict[str, Any], *, actor: dict[str, Any], correlation_id: str) -> dict[str, Any]:
+        record = deepcopy(record)
+        record["metadata"] = {**record.get("metadata", {}), "correlation_id": correlation_id}
+        decision = self.repositories.decisions.create(record)
+        self._event(
+            project_id=decision["project_ref"]["id"], event_type="decision.approved", actor=actor,
+            subject_ref=reference("decision", decision, include_version=True), correlation_id=correlation_id,
+            payload={"status": decision["status"], "title": decision["title"]},
+        )
+        return decision
