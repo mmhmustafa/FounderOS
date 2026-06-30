@@ -1,19 +1,19 @@
 # CURRENT_SPRINT
 
-Sprint: Runtime Observability and Audit Diagnostics (Milestone 9)
+Sprint: Authorization Policy Foundation (Milestone 10)
 
 ## Goal
-Make existing runtime operations diagnosable and auditable without adding lifecycle modules or external infrastructure.
+Define and enforce local runtime authorization policy without adding external authentication or lifecycle modules.
 
 ## Tasks
-- Define structured diagnostic and audit summaries
-- Preserve command correlation across application and runtime boundaries
-- Add safe inspection for runs, transitions, approvals, persistence, and recovery
-- Define sensitive-field redaction rules
-- Add end-to-end audit consistency tests
+- Define actor capabilities and Project ownership rules
+- Enforce authorization at application and lifecycle service boundaries
+- Protect human Approval and State Machine operations
+- Add redacted denial diagnostics
+- Add positive and negative authorization tests
 
 ## Definition of Done
-Operators can explain what happened, correlate commands to records and Events, and verify audit consistency without exposing sensitive content.
+Unauthorized actors cannot mutate protected records or advance state, while authorized local founders retain existing CLI behavior.
 
 ## Out of Scope
 Authentication

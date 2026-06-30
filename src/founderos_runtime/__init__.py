@@ -27,6 +27,7 @@ from .state_machine import StateMachine, TransitionCommand
 from .application import FounderOSApplication
 from .local_store import LocalProjectStore, LocalRuntime, PersistenceHealth
 from .lifecycle import ApprovalLifecycleService, ArtifactLifecycleService, EvaluationLifecycleService
+from .diagnostics import REDACTED, RuntimeDiagnostics, command_correlation, redact
 
 __all__ = [
     "ApprovalRequiredError",
@@ -61,6 +62,7 @@ __all__ = [
     "ReferenceIntegrityError",
     "RecoveryError",
     "RuntimeFoundationError",
+    "RuntimeDiagnostics",
     "RuntimeRepositories",
     "StateMachine",
     "StateMutationError",
@@ -68,7 +70,10 @@ __all__ = [
     "VerticalSliceError",
     "WorkflowRunService",
     "WorkflowSelector",
+    "REDACTED",
+    "command_correlation",
     "new_id",
     "replay_project_events",
+    "redact",
     "utc_now",
 ]

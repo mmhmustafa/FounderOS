@@ -24,6 +24,8 @@ class _LifecycleService:
 
 class ArtifactLifecycleService(_LifecycleService):
     def create(self, record: dict[str, Any], *, actor: dict[str, Any], correlation_id: str) -> dict[str, Any]:
+        record = deepcopy(record)
+        record["metadata"] = {**record.get("metadata", {}), "correlation_id": correlation_id}
         artifact = self.repositories.artifacts.create(record)
         self._event(
             project_id=artifact["project_ref"]["id"], event_type="artifact.created", actor=actor,
@@ -53,6 +55,8 @@ class ArtifactLifecycleService(_LifecycleService):
 
 class EvaluationLifecycleService(_LifecycleService):
     def create(self, record: dict[str, Any], *, actor: dict[str, Any], correlation_id: str) -> dict[str, Any]:
+        record = deepcopy(record)
+        record["metadata"] = {**record.get("metadata", {}), "correlation_id": correlation_id}
         evaluation = self.repositories.evaluations.create(record)
         self._event(
             project_id=evaluation["project_ref"]["id"], event_type="evaluation.completed", actor=actor,
@@ -64,6 +68,8 @@ class EvaluationLifecycleService(_LifecycleService):
 
 class ApprovalLifecycleService(_LifecycleService):
     def request(self, record: dict[str, Any], *, actor: dict[str, Any], correlation_id: str) -> dict[str, Any]:
+        record = deepcopy(record)
+        record["metadata"] = {**record.get("metadata", {}), "correlation_id": correlation_id}
         approval = self.repositories.approvals.create(record)
         self._event(
             project_id=approval["project_ref"]["id"], event_type="approval.requested", actor=actor,

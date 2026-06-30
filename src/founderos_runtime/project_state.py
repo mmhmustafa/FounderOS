@@ -83,6 +83,7 @@ class ProjectStateService:
                 "last_event_sequence": 1,
                 "created_at": now,
                 "updated_at": now,
+                "metadata": {"correlation_id": correlation_id},
             }
             project = self.repositories.contracts.validate("project", project)
             event = build_event(

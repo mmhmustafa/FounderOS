@@ -41,6 +41,10 @@ def build_parser() -> argparse.ArgumentParser:
     subcommands.add_parser("events", help="List ordered project events")
     subcommands.add_parser("health", help="Validate local persistence and backup health")
     subcommands.add_parser("recover", help="Restore the last validated local backup")
+    audit = subcommands.add_parser("audit", help="Show ordered, correlated runtime audit diagnostics")
+    audit.add_argument("--include-sensitive", action="store_true", help="Include Artifact content and sensitive fields")
+    subcommands.add_parser("runs", help="List WorkflowRun and AgentRun diagnostics")
+    subcommands.add_parser("transitions", help="List transition and approval trace diagnostics")
     return parser
 
 
@@ -70,6 +74,12 @@ def execute(arguments: argparse.Namespace) -> Any:
         return app.health()
     if arguments.command == "recover":
         return app.recover()
+    if arguments.command == "audit":
+        return app.audit(include_sensitive=arguments.include_sensitive)
+    if arguments.command == "runs":
+        return app.runs()
+    if arguments.command == "transitions":
+        return app.transitions()
     raise ValueError(f"Unknown command: {arguments.command}")
 
 

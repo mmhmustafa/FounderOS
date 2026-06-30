@@ -11,6 +11,7 @@ from .errors import ApprovalRequiredError, RecordNotFoundError, VerticalSliceErr
 from .execution_context import ExecutionContextBuilder
 from .founder_setup import FounderBriefPreparation, FounderSetupService
 from .local_store import LocalProjectStore, LocalRuntime
+from .diagnostics import RuntimeDiagnostics
 
 
 class FounderOSApplication:
@@ -29,11 +30,12 @@ class FounderOSApplication:
         runtime = self.store.empty_runtime()
         service = FounderSetupService(runtime.repositories, runtime.content)
         actor = self._human(founder_id, founder_name)
+        correlation_id = self._command_correlation("new", command_key)
         project = service.create_project(
             name=name, founder_id=founder_id, founder_name=founder_name, domain=domain,
-            actor=actor, correlation_id=self._correlation("new"),
+            actor=actor, correlation_id=correlation_id,
         )
-        result = {"project_id": project["id"], "state": project["current_state"], "next_action": project["next_action"]}
+        result = {"project_id": project["id"], "state": project["current_state"], "next_action": project["next_action"], "command_correlation_id": correlation_id}
         self._record_command(runtime, command_key, "new", result)
         self.store.save(runtime)
         return result
@@ -60,18 +62,20 @@ class FounderOSApplication:
             return replayed
         service = FounderSetupService(runtime.repositories, runtime.content)
         actor = self._project_actor(project)
-        session = service.start(project["id"], actor=actor, correlation_id=self._correlation("founder-setup"))
+        correlation_id = self._command_correlation("founder-brief", command_key)
+        session = service.start(project["id"], actor=actor, correlation_id=correlation_id)
         preparation = service.produce_founder_brief(
             session,
             founder_profile=self._object(content, "founder_profile"),
             startup_context=self._object(content, "startup_context"),
             assumptions=self._list(content, "assumptions"), risks=self._list(content, "risks"),
-            open_questions=self._list(content, "open_questions"), correlation_id=self._correlation("founder-brief"),
+            open_questions=self._list(content, "open_questions"), correlation_id=correlation_id,
         )
         artifact = runtime.repositories.artifacts.get(preparation.artifact_id)
         result = {
             "artifact_id": artifact["id"], "artifact_status": artifact["status"],
             "approval_id": preparation.approval_id, "project_state": service.projects.get(project["id"])["current_state"],
+            "command_correlation_id": correlation_id,
         }
         self._record_command(runtime, command_key, "founder-brief", result)
         self.store.save(runtime)
@@ -85,10 +89,11 @@ class FounderOSApplication:
         service = FounderSetupService(runtime.repositories, runtime.content)
         preparation = self._pending_preparation(runtime, project["id"])
         actor = self._human(founder_id or project["founder"]["actor_id"], founder_name or project["founder"]["display_name"])
+        correlation_id = self._command_correlation("approve", command_key)
         approval = service.approve_founder_brief(
-            preparation, actor=actor, rationale=rationale, correlation_id=self._correlation("approve"))
+            preparation, actor=actor, rationale=rationale, correlation_id=correlation_id)
         completion = service.complete(
-            preparation, actor=actor, correlation_id=self._correlation("complete"))
+            preparation, actor=actor, correlation_id=correlation_id)
         if completion.transition["status"] != "applied":
             raise VerticalSliceError(
                 f"Transition rejected: {completion.transition.get('rejection_code', 'unknown')}"
@@ -96,7 +101,7 @@ class FounderOSApplication:
         result = {
             "approval_id": approval["id"], "approval_status": approval["status"],
             "transition_id": completion.transition["id"], "transition_status": completion.transition["status"],
-            "project_state": completion.project["current_state"],
+            "project_state": completion.project["current_state"], "command_correlation_id": correlation_id,
         }
         self._record_command(runtime, command_key, "approve", result)
         self.store.save(runtime)
@@ -121,6 +126,20 @@ class FounderOSApplication:
 
     def recover(self) -> dict[str, Any]:
         return self.store.recover().to_dict()
+
+    def audit(self, *, include_sensitive: bool = False) -> dict[str, Any]:
+        runtime, project = self._load_project()
+        return RuntimeDiagnostics(runtime.repositories, runtime.content, self.store).audit(
+            project["id"], include_sensitive=include_sensitive
+        )
+
+    def runs(self) -> dict[str, Any]:
+        runtime, project = self._load_project()
+        return RuntimeDiagnostics(runtime.repositories, runtime.content, self.store).runs(project["id"])
+
+    def transitions(self) -> list[dict[str, Any]]:
+        runtime, project = self._load_project()
+        return RuntimeDiagnostics(runtime.repositories, runtime.content, self.store).transitions(project["id"])
 
     @staticmethod
     def _replay_command(runtime: LocalRuntime, command_key: str | None, operation: str) -> dict[str, Any] | None:
@@ -182,6 +201,10 @@ class FounderOSApplication:
     @staticmethod
     def _correlation(prefix: str) -> str:
         return f"cli:{prefix}:{uuid4().hex}"
+
+    @staticmethod
+    def _command_correlation(operation: str, command_key: str | None) -> str:
+        return f"cli:{operation}:{command_key or uuid4().hex}"
 
     @staticmethod
     def _object(content: dict[str, Any], key: str) -> dict[str, Any]:

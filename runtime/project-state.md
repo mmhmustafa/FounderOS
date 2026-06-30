@@ -82,4 +82,4 @@ Runtime repositories expose validated public import/export operations. The local
 
 ## Next Step
 
-Add structured audit diagnostics while preserving Project State as the authoritative aggregate.
+Define actor authorization rules while preserving Project State as the authoritative aggregate.

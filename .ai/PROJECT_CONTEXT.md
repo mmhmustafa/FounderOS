@@ -48,9 +48,10 @@ Runtime:
 - Thin FounderOS CLI and validated local JSON/JSONL persistence
 - Local single-writer protection, stale-write checks, backups, recovery, migration handling, and health reporting
 - Public persistence ports, reusable lifecycle services, restart-safe command idempotency, and guarded stale-lock recovery
+- Correlated read-only runtime diagnostics, audit traceability, consistency checks, and default redaction
 
 ## Current Milestone
-Add runtime observability and audit diagnostics without external infrastructure.
+Define local authorization policy without external authentication infrastructure.
 
 ## Planned
 - Durable persistence adapters

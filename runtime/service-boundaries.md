@@ -34,4 +34,4 @@ Local-store failure checkpoints exercise every multi-file write phase. A failed 
 
 ## Next Step
 
-Add structured, redacted runtime diagnostics and end-to-end audit consistency checks.
+Define local actor authorization capabilities at these service boundaries.

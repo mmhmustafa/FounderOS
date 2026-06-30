@@ -76,13 +76,22 @@
 - [x] Define stale-lock inspection and guarded manual lock removal
 - [x] Add failure-injection coverage across multi-file save phases
 
-## Milestone 9 - Runtime Observability and Audit Diagnostics (Next)
+## Milestone 9 - Runtime Observability and Audit Diagnostics
 
-- [ ] Define structured runtime diagnostic records without adding a database
-- [ ] Add command correlation and operation timing summaries
-- [ ] Add inspectable run, transition, approval, and persistence diagnostics
-- [ ] Add redaction rules for diagnostic output
-- [ ] Add end-to-end audit consistency checks
+- [x] Define structured runtime diagnostic summaries without adding a database
+- [x] Add command correlation and operation timing summaries
+- [x] Add inspectable run, transition, approval, Artifact, and persistence diagnostics
+- [x] Add default redaction and explicit sensitive-content opt-in
+- [x] Add end-to-end audit consistency checks
+- [x] Add read-only audit, runs, and transitions CLI commands
+
+## Milestone 10 - Authorization Policy Foundation (Next)
+
+- [ ] Define actor capabilities for Project, Approval, Artifact, and Transition operations
+- [ ] Enforce founder ownership at application and runtime service boundaries
+- [ ] Define authorization denial diagnostics without leaking sensitive context
+- [ ] Add authorization acceptance and negative tests
+- [ ] Preserve local CLI usability without external authentication
 
 ## Deferred Runtime Hardening
 

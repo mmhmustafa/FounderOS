@@ -4,6 +4,13 @@
 
 ### Added
 
+- Added read-only `RuntimeDiagnostics` summaries for Project state, Events, WorkflowRuns, AgentRuns, Approvals, Evaluations, Transitions, Artifacts, and persistence health.
+- Added `founderos audit`, `founderos runs`, and `founderos transitions` commands.
+- Added one root command correlation across each CLI mutation, application call, runtime records, and child Events.
+- Added approval-to-transition-to-Artifact traceability, ordered command summaries, operation timing, and audit consistency checks.
+- Added recursive sensitive-field redaction and explicit `--include-sensitive` opt-in for Founder Brief content.
+- Added seven diagnostics tests covering correlation, ordering, traceability, redaction, recovery consistency, completeness, and non-mutation.
+
 - Added public repository import/export ports so local persistence no longer hydrates through private insertion methods.
 - Added reusable Artifact, Evaluation, and Approval lifecycle services; existing WorkflowRun and AgentRun services remain the run boundaries.
 - Added persistence format v2 with a restart-safe command-result journal and CLI `--idempotency-key` support for `new`, `founder-brief`, and `approve`.

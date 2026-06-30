@@ -17,6 +17,9 @@ The CLI is a thin JSON interface over the existing FounderOS application and run
 - `founderos events` lists the ordered Event stream.
 - `founderos health` validates primary storage, backup, format, replay, digests, and lock state.
 - `founderos recover` restores the last validated pre-write backup.
+- `founderos audit` returns the ordered correlated audit view and consistency checks.
+- `founderos runs` lists WorkflowRun and AgentRun diagnostics.
+- `founderos transitions` traces transitions to Approvals and Artifacts.
 
 ## Persistence Layout
 
@@ -48,4 +51,4 @@ The format migration registry upgrades older snapshots one version at a time. Mi
 
 ## Next Step
 
-Add structured, redacted runtime diagnostics and end-to-end audit consistency checks.
+Define local actor authorization policy while preserving the read-only diagnostic boundary.

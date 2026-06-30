@@ -116,6 +116,7 @@ class WorkflowRunService(_RunService):
         requested_exit_state: str | None = None,
         input_artifact_refs: list[dict[str, Any]] | None = None,
         attempt: int = 1,
+        correlation_id: str | None = None,
     ) -> dict[str, Any]:
         project = self.repositories.resolve_reference(project_ref, project_id=project_ref["id"])
         self.repositories.resolve_reference(workflow_ref)
@@ -140,6 +141,8 @@ class WorkflowRunService(_RunService):
         }
         if requested_exit_state:
             record["requested_exit_state"] = requested_exit_state
+        if correlation_id:
+            record["metadata"] = {"correlation_id": correlation_id}
         return self.repository.create(record)
 
 
@@ -160,6 +163,7 @@ class AgentRunService(_RunService):
         agent_ref: dict[str, Any],
         input_refs: list[dict[str, Any]] | None = None,
         attempt: int = 1,
+        correlation_id: str | None = None,
     ) -> dict[str, Any]:
         self.repositories.resolve_reference(project_ref, project_id=project_ref["id"])
         workflow_run = self.repositories.resolve_reference(workflow_run_ref, project_id=project_ref["id"])
@@ -180,6 +184,8 @@ class AgentRunService(_RunService):
             "created_at": now,
             "updated_at": now,
         }
+        if correlation_id:
+            record["metadata"] = {"correlation_id": correlation_id}
         return self.repository.create(record)
 
     def retry(self, failed_run_id: str) -> dict[str, Any]:
@@ -192,6 +198,7 @@ class AgentRunService(_RunService):
             agent_ref=failed["agent_ref"],
             input_refs=failed["input_refs"],
             attempt=failed["attempt"] + 1,
+            correlation_id=failed.get("metadata", {}).get("correlation_id"),
         )
 
     def set_status(

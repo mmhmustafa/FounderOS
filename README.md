@@ -29,8 +29,9 @@ Completed foundations:
 - Single-writer locking, optimistic store revisions, validated backups, recovery, migrations, and persistence health checks
 - Public repository import/export ports and reusable Artifact, Evaluation, Approval, WorkflowRun, and AgentRun lifecycle services
 - Restart-safe idempotency keys for important CLI mutations
+- Read-only correlated audit diagnostics with default sensitive-field redaction
 
-Next: runtime observability and audit diagnostics (Milestone 9).
+Next: authorization policy foundation (Milestone 10).
 
 Most lifecycle agent, prompt, template, domain, and roadmap files remain explicitly marked as planned placeholders. No web application, Discovery, Validation, or Product module has been implemented.
 
@@ -74,9 +75,14 @@ founderos decisions
 founderos events
 founderos health
 founderos recover
+founderos audit
+founderos runs
+founderos transitions
 ```
 
 Mutation commands accept `--idempotency-key KEY`. Reusing the same key for the same command returns its persisted result without duplicating Projects, Artifacts, Approvals, runs, transitions, or Events. Reusing a key for another command is rejected.
+
+`founderos audit` returns an ordered timeline, command correlations and timing, Project and persistence diagnostics, runs, approvals, evaluations, transitions, artifacts, and consistency checks. Founder Brief content and sensitive rationale fields are redacted by default; use `founderos audit --include-sensitive` only when explicitly required.
 
 Use `--project-dir PATH` before the command to choose a store other than `.founderos`. CLI output is JSON. Local state uses `.founderos/project-state.json`, `.founderos/events.jsonl`, and `.founderos/artifacts/*.json`; the last validated pre-write state is retained under `.founderos/backup/`.
 

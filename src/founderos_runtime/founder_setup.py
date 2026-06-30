@@ -80,6 +80,7 @@ class FounderSetupService:
                 workflow_ref=reference("workflow", workflow, include_version=True),
                 entry_state="NO_PROJECT",
                 requested_exit_state="FOUNDER_SETUP",
+                correlation_id=correlation_id,
             )
             transition = self.machine.transition(TransitionCommand(
                 project_id=project_id, from_state="NO_PROJECT", to_state="FOUNDER_SETUP",
@@ -93,7 +94,8 @@ class FounderSetupService:
             if not candidates:
                 run = self.workflow_runs.create(
                     project_ref=reference("project", project), workflow_ref=reference("workflow", workflow, include_version=True),
-                    entry_state="FOUNDER_SETUP", requested_exit_state="FOUNDER_BRIEF_COMPLETE")
+                    entry_state="FOUNDER_SETUP", requested_exit_state="FOUNDER_BRIEF_COMPLETE",
+                    correlation_id=correlation_id)
             else:
                 run = candidates[-1]
         if run["status"] == "queued":
@@ -112,7 +114,7 @@ class FounderSetupService:
         agent = self.repositories.agents.get(session.agent_id)
         agent_run = self.agent_runs.create(
             project_ref=reference("project", project), workflow_run_ref=reference("workflow_run", workflow_run),
-            agent_ref=reference("agent", agent, include_version=True))
+            agent_ref=reference("agent", agent, include_version=True), correlation_id=correlation_id)
         agent_run = self.agent_runs.set_status(agent_run["id"], "running", expected_revision=1, actor=SERVICE_ACTOR, correlation_id=f"{correlation_id}:agent-start")
         content = {
             "schema_version": "1.0.0", "founder_profile": deepcopy(founder_profile),

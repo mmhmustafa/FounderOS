@@ -51,4 +51,4 @@ Tests can inject failures after backup, after Artifact writes, after Event write
 
 ## Next Step
 
-Add structured observability and audit diagnostics over the established boundaries.
+Add authorization-aware diagnostics without changing persistence semantics.

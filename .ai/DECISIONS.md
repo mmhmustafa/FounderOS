@@ -164,3 +164,23 @@ Status: Accepted.
 Decision: Local-store write phases expose test-only failure injection checkpoints.
 Reason: Recovery guarantees must be exercised at phase boundaries rather than inferred from happy-path tests.
 Status: Accepted.
+
+## D-034
+Decision: Audit and diagnostic output is a derived read model built from authoritative records and ordered Events.
+Reason: Observability must never become a second mutation or state authority.
+Status: Accepted.
+
+## D-035
+Decision: Every CLI mutation uses one root command correlation ID inherited by all child runtime Events and transition metadata.
+Reason: Operators need to identify which command caused each run, approval, Artifact, and state change.
+Status: Accepted.
+
+## D-036
+Decision: Founder Brief content, approval rationale, and other sensitive fields are redacted from diagnostics by default and require explicit opt-in.
+Reason: Operational inspection should expose metadata and evidence links without unnecessarily disclosing founder or customer context.
+Status: Accepted.
+
+## D-037
+Decision: Audit consistency checks verify Event order, deterministic Project replay, and transition Event resolution without writing repair data.
+Reason: Diagnostics must detect inconsistency while remaining strictly read-only.
+Status: Accepted.
