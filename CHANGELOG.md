@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+### Milestone 11 - Developer Experience and Test Stability
+
+- Added official PowerShell and POSIX test scripts with per-test progress and slow-test diagnostics.
+- Added a `dev` dependency group containing pytest and documented editable developer installation.
+- Diagnosed a protected, non-inheriting ACL on `.pytest_cache` as the cause of Windows cache access failures and reset it to inherited workspace permissions.
+- Added Windows troubleshooting guidance and a policy-independent official test command.
+- Verified that the reported apparent hang was the quiet 80–90 second suite run, not a surviving thread, subprocess, or shutdown deadlock.
+
+### Milestone 11.1 - Developer Experience Bug Fix
+
+- Removed the alternate pytest cache-path workaround after identifying the filesystem ACL root cause.
+- Restored pytest's standard `.pytest_cache` behavior and documented exact ACL inspection and repair commands.
+- Verified that the exact `python -m pytest -q` command returns immediately after the passing summary without warnings or interruption.
+
+### Milestone 11.2 - Windows Stale-Lock Probe Fix
+
+- Replaced POSIX-style `os.kill(pid, 0)` process probing on Windows with a non-signalling Win32 process-handle query.
+- Guaranteed that the Windows process handle is closed after every successful probe.
+- Made access-denied and indeterminate process checks fail closed so stale-lock recovery cannot remove a potentially live owner's lock.
+- Added a Windows regression test proving stale-lock inspection never calls `os.kill`.
+
 ### Added
 
 - Added deterministic Discovery Workflow v1 with no model, web, or external API calls.

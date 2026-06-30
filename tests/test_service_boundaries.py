@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from contextlib import nullcontext
 from datetime import UTC, datetime
 import json
 import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
 
 from founderos_runtime import (
     ApprovalLifecycleService,
@@ -95,22 +97,27 @@ class ServiceBoundaryTests(unittest.TestCase):
             app.founder_brief({}, command_key="shared")
 
     def test_lock_inspection_and_safe_stale_lock_policy(self) -> None:
-        store = LocalProjectStore(self.root)
-        with store.writer_lock():
-            info = store.inspect_lock()
-            self.assertEqual(os.getpid(), info["pid"])
-            self.assertTrue(info["owner_alive"])
-            with self.assertRaisesRegex(PersistenceLockError, "still alive"):
-                store.clear_stale_lock(expected_pid=os.getpid(), minimum_age_seconds=0)
-        self.root.mkdir(parents=True, exist_ok=True)
-        dead_pid = 2_000_000_000
-        store.lock_path.write_text(
-            json.dumps({"pid": dead_pid, "created_at": "2000-01-01T00:00:00+00:00"}), encoding="utf-8"
+        signal_guard = (
+            patch("founderos_runtime.local_store.os.kill", side_effect=AssertionError("os.kill must not be used"))
+            if os.name == "nt" else nullcontext()
         )
-        with self.assertRaisesRegex(PersistenceLockError, "PID changed"):
-            store.clear_stale_lock(expected_pid=dead_pid - 1, minimum_age_seconds=0)
-        store.clear_stale_lock(expected_pid=dead_pid, minimum_age_seconds=0)
-        self.assertFalse(store.lock_path.exists())
+        with signal_guard:
+            store = LocalProjectStore(self.root)
+            with store.writer_lock():
+                info = store.inspect_lock()
+                self.assertEqual(os.getpid(), info["pid"])
+                self.assertTrue(info["owner_alive"])
+                with self.assertRaisesRegex(PersistenceLockError, "still alive"):
+                    store.clear_stale_lock(expected_pid=os.getpid(), minimum_age_seconds=0)
+            self.root.mkdir(parents=True, exist_ok=True)
+            dead_pid = 2_000_000_000
+            store.lock_path.write_text(
+                json.dumps({"pid": dead_pid, "created_at": "2000-01-01T00:00:00+00:00"}), encoding="utf-8"
+            )
+            with self.assertRaisesRegex(PersistenceLockError, "PID changed"):
+                store.clear_stale_lock(expected_pid=dead_pid - 1, minimum_age_seconds=0)
+            store.clear_stale_lock(expected_pid=dead_pid, minimum_age_seconds=0)
+            self.assertFalse(store.lock_path.exists())
 
     def test_recent_dead_lock_is_not_broken(self) -> None:
         store = LocalProjectStore(self.root)

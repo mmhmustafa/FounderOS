@@ -94,7 +94,33 @@
 - [x] Apply guarded transitions through `DISCOVERY_RUNNING` to `OPPORTUNITY_SELECTED`
 - [x] Add CLI, audit traceability, replay, and acceptance tests
 
-## Milestone 11 - Authorization Policy Foundation (Next)
+## Milestone 11 - Developer Experience and Test Stability
+
+- [x] Diagnose Windows pytest completion behavior
+- [x] Diagnose and repair invalid Windows ACLs on pytest's standard cache path
+- [x] Add official PowerShell and POSIX test scripts
+- [x] Define pytest as an installable development dependency
+- [x] Document editable setup, test commands, and Windows troubleshooting
+- [x] Preserve runtime and CLI behavior while verifying the full suite
+
+### Milestone 11.1 - Developer Experience Bug Fix
+
+- [x] Reproduce pytest cache access under the exact quiet command
+- [x] Prove no runtime thread, subprocess, lock, or cleanup leak exists
+- [x] Identify the protected non-inheriting `.pytest_cache` ACL
+- [x] Restore inherited workspace permissions
+- [x] Remove the alternate cache-directory workaround
+- [x] Verify warning-free normal process termination
+
+### Milestone 11.2 - Windows Stale-Lock Probe Fix
+
+- [x] Isolate the hanging service-boundary lock test
+- [x] Remove POSIX signal probing from the Windows runtime path
+- [x] Use non-signalling Win32 process inspection with deterministic handle cleanup
+- [x] Add Windows-specific regression coverage
+- [x] Verify the service-boundary file and full suite terminate normally
+
+## Milestone 12 - Authorization Policy Foundation (Next)
 
 - [ ] Define actor capabilities for Project, Approval, Artifact, and Transition operations
 - [ ] Enforce founder ownership at application and runtime service boundaries

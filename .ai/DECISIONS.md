@@ -204,3 +204,28 @@ Status: Accepted.
 Decision: Equal totals are ordered by problem and target-user text.
 Reason: Guarantee deterministic ranking independent of input order.
 Status: Accepted.
+
+## D-042
+Decision: Pytest is the official developer test runner and is installed through the `dev` optional dependency group.
+Reason: Provide one consistent runner and installation path across supported environments while keeping test tooling out of runtime dependencies.
+Status: Accepted.
+
+## D-043
+Decision: Official test scripts run pytest verbosely and report the slowest tests.
+Reason: The persistence-heavy suite takes roughly 80–90 seconds on Windows; continuous progress distinguishes expected work from a deadlock or shutdown hang.
+Status: Accepted.
+
+## D-044
+Decision: Pytest uses its standard ignored `.pytest_cache` path; invalid local ACLs are repaired rather than bypassed with a second cache location.
+Reason: Keep standard tool behavior and correct the underlying filesystem permission defect instead of suppressing its warning.
+Status: Accepted.
+
+## D-045
+Decision: The documented Windows test command starts the repository script in a child PowerShell process with process-scoped execution-policy bypass.
+Reason: Make one-command testing work on default restricted Windows environments without changing persistent user or machine policy.
+Status: Accepted.
+
+## D-046
+Decision: Windows stale-lock owner checks use `OpenProcess` and `GetExitCodeProcess`, close every acquired handle, and treat access-denied or indeterminate results as alive.
+Reason: `os.kill(pid, 0)` is a POSIX idiom with unsafe, version-dependent Windows behavior; stale-lock recovery must inspect without signalling and fail closed when uncertain.
+Status: Accepted.

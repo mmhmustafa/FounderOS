@@ -32,29 +32,63 @@ Completed foundations:
 - Read-only correlated audit diagnostics with default sensitive-field redaction
 - Deterministic local Discovery Workflow v1 producing an approved Opportunity Report and selection Decision
 
-Next: authorization policy foundation (Milestone 11).
+Next: authorization policy foundation (Milestone 12).
 
-Most lifecycle agent, prompt, template, domain, and roadmap files remain explicitly marked as planned placeholders. No web application, Discovery, Validation, or Product module has been implemented.
+Most lifecycle agent, prompt, template, domain, and roadmap files remain explicitly marked as planned placeholders. No web application, Validation, or Product module has been implemented; Discovery is currently deterministic and local-only.
 
 ## Runtime Contracts
 
 The authoritative implementation contracts are indexed in [`runtime/contracts/README.md`](runtime/contracts/README.md). They define canonical identifiers, versioning, the five core objects, supporting runtime records, guarded transitions, recovery, persistence boundaries, and acceptance scenarios.
 
-## Runtime Foundation
+## Developer Setup and Testing
 
-FounderOS uses Python 3.11+ and one runtime dependency, `jsonschema` 4.x. The package lives in `src/founderos_runtime/`.
+FounderOS requires Python 3.11+. Create a virtual environment and install the editable package with its test dependency:
 
 ```powershell
 python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -e .
-.\.venv\Scripts\python.exe -m unittest discover -s tests -t . -v
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
 ```
+
+Run the complete suite on Windows PowerShell with the official command:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\test.ps1
+```
+
+On Linux, macOS, or Git Bash:
+
+```sh
+python3 -m venv .venv
+.venv/bin/python -m pip install --upgrade pip
+.venv/bin/python -m pip install -e '.[dev]'
+sh ./scripts/test.sh
+```
+
+The direct runner command is also supported:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest -q
+```
+
+### Windows Test Troubleshooting
+
+- A normal full run currently takes roughly 80–90 seconds. The official script prints every test so expected work does not look like a stalled process.
+- Pytest uses its standard ignored `.pytest_cache` directory. If it reports `Access is denied`, inspect `icacls .pytest_cache`; a protected non-inheriting ACL is invalid for this workspace.
+- Repair that disposable cache with `icacls .pytest_cache /reset /T /C`. This restores inherited workspace permissions without redirecting or disabling pytest's cache provider.
+- Stale writer-lock inspection uses a non-signalling Win32 process query. It does not use POSIX-style `os.kill(pid, 0)` on Windows.
+- The official command applies `ExecutionPolicy Bypass` only to its child PowerShell process; it does not modify the user or machine policy.
+- If a run truly stops producing progress, press Ctrl+C once and retain the traceback; it identifies the active test instead of masking it as a shutdown problem.
+
+## Runtime Foundation
+
+FounderOS uses `jsonschema` 4.x as its only runtime dependency. The package lives in `src/founderos_runtime/`.
 
 The runtime can currently validate contracts, create Projects in memory, execute Founder Setup, persist a structured Founder Brief in memory, require human approval, enforce optimistic revisions and transition guards, append ordered Events, and replay Project state.
 
 The read-only Runtime Planner can build an ExecutionContext from repository state and produce a deterministic ExecutionPlan. It recommends workflows and agent roles, identifies missing approved artifacts, exposes allowed transitions and quality gates, and clearly blocks invalid progress without mutating repositories.
 
-It has no database, general workflow executor, web UI, authentication, LLM calls, Discovery content generation, or Validation content generation.
+It has no database, general workflow executor, web UI, authentication, LLM calls, external Discovery research, or Validation content generation.
 
 ## CLI
 

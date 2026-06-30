@@ -12,6 +12,11 @@ dependencies = [
   "jsonschema[format]>=4.23,<5",
 ]
 
+[project.optional-dependencies]
+dev = [
+  "pytest>=8,<10",
+]
+
 [project.scripts]
 founderos = "founderos_runtime.cli:main"
 
@@ -20,3 +25,6 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

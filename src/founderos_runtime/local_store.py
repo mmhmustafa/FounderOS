@@ -397,8 +397,45 @@ class LocalProjectStore:
     def _pid_alive(pid: int) -> bool:
         if pid <= 0:
             return False
+        if os.name == "nt":
+            return LocalProjectStore._windows_pid_alive(pid)
         try:
             os.kill(pid, 0)
             return True
         except (OSError, PermissionError):
             return False
+
+    @staticmethod
+    def _windows_pid_alive(pid: int) -> bool:
+        """Probe a Windows process without signalling it and always close the OS handle."""
+
+        import ctypes
+        from ctypes import wintypes
+
+        process_query_limited_information = 0x1000
+        error_access_denied = 5
+        still_active = 259
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        open_process = kernel32.OpenProcess
+        open_process.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+        open_process.restype = wintypes.HANDLE
+        get_exit_code = kernel32.GetExitCodeProcess
+        get_exit_code.argtypes = (wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD))
+        get_exit_code.restype = wintypes.BOOL
+        close_handle = kernel32.CloseHandle
+        close_handle.argtypes = (wintypes.HANDLE,)
+        close_handle.restype = wintypes.BOOL
+
+        handle = open_process(process_query_limited_information, False, pid)
+        if not handle:
+            # A protected process still exists; stale-lock recovery must fail closed.
+            return ctypes.get_last_error() == error_access_denied
+        try:
+            exit_code = wintypes.DWORD()
+            if not get_exit_code(handle, ctypes.byref(exit_code)):
+                # An indeterminate process must be treated as alive to avoid breaking a live lock.
+                return True
+            return exit_code.value == still_active
+        finally:
+            close_handle(handle)

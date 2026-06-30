@@ -50,9 +50,10 @@ Runtime:
 - Public persistence ports, reusable lifecycle services, restart-safe command idempotency, and guarded stale-lock recovery
 - Correlated read-only runtime diagnostics, audit traceability, consistency checks, and default redaction
 - Deterministic Discovery Workflow v1 through approved Opportunity selection
+- Stable cross-platform pytest setup with official developer test scripts and standard cache behavior
 
 ## Current Milestone
-Define local authorization policy without external authentication infrastructure after Discovery v1.
+Milestone 12: define local authorization policy without external authentication infrastructure after Discovery v1.
 
 ## Planned
 - Durable persistence adapters
