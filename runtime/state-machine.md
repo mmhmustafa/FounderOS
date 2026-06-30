@@ -1,0 +1,90 @@
+# FounderOS State Machine
+
+> Derived from `architecture/FounderOS_Architecture_Specification_v1.0.md`
+
+---
+
+## States
+
+```text
+NO_PROJECT
+FOUNDER_SETUP
+FOUNDER_BRIEF_COMPLETE
+DISCOVERY_RUNNING
+OPPORTUNITY_SELECTED
+VALIDATION_RUNNING
+VALIDATION_PASSED
+PRODUCT_DESIGN_RUNNING
+PRD_COMPLETE
+ARCHITECTURE_RUNNING
+ARCHITECTURE_COMPLETE
+AI_DESIGN_RUNNING
+AI_ARCHITECTURE_COMPLETE
+DEVELOPMENT_PLANNING
+SPRINT_READY
+MVP_BUILDING
+QA_RUNNING
+READY_FOR_BETA
+LAUNCH_RUNNING
+CUSTOMERS_ACQUIRED
+CEO_REVIEW
+SCALING
+```
+
+---
+
+## Transition Flow
+
+```text
+NO_PROJECT
+  → FOUNDER_SETUP
+  → FOUNDER_BRIEF_COMPLETE
+  → DISCOVERY_RUNNING
+  → OPPORTUNITY_SELECTED
+  → VALIDATION_RUNNING
+  → VALIDATION_PASSED
+  → PRODUCT_DESIGN_RUNNING
+  → PRD_COMPLETE
+  → ARCHITECTURE_RUNNING
+  → ARCHITECTURE_COMPLETE
+  → AI_DESIGN_RUNNING
+  → AI_ARCHITECTURE_COMPLETE
+  → DEVELOPMENT_PLANNING
+  → SPRINT_READY
+  → MVP_BUILDING
+  → QA_RUNNING
+  → READY_FOR_BETA
+  → LAUNCH_RUNNING
+  → CUSTOMERS_ACQUIRED
+  → CEO_REVIEW
+  → SCALING
+```
+
+---
+
+## Universal State Rule
+
+FounderOS must always know:
+
+- Current state
+- Required artifact
+- Missing artifact
+- Allowed next state
+- Quality gate
+- Recovery action
+
+---
+
+## State Record Schema
+
+```yaml
+state:
+  id:
+  name:
+  required_artifacts:
+  allowed_actions:
+  exit_criteria:
+  next_states:
+  failure_states:
+  recovery_actions:
+```
