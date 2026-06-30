@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://founderos.dev/contracts/state.schema.json",
+  "title": "FounderOS State Definition",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "version", "status", "code", "name", "description", "allowed_actions", "exit_guards", "allowed_transitions", "failure_behavior", "created_at", "updated_at"],
+  "properties": {
+    "id": { "$ref": "common.schema.json#/$defs/canonicalId", "pattern": "^sta_" },
+    "version": { "$ref": "common.schema.json#/$defs/semver" },
+    "status": { "type": "string", "enum": ["draft", "active", "deprecated", "retired"] },
+    "code": { "$ref": "common.schema.json#/$defs/stateCode" },
+    "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "description": { "$ref": "common.schema.json#/$defs/nonEmptyString" },
+    "required_artifact_types": { "$ref": "common.schema.json#/$defs/stringList" },
+    "allowed_actions": { "$ref": "common.schema.json#/$defs/stringList" },
+    "exit_guards": { "type": "array", "items": { "$ref": "transition.schema.json#/$defs/guard" } },
+    "allowed_transitions": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/stateCode" }, "uniqueItems": true },
+    "failure_behavior": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["preserve_state", "record_event", "recovery_actions"],
+      "properties": {
+        "preserve_state": { "const": true },
+        "record_event": { "const": true },
+        "recovery_actions": { "$ref": "common.schema.json#/$defs/stringList" }
+      }
+    },
+    "created_at": { "$ref": "common.schema.json#/$defs/utcTimestamp" },
+    "updated_at": { "$ref": "common.schema.json#/$defs/utcTimestamp" },
+    "metadata": { "$ref": "common.schema.json#/$defs/metadata" }
+  }
+}

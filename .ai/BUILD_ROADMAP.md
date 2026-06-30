@@ -9,16 +9,17 @@
 - [x] Thin Master Orchestrator specification
 - [x] Honest status labels for planned placeholders
 
-## Milestone 2 - Executable Runtime Contracts (Next)
+## Milestone 2 - Executable Runtime Contracts
 
-- [ ] Define canonical identifiers and versioning
-- [ ] Define machine-valid core-object schemas
-- [ ] Define workflow-run, agent-run, transition, evaluation, approval, and event records
-- [ ] Define state-transition guards and recovery behavior
-- [ ] Define persistence and state-mutation boundaries
-- [ ] Define contract-level acceptance tests
+- [x] Define canonical identifiers and versioning
+- [x] Define machine-valid core-object schemas
+- [x] Define Project, workflow-run, agent-run, transition, evaluation, approval, and event records
+- [x] Define state-transition guards and recovery behavior
+- [x] Define persistence and state-mutation boundaries
+- [x] Define contract-level acceptance scenarios
+- [x] Replace runtime placeholders with contract-level component specifications
 
-## Milestone 3 - Runtime Foundation
+## Milestone 3 - Runtime Foundation (Next)
 
 - [ ] Project State
 - [ ] Workflow Engine

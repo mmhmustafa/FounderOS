@@ -1,26 +1,28 @@
 # CURRENT_SPRINT
 
-Sprint: Executable Runtime Contracts
+Sprint: Runtime Foundation
 
 ## Goal
-Turn the conceptual architecture into precise, testable runtime contracts without implementing application behavior yet.
+Implement the approved contracts as a minimal, testable runtime foundation without starting lifecycle modules or user interfaces.
 
 ## Tasks
-- Define canonical identifiers, versions, statuses, timestamps, and references
-- Define machine-valid schemas for the five core objects
-- Define Project, Workflow Run, Agent Run, Transition, Evaluation, Approval, and Event records
-- Define transition guards, failure paths, and recovery semantics
-- Define persistence and state-mutation boundaries
-- Define contract-level acceptance scenarios
+- Select the minimal runtime language and dependency baseline
+- Implement schema loading and validation
+- Implement repository interfaces and in-memory contract test doubles
+- Implement Project State and ordered Event persistence boundaries
+- Implement guarded State Machine transitions with optimistic concurrency
+- Implement WorkflowRun and AgentRun lifecycle foundations
+- Implement Artifact, Decision, Evaluation, and Approval boundaries
+- Automate all contract-level acceptance scenarios
 
 ## Definition of Done
-Runtime contracts are machine-valid, internally consistent, versioned, and sufficient to implement the first executable Founder Brief vertical slice.
+The runtime foundation enforces Milestone 2 schemas and invariants and passes all contract-level acceptance scenarios without implementing Discovery, Validation, Product, CLI, or web behavior.
 
 ## Out of Scope
 Web UI
 Database implementation
 Authentication
-Application runtime implementation
 Discovery Runtime
 Validation Runtime
 Product Runtime
+Founder Brief vertical slice

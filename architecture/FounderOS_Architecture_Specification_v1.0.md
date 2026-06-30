@@ -5,6 +5,8 @@
 > **Status:** Draft Architecture Constitution  
 > **Purpose:** Define the foundational architecture of FounderOS using five core object types: Agents, Artifacts, Workflows, States, and Decisions.
 
+> **Contract precedence:** The YAML fragments in this document are conceptual. `runtime/contracts/` contains the authoritative machine-valid implementation contracts and preserves the five-object product model while defining required supporting runtime records.
+
 ---
 
 ## 1. Executive Summary
@@ -517,7 +519,7 @@ WHILE project_not_complete:
 
 The Master Orchestrator is not a normal agent.
 
-It is the controller.
+It is the single user-facing entry point and a thin coordination facade over runtime services.
 
 It should:
 
@@ -526,7 +528,7 @@ It should:
 - Select next workflow
 - Route to agents
 - Validate outputs
-- Update state
+- Request guarded state updates through the State Machine
 - Show dashboard
 - Ask only necessary questions
 
@@ -737,19 +739,13 @@ Knowledge Base
 
 ---
 
-# 17. Next Deliverables
+# 17. Runtime Deliverable Status
 
-Based on this architecture, the next files to build are:
+The State Machine, Master Orchestrator, Project State, Agent Registry, Artifact Registry, Workflow Engine, Decision Engine, and Knowledge Base now have contract-level specifications.
 
-1. `runtime/state-machine.md`
-2. `runtime/master-orchestrator.md`
-3. `runtime/project-state.md`
-4. `runtime/agent-registry.md`
-5. `runtime/artifact-registry.md`
-6. `runtime/workflow-engine.md`
-7. `runtime/decision-engine.md`
+The authoritative machine-valid contracts are in `runtime/contracts/`. No application runtime behavior is implemented yet.
 
-These should now be written according to this architecture specification.
+The next deliverable is Milestone 3: implement the Runtime Foundation against those contracts and their acceptance scenarios.
 
 ---
 

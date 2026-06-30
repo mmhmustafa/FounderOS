@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://founderos.dev/contracts/decision.schema.json",
+  "title": "FounderOS Decision",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "version", "revision", "project_ref", "title", "status", "state_code", "context", "options_considered", "owner", "reversibility", "created_at", "updated_at"],
+  "properties": {
+    "id": { "$ref": "common.schema.json#/$defs/canonicalId", "pattern": "^dec_" },
+    "version": { "$ref": "common.schema.json#/$defs/semver" },
+    "revision": { "$ref": "common.schema.json#/$defs/revision" },
+    "project_ref": { "$ref": "common.schema.json#/$defs/reference" },
+    "title": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "status": { "type": "string", "enum": ["proposed", "approved", "rejected", "superseded"] },
+    "state_code": { "$ref": "common.schema.json#/$defs/stateCode" },
+    "context": { "$ref": "common.schema.json#/$defs/nonEmptyString" },
+    "options_considered": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1, "uniqueItems": true },
+    "selected_option": { "type": "string", "minLength": 1 },
+    "rationale": { "type": "string", "minLength": 1 },
+    "confidence_score": { "$ref": "common.schema.json#/$defs/confidenceScore" },
+    "risks": { "$ref": "common.schema.json#/$defs/stringList" },
+    "reversibility": { "type": "string", "enum": ["easy", "moderate", "difficult", "irreversible"] },
+    "owner": { "$ref": "common.schema.json#/$defs/actor" },
+    "related_artifact_refs": { "$ref": "common.schema.json#/$defs/referenceList" },
+    "approval_ref": { "$ref": "common.schema.json#/$defs/reference" },
+    "supersedes_ref": { "$ref": "common.schema.json#/$defs/reference" },
+    "created_at": { "$ref": "common.schema.json#/$defs/utcTimestamp" },
+    "updated_at": { "$ref": "common.schema.json#/$defs/utcTimestamp" },
+    "metadata": { "$ref": "common.schema.json#/$defs/metadata" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "approved" } } },
+      "then": { "required": ["selected_option", "rationale", "approval_ref"] }
+    }
+  ]
+}

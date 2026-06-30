@@ -29,22 +29,26 @@ Runtime:
 - Repository scaffold
 - AI governance location and onboarding entry point
 - Architecture Specification v1.0-alpha
-- Initial runtime state catalogue
+- Guarded state-transition and recovery specification
 - Thin Master Orchestrator specification
+- Machine-valid contracts for the five core objects
+- Machine-valid contracts for Project, WorkflowRun, AgentRun, Transition, Evaluation, Approval, and Event
+- Persistence/state-mutation boundaries and contract acceptance scenarios
+- Contract-level specifications for runtime foundation components
 
 ## Current Milestone
-Define executable runtime contracts for core objects, runtime records, state transitions, approvals, and quality gates.
+Implement the Runtime Foundation against the approved Milestone 2 contracts.
 
 ## Planned
-- Executable project-state model
-- Workflow engine
-- Agent and artifact registries
-- Decision engine
-- Knowledge base
+- Executable Project State repository and event boundary
+- State Machine and guarded transitions
+- Workflow Engine
+- Agent and Artifact Registries
+- Decision, Evaluation, Approval, and Knowledge services
 - Discovery, Validation, and Product runtimes
 - Executable application and persistent storage
 
-The files representing these planned components are scaffolds, not completed implementations.
+The runtime component files are completed contract-level specifications, not application implementations.
 
 ## Long-term Goal
 Evolve FounderOS into a web application with persistent project state and AI orchestration.

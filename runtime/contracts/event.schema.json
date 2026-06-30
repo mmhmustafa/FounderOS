@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://founderos.dev/contracts/event.schema.json",
+  "title": "FounderOS Event",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "project_ref", "sequence", "event_type", "actor", "subject_ref", "correlation_id", "payload", "occurred_at", "recorded_at"],
+  "properties": {
+    "id": { "$ref": "common.schema.json#/$defs/canonicalId", "pattern": "^evt_" },
+    "project_ref": { "$ref": "common.schema.json#/$defs/reference" },
+    "sequence": { "type": "integer", "minimum": 1 },
+    "event_type": {
+      "type": "string",
+      "enum": [
+        "project.created", "project.updated", "workflow.started", "workflow.completed", "workflow.failed",
+        "agent.started", "agent.completed", "agent.failed", "artifact.created", "artifact.submitted",
+        "artifact.approved", "artifact.rejected", "decision.proposed", "decision.approved", "decision.rejected",
+        "approval.requested", "approval.decided", "transition.requested", "transition.applied", "transition.rejected",
+        "evaluation.completed", "recovery.requested"
+      ]
+    },
+    "actor": { "$ref": "common.schema.json#/$defs/actor" },
+    "subject_ref": { "$ref": "common.schema.json#/$defs/reference" },
+    "correlation_id": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "causation_event_ref": { "$ref": "common.schema.json#/$defs/reference" },
+    "payload": { "type": "object", "additionalProperties": true },
+    "occurred_at": { "$ref": "common.schema.json#/$defs/utcTimestamp" },
+    "recorded_at": { "$ref": "common.schema.json#/$defs/utcTimestamp" },
+    "metadata": { "$ref": "common.schema.json#/$defs/metadata" }
+  }
+}

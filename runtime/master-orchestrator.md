@@ -4,7 +4,7 @@
 >
 > **Role:** Single user-facing entry point and thin runtime facade
 >
-> **Depends on:** `architecture/FounderOS_Architecture_Specification_v1.0.md`, `runtime/state-machine.md`, and planned executable runtime contracts
+> **Depends on:** `architecture/FounderOS_Architecture_Specification_v1.0.md`, `runtime/state-machine.md`, and `runtime/contracts/`
 
 ## Purpose
 
@@ -56,7 +56,7 @@ The orchestrator must not:
 - Quality Gate and Human Approval services
 - Knowledge Base where a workflow explicitly requires it
 
-These collaborators are planned runtime components. Their current Markdown files are placeholders, not executable implementations.
+These collaborators now have contract-level specifications. They remain unimplemented runtime components.
 
 ## Coordination Sequence
 
@@ -83,10 +83,10 @@ Important decisions and state transitions require an explicit approval record. T
 ## Current Limitations
 
 - No executable orchestrator exists.
-- Runtime collaborators and contracts are not implemented.
-- Persistence, concurrency, retries, authorization, and observability are not yet defined.
-- The state catalogue currently describes the primary lifecycle but not complete transition guards or recovery paths.
+- Runtime collaborators are not implemented.
+- Persistence boundaries, concurrency revisions, retries, transition guards, and recovery are specified but not implemented.
+- Authentication, concrete authorization policy, storage technology, and observability remain undefined.
 
 ## Next Step
 
-Define executable runtime contracts before implementing this specification.
+Implement the runtime foundation against `runtime/contracts/` in Milestone 3.

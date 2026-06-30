@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://founderos.dev/contracts/agent-run.schema.json",
+  "title": "FounderOS Agent Run",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "revision", "project_ref", "workflow_run_ref", "agent_ref", "status", "attempt", "input_refs", "output_refs", "created_at", "updated_at"],
+  "properties": {
+    "id": { "$ref": "common.schema.json#/$defs/canonicalId", "pattern": "^agr_" },
+    "revision": { "$ref": "common.schema.json#/$defs/revision" },
+    "project_ref": { "$ref": "common.schema.json#/$defs/reference" },
+    "workflow_run_ref": { "$ref": "common.schema.json#/$defs/reference" },
+    "agent_ref": { "$ref": "common.schema.json#/$defs/reference" },
+    "status": { "type": "string", "enum": ["queued", "running", "succeeded", "failed", "cancelled"] },
+    "attempt": { "type": "integer", "minimum": 1 },
+    "input_refs": { "$ref": "common.schema.json#/$defs/referenceList" },
+    "output_refs": { "$ref": "common.schema.json#/$defs/referenceList" },
+    "model_provider": { "type": "string", "minLength": 1, "maxLength": 100 },
+    "model_name": { "type": "string", "minLength": 1, "maxLength": 160 },
+    "prompt_version": { "$ref": "common.schema.json#/$defs/semver" },
+    "failure": { "$ref": "workflow-run.schema.json#/$defs/failure" },
+    "created_at": { "$ref": "common.schema.json#/$defs/utcTimestamp" },
+    "started_at": { "$ref": "common.schema.json#/$defs/utcTimestamp" },
+    "updated_at": { "$ref": "common.schema.json#/$defs/utcTimestamp" },
+    "completed_at": { "$ref": "common.schema.json#/$defs/utcTimestamp" },
+    "metadata": { "$ref": "common.schema.json#/$defs/metadata" }
+  },
+  "allOf": [
+    { "if": { "properties": { "status": { "enum": ["running", "succeeded", "failed", "cancelled"] } } }, "then": { "required": ["started_at"] } },
+    { "if": { "properties": { "status": { "enum": ["succeeded", "failed", "cancelled"] } } }, "then": { "required": ["completed_at"] } },
+    { "if": { "properties": { "status": { "const": "failed" } } }, "then": { "required": ["failure"] } }
+  ]
+}

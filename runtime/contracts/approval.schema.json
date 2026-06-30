@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://founderos.dev/contracts/approval.schema.json",
+  "title": "FounderOS Approval",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "revision", "project_ref", "subject_ref", "approval_type", "status", "requested_by", "required_approver_type", "requested_at"],
+  "properties": {
+    "id": { "$ref": "common.schema.json#/$defs/canonicalId", "pattern": "^apr_" },
+    "revision": { "$ref": "common.schema.json#/$defs/revision" },
+    "project_ref": { "$ref": "common.schema.json#/$defs/reference" },
+    "subject_ref": { "$ref": "common.schema.json#/$defs/reference" },
+    "approval_type": { "type": "string", "enum": ["artifact", "decision", "transition", "exception"] },
+    "status": { "type": "string", "enum": ["pending", "approved", "rejected", "expired", "cancelled"] },
+    "requested_by": { "$ref": "common.schema.json#/$defs/actor" },
+    "required_approver_type": { "type": "string", "enum": ["founder", "authorized_human"] },
+    "decided_by": { "$ref": "common.schema.json#/$defs/actor" },
+    "rationale": { "type": "string" },
+    "requested_at": { "$ref": "common.schema.json#/$defs/utcTimestamp" },
+    "expires_at": { "$ref": "common.schema.json#/$defs/utcTimestamp" },
+    "decided_at": { "$ref": "common.schema.json#/$defs/utcTimestamp" },
+    "metadata": { "$ref": "common.schema.json#/$defs/metadata" }
+  },
+  "allOf": [
+    { "if": { "properties": { "status": { "enum": ["approved", "rejected"] } } }, "then": { "required": ["decided_by", "rationale", "decided_at"] } }
+  ]
+}

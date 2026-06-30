@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://founderos.dev/contracts/artifact.schema.json",
+  "title": "FounderOS Artifact",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "version", "revision", "project_ref", "name", "artifact_type", "status", "owner_ref", "content_uri", "content_digest", "assumptions", "risks", "open_questions", "created_at", "updated_at"],
+  "properties": {
+    "id": { "$ref": "common.schema.json#/$defs/canonicalId", "pattern": "^art_" },
+    "version": { "$ref": "common.schema.json#/$defs/semver" },
+    "revision": { "$ref": "common.schema.json#/$defs/revision" },
+    "project_ref": { "$ref": "common.schema.json#/$defs/reference" },
+    "name": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "artifact_type": { "type": "string", "pattern": "^[a-z][a-z0-9_]{1,63}$" },
+    "status": { "type": "string", "enum": ["draft", "under_review", "approved", "rejected", "needs_more_research", "deprecated"] },
+    "owner_ref": { "$ref": "common.schema.json#/$defs/reference" },
+    "produced_by_run_ref": { "$ref": "common.schema.json#/$defs/reference" },
+    "content_uri": { "type": "string", "minLength": 1, "maxLength": 2048 },
+    "content_digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "input_artifact_refs": { "$ref": "common.schema.json#/$defs/referenceList" },
+    "output_consumer_refs": { "$ref": "common.schema.json#/$defs/referenceList" },
+    "confidence_score": { "$ref": "common.schema.json#/$defs/confidenceScore" },
+    "assumptions": { "$ref": "common.schema.json#/$defs/stringList" },
+    "risks": { "$ref": "common.schema.json#/$defs/stringList" },
+    "open_questions": { "$ref": "common.schema.json#/$defs/stringList" },
+    "decision_refs": { "$ref": "common.schema.json#/$defs/referenceList" },
+    "evaluation_refs": { "$ref": "common.schema.json#/$defs/referenceList" },
+    "approval_refs": { "$ref": "common.schema.json#/$defs/referenceList" },
+    "created_at": { "$ref": "common.schema.json#/$defs/utcTimestamp" },
+    "updated_at": { "$ref": "common.schema.json#/$defs/utcTimestamp" },
+    "metadata": { "$ref": "common.schema.json#/$defs/metadata" }
+  }
+}

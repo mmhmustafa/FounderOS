@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://founderos.dev/contracts/workflow-run.schema.json",
+  "title": "FounderOS Workflow Run",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "revision", "project_ref", "workflow_ref", "status", "entry_state", "attempt", "input_artifact_refs", "output_artifact_refs", "created_at", "updated_at"],
+  "properties": {
+    "id": { "$ref": "common.schema.json#/$defs/canonicalId", "pattern": "^wfr_" },
+    "revision": { "$ref": "common.schema.json#/$defs/revision" },
+    "project_ref": { "$ref": "common.schema.json#/$defs/reference" },
+    "workflow_ref": { "$ref": "common.schema.json#/$defs/reference" },
+    "status": { "type": "string", "enum": ["queued", "running", "waiting_for_input", "waiting_for_approval", "succeeded", "failed", "cancelled"] },
+    "entry_state": { "$ref": "common.schema.json#/$defs/stateCode" },
+    "requested_exit_state": { "$ref": "common.schema.json#/$defs/stateCode" },
+    "current_step_id": { "type": "string", "pattern": "^[a-z][a-z0-9_]{1,63}$" },
+    "attempt": { "type": "integer", "minimum": 1 },
+    "input_artifact_refs": { "$ref": "common.schema.json#/$defs/referenceList" },
+    "output_artifact_refs": { "$ref": "common.schema.json#/$defs/referenceList" },
+    "agent_run_refs": { "$ref": "common.schema.json#/$defs/referenceList" },
+    "evaluation_refs": { "$ref": "common.schema.json#/$defs/referenceList" },
+    "approval_refs": { "$ref": "common.schema.json#/$defs/referenceList" },
+    "failure": { "$ref": "#/$defs/failure" },
+    "created_at": { "$ref": "common.schema.json#/$defs/utcTimestamp" },
+    "started_at": { "$ref": "common.schema.json#/$defs/utcTimestamp" },
+    "updated_at": { "$ref": "common.schema.json#/$defs/utcTimestamp" },
+    "completed_at": { "$ref": "common.schema.json#/$defs/utcTimestamp" },
+    "metadata": { "$ref": "common.schema.json#/$defs/metadata" }
+  },
+  "$defs": {
+    "failure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message", "retryable", "recovery_action"],
+      "properties": {
+        "code": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{2,63}$" },
+        "message": { "$ref": "common.schema.json#/$defs/nonEmptyString" },
+        "retryable": { "type": "boolean" },
+        "recovery_action": { "$ref": "common.schema.json#/$defs/nonEmptyString" }
+      }
+    }
+  },
+  "allOf": [
+    { "if": { "properties": { "status": { "enum": ["running", "waiting_for_input", "waiting_for_approval", "succeeded", "failed", "cancelled"] } } }, "then": { "required": ["started_at"] } },
+    { "if": { "properties": { "status": { "enum": ["succeeded", "failed", "cancelled"] } } }, "then": { "required": ["completed_at"] } },
+    { "if": { "properties": { "status": { "const": "failed" } } }, "then": { "required": ["failure"] } }
+  ]
+}

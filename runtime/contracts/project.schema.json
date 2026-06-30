@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://founderos.dev/contracts/project.schema.json",
+  "title": "FounderOS Project",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "revision", "status", "name", "founder", "domain", "current_state", "completed_artifact_refs", "pending_artifact_types", "decision_refs", "risks", "next_action", "last_event_sequence", "created_at", "updated_at"],
+  "properties": {
+    "id": { "$ref": "common.schema.json#/$defs/canonicalId", "pattern": "^prj_" },
+    "revision": { "$ref": "common.schema.json#/$defs/revision" },
+    "status": { "type": "string", "enum": ["active", "paused", "completed", "archived"] },
+    "name": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "founder": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["actor_id", "display_name"],
+      "properties": {
+        "actor_id": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "display_name": { "type": "string", "minLength": 1, "maxLength": 200 }
+      }
+    },
+    "domain": { "type": "string", "minLength": 1, "maxLength": 160 },
+    "current_state": { "$ref": "common.schema.json#/$defs/stateCode" },
+    "current_workflow_run_ref": { "$ref": "common.schema.json#/$defs/reference" },
+    "completed_artifact_refs": { "$ref": "common.schema.json#/$defs/referenceList" },
+    "pending_artifact_types": { "$ref": "common.schema.json#/$defs/stringList" },
+    "decision_refs": { "$ref": "common.schema.json#/$defs/referenceList" },
+    "risks": { "$ref": "common.schema.json#/$defs/stringList" },
+    "next_action": { "$ref": "common.schema.json#/$defs/nonEmptyString" },
+    "last_event_sequence": { "type": "integer", "minimum": 0 },
+    "created_at": { "$ref": "common.schema.json#/$defs/utcTimestamp" },
+    "updated_at": { "$ref": "common.schema.json#/$defs/utcTimestamp" },
+    "metadata": { "$ref": "common.schema.json#/$defs/metadata" }
+  }
+}

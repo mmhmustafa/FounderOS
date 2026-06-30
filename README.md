@@ -15,14 +15,20 @@ Completed foundations:
 - Repository scaffold
 - AI governance in `.ai/`
 - Architecture Specification v1.0-alpha
-- Initial state catalogue
+- Guarded state-transition and recovery specification
 - Thin Master Orchestrator specification
+- JSON Schema Draft 2020-12 contracts for five core objects and seven runtime records
+- Persistence, state-mutation, and contract acceptance specifications
 
 In progress:
 
-- Executable runtime contracts
+- Runtime Foundation planning (Milestone 3)
 
-Most agent, workflow, prompt, template, domain, and roadmap files are explicitly marked as planned placeholders.
+Most lifecycle agent, prompt, template, domain, and roadmap files remain explicitly marked as planned placeholders. No application runtime, CLI, web application, Discovery, Validation, or Product module has been implemented.
+
+## Runtime Contracts
+
+The authoritative implementation contracts are indexed in [`runtime/contracts/README.md`](runtime/contracts/README.md). They define canonical identifiers, versioning, the five core objects, supporting runtime records, guarded transitions, recovery, persistence boundaries, and acceptance scenarios.
 
 ## AI and Engineering Onboarding
 

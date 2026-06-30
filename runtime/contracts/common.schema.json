@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://founderos.dev/contracts/common.schema.json",
+  "title": "FounderOS Common Contract Types",
+  "$defs": {
+    "canonicalId": {
+      "type": "string",
+      "pattern": "^(agt|art|wfl|sta|dec|prj|wfr|agr|trn|evl|apr|evt)_[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+      "description": "Immutable type-prefixed ULID. Ambiguous Crockford characters I, L, O, and U are excluded."
+    },
+    "semver": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Monotonically increasing optimistic-concurrency revision for a mutable record."
+    },
+    "utcTimestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "Z$",
+      "description": "RFC 3339 timestamp normalized to UTC with a trailing Z."
+    },
+    "stateCode": {
+      "type": "string",
+      "enum": [
+        "NO_PROJECT", "FOUNDER_SETUP", "FOUNDER_BRIEF_COMPLETE", "DISCOVERY_RUNNING",
+        "OPPORTUNITY_SELECTED", "VALIDATION_RUNNING", "VALIDATION_PASSED",
+        "PRODUCT_DESIGN_RUNNING", "PRD_COMPLETE", "ARCHITECTURE_RUNNING",
+        "ARCHITECTURE_COMPLETE", "AI_DESIGN_RUNNING", "AI_ARCHITECTURE_COMPLETE",
+        "DEVELOPMENT_PLANNING", "SPRINT_READY", "MVP_BUILDING", "QA_RUNNING",
+        "READY_FOR_BETA", "LAUNCH_RUNNING", "CUSTOMERS_ACQUIRED", "CEO_REVIEW", "SCALING"
+      ]
+    },
+    "entityKind": {
+      "type": "string",
+      "enum": ["agent", "artifact", "workflow", "state", "decision", "project", "workflow_run", "agent_run", "transition", "evaluation", "approval", "event"]
+    },
+    "reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id"],
+      "properties": {
+        "kind": { "$ref": "#/$defs/entityKind" },
+        "id": { "$ref": "#/$defs/canonicalId" },
+        "version": { "$ref": "#/$defs/semver" },
+        "revision": { "$ref": "#/$defs/revision" }
+      }
+    },
+    "actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id"],
+      "properties": {
+        "type": { "type": "string", "enum": ["human", "agent", "service"] },
+        "id": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "display_name": { "type": "string", "minLength": 1, "maxLength": 200 }
+      }
+    },
+    "nonEmptyString": { "type": "string", "minLength": 1 },
+    "confidenceScore": { "type": "number", "minimum": 0, "maximum": 1 },
+    "stringList": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "referenceList": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/reference" },
+      "uniqueItems": true
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": { "type": ["string", "number", "integer", "boolean", "null"] },
+      "maxProperties": 50
+    }
+  }
+}

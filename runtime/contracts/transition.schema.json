@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://founderos.dev/contracts/transition.schema.json",
+  "title": "FounderOS State Transition",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "project_ref", "status", "from_state", "to_state", "trigger", "requested_by", "expected_project_revision", "guard_results", "requested_at"],
+  "properties": {
+    "id": { "$ref": "common.schema.json#/$defs/canonicalId", "pattern": "^trn_" },
+    "project_ref": { "$ref": "common.schema.json#/$defs/reference" },
+    "workflow_run_ref": { "$ref": "common.schema.json#/$defs/reference" },
+    "status": { "type": "string", "enum": ["applied", "rejected"] },
+    "from_state": { "$ref": "common.schema.json#/$defs/stateCode" },
+    "to_state": { "$ref": "common.schema.json#/$defs/stateCode" },
+    "trigger": { "type": "string", "pattern": "^[a-z][a-z0-9_]{1,63}$" },
+    "requested_by": { "$ref": "common.schema.json#/$defs/actor" },
+    "expected_project_revision": { "$ref": "common.schema.json#/$defs/revision" },
+    "resulting_project_revision": { "$ref": "common.schema.json#/$defs/revision" },
+    "guard_results": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/guardResult" }
+    },
+    "approval_refs": { "$ref": "common.schema.json#/$defs/referenceList" },
+    "rejection_code": { "type": "string", "enum": ["INVALID_TRANSITION", "GUARD_FAILED", "APPROVAL_MISSING", "STALE_REVISION", "PROJECT_NOT_ACTIVE", "DEPENDENCY_FAILURE"] },
+    "recovery_action": { "type": "string", "minLength": 1 },
+    "requested_at": { "$ref": "common.schema.json#/$defs/utcTimestamp" },
+    "decided_at": { "$ref": "common.schema.json#/$defs/utcTimestamp" },
+    "metadata": { "$ref": "common.schema.json#/$defs/metadata" }
+  },
+  "$defs": {
+    "guard": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["guard_id", "type", "description", "failure_code", "recovery_action"],
+      "properties": {
+        "guard_id": { "type": "string", "pattern": "^[a-z][a-z0-9_]{1,63}$" },
+        "type": { "type": "string", "enum": ["state_matches", "artifact_status", "evaluation_passed", "approval_granted", "decision_recorded", "workflow_succeeded", "project_revision_matches", "project_active"] },
+        "description": { "$ref": "common.schema.json#/$defs/nonEmptyString" },
+        "parameters": { "type": "object", "additionalProperties": true },
+        "failure_code": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{2,63}$" },
+        "recovery_action": { "$ref": "common.schema.json#/$defs/nonEmptyString" }
+      }
+    },
+    "guardResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["guard_id", "passed", "evaluated_at"],
+      "properties": {
+        "guard_id": { "type": "string", "pattern": "^[a-z][a-z0-9_]{1,63}$" },
+        "passed": { "type": "boolean" },
+        "evidence_refs": { "$ref": "common.schema.json#/$defs/referenceList" },
+        "message": { "type": "string" },
+        "evaluated_at": { "$ref": "common.schema.json#/$defs/utcTimestamp" }
+      }
+    }
+  },
+  "allOf": [
+    { "if": { "properties": { "status": { "enum": ["applied", "rejected"] } } }, "then": { "required": ["decided_at"], "properties": { "guard_results": { "minItems": 1 } } } },
+    { "if": { "properties": { "status": { "const": "applied" } } }, "then": { "required": ["resulting_project_revision"] } },
+    { "if": { "properties": { "status": { "const": "rejected" } } }, "then": { "required": ["rejection_code", "recovery_action"] } }
+  ]
+}

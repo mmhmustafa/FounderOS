@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://founderos.dev/contracts/agent.schema.json",
+  "title": "FounderOS Agent Definition",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "version", "status", "name", "role", "purpose", "responsibilities", "accepted_artifact_types", "produced_artifact_types", "constraints", "created_at", "updated_at"],
+  "properties": {
+    "id": { "$ref": "common.schema.json#/$defs/canonicalId", "pattern": "^agt_" },
+    "version": { "$ref": "common.schema.json#/$defs/semver" },
+    "status": { "type": "string", "enum": ["draft", "active", "deprecated", "retired"] },
+    "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "role": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "domain": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "seniority": { "type": "string", "enum": ["associate", "senior", "staff", "principal", "executive", "not_applicable"] },
+    "purpose": { "$ref": "common.schema.json#/$defs/nonEmptyString" },
+    "responsibilities": { "$ref": "common.schema.json#/$defs/stringList" },
+    "accepted_artifact_types": { "$ref": "common.schema.json#/$defs/stringList" },
+    "produced_artifact_types": { "$ref": "common.schema.json#/$defs/stringList" },
+    "tool_ids": { "$ref": "common.schema.json#/$defs/stringList" },
+    "constraints": { "$ref": "common.schema.json#/$defs/stringList" },
+    "quality_gate_ids": { "$ref": "common.schema.json#/$defs/stringList" },
+    "handoff_agent_refs": { "$ref": "common.schema.json#/$defs/referenceList" },
+    "failure_modes": { "$ref": "common.schema.json#/$defs/stringList" },
+    "escalation_rules": { "$ref": "common.schema.json#/$defs/stringList" },
+    "created_at": { "$ref": "common.schema.json#/$defs/utcTimestamp" },
+    "updated_at": { "$ref": "common.schema.json#/$defs/utcTimestamp" },
+    "metadata": { "$ref": "common.schema.json#/$defs/metadata" }
+  }
+}
