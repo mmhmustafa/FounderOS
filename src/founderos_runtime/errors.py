@@ -35,3 +35,15 @@ class VerticalSliceError(RuntimeFoundationError):
 
 class ApprovalRequiredError(VerticalSliceError):
     """A current human approval is required before Founder Setup can complete."""
+
+
+class PersistenceError(RuntimeFoundationError):
+    """Local persistence is invalid or cannot complete safely."""
+
+
+class PersistenceLockError(PersistenceError):
+    """Another writer currently owns the local persistence lock."""
+
+
+class RecoveryError(PersistenceError):
+    """Local persistence cannot be recovered from its available backup."""

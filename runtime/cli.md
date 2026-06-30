@@ -15,6 +15,8 @@ The CLI is a thin JSON interface over the existing FounderOS application and run
 - `founderos approve` records human approval and requests the guarded Founder Setup transition.
 - `founderos decisions` lists Decision records.
 - `founderos events` lists the ordered Event stream.
+- `founderos health` validates primary storage, backup, format, replay, digests, and lock state.
+- `founderos recover` restores the last validated pre-write backup.
 
 ## Persistence Layout
 
@@ -24,9 +26,13 @@ The CLI is a thin JSON interface over the existing FounderOS application and run
   events.jsonl        # complete gap-free Event stream
   artifacts/
     art_*.json         # immutable structured Artifact content
+  backup/              # preceding validated committed state
+  .write.lock          # present only while a writer owns the store
 ```
 
-Writes use temporary-file replacement per file. Loads reject unsupported formats, invalid schemas, malformed Events, sequence gaps, missing content, and content digest mismatches.
+Writes require an exclusive lock and an expected store revision, create a backup, then use temporary-file replacement per file. Loads reject unsupported formats, invalid schemas, malformed Events, sequence gaps, replay mismatch, missing content, and content digest mismatches.
+
+The format migration registry upgrades older snapshots one version at a time. Missing version metadata is treated as v0; future formats fail closed.
 
 ## Boundaries
 
@@ -34,10 +40,12 @@ Writes use temporary-file replacement per file. Loads reject unsupported formats
 
 ## Risks
 
-- The store supports one Project per directory and assumes one writer.
-- Atomic replacement is per file, not across the whole directory.
-- There is no authentication, file encryption, database, or format migration framework.
+- The store supports one Project per directory and one active writer.
+- A crashed writer can leave a lock file requiring inspected manual removal; automatic stale-lock breaking is intentionally absent.
+- Atomic replacement is per file, not across the whole directory. Recovery rolls back to the preceding committed backup.
+- Only one rolling backup is retained, so recovery may discard the most recent save.
+- There is no authentication, file encryption, or database.
 
 ## Next Step
 
-Add stable persistence ports, file locking, transaction recovery, and migration tests before broadening the CLI.
+Replace repository-private hydration with explicit persistence ports and add phase-specific failure injection.

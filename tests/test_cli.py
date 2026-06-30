@@ -123,6 +123,25 @@ class FounderOSCliTests(unittest.TestCase):
         self.assertEqual(0, code, error)
         self.assertEqual([], output)
 
+    def test_health_command_reports_valid_local_store(self) -> None:
+        self.create_project()
+        code, output, error = self.invoke("health")
+        self.assertEqual(0, code, error)
+        self.assertEqual("healthy", output["status"])
+        self.assertTrue(output["primary_valid"])
+
+    def test_recover_command_restores_valid_backup(self) -> None:
+        self.create_project()
+        store = LocalProjectStore(self.root)
+        store.save(store.load())
+        store.events_path.write_text("corrupt\n", encoding="utf-8")
+        code, health, error = self.invoke("health")
+        self.assertEqual(0, code, error)
+        self.assertEqual("recoverable", health["status"])
+        code, recovered, error = self.invoke("recover")
+        self.assertEqual(0, code, error)
+        self.assertEqual("healthy", recovered["status"])
+
 
 if __name__ == "__main__":
     unittest.main()

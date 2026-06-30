@@ -46,9 +46,10 @@ Runtime:
 - Founder Brief content contract and immutable in-memory content store
 - Executable Founder Setup service with human approval and deterministic replay/resume
 - Thin FounderOS CLI and validated local JSON/JSONL persistence
+- Local single-writer protection, stale-write checks, backups, recovery, migration handling, and health reporting
 
 ## Current Milestone
-Harden local persistence, concurrency, and recovery behind stable storage ports.
+Harden runtime service and persistence adapter boundaries without adding lifecycle modules.
 
 ## Planned
 - Durable persistence adapters

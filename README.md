@@ -26,8 +26,9 @@ Completed foundations:
 - Structured Founder Brief content validation and immutable in-memory content storage
 - Executable Founder Setup through human approval, guarded completion, and deterministic replay/resume
 - Standard-library CLI with local JSON/JSONL persistence
+- Single-writer locking, optimistic store revisions, validated backups, recovery, migrations, and persistence health checks
 
-Next: persistence hardening and transactional recovery (Milestone 7).
+Next: runtime service-boundary hardening (Milestone 8).
 
 Most lifecycle agent, prompt, template, domain, and roadmap files remain explicitly marked as planned placeholders. No web application, Discovery, Validation, or Product module has been implemented.
 
@@ -69,9 +70,13 @@ founderos founder-brief --input founder-brief.json
 founderos approve --rationale "The brief accurately represents my constraints"
 founderos decisions
 founderos events
+founderos health
+founderos recover
 ```
 
-Use `--project-dir PATH` before the command to choose a store other than `.founderos`. CLI output is JSON. Local state uses `.founderos/project-state.json`, `.founderos/events.jsonl`, and `.founderos/artifacts/*.json`.
+Use `--project-dir PATH` before the command to choose a store other than `.founderos`. CLI output is JSON. Local state uses `.founderos/project-state.json`, `.founderos/events.jsonl`, and `.founderos/artifacts/*.json`; the last validated pre-write state is retained under `.founderos/backup/`.
+
+`founderos health` validates schemas, Event ordering and replay, Artifact digests, format support, backup validity, and writer-lock state. If health reports `recoverable`, `founderos recover` restores and revalidates the last backup. Recovery may lose the most recent write because the backup intentionally represents the preceding committed state.
 
 ## AI and Engineering Onboarding
 

@@ -84,11 +84,11 @@ Important decisions and state transitions require an explicit approval record. T
 ## Current Limitations
 
 - No general-purpose executable orchestrator exists; the CLI exposes only Project inspection and Founder Setup.
-- Runtime Foundation collaborators now have in-memory implementations, but there is no application facade or durable persistence.
+- Runtime Foundation collaborators have in-memory implementations and a local application facade; production persistence is not implemented.
 - The Runtime Planner is consumed by the Founder Setup vertical slice.
 - Contract validation, concurrency revisions, basic retries, transition guards, recovery outcomes, and Events are implemented.
 - Authentication, concrete authorization policy, storage technology, and observability remain undefined.
 
 ## Next Step
 
-Harden the CLI persistence boundary, concurrent-writer behavior, and recovery semantics in Milestone 7.
+Harden runtime service and persistence import/export boundaries in Milestone 8.

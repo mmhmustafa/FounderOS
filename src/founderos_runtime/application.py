@@ -99,6 +99,12 @@ class FounderOSApplication:
             for event in runtime.repositories.events.for_project(project["id"])
         ]
 
+    def health(self) -> dict[str, Any]:
+        return self.store.health().to_dict()
+
+    def recover(self) -> dict[str, Any]:
+        return self.store.recover().to_dict()
+
     def _load_project(self) -> tuple[LocalRuntime, dict[str, Any]]:
         runtime = self.store.load()
         projects = runtime.repositories.projects.all()

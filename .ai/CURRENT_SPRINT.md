@@ -1,18 +1,19 @@
 # CURRENT_SPRINT
 
-Sprint: Persistence Hardening (Milestone 7)
+Sprint: Runtime Service Boundary Hardening (Milestone 8)
 
 ## Goal
-Harden the completed local CLI store without changing runtime contracts or adding lifecycle modules.
+Remove remaining implementation shortcuts between the CLI persistence adapter and runtime services without adding lifecycle modules.
 
 ## Tasks
-- Replace private in-memory hydration dependencies with stable storage ports
-- Add cross-process locking and conflict behavior
-- Define atomic recovery across snapshot, Event, and Artifact files
-- Add format migration, corruption, and backup recovery tests
+- Define explicit repository import/export ports for persistence adapters
+- Extract reusable Artifact, Evaluation, and Approval lifecycle services
+- Persist command idempotency keys across process restarts
+- Define safe stale-lock inspection and recovery
+- Add phase-specific persistence failure injection tests
 
 ## Definition of Done
-The CLI store has explicit concurrency, transaction recovery, migration, and corruption semantics with executable tests.
+Persistence no longer depends on repository-private hydration methods, lifecycle mutations have reusable service boundaries, and restart-safe idempotency is tested.
 
 ## Out of Scope
 Authentication

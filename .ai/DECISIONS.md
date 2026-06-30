@@ -119,3 +119,23 @@ Status: Accepted.
 Decision: The initial CLI persists one Project using a validated JSON record snapshot, an ordered JSONL Event stream, and immutable JSON Artifact content files under `.founderos/`.
 Reason: Provide understandable restart-safe local use without introducing a database or claiming production-grade transaction semantics.
 Status: Accepted.
+
+## D-025
+Decision: Local writes require an exclusive lock file and must match a monotonic persisted store revision.
+Reason: A lock prevents simultaneous writers while the revision rejects stale read-modify-write attempts that occur sequentially.
+Status: Accepted.
+
+## D-026
+Decision: Every replacement after the first committed save creates one validated pre-write backup under `.founderos/backup/`.
+Reason: Preserve a simple, understandable recovery point without introducing a database or transaction log.
+Status: Accepted.
+
+## D-027
+Decision: Recovery is explicit, restores only a validated backup, and revalidates the restored primary before reporting success.
+Reason: Avoid silently masking corruption and make potential loss of the latest write visible to the operator.
+Status: Accepted.
+
+## D-028
+Decision: Local persistence formats migrate through an ordered registry; missing format metadata is treated as v0 and future versions fail closed.
+Reason: Make compatibility behavior testable and prevent newer data from being guessed at by an older runtime.
+Status: Accepted.

@@ -4,6 +4,12 @@
 
 ### Added
 
+- Added exclusive local writer locks and optimistic store revisions to reject concurrent and stale writes.
+- Added validated pre-write backups and explicit `founderos recover` restoration.
+- Added `founderos health` for schema, Event replay, content digest, lock, format, and backup checks.
+- Added an explicit version-to-version migration registry with v0-to-v1 compatibility and future-version rejection.
+- Added 10 persistence-hardening tests plus CLI health coverage for corruption, missing files, stale writes, locks, backup restore, replay mismatch, and migrations.
+
 - Added the standard-library `founderos` CLI with `new`, `status`, `plan`, `founder-brief`, `approve`, `decisions`, and `events` commands.
 - Added a thin application facade that delegates planning and mutations to existing runtime services.
 - Added validated local persistence using `project-state.json`, ordered `events.jsonl`, and immutable Artifact JSON files under `.founderos/`.

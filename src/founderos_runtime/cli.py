@@ -36,6 +36,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     subcommands.add_parser("decisions", help="List recorded decisions")
     subcommands.add_parser("events", help="List ordered project events")
+    subcommands.add_parser("health", help="Validate local persistence and backup health")
+    subcommands.add_parser("recover", help="Restore the last validated local backup")
     return parser
 
 
@@ -61,6 +63,10 @@ def execute(arguments: argparse.Namespace) -> Any:
         return app.decisions()
     if arguments.command == "events":
         return app.events()
+    if arguments.command == "health":
+        return app.health()
+    if arguments.command == "recover":
+        return app.recover()
     raise ValueError(f"Unknown command: {arguments.command}")
 
 

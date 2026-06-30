@@ -72,10 +72,10 @@ The Master Orchestrator, Workflow Engine, registries, and agents cannot write Pr
 
 ## Local CLI Persistence
 
-`LocalProjectStore` serializes validated runtime records to `.founderos/project-state.json`, writes the complete ordered Event stream to `.founderos/events.jsonl`, and stores Artifact content under `.founderos/artifacts/`. Every load validates schemas, Event ordering, and content digests before commands run.
+`LocalProjectStore` serializes validated runtime records to `.founderos/project-state.json`, writes the complete ordered Event stream to `.founderos/events.jsonl`, and stores Artifact content under `.founderos/artifacts/`. Every load validates schemas, Event ordering and replay, format compatibility, and content digests before commands run.
 
-The adapter is intentionally single-Project and single-process. It does not claim database-grade transactions or concurrent writer safety.
+Writes require an exclusive lock and matching store revision. A validated pre-write backup supports explicit rollback recovery. The adapter is intentionally single-Project and single-writer; it does not claim database-grade transactions.
 
 ## Next Step
 
-Define stable storage ports and harden concurrency, atomic recovery, and format migration.
+Define stable import/export ports and remove repository-private hydration from the adapter.

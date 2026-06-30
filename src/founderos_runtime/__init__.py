@@ -6,8 +6,11 @@ from .errors import (
     ConflictError,
     ContractValidationError,
     DuplicateRecordError,
+    PersistenceError,
+    PersistenceLockError,
     RecordNotFoundError,
     ReferenceIntegrityError,
+    RecoveryError,
     RuntimeFoundationError,
     StateMutationError,
     VerticalSliceError,
@@ -22,7 +25,7 @@ from .repositories import RuntimeRepositories
 from .runs import AgentRunService, WorkflowRunService
 from .state_machine import StateMachine, TransitionCommand
 from .application import FounderOSApplication
-from .local_store import LocalProjectStore, LocalRuntime
+from .local_store import LocalProjectStore, LocalRuntime, PersistenceHealth
 
 __all__ = [
     "ApprovalRequiredError",
@@ -37,6 +40,7 @@ __all__ = [
     "InMemoryContentStore",
     "LocalProjectStore",
     "LocalRuntime",
+    "PersistenceHealth",
     "ConflictError",
     "ContractRegistry",
     "ContractValidationError",
@@ -47,8 +51,11 @@ __all__ = [
     "ProjectStateService",
     "Planner",
     "PlanningError",
+    "PersistenceError",
+    "PersistenceLockError",
     "RecordNotFoundError",
     "ReferenceIntegrityError",
+    "RecoveryError",
     "RuntimeFoundationError",
     "RuntimeRepositories",
     "StateMachine",

@@ -18,4 +18,4 @@ Only an approved Artifact, passing Evaluation, successful WorkflowRun, and curre
 
 ## Limitations
 
-The CLI reloads records and content between invocations, but its file store is single-process and lacks transactional recovery across files. Authentication, production authorization policy, generalized workflow execution, and lifecycle modules after Founder Setup are not implemented.
+The CLI reloads records and content between invocations and now provides single-writer protection plus backup recovery. File replacement is not transactional across the entire directory. Authentication, production authorization policy, generalized workflow execution, and lifecycle modules after Founder Setup are not implemented.

@@ -80,7 +80,7 @@ Combines context, artifact analysis, workflow selection, agent routing, and Stat
 - Confidence is `1.0` for recognized deterministic rules; it is not an evidence confidence score.
 - The Planner does not choose among multiple valid recovery branches; it reports all allowed transitions and one primary next-state candidate.
 - The Planner itself performs no execution or content generation. Founder Setup is the first separate service consuming its plans.
-- No AI call, durable persistence adapter, CLI, or UI exists.
+- The local CLI consumes Planner output; no AI call, database persistence, or UI exists.
 
 ## Tests
 
@@ -92,4 +92,4 @@ Milestone 5's `FounderSetupService` consumes the Planner recommendation and dele
 
 ## Next Step
 
-Milestone 6 should preserve Planner and Founder Setup behavior across process restarts through durable persistence.
+Milestone 8 should harden the application and persistence service boundaries without changing Planner behavior.

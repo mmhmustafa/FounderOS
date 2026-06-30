@@ -745,7 +745,7 @@ The State Machine, Master Orchestrator, Project State, Agent Registry, Artifact 
 
 The authoritative machine-valid contracts are in `runtime/contracts/`. The Runtime Foundation enforces those contracts, the Runtime Planner produces deterministic read-only plans, and the Founder Setup vertical slice executes through a thin local CLI.
 
-The CLI uses a simple single-Project file store. Database-grade persistence, generalized workflow execution, AI providers, and later lifecycle modules remain planned.
+The CLI uses a hardened single-Project file store with single-writer protection, optimistic store revisions, validated backups, explicit recovery, migration handling, and health checks. Database-grade persistence, generalized workflow execution, AI providers, and later lifecycle modules remain planned.
 
 ---
 

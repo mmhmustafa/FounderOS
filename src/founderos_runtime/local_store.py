@@ -1,15 +1,18 @@
-"""Simple, validated local-file persistence for the FounderOS CLI."""
+"""Hardened local-file persistence for the FounderOS CLI."""
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+import shutil
+from typing import Any, Callable, Iterator
 
 from .content import InMemoryContentStore
 from .contracts import ContractRegistry
-from .errors import ConflictError, RecordNotFoundError
+from .errors import ConflictError, PersistenceLockError, RecordNotFoundError, RecoveryError
 from .project_state import replay_project_events
 from .repositories import RuntimeRepositories
 
@@ -20,14 +23,51 @@ _RECORD_KINDS = (
 )
 
 
+def _migrate_v0_to_v1(snapshot: dict[str, Any]) -> dict[str, Any]:
+    migrated = dict(snapshot)
+    migrated["format_version"] = 1
+    migrated.setdefault("store_revision", 0)
+    return migrated
+
+
+MIGRATIONS: dict[int, Callable[[dict[str, Any]], dict[str, Any]]] = {0: _migrate_v0_to_v1}
+
+
 @dataclass(frozen=True)
 class LocalRuntime:
     repositories: RuntimeRepositories
     content: InMemoryContentStore
+    store_revision: int = 0
+
+
+@dataclass(frozen=True)
+class PersistenceHealth:
+    status: str
+    primary_valid: bool
+    backup_available: bool
+    backup_valid: bool
+    locked: bool
+    format_version: int | None
+    store_revision: int | None
+    issues: tuple[str, ...]
+    recovery_recommended: bool
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "primary_valid": self.primary_valid,
+            "backup_available": self.backup_available,
+            "backup_valid": self.backup_valid,
+            "locked": self.locked,
+            "format_version": self.format_version,
+            "store_revision": self.store_revision,
+            "issues": list(self.issues),
+            "recovery_recommended": self.recovery_recommended,
+        }
 
 
 class LocalProjectStore:
-    """Persist one CLI project as JSON, JSONL Events, and JSON artifacts."""
+    """Persist one validated Project with optimistic single-writer protection."""
 
     FORMAT_VERSION = 1
 
@@ -36,6 +76,8 @@ class LocalProjectStore:
         self.state_path = self.root / "project-state.json"
         self.events_path = self.root / "events.jsonl"
         self.artifacts_path = self.root / "artifacts"
+        self.backup_path = self.root / "backup"
+        self.lock_path = self.root / ".write.lock"
 
     @property
     def exists(self) -> bool:
@@ -43,30 +85,157 @@ class LocalProjectStore:
 
     def empty_runtime(self) -> LocalRuntime:
         repositories = RuntimeRepositories(ContractRegistry())
-        return LocalRuntime(repositories, InMemoryContentStore(repositories.lock))
+        return LocalRuntime(repositories, InMemoryContentStore(repositories.lock), 0)
 
     def load(self) -> LocalRuntime:
         if not self.exists:
             raise RecordNotFoundError(f"No FounderOS project exists at {self.root}")
-        snapshot = self._read_json(self.state_path)
-        if snapshot.get("format_version") != self.FORMAT_VERSION:
-            raise ConflictError("Unsupported local FounderOS persistence format")
+        snapshot = self._migrate_snapshot(self._read_json(self.state_path))
+        runtime = self._hydrate(snapshot)
+        return LocalRuntime(runtime.repositories, runtime.content, snapshot["store_revision"])
+
+    def save(self, runtime: LocalRuntime) -> None:
+        projects = runtime.repositories.projects.all()
+        if len(projects) != 1:
+            raise ConflictError("Local CLI persistence requires exactly one Project")
+        self.root.mkdir(parents=True, exist_ok=True)
+        with self.writer_lock():
+            current_revision = self._current_store_revision()
+            if current_revision != runtime.store_revision:
+                raise ConflictError(
+                    f"Stale local persistence write: expected store revision {runtime.store_revision}, "
+                    f"stored {current_revision}"
+                )
+            if self.exists:
+                self._create_backup()
+            next_revision = current_revision + 1
+            records = {
+                kind: runtime.repositories.repository_for_kind(kind).all() for kind in _RECORD_KINDS
+            }
+            events = runtime.repositories.events.for_project(projects[0]["id"])
+            event_text = "".join(
+                json.dumps(event, sort_keys=True, separators=(",", ":")) + "\n" for event in events
+            )
+            self.artifacts_path.mkdir(parents=True, exist_ok=True)
+            expected_files: set[Path] = set()
+            for artifact in runtime.repositories.artifacts.all():
+                path = self.artifacts_path / f"{artifact['id']}.json"
+                expected_files.add(path)
+                self._write_json_atomic(path, runtime.content.get(artifact["content_uri"]))
+            self._write_text_atomic(self.events_path, event_text)
+            self._write_json_atomic(
+                self.state_path,
+                {"format_version": self.FORMAT_VERSION, "store_revision": next_revision, "records": records},
+            )
+            for path in self.artifacts_path.glob("*.json"):
+                if path not in expected_files:
+                    path.unlink()
+
+    @contextmanager
+    def writer_lock(self) -> Iterator[None]:
+        """Acquire an exclusive lock file or fail immediately."""
+
+        self.root.mkdir(parents=True, exist_ok=True)
+        try:
+            descriptor = os.open(self.lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError as error:
+            raise PersistenceLockError(
+                f"FounderOS persistence is locked by another writer: {self.lock_path}"
+            ) from error
+        try:
+            metadata = json.dumps({"pid": os.getpid()}) + "\n"
+            os.write(descriptor, metadata.encode("utf-8"))
+            os.close(descriptor)
+            descriptor = -1
+            yield
+        finally:
+            if descriptor >= 0:
+                os.close(descriptor)
+            self.lock_path.unlink(missing_ok=True)
+
+    def health(self) -> PersistenceHealth:
+        issues: list[str] = []
+        locked = self.lock_path.exists()
+        primary_valid = False
+        format_version: int | None = None
+        store_revision: int | None = None
+        try:
+            runtime = self.load()
+            primary_valid = True
+            store_revision = runtime.store_revision
+            format_version = self.FORMAT_VERSION
+        except Exception as error:
+            issues.append(f"primary: {error}")
+            try:
+                raw = self._read_json(self.state_path)
+                value = raw.get("format_version", 0)
+                format_version = value if isinstance(value, int) else None
+            except Exception:
+                pass
+        backup_available = (self.backup_path / "project-state.json").is_file()
+        backup_valid = False
+        if backup_available:
+            try:
+                LocalProjectStore(self.backup_path).load()
+                backup_valid = True
+            except Exception as error:
+                issues.append(f"backup: {error}")
+        if locked:
+            issues.append(f"writer lock present: {self.lock_path}")
+        recovery_recommended = not primary_valid and backup_valid
+        status = "healthy" if primary_valid and not locked else "recoverable" if recovery_recommended else "unhealthy"
+        return PersistenceHealth(
+            status, primary_valid, backup_available, backup_valid, locked,
+            format_version, store_revision, tuple(issues), recovery_recommended,
+        )
+
+    def recover(self) -> PersistenceHealth:
+        """Restore the last validated pre-write backup and revalidate it."""
+
+        backup_store = LocalProjectStore(self.backup_path)
+        if not backup_store.exists:
+            raise RecoveryError("No local persistence backup is available")
+        try:
+            backup_store.load()
+        except Exception as error:
+            raise RecoveryError(f"Local persistence backup is invalid: {error}") from error
+        with self.writer_lock():
+            self._copy_file_atomic(backup_store.state_path, self.state_path)
+            self._copy_file_atomic(backup_store.events_path, self.events_path)
+            if self.artifacts_path.exists():
+                shutil.rmtree(self.artifacts_path)
+            if backup_store.artifacts_path.exists():
+                shutil.copytree(backup_store.artifacts_path, self.artifacts_path)
+            else:
+                self.artifacts_path.mkdir(parents=True, exist_ok=True)
+        result = self.health()
+        if not result.primary_valid:
+            raise RecoveryError("Backup restore completed but validation still failed")
+        return result
+
+    def _hydrate(self, snapshot: dict[str, Any]) -> LocalRuntime:
         runtime = self.empty_runtime()
-        records = snapshot.get("records", {})
+        records = snapshot.get("records")
+        if not isinstance(records, dict):
+            raise ConflictError("Local persistence records must be a JSON object")
         for kind in _RECORD_KINDS:
+            items = records.get(kind, [])
+            if not isinstance(items, list):
+                raise ConflictError(f"Local persistence record collection must be an array: {kind}")
             repository = runtime.repositories.repository_for_kind(kind)
-            for record in records.get(kind, []):
+            for record in items:
                 validated = runtime.repositories.contracts.validate(kind, record)
                 repository._insert_validated(validated)
-        if self.events_path.exists():
-            for line_number, line in enumerate(self.events_path.read_text(encoding="utf-8").splitlines(), start=1):
-                if not line.strip():
-                    continue
-                try:
-                    event = json.loads(line)
-                except json.JSONDecodeError as error:
-                    raise ConflictError(f"Invalid Event JSON on line {line_number}") from error
-                runtime.repositories.events.append(event)
+        if not self.events_path.is_file():
+            raise RecordNotFoundError(f"Required local persistence file is missing: {self.events_path}")
+        for line_number, line in enumerate(self.events_path.read_text(encoding="utf-8").splitlines(), start=1):
+            if not line.strip():
+                continue
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError as error:
+                raise ConflictError(f"Invalid Event JSON on line {line_number}") from error
+            runtime.repositories.events.append(event)
         projects = runtime.repositories.projects.all()
         if len(projects) != 1:
             raise ConflictError("Local FounderOS persistence must contain exactly one Project")
@@ -82,27 +251,51 @@ class LocalProjectStore:
                 raise ConflictError(f"Artifact content digest mismatch: {artifact['id']}")
         return runtime
 
-    def save(self, runtime: LocalRuntime) -> None:
-        projects = runtime.repositories.projects.all()
-        if len(projects) != 1:
-            raise ConflictError("Local CLI persistence requires exactly one Project")
-        self.root.mkdir(parents=True, exist_ok=True)
-        self.artifacts_path.mkdir(parents=True, exist_ok=True)
-        records: dict[str, list[dict[str, Any]]] = {}
-        for kind in _RECORD_KINDS:
-            records[kind] = runtime.repositories.repository_for_kind(kind).all()
-        self._write_json_atomic(self.state_path, {"format_version": self.FORMAT_VERSION, "records": records})
-        events = runtime.repositories.events.for_project(projects[0]["id"])
-        event_text = "".join(json.dumps(event, sort_keys=True, separators=(",", ":")) + "\n" for event in events)
-        self._write_text_atomic(self.events_path, event_text)
-        expected_files: set[Path] = set()
-        for artifact in runtime.repositories.artifacts.all():
-            path = self.artifacts_path / f"{artifact['id']}.json"
-            expected_files.add(path)
-            self._write_json_atomic(path, runtime.content.get(artifact["content_uri"]))
-        for path in self.artifacts_path.glob("*.json"):
-            if path not in expected_files:
-                path.unlink()
+    def _migrate_snapshot(self, snapshot: dict[str, Any]) -> dict[str, Any]:
+        version = snapshot.get("format_version", 0)
+        if not isinstance(version, int) or version < 0:
+            raise ConflictError("Invalid local persistence format version")
+        if version > self.FORMAT_VERSION:
+            raise ConflictError(
+                f"Unsupported future local persistence format {version}; runtime supports {self.FORMAT_VERSION}"
+            )
+        migrated = dict(snapshot)
+        while version < self.FORMAT_VERSION:
+            migration = MIGRATIONS.get(version)
+            if migration is None:
+                raise ConflictError(f"No migration exists from local persistence format {version}")
+            migrated = migration(migrated)
+            next_version = migrated.get("format_version")
+            if not isinstance(next_version, int) or next_version <= version:
+                raise ConflictError(f"Invalid migration result from local persistence format {version}")
+            version = next_version
+        revision = migrated.get("store_revision", 0)
+        if not isinstance(revision, int) or revision < 0:
+            raise ConflictError("Invalid local persistence store revision")
+        migrated["store_revision"] = revision
+        return migrated
+
+    def _current_store_revision(self) -> int:
+        if not self.exists:
+            return 0
+        snapshot = self._migrate_snapshot(self._read_json(self.state_path))
+        return snapshot["store_revision"]
+
+    def _create_backup(self) -> None:
+        """Create a validated copy of the last committed primary state."""
+
+        self.load()
+        temporary = self.root / "backup.tmp"
+        if temporary.exists():
+            shutil.rmtree(temporary)
+        temporary.mkdir(parents=True)
+        shutil.copy2(self.state_path, temporary / self.state_path.name)
+        shutil.copy2(self.events_path, temporary / self.events_path.name)
+        if self.artifacts_path.exists():
+            shutil.copytree(self.artifacts_path, temporary / "artifacts")
+        if self.backup_path.exists():
+            shutil.rmtree(self.backup_path)
+        temporary.replace(self.backup_path)
 
     @staticmethod
     def _read_json(path: Path) -> dict[str, Any]:
@@ -110,7 +303,7 @@ class LocalProjectStore:
             raise RecordNotFoundError(f"Required local persistence file is missing: {path}")
         try:
             value = json.loads(path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError as error:
+        except (OSError, json.JSONDecodeError) as error:
             raise ConflictError(f"Invalid JSON persistence file: {path}") from error
         if not isinstance(value, dict):
             raise ConflictError(f"Expected a JSON object in {path}")
@@ -122,6 +315,16 @@ class LocalProjectStore:
 
     @staticmethod
     def _write_text_atomic(path: Path, value: str) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
         temporary = path.with_name(path.name + ".tmp")
         temporary.write_text(value, encoding="utf-8", newline="\n")
         temporary.replace(path)
+
+    @staticmethod
+    def _copy_file_atomic(source: Path, destination: Path) -> None:
+        if not source.is_file():
+            raise RecoveryError(f"Backup file is missing: {source}")
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        temporary = destination.with_name(destination.name + ".recovery.tmp")
+        shutil.copy2(source, temporary)
+        temporary.replace(destination)

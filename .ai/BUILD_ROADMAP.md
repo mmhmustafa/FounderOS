@@ -57,13 +57,23 @@
 - [x] Preserve Planner, Approval, and State Machine boundaries
 - [x] Add CLI acceptance coverage
 
-## Milestone 7 - Persistence Hardening (Next)
+## Milestone 7 - Persistence Hardening
 
-- [ ] Define stable storage ports independent of in-memory repository internals
-- [ ] Add transactional recovery or one atomic durable adapter
-- [ ] Add file locking and concurrent-process conflict handling
-- [ ] Persist command idempotency indexes across restarts
-- [ ] Add corruption, partial-write, migration, and backup recovery tests
+- [x] Add exclusive single-writer protection
+- [x] Reject stale writes using monotonic store revisions
+- [x] Create a validated backup before replacing committed files
+- [x] Detect corrupt/missing state, Event errors, replay mismatch, and Artifact digest mismatch
+- [x] Add explicit backup recovery and persistence health reporting
+- [x] Add format-version migration structure and future-version rejection
+- [x] Add corruption, locking, stale-write, migration, and recovery tests
+
+## Milestone 8 - Runtime Service Boundary Hardening (Next)
+
+- [ ] Replace persistence hydration through repository internals with explicit import/export ports
+- [ ] Extract Artifact, Evaluation, and Approval lifecycle operations from the Founder Setup coordinator
+- [ ] Persist command idempotency keys independently of in-process service instances
+- [ ] Define stale-lock inspection and authorized lock-break recovery
+- [ ] Add failure-injection coverage across multi-file save phases
 
 ## Deferred Runtime Hardening
 
