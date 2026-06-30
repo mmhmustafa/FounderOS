@@ -27,3 +27,11 @@ class ReferenceIntegrityError(RuntimeFoundationError):
 
 class StateMutationError(RuntimeFoundationError):
     """A caller attempted to bypass the State Machine boundary."""
+
+
+class VerticalSliceError(RuntimeFoundationError):
+    """The Founder Setup vertical slice cannot perform the requested operation."""
+
+
+class ApprovalRequiredError(VerticalSliceError):
+    """A current human approval is required before Founder Setup can complete."""

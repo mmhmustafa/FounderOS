@@ -1,20 +1,18 @@
 # CURRENT_SPRINT
 
-Sprint: First Executable Vertical Slice (Milestone 5)
+Sprint: Durable Runtime Persistence (Milestone 6)
 
 ## Goal
-Use the Runtime Planner and Runtime Foundation to create, resume, produce, review, and approve a Founder Brief without implementing Discovery or other lifecycle modules.
+Make the completed Founder Setup slice survive process restarts without changing its runtime contracts or adding lifecycle modules.
 
 ## Tasks
-- Define the Founder Setup Workflow and minimum Agent definition
-- Define the Founder Brief content contract/template
-- Implement the vertical-slice application service over existing runtime boundaries
-- Persist and resume the slice using a minimal approved persistence adapter
-- Require human review and Approval before transition
-- Add end-to-end tests from Project creation through `FOUNDER_BRIEF_COMPLETE`
+- Define storage ports for records, ordered Events, and artifact content
+- Select one minimal transactional durable adapter
+- Rehydrate idempotency and runtime composition after restart
+- Run Founder Setup acceptance tests against both storage implementations
 
 ## Definition of Done
-A Project can be created or resumed, a Founder Brief can be produced and approved, and the guarded transition to `FOUNDER_BRIEF_COMPLETE` is persisted and replayable.
+Founder Setup resumes after a real process restart with identical Project state, event order, content digest, approvals, and idempotency behavior.
 
 ## Out of Scope
 Authentication

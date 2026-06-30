@@ -89,3 +89,18 @@ Status: Accepted.
 Decision: Planner workflow and agent-role mappings are explicit static metadata in Milestone 4, while allowed transitions and guard requirements remain authoritative in the State Machine.
 Reason: Keep routing transparent and testable without duplicating transition authority or introducing AI-based planning.
 Status: Accepted.
+
+## D-019
+Decision: Founder Brief content is caller-supplied structured data validated by a dedicated versioned schema; Milestone 5 performs no generative AI work.
+Reason: Exercise the complete runtime path deterministically before introducing nondeterministic providers.
+Status: Accepted.
+
+## D-020
+Decision: The Founder Setup application service coordinates existing Planner, run, registry, approval, Event, and State Machine boundaries instead of becoming a second transition authority.
+Reason: Keep orchestration thin and preserve the runtime contracts as the source of truth.
+Status: Accepted.
+
+## D-021
+Decision: Milestone 5 stores canonical JSON content immutably in memory and records its SHA-256 digest on the Artifact.
+Reason: Verify content integrity and replay semantics while deferring storage technology to Milestone 6.
+Status: Accepted.

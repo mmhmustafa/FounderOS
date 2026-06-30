@@ -41,12 +41,20 @@
 - [x] Explicit blocking reasons and unknown-state rejection
 - [x] Non-mutation and determinism tests
 
-## Milestone 5 - First Executable Vertical Slice (Next)
+## Milestone 5 - First Executable Vertical Slice
 
-- [ ] Create or resume a project
-- [ ] Produce and approve a Founder Brief
-- [ ] Persist the artifact, decision, and state transition
-- [ ] Verify deterministic resume behavior
+- [x] Create or resume a project in the active runtime
+- [x] Produce, validate, persist, and approve a structured Founder Brief
+- [x] Persist run, evaluation, approval, event, artifact, and transition records in memory
+- [x] Verify deterministic replay/resume behavior and idempotent completion
+
+## Milestone 6 - Durable Runtime Persistence (Next)
+
+- [ ] Define a storage-port boundary for repositories, content, and event streams
+- [ ] Add one transactional durable adapter without changing domain contracts
+- [ ] Rehydrate the application composition root after process restart
+- [ ] Preserve optimistic revisions, event ordering, and idempotency across restarts
+- [ ] Run the Founder Setup end-to-end suite against in-memory and durable adapters
 
 ## Deferred Runtime Hardening
 

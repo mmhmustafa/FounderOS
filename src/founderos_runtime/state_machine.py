@@ -381,6 +381,22 @@ class StateMachine:
                 "next_action": f"Continue from {command.to_state}",
             }
         )
+        completed_refs = list(updated_project["completed_artifact_refs"])
+        known_refs = {(item["kind"], item["id"], item.get("version")) for item in completed_refs}
+        for artifact_ref in command.artifact_refs:
+            key = (artifact_ref["kind"], artifact_ref["id"], artifact_ref.get("version"))
+            if key not in known_refs:
+                completed_refs.append(artifact_ref)
+                known_refs.add(key)
+        updated_project["completed_artifact_refs"] = completed_refs
+        if command.artifact_refs:
+            artifact_types = {
+                self.repositories.resolve_reference(ref, project_id=command.project_id)["artifact_type"]
+                for ref in command.artifact_refs
+            }
+            updated_project["pending_artifact_types"] = [
+                item for item in updated_project["pending_artifact_types"] if item not in artifact_types
+            ]
         updated_project = self.repositories.contracts.validate("project", updated_project)
 
         project_snapshot = self.repositories.projects._snapshot()

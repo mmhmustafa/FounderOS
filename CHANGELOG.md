@@ -4,6 +4,10 @@
 
 ### Added
 
+- Added the first executable Founder Setup vertical slice: project start/resume, structured Founder Brief production, schema evaluation, human approval, guarded completion, and replay verification.
+- Added `founder-brief-content.schema.json`, immutable canonical-JSON content storage, Founder Setup Agent/Workflow definitions, and six end-to-end tests.
+- Added approved artifact references to the Project aggregate when a guarded transition applies.
+
 - Added immutable ExecutionContext and ExecutionPlan read models.
 - Added a deterministic Runtime Planner composed of ArtifactPlanner, WorkflowSelector, and AgentRouter.
 - Added planning rules for all 22 known lifecycle states while reusing State Machine routes and guard requirements.

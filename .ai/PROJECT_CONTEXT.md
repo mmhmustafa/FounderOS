@@ -43,9 +43,11 @@ Runtime:
 - Deterministic read-only Runtime Planner Engine
 - ExecutionContext and ExecutionPlan models
 - Workflow selection, missing-artifact analysis, agent-role routing, and quality-gate planning
+- Founder Brief content contract and immutable in-memory content store
+- Executable Founder Setup service with human approval and deterministic replay/resume
 
 ## Current Milestone
-Build the first executable Founder Brief vertical slice using the Runtime Planner and Runtime Foundation.
+Add durable, restart-safe persistence behind the existing runtime boundaries.
 
 ## Planned
 - Durable persistence adapters
@@ -56,9 +58,9 @@ Build the first executable Founder Brief vertical slice using the Runtime Planne
 - Discovery, Validation, and Product runtimes
 - Executable application and persistent storage
 
-The minimal in-memory Runtime Foundation is implemented. Higher-level services and lifecycle modules remain planned.
+The minimal in-memory Runtime Foundation and first Founder Setup application service are implemented. General orchestration and later lifecycle modules remain planned.
 
-The Planner recommends and blocks work deterministically but does not execute workflows, generate content, call models, or mutate Project state.
+The Planner remains read-only. Founder Setup consumes its recommendation and coordinates explicit runtime mutations; it does not call models.
 
 ## Long-term Goal
 Evolve FounderOS into a web application with persistent project state and AI orchestration.

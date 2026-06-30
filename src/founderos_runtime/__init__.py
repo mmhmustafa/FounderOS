@@ -2,6 +2,7 @@
 
 from .contracts import ContractRegistry
 from .errors import (
+    ApprovalRequiredError,
     ConflictError,
     ContractValidationError,
     DuplicateRecordError,
@@ -9,7 +10,10 @@ from .errors import (
     ReferenceIntegrityError,
     RuntimeFoundationError,
     StateMutationError,
+    VerticalSliceError,
 )
+from .content import InMemoryContentStore
+from .founder_setup import FounderBriefPreparation, FounderSetupCompletion, FounderSetupService, FounderSetupSession
 from .ids import new_id, utc_now
 from .execution_context import ExecutionContext, ExecutionContextBuilder
 from .planner import AgentRouter, ArtifactPlanner, ExecutionPlan, Planner, PlanningError, WorkflowSelector
@@ -19,9 +23,15 @@ from .runs import AgentRunService, WorkflowRunService
 from .state_machine import StateMachine, TransitionCommand
 
 __all__ = [
+    "ApprovalRequiredError",
     "AgentRunService",
     "AgentRouter",
     "ArtifactPlanner",
+    "FounderBriefPreparation",
+    "FounderSetupCompletion",
+    "FounderSetupService",
+    "FounderSetupSession",
+    "InMemoryContentStore",
     "ConflictError",
     "ContractRegistry",
     "ContractValidationError",
@@ -39,6 +49,7 @@ __all__ = [
     "StateMachine",
     "StateMutationError",
     "TransitionCommand",
+    "VerticalSliceError",
     "WorkflowRunService",
     "WorkflowSelector",
     "new_id",

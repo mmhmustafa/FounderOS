@@ -79,12 +79,17 @@ Combines context, artifact analysis, workflow selection, agent routing, and Stat
 - Available definitions are reported in context but are not yet required to exist before a recommendation is made.
 - Confidence is `1.0` for recognized deterministic rules; it is not an evidence confidence score.
 - The Planner does not choose among multiple valid recovery branches; it reports all allowed transitions and one primary next-state candidate.
-- No workflow execution, content generation, AI call, persistence adapter, CLI, or UI exists.
+- The Planner itself performs no execution or content generation. Founder Setup is the first separate service consuming its plans.
+- No AI call, durable persistence adapter, CLI, or UI exists.
 
 ## Tests
 
 `tests/test_planner.py` verifies required early lifecycle routes, blocking behavior, unknown-state rejection, plan completeness, deterministic output, context inventory, and zero repository mutation.
 
+## Executable Consumer
+
+Milestone 5's `FounderSetupService` consumes the Planner recommendation and delegates all writes to explicit runtime boundaries. The Planner remains non-mutating.
+
 ## Next Step
 
-Milestone 5 should use the Planner in the first executable Founder Brief vertical slice without allowing planning to bypass runtime services.
+Milestone 6 should preserve Planner and Founder Setup behavior across process restarts through durable persistence.

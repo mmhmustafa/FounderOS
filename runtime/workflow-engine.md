@@ -1,6 +1,6 @@
 # Workflow Engine
 
-> **Status:** Basic in-memory WorkflowRun lifecycle implemented; workflow step execution not started
+> **Status:** Basic in-memory lifecycle implemented; Founder Setup is explicitly coordinated, but no general step executor exists
 >
 > **Schemas:** `runtime/contracts/workflow.schema.json` and `runtime/contracts/workflow-run.schema.json`
 
@@ -75,6 +75,10 @@ Transient failures create new attempts within policy limits. Input/evidence fail
 
 `src/founderos_runtime/runs.py` implements validated WorkflowRun creation and lifecycle transitions with revisions and ordered lifecycle Events. It does not execute Workflow steps.
 
+## Executable Slice
+
+`FounderSetupService` coordinates the five Founder Setup steps directly through existing services. This is deliberately not a general workflow interpreter.
+
 ## Next Step
 
-Implement only the Founder Setup Workflow steps required by the Milestone 5 vertical slice.
+Make the existing slice restart-safe through durable storage before expanding workflow execution.

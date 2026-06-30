@@ -34,6 +34,10 @@ This folder is the machine-valid boundary between the FounderOS architecture and
 - `approval.schema.json`
 - `event.schema.json`
 
+### Executable artifact content contracts
+
+- `founder-brief-content.schema.json` — structured, versioned Founder Brief content
+
 ### Semantic contracts
 
 - `transition-and-recovery.md`
@@ -141,4 +145,4 @@ The runtime validator must enable RFC 3339 `date-time` format assertion; treatin
 
 ## Next Step
 
-Milestone 4 should build the first Founder Brief vertical slice over these boundaries without bypassing them.
+Milestone 6 should add durable storage ports and one restart-safe adapter without weakening these contracts.

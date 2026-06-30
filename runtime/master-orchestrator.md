@@ -57,7 +57,7 @@ The orchestrator must not:
 - Quality Gate and Human Approval services
 - Knowledge Base where a workflow explicitly requires it
 
-Runtime Foundation collaborators and the Runtime Planner have in-memory implementations. The higher-level orchestration facade, workflow executor, durable persistence, and lifecycle services remain unimplemented.
+Runtime Foundation collaborators and the Runtime Planner have in-memory implementations. `FounderSetupService` is the first narrow application-service consumer. A general orchestration facade, general workflow executor, and durable persistence remain unimplemented.
 
 ## Coordination Sequence
 
@@ -83,12 +83,12 @@ Important decisions and state transitions require an explicit approval record. T
 
 ## Current Limitations
 
-- No executable orchestrator exists.
+- No general-purpose executable orchestrator exists; only Founder Setup has an application service.
 - Runtime Foundation collaborators now have in-memory implementations, but there is no application facade or durable persistence.
-- The Runtime Planner is implemented, but no orchestrator application service consumes it yet.
+- The Runtime Planner is consumed by the Founder Setup vertical slice.
 - Contract validation, concurrency revisions, basic retries, transition guards, recovery outcomes, and Events are implemented.
 - Authentication, concrete authorization policy, storage technology, and observability remain undefined.
 
 ## Next Step
 
-Build the first Founder Brief vertical-slice application service over the Planner and Runtime Foundation in Milestone 5.
+Add restart-safe durable persistence behind the existing runtime boundaries in Milestone 6.

@@ -8,7 +8,7 @@ v0.1-alpha
 
 ## Current Status
 
-FounderOS is an architecture and runtime-specification project. It is not yet an executable application.
+FounderOS now has an executable, in-memory Founder Setup vertical slice. It is not yet a durable or user-facing application.
 
 Completed foundations:
 
@@ -23,10 +23,10 @@ Completed foundations:
 - In-memory repositories, Project State, ordered Events, guarded transitions, and run lifecycles
 - Executable coverage of all 14 contract acceptance scenarios
 - Deterministic Runtime Planner for workflow, artifact, agent-role, quality-gate, and next-state recommendations
+- Structured Founder Brief content validation and immutable in-memory content storage
+- Executable Founder Setup through human approval, guarded completion, and deterministic replay/resume
 
-In progress:
-
-- First executable Founder Brief vertical slice planning (Milestone 5)
+Next: durable persistence and restart-safe application composition (Milestone 6).
 
 Most lifecycle agent, prompt, template, domain, and roadmap files remain explicitly marked as planned placeholders. No application runtime, CLI, web application, Discovery, Validation, or Product module has been implemented.
 
@@ -44,11 +44,11 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m unittest discover -s tests -t . -v
 ```
 
-The runtime can currently validate contracts, create Projects in memory, manage basic WorkflowRun and AgentRun lifecycles, resolve exact references, enforce optimistic revisions and transition guards, append ordered Events, replay Project state, and atomically apply or reject transitions.
+The runtime can currently validate contracts, create Projects in memory, execute Founder Setup, persist a structured Founder Brief in memory, require human approval, enforce optimistic revisions and transition guards, append ordered Events, and replay Project state.
 
 The read-only Runtime Planner can build an ExecutionContext from repository state and produce a deterministic ExecutionPlan. It recommends workflows and agent roles, identifies missing approved artifacts, exposes allowed transitions and quality gates, and clearly blocks invalid progress without mutating repositories.
 
-It has no durable database, workflow executor, CLI, web UI, authentication, LLM calls, Discovery content generation, or Validation content generation.
+It has no durable database, general workflow executor, CLI, web UI, authentication, LLM calls, Discovery content generation, or Validation content generation.
 
 ## AI and Engineering Onboarding
 
