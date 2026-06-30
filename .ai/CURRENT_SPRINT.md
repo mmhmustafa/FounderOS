@@ -1,22 +1,26 @@
 # CURRENT_SPRINT
 
-Sprint: Runtime Foundation
+Sprint: Executable Runtime Contracts
 
 ## Goal
-Complete the FounderOS runtime.
+Turn the conceptual architecture into precise, testable runtime contracts without implementing application behavior yet.
 
 ## Tasks
-- Implement project-state.md
-- Implement workflow-engine.md
-- Finalize agent-registry.md
-- Finalize artifact-registry.md
-- Finalize decision-engine.md
-- Finalize knowledge-base.md
+- Define canonical identifiers, versions, statuses, timestamps, and references
+- Define machine-valid schemas for the five core objects
+- Define Project, Workflow Run, Agent Run, Transition, Evaluation, Approval, and Event records
+- Define transition guards, failure paths, and recovery semantics
+- Define persistence and state-mutation boundaries
+- Define contract-level acceptance scenarios
 
 ## Definition of Done
-Runtime can manage project state and determine the next workflow automatically.
+Runtime contracts are machine-valid, internally consistent, versioned, and sufficient to implement the first executable Founder Brief vertical slice.
 
 ## Out of Scope
 Web UI
 Database implementation
 Authentication
+Application runtime implementation
+Discovery Runtime
+Validation Runtime
+Product Runtime

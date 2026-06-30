@@ -58,11 +58,11 @@ Important project knowledge belongs in version-controlled files.
 
 Read these first:
 
-1. PROJECT_CONTEXT.md
-2. AI_INSTRUCTIONS.md
-3. BUILD_ROADMAP.md
-4. CURRENT_SPRINT.md
-5. DECISIONS.md
+1. `.ai/PROJECT_CONTEXT.md`
+2. `.ai/AI_INSTRUCTIONS.md`
+3. `.ai/BUILD_ROADMAP.md`
+4. `.ai/CURRENT_SPRINT.md`
+5. `.ai/DECISIONS.md`
 6. architecture/FounderOS_Architecture_Specification_v1.0.md
 
 ---

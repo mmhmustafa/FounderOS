@@ -1,39 +1,44 @@
 # BUILD_ROADMAP
 
-## Phase 1
-- [x] Repository
-- [x] Initial structure
+## Milestone 1 - Repository Reconciliation
 
-## Phase 2
-- [x] Architecture Specification
-- [x] State Machine
-- [x] Master Orchestrator
+- [x] Repository scaffold
+- [x] Official `.ai/` governance location
+- [x] Architecture Specification v1.0-alpha
+- [x] Initial state catalogue
+- [x] Thin Master Orchestrator specification
+- [x] Honest status labels for planned placeholders
 
-## Phase 3 (Current)
+## Milestone 2 - Executable Runtime Contracts (Next)
+
+- [ ] Define canonical identifiers and versioning
+- [ ] Define machine-valid core-object schemas
+- [ ] Define workflow-run, agent-run, transition, evaluation, approval, and event records
+- [ ] Define state-transition guards and recovery behavior
+- [ ] Define persistence and state-mutation boundaries
+- [ ] Define contract-level acceptance tests
+
+## Milestone 3 - Runtime Foundation
+
 - [ ] Project State
 - [ ] Workflow Engine
 - [ ] Agent Registry
 - [ ] Artifact Registry
 - [ ] Decision Engine
 - [ ] Knowledge Base
+- [ ] Quality Gate and Human Approval services
 
-## Phase 4
-- Discovery Runtime
-- Validation Runtime
-- Product Runtime
+## Milestone 4 - First Executable Vertical Slice
 
-## Phase 5
-- Engineering
-- AI
-- Development
-- UX
-- QA
-- Deployment
+- [ ] Create or resume a project
+- [ ] Produce and approve a Founder Brief
+- [ ] Persist the artifact, decision, and state transition
+- [ ] Verify deterministic resume behavior
 
-## Phase 6
-- Growth
-- Sales
-- CEO Review
+## Later Milestones
 
-## Phase 7
-- Convert architecture into executable application
+- Discovery, Validation, and Product runtimes
+- Engineering, AI, Development, UX, QA, and Deployment runtimes
+- Growth, Sales, and CEO Review runtimes
+
+Later lifecycle modules must not begin before the executable runtime contracts and first vertical slice are validated.

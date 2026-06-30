@@ -23,16 +23,28 @@ Runtime:
 - Knowledge Base
 
 ## Repository Structure
-runtime/, architecture/, agents/, prompts/, templates/, domains/, examples/, roadmap/, docs/
+`.ai/`, `runtime/`, `architecture/`, `agents/`, `prompts/`, `templates/`, `domains/`, `examples/`, `roadmap/`, `docs/`
 
 ## Completed
 - Repository scaffold
-- Architecture Specification v1
-- State Machine
-- Master Orchestrator draft
+- AI governance location and onboarding entry point
+- Architecture Specification v1.0-alpha
+- Initial runtime state catalogue
+- Thin Master Orchestrator specification
 
 ## Current Milestone
-Build the runtime so FounderOS can guide a founder from idea to MVP.
+Define executable runtime contracts for core objects, runtime records, state transitions, approvals, and quality gates.
+
+## Planned
+- Executable project-state model
+- Workflow engine
+- Agent and artifact registries
+- Decision engine
+- Knowledge base
+- Discovery, Validation, and Product runtimes
+- Executable application and persistent storage
+
+The files representing these planned components are scaffolds, not completed implementations.
 
 ## Long-term Goal
 Evolve FounderOS into a web application with persistent project state and AI orchestration.

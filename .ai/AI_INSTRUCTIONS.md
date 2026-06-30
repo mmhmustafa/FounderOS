@@ -3,8 +3,8 @@
 You are working on FounderOS.
 
 ## Rules
-1. Read PROJECT_CONTEXT.md first.
-2. Read BUILD_ROADMAP.md before implementing anything.
+1. Read `.ai/PROJECT_CONTEXT.md` first.
+2. Read `.ai/BUILD_ROADMAP.md` before implementing anything.
 3. Follow the Architecture Specification.
 4. Do not redesign architecture unless requested.
 5. Keep documentation synchronized.

@@ -4,14 +4,14 @@ If you are an AI assistant working on FounderOS, start here.
 
 Read these documents in order:
 
-1. ENGINEERING_HANDBOOK.md
-2. PROJECT_CONTEXT.md
-3. AI_INSTRUCTIONS.md
-4. BUILD_ROADMAP.md
-5. CURRENT_SPRINT.md
-6. DECISIONS.md
-7. LESSONS_LEARNED.md
-8. IDEAS_BACKLOG.md
+1. `.ai/ENGINEERING_HANDBOOK.md`
+2. `.ai/PROJECT_CONTEXT.md`
+3. `.ai/AI_INSTRUCTIONS.md`
+4. `.ai/BUILD_ROADMAP.md`
+5. `.ai/CURRENT_SPRINT.md`
+6. `.ai/DECISIONS.md`
+7. `.ai/LESSONS_LEARNED.md`
+8. `.ai/IDEAS_BACKLOG.md`
 
 After reading these documents, continue with:
 
