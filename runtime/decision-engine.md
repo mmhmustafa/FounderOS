@@ -1,6 +1,6 @@
 # Decision Engine
 
-> **Status:** Contract-level specification; implementation not started
+> **Status:** Validated in-memory repository implemented; decision lifecycle service not started
 >
 > **Schema:** `runtime/contracts/decision.schema.json`
 
@@ -60,6 +60,10 @@ Missing evidence or approval leaves the Decision proposed. Conflicting approved 
 - Decision conflict policy and role-based authority remain to be implemented.
 - Confidence is normalized to `0..1` but is not a substitute for evidence or approval.
 
+## Implementation
+
+`src/founderos_runtime/repositories.py` provides validated, revision-aware Decision persistence. Higher-level proposal, approval, rejection, and supersession commands remain planned.
+
 ## Next Step
 
-Implement proposal, approval, rejection, and supersession repository operations in Milestone 3.
+Add only the Decision behavior required by the first vertical slice, if any.

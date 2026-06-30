@@ -59,6 +59,7 @@ Cross-system AI/tool calls never execute inside the state mutation transaction. 
 - `correlation_id` groups one user/runtime command.
 - `causation_event_ref` links derived effects.
 - Event payloads are factual snapshots or references, never the sole storage of large artifact content.
+- `Project.last_event_sequence` is the latest aggregate-mutating Event incorporated into that snapshot. Non-mutating audit Events remain ordered in the Event repository without incrementing Project revision.
 
 ## Artifact Content Boundary
 
@@ -88,6 +89,10 @@ Dashboards and search indexes are derived, disposable read models. They never be
 - Event schema evolution and snapshot policy need implementation design.
 - Multi-tenant authorization and deletion policy are outside Milestone 2.
 
+## Runtime Implementation
+
+Milestone 3 implements these boundaries using thread-safe in-memory repositories and rollback snapshots. Durable adapters remain future work.
+
 ## Next Step
 
-Define repository interfaces and transactional tests in Milestone 3 using these ownership rules.
+Implement a durable persistence adapter for the first vertical slice without changing service ownership.

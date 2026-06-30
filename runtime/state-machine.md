@@ -1,6 +1,6 @@
 # FounderOS State Machine
 
-> **Status:** Contract-level specification; executable implementation not started
+> **Status:** In-memory Runtime Foundation implemented
 >
 > **Derived from:** `architecture/FounderOS_Architecture_Specification_v1.0.md`
 >
@@ -103,6 +103,10 @@ An applied transition atomically persists the Transition, appends its Event, cha
 - Contract version `1.x` permits one state-owning workflow at a time.
 - Full lifecycle artifacts remain planned and are not implemented by this specification.
 
+## Implementation
+
+`src/founderos_runtime/state_machine.py` implements all 22 allowed routes, ordered guards, applied/rejected Transition records, exact evidence resolution, optimistic concurrency, human Approval checks, Event append, idempotency, and rollback.
+
 ## Next Step
 
-Milestone 3 should implement the State Machine boundary and acceptance tests without adding lifecycle modules.
+Exercise the `FOUNDER_SETUP -> FOUNDER_BRIEF_COMPLETE` path through the first vertical-slice application service.

@@ -1,6 +1,6 @@
 # Agent Registry
 
-> **Status:** Contract-level specification; implementation not started
+> **Status:** In-memory Agent definition and AgentRun lifecycle foundation implemented; AI/provider execution not started
 >
 > **Schemas:** `runtime/contracts/agent.schema.json` and `runtime/contracts/agent-run.schema.json`
 
@@ -59,6 +59,10 @@ Invalid definition/input fails before invocation. Transient provider failure fol
 - Tool permission and model safety policies need implementation detail.
 - Token/cost metrics are reserved for later observability contracts.
 
+## Implementation
+
+`src/founderos_runtime/repositories.py` stores immutable Agent definitions, while `runs.py` implements validated AgentRun lifecycles, immutable retries, and retry-exhaustion propagation.
+
 ## Next Step
 
-Implement definition resolution and provider adapter interfaces in Milestone 3.
+Define the non-LLM Founder Setup Agent behavior needed by the first vertical slice.

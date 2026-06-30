@@ -64,3 +64,28 @@ Status: Accepted.
 Decision: Supporting runtime records do not expand the five product-level core objects.
 Reason: Project, run, transition, evaluation, approval, and event records are operational infrastructure for Agent, Artifact, Workflow, State, and Decision.
 Status: Accepted.
+
+## D-014
+Decision: The Runtime Foundation uses Python 3.11+ with `jsonschema` 4.x as its only runtime dependency and standard-library `unittest` for tests.
+Reason: Python provides a small, readable implementation surface while `jsonschema` enforces the approved language-neutral contracts without introducing an application framework.
+Status: Accepted.
+
+## D-015
+Decision: Milestone 3 uses thread-safe in-memory repositories behind explicit service boundaries.
+Reason: Validate contracts, transactions, guards, and lifecycle semantics before choosing durable storage technology.
+Status: Accepted.
+
+## D-016
+Decision: `Project.last_event_sequence` identifies the latest aggregate-mutating Event incorporated into the Project snapshot; the Event repository independently owns the complete gap-free audit-stream sequence.
+Reason: Rejected transitions and run lifecycle Events must remain auditable without changing Project state or optimistic revision.
+Status: Accepted.
+
+## D-017
+Decision: The Runtime Planner is a deterministic, read-only layer that produces recommendations but never creates runs, transitions, events, artifacts, decisions, or state mutations.
+Reason: Separate planning from execution so recommendations cannot bypass runtime contracts, quality gates, approvals, or persistence boundaries.
+Status: Accepted.
+
+## D-018
+Decision: Planner workflow and agent-role mappings are explicit static metadata in Milestone 4, while allowed transitions and guard requirements remain authoritative in the State Machine.
+Reason: Keep routing transparent and testable without duplicating transition authority or introducing AI-based planning.
+Status: Accepted.

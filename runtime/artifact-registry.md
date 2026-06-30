@@ -1,6 +1,6 @@
 # Artifact Registry
 
-> **Status:** Contract-level specification; implementation not started
+> **Status:** Validated in-memory repository implemented; full lifecycle service not started
 >
 > **Schema:** `runtime/contracts/artifact.schema.json`
 
@@ -64,6 +64,10 @@ Digest mismatch, invalid lineage, missing content, or cross-project ownership re
 - Artifact-type-specific content schemas are future work.
 - Storage retention, access control, and large-object handling are undecided.
 
+## Implementation
+
+`src/founderos_runtime/repositories.py` implements contract validation, immutable identity, defensive reads, and revision-checked replacement for Artifact metadata. Content storage remains external.
+
 ## Next Step
 
-Implement metadata/content repository interfaces and lifecycle tests in Milestone 3.
+Implement Founder Brief content persistence and approval lifecycle for the first vertical slice.

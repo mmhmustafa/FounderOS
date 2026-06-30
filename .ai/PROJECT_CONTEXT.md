@@ -35,20 +35,30 @@ Runtime:
 - Machine-valid contracts for Project, WorkflowRun, AgentRun, Transition, Evaluation, Approval, and Event
 - Persistence/state-mutation boundaries and contract acceptance scenarios
 - Contract-level specifications for runtime foundation components
+- Python runtime package and JSON Schema validation
+- In-memory runtime repositories and Project State
+- Guarded State Machine with optimistic concurrency and atomic Event append
+- Basic WorkflowRun and AgentRun lifecycle services
+- Automated contract acceptance suite
+- Deterministic read-only Runtime Planner Engine
+- ExecutionContext and ExecutionPlan models
+- Workflow selection, missing-artifact analysis, agent-role routing, and quality-gate planning
 
 ## Current Milestone
-Implement the Runtime Foundation against the approved Milestone 2 contracts.
+Build the first executable Founder Brief vertical slice using the Runtime Planner and Runtime Foundation.
 
 ## Planned
-- Executable Project State repository and event boundary
-- State Machine and guarded transitions
-- Workflow Engine
-- Agent and Artifact Registries
-- Decision, Evaluation, Approval, and Knowledge services
+- Durable persistence adapters
+- Full Workflow step execution
+- Artifact, Decision, Evaluation, and Approval lifecycle services beyond repository boundaries
+- Knowledge Entry schema and executable Knowledge Base
+- Authorization and observability
 - Discovery, Validation, and Product runtimes
 - Executable application and persistent storage
 
-The runtime component files are completed contract-level specifications, not application implementations.
+The minimal in-memory Runtime Foundation is implemented. Higher-level services and lifecycle modules remain planned.
+
+The Planner recommends and blocks work deterministically but does not execute workflows, generate content, call models, or mutate Project state.
 
 ## Long-term Goal
 Evolve FounderOS into a web application with persistent project state and AI orchestration.

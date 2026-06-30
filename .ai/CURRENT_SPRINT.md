@@ -1,28 +1,26 @@
 # CURRENT_SPRINT
 
-Sprint: Runtime Foundation
+Sprint: First Executable Vertical Slice (Milestone 5)
 
 ## Goal
-Implement the approved contracts as a minimal, testable runtime foundation without starting lifecycle modules or user interfaces.
+Use the Runtime Planner and Runtime Foundation to create, resume, produce, review, and approve a Founder Brief without implementing Discovery or other lifecycle modules.
 
 ## Tasks
-- Select the minimal runtime language and dependency baseline
-- Implement schema loading and validation
-- Implement repository interfaces and in-memory contract test doubles
-- Implement Project State and ordered Event persistence boundaries
-- Implement guarded State Machine transitions with optimistic concurrency
-- Implement WorkflowRun and AgentRun lifecycle foundations
-- Implement Artifact, Decision, Evaluation, and Approval boundaries
-- Automate all contract-level acceptance scenarios
+- Define the Founder Setup Workflow and minimum Agent definition
+- Define the Founder Brief content contract/template
+- Implement the vertical-slice application service over existing runtime boundaries
+- Persist and resume the slice using a minimal approved persistence adapter
+- Require human review and Approval before transition
+- Add end-to-end tests from Project creation through `FOUNDER_BRIEF_COMPLETE`
 
 ## Definition of Done
-The runtime foundation enforces Milestone 2 schemas and invariants and passes all contract-level acceptance scenarios without implementing Discovery, Validation, Product, CLI, or web behavior.
+A Project can be created or resumed, a Founder Brief can be produced and approved, and the guarded transition to `FOUNDER_BRIEF_COMPLETE` is persisted and replayable.
 
 ## Out of Scope
-Web UI
-Database implementation
 Authentication
 Discovery Runtime
 Validation Runtime
 Product Runtime
-Founder Brief vertical slice
+Web UI
+General-purpose CLI
+LLM/AI provider integration

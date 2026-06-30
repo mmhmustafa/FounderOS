@@ -1,6 +1,6 @@
 # Project State
 
-> **Status:** Contract-level specification; implementation not started
+> **Status:** In-memory Runtime Foundation implemented; durable persistence not started
 >
 > **Schema:** `runtime/contracts/project.schema.json`
 
@@ -28,7 +28,7 @@ Project State is the authoritative project aggregate and resume boundary. It ide
 3. Only the State Machine may change `current_state`.
 4. At most one state-owning WorkflowRun may be current in contract version `1.x`.
 5. Completed artifact and decision references must resolve within the Project.
-6. `last_event_sequence` equals the latest committed Event sequence.
+6. `last_event_sequence` equals the latest aggregate-mutating Event reflected by the Project snapshot; the Event repository owns the complete audit sequence.
 7. Read models never override the Project snapshot.
 8. Archived or completed Projects reject new workflow and transition mutations.
 
@@ -66,6 +66,10 @@ The Master Orchestrator, Workflow Engine, registries, and agents cannot write Pr
 - Snapshot frequency and event replay implementation are undecided.
 - Multi-tenant authorization and deletion policy are deferred.
 
+## Implementation
+
+`src/founderos_runtime/project_state.py` and `repositories.py` implement Project creation, guarded detail updates, optimistic revisions, atomic aggregate/Event commits, defensive copies, and replay verification in memory.
+
 ## Next Step
 
-Implement the Project repository contract and concurrency tests in Milestone 3.
+Add a durable Project/Event adapter for the first vertical slice.

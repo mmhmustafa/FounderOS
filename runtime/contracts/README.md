@@ -1,6 +1,6 @@
 # FounderOS Executable Runtime Contracts
 
-> **Status:** Milestone 2 specification
+> **Status:** Milestone 2 specification; enforced by the Milestone 3 in-memory runtime foundation
 >
 > **Schema dialect:** JSON Schema Draft 2020-12
 >
@@ -135,6 +135,10 @@ The runtime validator must enable RFC 3339 `date-time` format assertion; treatin
 - The architecture's universal confidence threshold is normalized to `0.70`; calibration remains future work.
 - Authentication and tenant policy are intentionally deferred, but actor and project boundaries are reserved in the contracts.
 
+## Runtime Implementation
+
+`src/founderos_runtime/` loads these schemas through a Draft 2020-12 validator, enables format checking, and enforces repository, reference, revision, transition, and event semantics. `tests/test_acceptance_scenarios.py` executes the specified acceptance scenarios.
+
 ## Next Step
 
-Milestone 3 should implement these contracts without changing their semantics unless a documented architecture decision is approved.
+Milestone 4 should build the first Founder Brief vertical slice over these boundaries without bypassing them.

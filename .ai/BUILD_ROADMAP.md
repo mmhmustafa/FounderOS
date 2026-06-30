@@ -19,22 +19,42 @@
 - [x] Define contract-level acceptance scenarios
 - [x] Replace runtime placeholders with contract-level component specifications
 
-## Milestone 3 - Runtime Foundation (Next)
+## Milestone 3 - Runtime Foundation
 
-- [ ] Project State
-- [ ] Workflow Engine
-- [ ] Agent Registry
-- [ ] Artifact Registry
-- [ ] Decision Engine
-- [ ] Knowledge Base
-- [ ] Quality Gate and Human Approval services
+- [x] Minimal Python package and dependency baseline
+- [x] Contract loading and JSON Schema validation
+- [x] In-memory repositories for required runtime records
+- [x] Project State with optimistic revisions
+- [x] Guarded State Machine transitions
+- [x] Ordered Event append and Project replay
+- [x] Basic WorkflowRun and AgentRun lifecycles
+- [x] Automated contract acceptance scenarios
 
-## Milestone 4 - First Executable Vertical Slice
+## Milestone 4 - Runtime Planner Engine
+
+- [x] Immutable ExecutionContext
+- [x] Immutable ExecutionPlan
+- [x] State-aware WorkflowSelector
+- [x] Approved-artifact gap analysis
+- [x] Deterministic AgentRouter
+- [x] State Machine route and quality-gate integration
+- [x] Explicit blocking reasons and unknown-state rejection
+- [x] Non-mutation and determinism tests
+
+## Milestone 5 - First Executable Vertical Slice (Next)
 
 - [ ] Create or resume a project
 - [ ] Produce and approve a Founder Brief
 - [ ] Persist the artifact, decision, and state transition
 - [ ] Verify deterministic resume behavior
+
+## Deferred Runtime Hardening
+
+- Durable persistence adapters
+- Knowledge Entry schema and executable Knowledge Base
+- Authentication and authorization
+- Observability and cost accounting
+- Full workflow step execution and external tool/AI adapters
 
 ## Later Milestones
 
@@ -42,4 +62,4 @@
 - Engineering, AI, Development, UX, QA, and Deployment runtimes
 - Growth, Sales, and CEO Review runtimes
 
-Later lifecycle modules must not begin before the executable runtime contracts and first vertical slice are validated.
+Later lifecycle modules must not begin before the executable runtime contracts, planner, and first vertical slice are validated.

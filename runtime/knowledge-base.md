@@ -22,7 +22,7 @@ Each entry must contain:
 - Access classification
 - Optional structured metadata and tags
 
-The concrete machine schema is deferred until Milestone 3 confirms storage and retrieval boundaries; KnowledgeEntry is not one of the required Milestone 2 runtime records.
+The concrete machine schema is deferred to Runtime Hardening; KnowledgeEntry was not one of the required Milestone 2 or Milestone 3 runtime records.
 
 ## Inputs
 
@@ -65,8 +65,8 @@ Missing provenance, digest mismatch, inaccessible scope, or unsupported source r
 ## Risks
 
 - Retrieval ranking, embedding model, licensing, retention, and sensitive-data policy remain undefined.
-- A machine schema is intentionally deferred to Milestone 3 implementation design.
+- A machine schema is intentionally deferred until the first vertical slice clarifies evidence-storage needs.
 
 ## Next Step
 
-Define KnowledgeEntry schema and repository/retrieval interfaces when implementing the Runtime Foundation in Milestone 3.
+Define the KnowledgeEntry schema and repository/retrieval interfaces during Runtime Hardening, before any workflow relies on retrieved knowledge.

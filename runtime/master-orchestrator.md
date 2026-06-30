@@ -14,7 +14,7 @@ The Master Orchestrator coordinates FounderOS runtime services. It does not perf
 
 1. Accept a user command or continuation request.
 2. Load the current project state through the Project State service.
-3. Ask the Workflow Engine for valid next actions.
+3. Ask the Runtime Planner for a read-only ExecutionPlan.
 4. Present required human approvals or missing inputs.
 5. Delegate specialist work through the Agent Registry.
 6. Submit produced artifacts to validation and quality gates.
@@ -48,6 +48,7 @@ The orchestrator must not:
 ## Required Collaborators
 
 - Project State
+- Runtime Planner
 - State Machine
 - Workflow Engine
 - Agent Registry
@@ -56,14 +57,14 @@ The orchestrator must not:
 - Quality Gate and Human Approval services
 - Knowledge Base where a workflow explicitly requires it
 
-These collaborators now have contract-level specifications. They remain unimplemented runtime components.
+Runtime Foundation collaborators and the Runtime Planner have in-memory implementations. The higher-level orchestration facade, workflow executor, durable persistence, and lifecycle services remain unimplemented.
 
 ## Coordination Sequence
 
 ```text
 Receive command
-→ Load project state
-→ Resolve valid workflow action
+→ Load project state and build ExecutionContext
+→ Generate read-only ExecutionPlan
 → Collect missing input or approval
 → Invoke registered agent when required
 → Validate and register artifact
@@ -83,10 +84,11 @@ Important decisions and state transitions require an explicit approval record. T
 ## Current Limitations
 
 - No executable orchestrator exists.
-- Runtime collaborators are not implemented.
-- Persistence boundaries, concurrency revisions, retries, transition guards, and recovery are specified but not implemented.
+- Runtime Foundation collaborators now have in-memory implementations, but there is no application facade or durable persistence.
+- The Runtime Planner is implemented, but no orchestrator application service consumes it yet.
+- Contract validation, concurrency revisions, basic retries, transition guards, recovery outcomes, and Events are implemented.
 - Authentication, concrete authorization policy, storage technology, and observability remain undefined.
 
 ## Next Step
 
-Implement the runtime foundation against `runtime/contracts/` in Milestone 3.
+Build the first Founder Brief vertical-slice application service over the Planner and Runtime Foundation in Milestone 5.

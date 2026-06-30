@@ -1,12 +1,14 @@
 # Workflow Engine
 
-> **Status:** Contract-level specification; implementation not started
+> **Status:** Basic in-memory WorkflowRun lifecycle implemented; workflow step execution not started
 >
 > **Schemas:** `runtime/contracts/workflow.schema.json` and `runtime/contracts/workflow-run.schema.json`
 
 ## Purpose
 
 The Workflow Engine executes version-pinned Workflow definitions as durable WorkflowRuns. It coordinates steps and records progress; it does not approve outputs or mutate Project state.
+
+The Runtime Planner selects and recommends workflows before execution. A recommendation never creates a WorkflowRun; an authorized application service must explicitly request one.
 
 ## Inputs
 
@@ -69,6 +71,10 @@ Transient failures create new attempts within policy limits. Input/evidence fail
 - Parallel branches and multiple state-owning workflows are deferred.
 - Scheduling, queues, and worker leases are implementation decisions.
 
+## Implementation
+
+`src/founderos_runtime/runs.py` implements validated WorkflowRun creation and lifecycle transitions with revisions and ordered lifecycle Events. It does not execute Workflow steps.
+
 ## Next Step
 
-Implement deterministic step execution and contract acceptance tests in Milestone 3.
+Implement only the Founder Setup Workflow steps required by the Milestone 5 vertical slice.

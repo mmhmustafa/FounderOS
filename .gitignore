@@ -5,3 +5,8 @@ node_modules/
 __pycache__/
 *.log
 .vscode/
+.venv/
+.coverage
+build/
+dist/
+*.egg-info/

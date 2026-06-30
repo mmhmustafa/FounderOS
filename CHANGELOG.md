@@ -4,6 +4,21 @@
 
 ### Added
 
+- Added immutable ExecutionContext and ExecutionPlan read models.
+- Added a deterministic Runtime Planner composed of ArtifactPlanner, WorkflowSelector, and AgentRouter.
+- Added planning rules for all 22 known lifecycle states while reusing State Machine routes and guard requirements.
+- Added missing-artifact blocking, workflow recommendations, agent-role routing, allowed transitions, quality-gate summaries, and next-state candidates.
+- Added 13 planner tests covering required early lifecycle routes, approved-artifact filtering, plan completeness, context construction, unknown states, non-mutation, determinism, and rule/State Machine consistency.
+
+- Added the Python 3.11+ `founderos_runtime` package with `jsonschema` 4.x as its only runtime dependency.
+- Added a Draft 2020-12 contract registry with local reference resolution and RFC 3339 format enforcement.
+- Added defensive in-memory repositories for Project, Artifact, Decision, WorkflowRun, AgentRun, Event, Approval, Evaluation, and Transition records, plus Agent and Workflow definitions.
+- Added Project State creation/update operations with optimistic revision checks and atomic Event persistence.
+- Added guarded State Machine transitions with exact evidence resolution, human Approval checks, rejection outcomes, idempotent correlation handling, and rollback on commit failure.
+- Added ordered Event streams and deterministic Project event replay.
+- Added basic WorkflowRun and AgentRun lifecycle services with bounded retry exhaustion behavior.
+- Added 19 automated tests covering all 14 contract acceptance scenarios, schema loading, transaction rollback, revision conflicts, ordered Events, and defensive repository reads.
+
 - Added JSON Schema Draft 2020-12 contracts under `runtime/contracts/` for Agent, Artifact, Workflow, State, Decision, Project, WorkflowRun, AgentRun, Transition, Evaluation, Approval, and Event.
 - Added canonical ID, version, revision, timestamp, actor, status, and typed-reference conventions.
 - Added transition guard ordering, complete allowed routes, atomic mutation rules, rejection behavior, and recovery semantics.
@@ -22,6 +37,9 @@
 - Expanded the State Machine from a state list into guarded transition and recovery contracts.
 - Updated the Master Orchestrator to depend on the completed contract specifications while remaining unimplemented.
 - Marked Executable Runtime Contracts complete and Runtime Foundation as the next milestone.
+- Marked Runtime Foundation complete and First Executable Vertical Slice as the next milestone.
+- Clarified that `Project.last_event_sequence` tracks the latest aggregate-mutating Event reflected by the Project snapshot; the Event repository owns the complete audit-stream sequence.
+- Marked the Runtime Planner Engine complete and moved the first Founder Brief vertical slice to Milestone 5.
 
 ## v0.1-alpha
 

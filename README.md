@@ -19,16 +19,36 @@ Completed foundations:
 - Thin Master Orchestrator specification
 - JSON Schema Draft 2020-12 contracts for five core objects and seven runtime records
 - Persistence, state-mutation, and contract acceptance specifications
+- Python runtime package with real JSON Schema validation
+- In-memory repositories, Project State, ordered Events, guarded transitions, and run lifecycles
+- Executable coverage of all 14 contract acceptance scenarios
+- Deterministic Runtime Planner for workflow, artifact, agent-role, quality-gate, and next-state recommendations
 
 In progress:
 
-- Runtime Foundation planning (Milestone 3)
+- First executable Founder Brief vertical slice planning (Milestone 5)
 
 Most lifecycle agent, prompt, template, domain, and roadmap files remain explicitly marked as planned placeholders. No application runtime, CLI, web application, Discovery, Validation, or Product module has been implemented.
 
 ## Runtime Contracts
 
 The authoritative implementation contracts are indexed in [`runtime/contracts/README.md`](runtime/contracts/README.md). They define canonical identifiers, versioning, the five core objects, supporting runtime records, guarded transitions, recovery, persistence boundaries, and acceptance scenarios.
+
+## Runtime Foundation
+
+FounderOS uses Python 3.11+ and one runtime dependency, `jsonschema` 4.x. The package lives in `src/founderos_runtime/`.
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -e .
+.\.venv\Scripts\python.exe -m unittest discover -s tests -t . -v
+```
+
+The runtime can currently validate contracts, create Projects in memory, manage basic WorkflowRun and AgentRun lifecycles, resolve exact references, enforce optimistic revisions and transition guards, append ordered Events, replay Project state, and atomically apply or reject transitions.
+
+The read-only Runtime Planner can build an ExecutionContext from repository state and produce a deterministic ExecutionPlan. It recommends workflows and agent roles, identifies missing approved artifacts, exposes allowed transitions and quality gates, and clearly blocks invalid progress without mutating repositories.
+
+It has no durable database, workflow executor, CLI, web UI, authentication, LLM calls, Discovery content generation, or Validation content generation.
 
 ## AI and Engineering Onboarding
 

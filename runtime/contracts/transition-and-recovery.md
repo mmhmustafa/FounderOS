@@ -106,6 +106,10 @@ A rejected transition:
 - Compensation for external side effects requires tool-specific contracts in a later milestone.
 - Concurrent workflows beyond one state-owning workflow per project require future design.
 
+## Runtime Implementation
+
+`src/founderos_runtime/state_machine.py` enforces the allowed routes, ordered guards, applied/rejected outcomes, optimistic revision checks, human Approval evidence, idempotent correlations, and rollback behavior.
+
 ## Next Step
 
-Implement guard evaluation and atomic transition persistence in Milestone 3.
+Use the State Machine in the first Founder Brief vertical slice.

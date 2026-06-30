@@ -1,6 +1,6 @@
 # Contract-Level Acceptance Scenarios
 
-> **Status:** Specification; executable tests are Milestone 3 work
+> **Status:** Specification implemented by `tests/test_acceptance_scenarios.py`
 
 ## Purpose
 
@@ -110,6 +110,6 @@ Provide technology-independent scenarios proving that an implementation conforms
 **Then** the result satisfies no guard until cited by an Artifact or Evaluation
 **And** the cited content digest and source remain traceable.
 
-## Exit Criteria for Milestone 3
+## Milestone 3 Result
 
-An implementation is not contract-conformant until automated tests cover all scenarios above, including negative and transactional paths.
+All scenarios above have executable positive, negative, concurrency, lifecycle, replay, idempotency, and transactional coverage in the Runtime Foundation test suite.
