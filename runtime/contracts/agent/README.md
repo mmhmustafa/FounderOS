@@ -69,4 +69,4 @@ The active runtime `ContractRegistry` remains non-recursive and does not adopt t
 
 ## Risks and Next Step
 
-The manifest is not yet resolved from App packages, registered, loaded, authorized, or executed. PR-002 now defines a Workflow Manifest that references exact Agent IDs and versions; a later adoption boundary must still resolve those references without replacing historical runtime definitions.
+PR-005's read-only Workspace now resolves exact Workflow/App Agent references within one bounded project snapshot. The manifest is still not registered, persisted, authorized, or executed, and side-by-side version lifecycle remains deferred.

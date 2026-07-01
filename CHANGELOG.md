@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### PR-005 - Workspace Foundation
+
+- Added a read-only in-memory Workspace that discovers Agent, Workflow, and App YAML beneath bounded project roots and delegates validation to PR-004.
+- Added deterministic duplicate-ID, exact-reference, runtime/Kernel compatibility, App dependency compatibility, and circular dependency checks.
+- Added sorted defensive `apps`, `workflows`, `agents`, `get_*`, and `summary` query APIs with no registration or mutation surface.
+- Added typed discovery, duplicate, missing-reference, compatibility, dependency-cycle, and query errors.
+- Added 10 tests plus duplicate-kind subtests covering empty, single-App, multi-App, duplicates, missing references, compatibility, queries, summaries, defensive results, and dependency cycles.
+- Added no Planner, registry, execution, Provider, Tool, authorization, memory, CLI, persistence, state transition, or Kernel integration.
+
 ### PR-004 - Manifest Loader Foundation
 
 - Added a stateless `founderos_runtime.manifest_loader` package with explicit Agent, Workflow, and App loading APIs.

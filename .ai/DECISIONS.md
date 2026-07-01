@@ -399,3 +399,28 @@ Status: Accepted by PR-004.
 Decision: PyYAML is a runtime dependency beginning with PR-004.
 Reason: Safe YAML parsing is now production loader behavior rather than test-only contract tooling.
 Status: Accepted by PR-004.
+
+## D-081
+Decision: A Workspace is a fresh, read-only, in-memory semantic snapshot of validated manifests beneath one bounded project root, not a registry.
+Reason: Callers need coherent relationships and deterministic queries before execution, while registration lifecycle, persistence, global state, and version resolution remain separate future concerns.
+Status: Accepted by PR-005.
+
+## D-082
+Decision: Workspace manifest kind is determined by the nearest ancestor directory named `agents`, `workflows`, or `apps`, and every discovered file is validated through PR-004 before indexing.
+Reason: An explicit bounded convention avoids content guessing and keeps YAML/schema validation owned by one loader boundary.
+Status: Accepted by PR-005.
+
+## D-083
+Decision: One Workspace permits one manifest per logical Agent, Workflow, or App ID and resolves references by exact ID and version.
+Reason: Deterministic snapshots must reject ambiguity; side-by-side versions and selection policy belong to a future registry/version resolver.
+Status: Accepted by PR-005.
+
+## D-084
+Decision: Workspace compatibility checks use runtime `0.1.0` by default, enforce App/Workflow bounds and App dependency ranges, and reject circular present dependencies.
+Reason: A semantic model must fail before planning when its definitions cannot coexist with the active runtime or each other.
+Status: Accepted by PR-005.
+
+## D-085
+Decision: Workspace query APIs return deterministically ordered defensive copies and expose no add, update, remove, execute, authorize, persist, or mutate operations.
+Reason: Consumers may safely inspect the semantic model without gaining a back door into definition lifecycle or runtime state.
+Status: Accepted by PR-005.

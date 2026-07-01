@@ -213,14 +213,16 @@ Authorization runtime enforcement remains mandatory before Provider or Tool exec
 - [x] Keep loading stateless, uncached, read-only, and independent from Kernel, execution, Providers, and registries
 - [x] Add comprehensive loader and regression tests
 
-### PR-005 - Bounded Manifest Discovery Foundation (Next)
+### PR-005 - Workspace Foundation
 
-- [ ] Discover only supported manifest filenames beneath explicit trusted roots
-- [ ] Reject unsafe roots, symlink escapes, ambiguous kinds, and duplicate physical paths
-- [ ] Delegate every discovered file to PR-004 loading and validation
-- [ ] Return deterministic read-only discovery results without registration, version resolution, or execution
+- [x] Discover Agent, Workflow, and App manifests beneath explicit bounded roots
+- [x] Delegate every discovered manifest to PR-004 loading and validation
+- [x] Build exact App/Workflow/Agent relationships and reject duplicate IDs or missing references
+- [x] Enforce runtime, Kernel, and App dependency compatibility plus cycle detection
+- [x] Expose sorted defensive read-only query and summary APIs
+- [x] Preserve all existing Planner, registry, execution, Provider, Tool, CLI, and Kernel behavior
 
-### PR-006 - Prompt Pack Manifest Schema Foundation
+### PR-006 - Prompt Pack Manifest Schema Foundation (Next)
 
 - [ ] Define immutable prompt-pack identity, version, variables, input/output schema references, and safety metadata
 - [ ] Keep prompt text in referenced package assets rather than embedding it in Agent, Workflow, or App manifests

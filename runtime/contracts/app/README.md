@@ -83,4 +83,4 @@ The active `ContractRegistry` remains non-recursive and does not adopt this defi
 
 ## Risks and Next Step
 
-No resolver proves that indexed files exist or that their internal IDs, versions, and digests match these references. Canonical package hashing, signatures, installation, and historical resolution remain undefined. The next PR should define prompt-pack and Evaluation-rubric asset contracts—or another explicitly approved narrow contract gate—before any package loading or execution is considered.
+PR-005's read-only Workspace now resolves exact App-to-Workflow, App-to-Agent, and App dependency identities and versions within one bounded project snapshot. Manifest paths, other indexed files, and digests are not yet verified. Canonical hashing, signatures, installation, historical resolution, and execution remain undefined.

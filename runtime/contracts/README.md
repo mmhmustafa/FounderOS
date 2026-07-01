@@ -69,6 +69,8 @@ This folder is the machine-valid boundary between the FounderOS architecture and
 
 `src/founderos_runtime/manifest_loader/` provides explicit Agent, Workflow, and App YAML loading with structural and semantic validation. It is separate from the active runtime `ContractRegistry`: loading returns a defensive object but performs no registration, resolution, installation, execution, or mutation.
 
+`src/founderos_runtime/workspace/` builds a fresh read-only semantic snapshot from manifests beneath one bounded root. It validates exact App/Workflow/Agent relationships, compatibility, duplicates, and dependency cycles without creating a registry or execution authority.
+
 ## Canonical Conventions
 
 ### Identifiers

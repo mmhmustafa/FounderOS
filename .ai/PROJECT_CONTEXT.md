@@ -58,9 +58,10 @@ Runtime:
 - PR-002 versioned Workflow Manifest schema, Discovery example, lifecycle/utility boundaries, and semantic reference validation
 - PR-003 versioned App Package Manifest schema, Discovery App example, first-party asset index, and package-boundary validation
 - PR-004 stateless Manifest Loader with safe YAML parsing, deterministic structural/semantic validation, and typed contextual errors
+- PR-005 read-only Workspace with bounded discovery, exact manifest relationships, compatibility checks, cycle detection, and deterministic queries
 
 ## Current Milestone
-PR-005: discover and validate supported manifests beneath bounded roots without implementing a registry or execution.
+PR-006: define versioned Prompt Pack Manifest metadata without implementing rendering or Provider integration.
 
 ## Planned
 - Durable persistence adapters
@@ -71,7 +72,6 @@ PR-005: discover and validate supported manifests beneath bounded roots without 
 - Authorization decision persistence/audit integration and acceptance tests
 - Executable durable Activity service, persistence, scheduling, and enforcement
 - Minimal bundled first-party App package contract
-- Bounded Manifest Discovery service
 - Versioned Prompt Pack Manifest contract
 - Deterministic fake structured-generation Provider
 - Validation and Product runtimes

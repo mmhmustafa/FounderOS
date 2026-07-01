@@ -82,4 +82,4 @@ except ManifestLoaderError as error:
 
 The default contract lookup expects the source-tree `runtime/contracts/` directory, matching the current editable/local deployment. Wheel resource packaging is not defined yet. File-size limits, YAML alias limits, referenced-asset resolution, digest verification, and registry semantics remain future work.
 
-PR-005 should add a read-only Manifest Discovery service that finds explicitly supported manifest filenames under bounded roots and delegates every file to this loader. It must not become a registry, execute definitions, or follow unsafe paths.
+PR-005's read-only Workspace now performs bounded discovery and delegates every supported file to this loader before building a semantic snapshot. The loader itself remains path-explicit, stateless, uncached, and independent from Workspace indexing.
