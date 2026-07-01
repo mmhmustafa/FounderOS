@@ -229,3 +229,38 @@ Status: Accepted.
 Decision: Windows stale-lock owner checks use `OpenProcess` and `GetExitCodeProcess`, close every acquired handle, and treat access-denied or indeterminate results as alive.
 Reason: `os.kill(pid, 0)` is a POSIX idiom with unsafe, version-dependent Windows behavior; stale-lock recovery must inspect without signalling and fail closed when uncertain.
 Status: Accepted.
+
+## D-047
+Decision: A FounderOS App is an immutable, versioned package/index of definitions and assets, not a sixth core object or an execution authority.
+Reason: Packaging Workflows, Agents, schemas, prompts, rubrics, policies, fixtures, and tests enables reuse without duplicating runtime semantics.
+Status: Accepted.
+
+## D-048
+Decision: Workflow remains the sole executable process definition, and WorkflowRun remains its runtime execution record.
+Reason: Reusing and evolving the existing contracts prevents parallel App/Workflow step, retry, approval, state, and recovery models.
+Status: Accepted.
+
+## D-049
+Decision: The FounderOS Kernel remains the sole domain-mutation authority, and only the State Machine may change `Project.current_state`.
+Reason: Apps, Agents, Providers, Tools, interfaces, and orchestration must not bypass the service boundaries, guards, approvals, revisions, or authoritative Event stream established in v0.1.
+Status: Accepted.
+
+## D-050
+Decision: Lifecycle Workflows may request guarded Project transitions; utility Workflows may create records through Kernel services but cannot change `Project.current_state`.
+Reason: General-purpose Apps such as reviews and incident analysis must not distort or bypass the startup lifecycle state machine.
+Status: Accepted.
+
+## D-051
+Decision: FounderOS v0.2 is a modular monolith with Provider, Tool, Knowledge, persistence, Event, and secret/configuration capabilities behind outbound ports.
+Reason: Explicit dependency directions preserve testability and future adapter replacement without premature services or distributed-system complexity.
+Status: Accepted.
+
+## D-052
+Decision: Authorization Policy Foundation must complete before AI Provider or Tool execution is implemented.
+Reason: Audit actors and manifest declarations do not prove identity or grant authority; protected reads, mutations, approvals, transitions, secrets, data disclosure, and external effects require enforceable deny-by-default policy.
+Status: Accepted.
+
+## D-053
+Decision: The first v0.2 product proof is a bundled, first-party, package-defined Validation vertical slice shaped by preceding authorization, durable-activity, App-package, and fake-provider gates.
+Reason: A real founder outcome should drive the minimum reusable abstractions before marketplace, broad Provider/Tool, memory, or Knowledge infrastructure is built.
+Status: Accepted.

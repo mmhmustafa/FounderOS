@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### Milestone 12A - FounderOS v0.2 Architecture Review Board
+
+- Added a formal five-perspective architecture review of the draft FounderOS v0.2 Blueprint.
+- Recommended proceeding only after resolving App/Workflow semantics, authorization order, durable execution boundaries, AI safety contracts, and the platform-first milestone sequence.
+- Proposed a narrower v0.2 scope centered on first-party App packaging and one package-defined Validation vertical slice.
+
+### Milestone 12B - Blueprint Revision and Architecture Decisions
+
+- Revised the v0.2 Blueprint so App is packaging, Workflow remains execution, and the Kernel remains the sole runtime mutation authority.
+- Replaced independent “OS” service implications with a modular-monolith dependency model and explicit outbound ports.
+- Defined lifecycle and utility Workflow state authority, first-party App package boundaries, compatibility direction, and v0.2 non-goals.
+- Added authorization, durable activity/effect, App package, fake structured-generation Provider, and Validation vertical-slice implementation gates.
+- Reconciled roadmap, sprint, project context, README, and architecture decisions around Milestone 12C as the next step.
+
 ### Milestone 11 - Developer Experience and Test Stability
 
 - Added official PowerShell and POSIX test scripts with per-test progress and slow-test diagnostics.

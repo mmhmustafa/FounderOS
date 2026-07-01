@@ -120,13 +120,54 @@
 - [x] Add Windows-specific regression coverage
 - [x] Verify the service-boundary file and full suite terminate normally
 
-## Milestone 12 - Authorization Policy Foundation (Next)
+## Milestone 12A - FounderOS v0.2 Architecture Review Board
+
+- [x] Review the draft v0.2 Blueprint from enterprise, distributed systems, AI, software, and startup perspectives
+- [x] Identify conflicting App/Workflow semantics and missing trust/execution boundaries
+- [x] Recommend a narrower vertical-slice-driven v0.2 scope
+- [x] Record conditional approval: proceed with changes
+
+## Milestone 12B - Blueprint Revision and Architecture Decisions
+
+- [x] Define App as a package and Workflow as the executable unit
+- [x] Establish a modular-monolith dependency model with outbound ports
+- [x] Preserve the Kernel and State Machine as sole domain/state mutation authorities
+- [x] Define lifecycle versus utility Workflows
+- [x] Define first-party App package contents and compatibility direction
+- [x] Narrow v0.2 scope and explicit non-goals
+- [x] Establish authorization, durable activity, package, fake-provider, and Validation implementation gates
+
+## Milestone 12C - Authorization Policy Foundation (Next)
 
 - [ ] Define actor capabilities for Project, Approval, Artifact, and Transition operations
 - [ ] Enforce founder ownership at application and runtime service boundaries
 - [ ] Define authorization denial diagnostics without leaking sensitive context
 - [ ] Add authorization acceptance and negative tests
 - [ ] Preserve local CLI usability without external authentication
+
+## Milestone 12D - Durable Activity and Side-Effect Contracts
+
+- [ ] Define activity attempts, leases, deadlines, cancellation, and retry classification
+- [ ] Define external-effect idempotency, receipts, reconciliation, and correlation
+- [ ] Keep Provider and Tool integrations out of scope
+
+## Milestone 12E - Minimal First-Party App Package Contract
+
+- [ ] Define package identity, Kernel compatibility, asset index, configuration, and historical resolution
+- [ ] Reuse existing Agent and Workflow definitions and registries
+- [ ] Define lifecycle versus utility Workflow contract extensions only as required
+
+## Milestone 12F - Fake Structured-Generation Provider
+
+- [ ] Define canonical structured generation requests/results, budgets, and typed failures
+- [ ] Add versioned prompt rendering and deterministic fake behavior
+- [ ] Keep real Provider integration out of scope
+
+## Milestone 12G - Validation App Vertical Slice
+
+- [ ] Package Validation as the first bundled first-party App
+- [ ] Reuse Kernel Artifact, Evaluation, Approval, Decision, Transition, Event, replay, and audit boundaries
+- [ ] Demonstrate value from `OPPORTUNITY_SELECTED` without Web, marketplace, broad Tools, or real Providers
 
 ## Deferred Runtime Hardening
 
@@ -135,6 +176,12 @@
 - Authentication and authorization
 - Observability and cost accounting
 - Full workflow step execution and external tool/AI adapters
+
+## Conditional v0.2 Follow-ups
+
+- One read-only Tool or Knowledge capability only if required by Validation
+- One opt-in real Provider adapter only after fake-provider acceptance and a security/cost review
+- v0.2 adoption review before adding further platform breadth
 
 ## Later Milestones
 

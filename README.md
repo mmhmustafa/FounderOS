@@ -31,14 +31,17 @@ Completed foundations:
 - Restart-safe idempotency keys for important CLI mutations
 - Read-only correlated audit diagnostics with default sensitive-field redaction
 - Deterministic local Discovery Workflow v1 producing an approved Opportunity Report and selection Decision
+- Architecture-reviewed and revised FounderOS v0.2 Blueprint with explicit App, Workflow, Kernel, policy, and outbound-port boundaries
 
-Next: authorization policy foundation (Milestone 12).
+Next: authorization policy foundation (Milestone 12C).
 
 Most lifecycle agent, prompt, template, domain, and roadmap files remain explicitly marked as planned placeholders. No web application, Validation, or Product module has been implemented; Discovery is currently deterministic and local-only.
 
 ## Runtime Contracts
 
 The authoritative implementation contracts are indexed in [`runtime/contracts/README.md`](runtime/contracts/README.md). They define canonical identifiers, versioning, the five core objects, supporting runtime records, guarded transitions, recovery, persistence boundaries, and acceptance scenarios.
+
+The revised [`FounderOS v0.2 Blueprint`](architecture/FounderOS_v0.2_Blueprint.md) defines App as first-party packaging over existing definitions, keeps Workflow as the executable unit, preserves the Kernel as sole mutation authority, and gates Provider/Tool work behind authorization and durable side-effect contracts. The supporting [Architecture Review](docs/reviews/FounderOS_v0.2_Architecture_Review.md) records the rationale and deferred scope.
 
 ## Developer Setup and Testing
 

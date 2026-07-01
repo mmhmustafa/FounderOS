@@ -1,6 +1,6 @@
 # CURRENT_SPRINT
 
-Sprint: Authorization Policy Foundation (Milestone 12)
+Sprint: Authorization Policy Foundation (Milestone 12C)
 
 ## Goal
 Define and enforce local runtime authorization policy without adding external authentication or lifecycle modules.
@@ -21,3 +21,6 @@ Validation Runtime
 Product Runtime
 Web UI
 LLM/AI provider integration
+App package/runtime implementation
+Tool execution
+Knowledge runtime

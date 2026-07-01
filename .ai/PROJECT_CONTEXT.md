@@ -51,9 +51,10 @@ Runtime:
 - Correlated read-only runtime diagnostics, audit traceability, consistency checks, and default redaction
 - Deterministic Discovery Workflow v1 through approved Opportunity selection
 - Stable cross-platform pytest setup with official developer test scripts and standard cache behavior
+- FounderOS v0.2 Architecture Review Board and revised implementation-gated Blueprint
 
 ## Current Milestone
-Milestone 12: define local authorization policy without external authentication infrastructure after Discovery v1.
+Milestone 12C: define local authorization policy without external authentication infrastructure before App, Provider, Tool, Knowledge, or Validation implementation.
 
 ## Planned
 - Durable persistence adapters
@@ -61,12 +62,17 @@ Milestone 12: define local authorization policy without external authentication 
 - Artifact, Decision, Evaluation, and Approval lifecycle services beyond repository boundaries
 - Knowledge Entry schema and executable Knowledge Base
 - Authorization and observability
+- Durable activity and external side-effect contracts
+- Minimal bundled first-party App package contract
+- Deterministic fake structured-generation Provider
 - Validation and Product runtimes
 - Web application and database persistence
 
 The Runtime Foundation, Founder Setup, deterministic Discovery v1, and local CLI are implemented. General orchestration and later lifecycle modules remain planned.
 
 The Planner remains read-only. Founder Setup consumes its recommendation and coordinates explicit runtime mutations; it does not call models.
+
+For v0.2, an App is a package of existing definitions and assets, while Workflow remains the executable unit. FounderOS remains a modular monolith; the Kernel is the sole runtime mutation authority, and authorization precedes Provider or Tool execution.
 
 ## Long-term Goal
 Evolve FounderOS into a web application with persistent project state and AI orchestration.
