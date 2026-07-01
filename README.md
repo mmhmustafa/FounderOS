@@ -39,8 +39,9 @@ Completed foundations:
 - PR-003 App Package Manifest schema with immutable first-party asset indexing and a validated Discovery App
 - PR-004 deterministic Manifest Loader for explicit Agent, Workflow, and App YAML validation
 - PR-005 read-only Workspace for bounded discovery, relationships, compatibility, and deterministic queries
+- PR-006 immutable Provider contracts and a deterministic offline Mock Provider
 
-Next: PR-006 Prompt Pack Manifest Schema Foundation, defining immutable prompt metadata without rendering or Provider integration.
+Next: PR-007 Prompt Pack Manifest Schema Foundation, defining immutable prompt metadata without rendering or real Provider integration.
 
 Most lifecycle agent, prompt, template, domain, and roadmap files remain explicitly marked as planned placeholders. No web application, Validation, or Product module has been implemented; Discovery is currently deterministic and local-only.
 
@@ -63,6 +64,8 @@ The revised [`FounderOS v0.2 Blueprint`](architecture/FounderOS_v0.2_Blueprint.m
 [`founderos_runtime.manifest_loader`](src/founderos_runtime/manifest_loader/) explicitly loads and validates requested Agent, Workflow, and App YAML paths. It returns defensive parsed objects and typed deterministic errors; it performs no discovery, caching, registration, reference resolution, execution, authorization, persistence, or Kernel mutation.
 
 [`founderos_runtime.workspace`](src/founderos_runtime/workspace/) builds a fresh read-only semantic snapshot from validated manifests beneath one bounded project root. It detects duplicates, missing exact references, runtime/dependency incompatibility, and App dependency cycles, then exposes sorted defensive query results. It has no registry lifecycle, execution, Provider, Tool, authorization, memory, persistence, CLI, or Kernel mutation behavior.
+
+[`founderos_runtime.provider`](src/founderos_runtime/provider/) defines frozen structured generation requests/responses and an offline deterministic Mock Provider. It supports exact fixtures, simulated failures, output-schema validation, correlation, and idempotency metadata without network access, API keys, real models, Provider registry, Activities, execution, persistence, or Kernel mutation.
 
 ## Developer Setup and Testing
 

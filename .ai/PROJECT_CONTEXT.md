@@ -59,9 +59,10 @@ Runtime:
 - PR-003 versioned App Package Manifest schema, Discovery App example, first-party asset index, and package-boundary validation
 - PR-004 stateless Manifest Loader with safe YAML parsing, deterministic structural/semantic validation, and typed contextual errors
 - PR-005 read-only Workspace with bounded discovery, exact manifest relationships, compatibility checks, cycle detection, and deterministic queries
+- PR-006 immutable Provider contracts and deterministic offline Mock Provider with fixtures, error simulation, schema checks, and no runtime mutation
 
 ## Current Milestone
-PR-006: define versioned Prompt Pack Manifest metadata without implementing rendering or Provider integration.
+PR-007: define versioned Prompt Pack Manifest metadata without implementing rendering or real Provider integration.
 
 ## Planned
 - Durable persistence adapters

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### PR-006 - Mock Provider Foundation
+
+- Added immutable `ProviderRequest`, `ProviderResponse`, `ProviderStatus`, and structured `ProviderError` contracts.
+- Added a deterministic offline Mock Provider with canonical request fingerprints, correlation/idempotency metadata, fallback output, strict JSON fixtures, simulated failures, and expected-output schema validation.
+- Added typed request, fixture, and missing-fixture errors with no real Provider SDK, network access, API keys, or external dependency.
+- Added 11 tests covering deterministic output, repeated requests, fixtures, missing fixtures, simulated errors, Provider metadata, network isolation, runtime non-mutation, invalid requests, output-schema failures, and immutability.
+- Kept Provider behavior disconnected from Workspace, Apps, Workflows, Agents, Activities, authorization, Kernel services, persistence, CLI, and runtime state.
+
 ### PR-005 - Workspace Foundation
 
 - Added a read-only in-memory Workspace that discovers Agent, Workflow, and App YAML beneath bounded project roots and delegates validation to PR-004.

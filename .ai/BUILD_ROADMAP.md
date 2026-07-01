@@ -222,11 +222,20 @@ Authorization runtime enforcement remains mandatory before Provider or Tool exec
 - [x] Expose sorted defensive read-only query and summary APIs
 - [x] Preserve all existing Planner, registry, execution, Provider, Tool, CLI, and Kernel behavior
 
-### PR-006 - Prompt Pack Manifest Schema Foundation (Next)
+### PR-006 - Mock Provider Foundation
+
+- [x] Define immutable structured Provider request, response, status, and error contracts
+- [x] Add deterministic fallback and exact fixture-based responses
+- [x] Add simulated Provider failures and expected-output schema validation
+- [x] Preserve correlation and idempotency metadata without timestamps or randomness
+- [x] Require no network, API keys, real Provider SDK, registry, execution, Activity, or Kernel integration
+- [x] Add comprehensive deterministic and isolation tests
+
+### PR-007 - Prompt Pack Manifest Schema Foundation (Next)
 
 - [ ] Define immutable prompt-pack identity, version, variables, input/output schema references, and safety metadata
 - [ ] Keep prompt text in referenced package assets rather than embedding it in Agent, Workflow, or App manifests
-- [ ] Add deterministic examples and validation without rendering prompts or invoking Providers
+- [ ] Add deterministic examples and validation without rendering prompts or invoking real Providers
 
 ## Deferred Runtime Hardening
 

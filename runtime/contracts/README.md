@@ -71,6 +71,8 @@ This folder is the machine-valid boundary between the FounderOS architecture and
 
 `src/founderos_runtime/workspace/` builds a fresh read-only semantic snapshot from manifests beneath one bounded root. It validates exact App/Workflow/Agent relationships, compatibility, duplicates, and dependency cycles without creating a registry or execution authority.
 
+`src/founderos_runtime/provider/` defines immutable structured generation contracts and a deterministic offline Mock Provider. It does not add a real Provider adapter, registry, prompt renderer, Activity integration, or runtime mutation path.
+
 ## Canonical Conventions
 
 ### Identifiers

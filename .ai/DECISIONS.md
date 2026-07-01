@@ -424,3 +424,28 @@ Status: Accepted by PR-005.
 Decision: Workspace query APIs return deterministically ordered defensive copies and expose no add, update, remove, execute, authorize, persist, or mutate operations.
 Reason: Consumers may safely inspect the semantic model without gaining a back door into definition lifecycle or runtime state.
 Status: Accepted by PR-005.
+
+## D-086
+Decision: ProviderRequest, ProviderResponse, ProviderStatus, and ProviderError are immutable structured contracts independent from any real Provider SDK.
+Reason: FounderOS needs one stable generation boundary before adopting vendor transports, credentials, model configuration, or nondeterministic behavior.
+Status: Accepted by PR-006.
+
+## D-087
+Decision: The Mock Provider is a pure offline adapter whose default response and exact fixture responses contain no time, randomness, environment, network, or runtime-state inputs.
+Reason: Identical requests and configuration must produce equal responses so Provider-based workflow tests can be deterministic and cost-free.
+Status: Accepted by PR-006.
+
+## D-088
+Decision: Correlation ID and idempotency key are preserved as explicit response metadata, while the request fingerprint derives only from operation, structured input, and expected output schema.
+Reason: Trace context may change across attempts without changing logical generation intent, and idempotency identity must remain separate from canonical request content.
+Status: Accepted by PR-006.
+
+## D-089
+Decision: Invalid caller requests and fixture configuration raise typed local exceptions; simulated Provider failures return structured error responses.
+Reason: Contract/configuration misuse is a local programming boundary, while failure responses model the outcome of a future outbound Provider operation.
+Status: Accepted by PR-006.
+
+## D-090
+Decision: PR-006 does not wire MockProvider into Workflows, Agents, Workspace, authorization, Activities, Kernel services, persistence, or CLI behavior.
+Reason: Provider invocation must eventually pass through authorization and RFC-0001 durable Activity boundaries; a deterministic test adapter must not bypass those gates.
+Status: Accepted by PR-006.
