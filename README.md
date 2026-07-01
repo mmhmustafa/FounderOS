@@ -32,8 +32,9 @@ Completed foundations:
 - Read-only correlated audit diagnostics with default sensitive-field redaction
 - Deterministic local Discovery Workflow v1 producing an approved Opportunity Report and selection Decision
 - Architecture-reviewed and revised FounderOS v0.2 Blueprint with explicit App, Workflow, Kernel, policy, and outbound-port boundaries
+- Runtime authorization architecture with deterministic default-deny contracts and a Kernel-boundary ADR
 
-Next: authorization policy foundation (Milestone 12C).
+Next: durable Activity and side-effect contracts (Milestone 12D).
 
 Most lifecycle agent, prompt, template, domain, and roadmap files remain explicitly marked as planned placeholders. No web application, Validation, or Product module has been implemented; Discovery is currently deterministic and local-only.
 
@@ -42,6 +43,8 @@ Most lifecycle agent, prompt, template, domain, and roadmap files remain explici
 The authoritative implementation contracts are indexed in [`runtime/contracts/README.md`](runtime/contracts/README.md). They define canonical identifiers, versioning, the five core objects, supporting runtime records, guarded transitions, recovery, persistence boundaries, and acceptance scenarios.
 
 The revised [`FounderOS v0.2 Blueprint`](architecture/FounderOS_v0.2_Blueprint.md) defines App as first-party packaging over existing definitions, keeps Workflow as the executable unit, preserves the Kernel as sole mutation authority, and gates Provider/Tool work behind authorization and durable side-effect contracts. The supporting [Architecture Review](docs/reviews/FounderOS_v0.2_Architecture_Review.md) records the rationale and deferred scope.
+
+[`runtime/authorization.md`](runtime/authorization.md) defines Actor, Action, Resource, Effect, Condition, Policy, AuthorizationRequest, AuthorizationDecision, and deterministic PolicyEngine semantics. The related schemas are placeholders under `runtime/contracts/authorization/`; they are intentionally not loaded or enforced by the current runtime. Authorization is not authentication, does not replace human Approval, and an allow decision never mutates Kernel state.
 
 ## Developer Setup and Testing
 

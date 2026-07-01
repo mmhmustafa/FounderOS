@@ -264,3 +264,28 @@ Status: Accepted.
 Decision: The first v0.2 product proof is a bundled, first-party, package-defined Validation vertical slice shaped by preceding authorization, durable-activity, App-package, and fake-provider gates.
 Reason: A real founder outcome should drive the minimum reusable abstractions before marketplace, broad Provider/Tool, memory, or Knowledge infrastructure is built.
 Status: Accepted.
+
+## D-054
+Decision: Runtime authorization is distinct from authentication and evaluates an explicit Actor, Action, Resource, and context before a protected Kernel operation.
+Reason: Audit actor metadata does not prove identity or authority, while Milestone 12C must remain compatible with future authentication and enterprise identity without implementing either.
+Status: Accepted.
+
+## D-055
+Decision: Authorization Policies are immutable and versioned, use `default_effect: deny` with `deny_overrides`, and must produce deterministic AuthorizationDecisions.
+Reason: Fail-closed, exact-version policy evaluation is testable, auditable, and safe for future human and non-human Actors.
+Status: Accepted.
+
+## D-056
+Decision: An authorization allow permits a request to reach the owning Kernel service but performs no mutation and bypasses no contract, revision, guard, Evaluation, Approval, transaction, or Event rule.
+Reason: The Kernel and State Machine must remain the sole domain and Project-state mutation authorities.
+Status: Accepted.
+
+## D-057
+Decision: Authorization and human Approval are independent requirements; neither substitutes for the other.
+Reason: Authorization governs whether an Actor may attempt an Action, while Approval records an authorized human decision about a specific subject and remains explicit transition or lifecycle evidence.
+Status: Accepted.
+
+## D-058
+Decision: Milestone 12C authorization schemas remain under a non-loaded contract subdirectory and are not registered, persisted, or enforced by the current runtime.
+Reason: The milestone was explicitly limited to architecture, contracts, documentation, and placeholder interfaces; future adoption requires deliberate compatibility, persistence, service-wiring, and acceptance-test work.
+Status: Accepted.

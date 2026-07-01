@@ -65,6 +65,7 @@ Runtime Foundation collaborators and the Runtime Planner have implementations. `
 Receive command
 → Load project state and build ExecutionContext
 → Generate read-only ExecutionPlan
+→ Request deterministic AuthorizationDecision
 → Collect missing input or approval
 → Invoke registered agent when required
 → Validate and register artifact
@@ -80,6 +81,8 @@ If a dependency fails, evidence is insufficient, validation fails, approval is d
 ## Human Approval
 
 Important decisions and state transitions require an explicit approval record. The executable runtime contracts will define which transitions require approval and who may grant it.
+
+Authorization and Approval are independent. A future allow decision permits a command to reach the Kernel but never replaces required human Approval, transition evidence, or State Machine guards. Milestone 12C specifies this boundary without wiring it into the current orchestrator or runtime.
 
 ## Current Limitations
 

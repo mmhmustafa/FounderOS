@@ -16,6 +16,15 @@
 - Added authorization, durable activity/effect, App package, fake structured-generation Provider, and Validation vertical-slice implementation gates.
 - Reconciled roadmap, sprint, project context, README, and architecture decisions around Milestone 12C as the next step.
 
+### Milestone 12C - Authorization Policy Foundation
+
+- Defined runtime authorization concepts, supported Actor/Action/Resource vocabularies, deterministic decision flow, failure semantics, and future RBAC/enterprise compatibility.
+- Added placeholder Draft 2020-12 schemas for AuthorizationRequest, AuthorizationDecision, PolicyRule, and AuthorizationPolicy without registering or enforcing them in the runtime.
+- Specified a pure PolicyEngine interface using default-deny and deny-overrides semantics with exact Policy versions.
+- Added diagrams for command, trust-boundary, and future outbound-execution flows.
+- Added ADR-001 establishing that authorization precedes protected mutation while the Kernel and State Machine retain sole mutation authority.
+- Clarified that authorization, authentication, and human Approval are separate concerns and that Milestone 12C changes no runtime behavior.
+
 ### Milestone 11 - Developer Experience and Test Stability
 
 - Added official PowerShell and POSIX test scripts with per-test progress and slow-test diagnostics.

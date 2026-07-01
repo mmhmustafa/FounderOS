@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://founderos.dev/contracts/authorization/authorization-decision.schema.json",
+  "title": "FounderOS AuthorizationDecision Contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id", "request_id", "effect", "allowed", "reason_code", "policy_ref",
+    "matched_rule_refs", "obligations", "evaluated_at"
+  ],
+  "properties": {
+    "id": { "type": "string", "pattern": "^azd_[0-7][0-9A-HJKMNP-TV-Z]{25}$" },
+    "request_id": { "type": "string", "pattern": "^azr_[0-7][0-9A-HJKMNP-TV-Z]{25}$" },
+    "effect": { "$ref": "authorization-common.schema.json#/$defs/effect" },
+    "allowed": { "type": "boolean" },
+    "reason_code": {
+      "type": "string",
+      "enum": [
+        "ALLOW_RULE_MATCH", "EXPLICIT_DENY", "DEFAULT_DENY", "INVALID_REQUEST",
+        "POLICY_UNAVAILABLE", "POLICY_EVALUATION_ERROR"
+      ]
+    },
+    "policy_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^pol_[0-7][0-9A-HJKMNP-TV-Z]{25}$" },
+        "version": { "$ref": "authorization-common.schema.json#/$defs/semver" }
+      }
+    },
+    "matched_rule_refs": {
+      "type": "array",
+      "items": { "$ref": "authorization-common.schema.json#/$defs/policyRuleRef" },
+      "uniqueItems": true
+    },
+    "obligations": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1, "maxLength": 200 },
+      "uniqueItems": true
+    },
+    "context_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "diagnostic": { "type": "string", "minLength": 1, "maxLength": 500 },
+    "evaluated_at": { "$ref": "authorization-common.schema.json#/$defs/utcTimestamp" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "effect": { "const": "allow" } }, "required": ["effect"] },
+      "then": {
+        "properties": {
+          "allowed": { "const": true },
+          "reason_code": { "const": "ALLOW_RULE_MATCH" }
+        }
+      },
+      "else": {
+        "properties": {
+          "allowed": { "const": false },
+          "reason_code": {
+            "enum": [
+              "EXPLICIT_DENY", "DEFAULT_DENY", "INVALID_REQUEST",
+              "POLICY_UNAVAILABLE", "POLICY_EVALUATION_ERROR"
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

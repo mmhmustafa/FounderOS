@@ -52,16 +52,18 @@ Runtime:
 - Deterministic Discovery Workflow v1 through approved Opportunity selection
 - Stable cross-platform pytest setup with official developer test scripts and standard cache behavior
 - FounderOS v0.2 Architecture Review Board and revised implementation-gated Blueprint
+- Runtime authorization architecture, placeholder contracts, deterministic policy semantics, and ADR
 
 ## Current Milestone
-Milestone 12C: define local authorization policy without external authentication infrastructure before App, Provider, Tool, Knowledge, or Validation implementation.
+Milestone 12D: define durable Activity and side-effect contracts without implementing Provider or Tool execution.
 
 ## Planned
 - Durable persistence adapters
 - Full Workflow step execution
 - Artifact, Decision, Evaluation, and Approval lifecycle services beyond repository boundaries
 - Knowledge Entry schema and executable Knowledge Base
-- Authorization and observability
+- Executable authorization enforcement at application and Kernel mutation boundaries
+- Authorization decision persistence/audit integration and acceptance tests
 - Durable activity and external side-effect contracts
 - Minimal bundled first-party App package contract
 - Deterministic fake structured-generation Provider
@@ -73,6 +75,8 @@ The Runtime Foundation, Founder Setup, deterministic Discovery v1, and local CLI
 The Planner remains read-only. Founder Setup consumes its recommendation and coordinates explicit runtime mutations; it does not call models.
 
 For v0.2, an App is a package of existing definitions and assets, while Workflow remains the executable unit. FounderOS remains a modular monolith; the Kernel is the sole runtime mutation authority, and authorization precedes Provider or Tool execution.
+
+Milestone 12C defines authorization contracts only. Current services do not yet enforce them, and existing runtime Actor schemas remain unchanged. Runtime enforcement is a required future gate before Provider or Tool execution.
 
 ## Long-term Goal
 Evolve FounderOS into a web application with persistent project state and AI orchestration.

@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://founderos.dev/contracts/authorization/authorization-request.schema.json",
+  "title": "FounderOS AuthorizationRequest Contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "actor", "action", "resource", "policy_ref", "context", "requested_at"],
+  "properties": {
+    "id": { "type": "string", "pattern": "^azr_[0-7][0-9A-HJKMNP-TV-Z]{25}$" },
+    "actor": { "$ref": "authorization-common.schema.json#/$defs/actor" },
+    "action": { "$ref": "authorization-common.schema.json#/$defs/action" },
+    "resource": { "$ref": "authorization-common.schema.json#/$defs/resource" },
+    "policy_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^pol_[0-7][0-9A-HJKMNP-TV-Z]{25}$" },
+        "version": { "$ref": "authorization-common.schema.json#/$defs/semver" }
+      }
+    },
+    "context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["correlation_id", "command_name", "environment"],
+      "properties": {
+        "correlation_id": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "command_name": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "environment": { "type": "string", "enum": ["local", "development", "test", "staging", "production"] },
+        "project_owner_id": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "current_state": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "attributes": {
+          "type": "object",
+          "additionalProperties": { "$ref": "authorization-common.schema.json#/$defs/scalar" },
+          "maxProperties": 25
+        }
+      }
+    },
+    "requested_at": { "$ref": "authorization-common.schema.json#/$defs/utcTimestamp" }
+  }
+}

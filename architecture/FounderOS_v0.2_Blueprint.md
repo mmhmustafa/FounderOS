@@ -452,15 +452,17 @@ No Agent OS runtime, App registry runtime, Provider integration, Tool implementa
 - Narrow v0.2 scope and non-goals.
 - Establish implementation gates.
 
-### Milestone 12C — Authorization Policy Foundation — next
+### Milestone 12C — Authorization Policy Foundation — contract specification complete
 
-- Define principal, Project scope, capabilities, and policy decisions.
-- Enforce ownership and authority at application and Kernel service boundaries.
-- Protect Approvals, Transitions, sensitive reads, and future outbound execution.
-- Add redacted denial diagnostics and acceptance tests.
-- Preserve local CLI usability without external authentication.
+- Define Actor, Action, Resource, Effect, Condition, PolicyRule, Policy, and Decision concepts.
+- Define placeholder AuthorizationRequest, AuthorizationDecision, PolicyRule, AuthorizationPolicy, PolicyEngine, and resolver contracts.
+- Specify deterministic default-deny and deny-overrides behavior.
+- Reserve authorization checks before every owning Kernel mutation boundary.
+- Keep authentication, users, RBAC, persistence, and runtime wiring out of scope.
 
-### Milestone 12D — Durable Activity and Side-Effect Contracts
+Executable enforcement remains required before Provider or Tool execution; Milestone 12C intentionally changes no current runtime behavior.
+
+### Milestone 12D — Durable Activity and Side-Effect Contracts — next
 
 - Specify activities, attempts, leases, deadlines, cancellation, idempotency, receipts, reconciliation, and correlation.
 - Do not integrate a Provider or Tool.
@@ -534,7 +536,7 @@ The first package-defined Validation vertical slice determines the minimum App, 
 
 ## 21. Remaining Risks
 
-- The exact authorization capability vocabulary remains to be designed in Milestone 12C.
+- The authorization capability vocabulary is specified but not yet enforced by runtime services.
 - Durable Activity/Effect records may expose needed changes to Event and run contracts.
 - App package compatibility and historical resolution need executable acceptance scenarios.
 - Validation may not require a Provider initially; the fake Provider must not force artificial AI work into the workflow.
@@ -543,6 +545,6 @@ The first package-defined Validation vertical slice determines the minimum App, 
 
 ## 22. Immediate Next Step
 
-Proceed with **Milestone 12C: Authorization Policy Foundation**.
+Proceed with **Milestone 12D: Durable Activity and Side-Effect Contracts**.
 
-Do not create App registries, Agent OS runtimes, Provider adapters, Tools, Knowledge services, or Validation behavior during 12C. Authorization must first protect the current application and Kernel boundaries and reserve explicit policy points for future outbound execution.
+Do not create App registries, Agent OS runtimes, Provider adapters, Tools, Knowledge services, or Validation behavior during 12D. Authorization enforcement remains a required implementation gate before any Provider or Tool execution.

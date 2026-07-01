@@ -45,6 +45,10 @@ This folder is the machine-valid boundary between the FounderOS architecture and
 - `persistence-boundaries.md`
 - `acceptance-scenarios.md`
 
+### Future authorization contracts
+
+- `authorization/` — Milestone 12C placeholder AuthorizationRequest, AuthorizationDecision, PolicyRule, and AuthorizationPolicy schemas. They are intentionally outside the current runtime registry and do not change executable behavior.
+
 ## Canonical Conventions
 
 ### Identifiers

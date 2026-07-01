@@ -137,19 +137,23 @@
 - [x] Narrow v0.2 scope and explicit non-goals
 - [x] Establish authorization, durable activity, package, fake-provider, and Validation implementation gates
 
-## Milestone 12C - Authorization Policy Foundation (Next)
+## Milestone 12C - Authorization Policy Foundation
 
-- [ ] Define actor capabilities for Project, Approval, Artifact, and Transition operations
-- [ ] Enforce founder ownership at application and runtime service boundaries
-- [ ] Define authorization denial diagnostics without leaking sensitive context
-- [ ] Add authorization acceptance and negative tests
-- [ ] Preserve local CLI usability without external authentication
+- [x] Define Actor, Action, Resource, Effect, Condition, Policy, and Decision concepts
+- [x] Define placeholder AuthorizationRequest, AuthorizationDecision, PolicyRule, AuthorizationPolicy, and PolicyEngine contracts
+- [x] Define deterministic default-deny and deny-overrides evaluation
+- [x] Reserve authorization checks before every owning Kernel mutation boundary
+- [x] Separate authorization from authentication, RBAC, and human Approval
+- [x] Add redaction, future enterprise compatibility, diagrams, and an authorization ADR
+- [x] Preserve runtime behavior by keeping contracts outside the active ContractRegistry
 
-## Milestone 12D - Durable Activity and Side-Effect Contracts
+## Milestone 12D - Durable Activity and Side-Effect Contracts (Next)
 
 - [ ] Define activity attempts, leases, deadlines, cancellation, and retry classification
 - [ ] Define external-effect idempotency, receipts, reconciliation, and correlation
 - [ ] Keep Provider and Tool integrations out of scope
+
+Authorization runtime enforcement remains mandatory before Provider or Tool execution. Milestone 12C defines the boundary but intentionally does not wire it into current services.
 
 ## Milestone 12E - Minimal First-Party App Package Contract
 

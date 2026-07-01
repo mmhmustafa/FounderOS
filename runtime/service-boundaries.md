@@ -17,6 +17,12 @@ Repositories expose `export_records()` and validated `import_records()` operatio
 
 Founder Setup coordinates these services but does not duplicate their mutation logic.
 
+## Authorization Boundary
+
+Milestone 12C defines, but does not implement, a deterministic authorization gate in `runtime/authorization.md`. Every protected mutation must eventually be authorized immediately before the owning service boundary. An allow decision permits the request to reach that service; the service retains contract, reference, revision, Approval, Event, and transaction authority.
+
+Application/CLI checks alone are insufficient because internal Workflow, Agent, and future background callers could bypass them. The owning mutation service must enforce authorization when the contracts are adopted in a later implementation milestone.
+
 ## Command Idempotency
 
 CLI mutation commands may include an explicit idempotency key. Format v2 persists the key, operation name, and completed result. The same key and operation return the prior result; using the key for another operation fails. Commands without a key preserve prior behavior.
@@ -34,4 +40,4 @@ Local-store failure checkpoints exercise every multi-file write phase. A failed 
 
 ## Next Step
 
-Define local actor authorization capabilities at these service boundaries.
+Define durable Activity and external side-effect contracts without implementing Provider or Tool execution.

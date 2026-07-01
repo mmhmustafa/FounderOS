@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://founderos.dev/contracts/authorization/authorization-policy.schema.json",
+  "title": "FounderOS AuthorizationPolicy Contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id", "version", "status", "name", "default_effect", "combining_algorithm",
+    "rule_refs", "created_at", "updated_at"
+  ],
+  "properties": {
+    "id": { "type": "string", "pattern": "^pol_[0-7][0-9A-HJKMNP-TV-Z]{25}$" },
+    "version": { "$ref": "authorization-common.schema.json#/$defs/semver" },
+    "status": { "type": "string", "enum": ["active", "deprecated"] },
+    "name": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "description": { "type": "string", "minLength": 1, "maxLength": 1000 },
+    "default_effect": { "const": "deny" },
+    "combining_algorithm": { "const": "deny_overrides" },
+    "rule_refs": {
+      "type": "array",
+      "items": { "$ref": "authorization-common.schema.json#/$defs/policyRuleRef" },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "created_at": { "$ref": "authorization-common.schema.json#/$defs/utcTimestamp" },
+    "updated_at": { "$ref": "authorization-common.schema.json#/$defs/utcTimestamp" }
+  }
+}

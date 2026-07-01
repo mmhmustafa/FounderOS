@@ -1,26 +1,24 @@
 # CURRENT_SPRINT
 
-Sprint: Authorization Policy Foundation (Milestone 12C)
+Sprint: Durable Activity and Side-Effect Contracts (Milestone 12D)
 
 ## Goal
-Define and enforce local runtime authorization policy without adding external authentication or lifecycle modules.
+Define durable contracts for bounded, recoverable future Provider and Tool activities without executing either capability.
 
 ## Tasks
-- Define actor capabilities and Project ownership rules
-- Enforce authorization at application and lifecycle service boundaries
-- Protect human Approval and State Machine operations
-- Add redacted denial diagnostics
-- Add positive and negative authorization tests
+- Define Activity identity, exact references, attempts, leases, and deadlines
+- Define cancellation, retry classification, and idempotency
+- Define input/output and external-effect receipts
+- Define crash recovery, reconciliation, and compensation semantics
+- Define correlation with commands, runs, outputs, approvals, decisions, transitions, and Events
 
 ## Definition of Done
-Unauthorized actors cannot mutate protected records or advance state, while authorized local founders retain existing CLI behavior.
+Activity and side-effect contracts are precise enough for later adapters without adding Provider or Tool execution.
 
 ## Out of Scope
-Authentication
+Provider implementation
+Tool implementation
 Validation Runtime
-Product Runtime
-Web UI
-LLM/AI provider integration
 App package/runtime implementation
-Tool execution
-Knowledge runtime
+Web UI
+Cloud/multi-user execution

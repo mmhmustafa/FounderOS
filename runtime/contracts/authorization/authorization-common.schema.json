@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://founderos.dev/contracts/authorization/authorization-common.schema.json",
+  "title": "FounderOS Authorization Common Types",
+  "$defs": {
+    "semver": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+    },
+    "utcTimestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "Z$"
+    },
+    "scalar": {
+      "type": ["string", "number", "integer", "boolean", "null"]
+    },
+    "effect": {
+      "type": "string",
+      "enum": ["allow", "deny"]
+    },
+    "actorType": {
+      "type": "string",
+      "enum": ["human", "agent", "workflow", "tool", "system"]
+    },
+    "actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id"],
+      "properties": {
+        "type": { "$ref": "#/$defs/actorType" },
+        "id": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "display_name": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "attributes": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/scalar" },
+          "maxProperties": 25
+        }
+      }
+    },
+    "action": {
+      "type": "string",
+      "enum": [
+        "project.create", "project.read", "project.update", "project.archive",
+        "artifact.create", "artifact.read", "artifact.update", "artifact.delete", "artifact.approve",
+        "decision.create", "decision.read", "decision.update", "state.transition",
+        "workflow_run.create", "workflow_run.read", "workflow_run.update", "workflow_run.cancel",
+        "agent_run.create", "agent_run.read", "agent_run.update", "agent_run.cancel",
+        "approval.request", "approval.read", "approval.decide",
+        "evaluation.create", "evaluation.read",
+        "agent.register", "workflow.register", "app.execute",
+        "tool.execute", "provider.invoke",
+        "knowledge.read", "knowledge.write", "memory.read", "memory.write",
+        "configuration.read", "configuration.update"
+      ]
+    },
+    "resourceType": {
+      "type": "string",
+      "enum": [
+        "project", "artifact", "decision", "workflow", "workflow_run", "agent", "agent_run",
+        "approval", "evaluation", "transition", "app_package", "knowledge_entry", "memory",
+        "configuration", "tool", "provider"
+      ]
+    },
+    "resource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": { "$ref": "#/$defs/resourceType" },
+        "id": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "project_id": { "type": "string", "pattern": "^prj_[0-7][0-9A-HJKMNP-TV-Z]{25}$" },
+        "version": { "$ref": "#/$defs/semver" },
+        "revision": { "type": "integer", "minimum": 1 },
+        "attributes": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/scalar" },
+          "maxProperties": 25
+        }
+      }
+    },
+    "conditionPath": {
+      "type": "string",
+      "enum": [
+        "actor.type", "actor.id", "action", "resource.type", "resource.id", "resource.project_id",
+        "context.project_owner_id", "context.current_state", "context.command_name", "context.environment"
+      ]
+    },
+    "condition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "operator"],
+      "properties": {
+        "path": { "$ref": "#/$defs/conditionPath" },
+        "operator": {
+          "type": "string",
+          "enum": ["equals", "not_equals", "in", "not_in", "exists", "not_exists"]
+        },
+        "value": {
+          "oneOf": [
+            { "$ref": "#/$defs/scalar" },
+            {
+              "type": "array",
+              "items": { "$ref": "#/$defs/scalar" },
+              "minItems": 1,
+              "uniqueItems": true
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "operator": { "enum": ["exists", "not_exists"] } }, "required": ["operator"] },
+          "then": { "not": { "required": ["value"] } },
+          "else": { "required": ["value"] }
+        }
+      ]
+    },
+    "policyRuleRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^prl_[0-7][0-9A-HJKMNP-TV-Z]{25}$" },
+        "version": { "$ref": "#/$defs/semver" }
+      }
+    }
+  }
+}
