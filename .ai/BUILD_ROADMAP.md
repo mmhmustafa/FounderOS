@@ -240,18 +240,20 @@ Authorization runtime enforcement remains mandatory before Provider or Tool exec
 - [x] Add comprehensive deterministic contract and runner tests
 - [x] Preserve all Planner, Workflow, Provider, Tool, CLI, persistence, and Kernel behavior
 
-### PR-008 - Evaluation Rubric Manifest Schema Foundation (Next)
+### PR-008 - Planner Foundation
 
-- [ ] Define immutable rubric identity, version, rules, score threshold, and target contract metadata
-- [ ] Map declarative rule parameters exactly to the PR-007 runner
-- [ ] Add Manifest Loader and Workspace support only as required for validation/query
-- [ ] Add no Workflow execution, human Approval, persistence, or Kernel mutation
+- [x] Produce immutable deterministic Execution Plans from Workspace Workflows
+- [x] Resolve exact Agent and Artifact references
+- [x] Order steps from Artifact dependencies and reject cycles
+- [x] Insert declared Evaluation and Approval checkpoints
+- [x] Preserve transition intent as a non-authoritative request
+- [x] Add no Workflow execution, persistence, CLI, or Kernel mutation
 
-### PR-009 - Prompt Pack Manifest Schema Foundation
+### PR-009 - Plan Validation and Authorization Request Foundation (Next)
 
-- [ ] Define immutable prompt-pack identity, version, variables, input/output schema references, and safety metadata
-- [ ] Keep prompt text in referenced package assets rather than embedding it in Agent, Workflow, or App manifests
-- [ ] Add deterministic examples and validation without rendering prompts or invoking real Providers
+- [ ] Validate plan references, ordering, checkpoints, and requested capabilities
+- [ ] Translate planned actions into deterministic authorization requests
+- [ ] Add no policy enforcement, execution, persistence, or Kernel mutation
 
 ## Deferred Runtime Hardening
 

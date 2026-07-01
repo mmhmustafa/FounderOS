@@ -1,20 +1,21 @@
 # CURRENT_SPRINT
 
-Sprint: Evaluation Rubric Manifest Schema Foundation (PR-008)
+Sprint: Plan Validation and Authorization Request Foundation (PR-009)
 
 ## Goal
-Define immutable, versioned declarative Evaluation rubrics that map exactly to the deterministic PR-007 runner without adding Workflow execution or persistence.
+Define the deterministic boundary that validates a PR-008 Execution Plan and translates its requested capabilities into authorization requests without executing the plan.
 
 ## Prerequisites Completed
 - PR-001 through PR-005 manifest and Workspace foundations
 - PR-006 Mock Provider Foundation
 - PR-007 Evaluation Contract and Runner Foundation
+- PR-008 Planner Foundation
 
 ## Expected Scope
-- Rubric identity, version, target type, score threshold, and deterministic Evaluation rules
-- Validation for rule parameters supported by PR-007
-- One first-party example plus Manifest Loader/Workspace support only if required
-- No Workflow/Agent execution, Provider invocation, human Approval, CLI, persistence, Event, or Kernel mutation
+- Validate plan structure, references, ordering, and checkpoint invariants
+- Derive authorization requests for planned actions without evaluating policy or executing actions
+- Preserve the Kernel as sole mutation authority
+- No Workflow execution, Provider or Tool invocation, Approval execution, CLI, persistence, Event, or state mutation
 
 ## Definition of Done
-Apps can package a validated rubric whose rules can be translated directly into PR-007 Evaluation contracts without introducing another scoring or execution model.
+A deterministic plan can be checked and expressed as authorization intent before any future executor is introduced.

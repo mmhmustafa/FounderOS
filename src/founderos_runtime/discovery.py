@@ -13,7 +13,7 @@ from .lifecycle import (
     DecisionLifecycleService,
     EvaluationLifecycleService,
 )
-from .planner import Planner
+from .lifecycle_planner import Planner
 from .execution_context import ExecutionContextBuilder
 from .project_state import ProjectStateService, replay_project_events
 from .repositories import RuntimeRepositories

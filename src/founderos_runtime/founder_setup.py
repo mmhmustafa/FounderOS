@@ -11,7 +11,7 @@ from .errors import ApprovalRequiredError, VerticalSliceError
 from .execution_context import ExecutionContextBuilder
 from .ids import new_id, reference, utc_now
 from .lifecycle import ApprovalLifecycleService, ArtifactLifecycleService, EvaluationLifecycleService
-from .planner import ExecutionPlan, Planner
+from .lifecycle_planner import ExecutionPlan, Planner
 from .project_state import ProjectStateService, replay_project_events
 from .repositories import RuntimeRepositories
 from .runs import AgentRunService, WorkflowRunService

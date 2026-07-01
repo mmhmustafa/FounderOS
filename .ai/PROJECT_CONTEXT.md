@@ -61,9 +61,10 @@ Runtime:
 - PR-005 read-only Workspace with bounded discovery, exact manifest relationships, compatibility checks, cycle detection, and deterministic queries
 - PR-006 immutable Provider contracts and deterministic offline Mock Provider with fixtures, error simulation, schema checks, and no runtime mutation
 - PR-007 immutable Evaluation contracts and deterministic quality runner with built-in/custom rules, scoring, and no persisted evidence mutation
+- PR-008 immutable Workspace Execution Plans with exact reference resolution, dependency ordering, checkpoints, and no execution or mutation
 
 ## Current Milestone
-PR-008: define versioned Evaluation Rubric Manifest metadata that maps to the deterministic runner without execution or persistence.
+PR-009: validate Execution Plans and derive authorization requests without execution, policy enforcement, persistence, or mutation.
 
 ## Planned
 - Durable persistence adapters

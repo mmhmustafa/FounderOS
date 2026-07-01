@@ -19,7 +19,8 @@ from .content import InMemoryContentStore
 from .founder_setup import FounderBriefPreparation, FounderSetupCompletion, FounderSetupService, FounderSetupSession
 from .ids import new_id, utc_now
 from .execution_context import ExecutionContext, ExecutionContextBuilder
-from .planner import AgentRouter, ArtifactPlanner, ExecutionPlan, Planner, PlanningError, WorkflowSelector
+from .lifecycle_planner import AgentRouter, ArtifactPlanner, ExecutionPlan, Planner, PlanningError, WorkflowSelector
+from .planner import ExecutionPlan as WorkspaceExecutionPlan, Planner as WorkspacePlanner
 from .project_state import ProjectStateService, replay_project_events
 from .repositories import RuntimeRepositories
 from .runs import AgentRunService, WorkflowRunService
@@ -75,6 +76,8 @@ __all__ = [
     "VerticalSliceError",
     "WorkflowRunService",
     "WorkflowSelector",
+    "WorkspaceExecutionPlan",
+    "WorkspacePlanner",
     "REDACTED",
     "command_correlation",
     "new_id",

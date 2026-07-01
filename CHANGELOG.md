@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### PR-008 - Planner Foundation
+
+- Added a read-only Workspace Planner that produces immutable deterministic Execution Plans from validated Workflow manifests.
+- Added exact Agent and Artifact resolution, Artifact-dependency topological ordering, cycle detection, and descriptive typed planning failures.
+- Added deterministic Evaluation and Approval checkpoint insertion while preserving transition intent as a non-authoritative request.
+- Preserved the existing state-aware lifecycle Planner for CLI and vertical-slice compatibility under an explicit internal module.
+- Added 10 tests covering plan generation, missing references, cycles, checkpoints, determinism, summaries, invalid definitions, and non-mutation.
+- Added no Workflow execution, Provider or Tool calls, Approval execution, persistence, CLI changes, or Kernel state mutation.
+
 ### PR-007 - Evaluation Contract and Runner Foundation
 
 - Added immutable EvaluationRule, EvaluationRequest, EvaluationFinding, and EvaluationResult contracts with explicit severity and rule-type enums.

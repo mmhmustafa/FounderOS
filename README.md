@@ -41,8 +41,9 @@ Completed foundations:
 - PR-005 read-only Workspace for bounded discovery, relationships, compatibility, and deterministic queries
 - PR-006 immutable Provider contracts and a deterministic offline Mock Provider
 - PR-007 immutable Evaluation contracts and deterministic quality-rule runner
+- PR-008 deterministic Workspace Planner with immutable execution plans, dependency ordering, and quality/approval checkpoints
 
-Next: PR-008 Evaluation Rubric Manifest Schema Foundation, packaging deterministic rules without Workflow execution or persistence.
+Next: PR-009 Plan Validation and Authorization Request Foundation, keeping execution and Kernel mutation out of scope.
 
 Most lifecycle agent, prompt, template, domain, and roadmap files remain explicitly marked as planned placeholders. No web application, Validation, or Product module has been implemented; Discovery is currently deterministic and local-only.
 
@@ -69,6 +70,8 @@ The revised [`FounderOS v0.2 Blueprint`](architecture/FounderOS_v0.2_Blueprint.m
 [`founderos_runtime.provider`](src/founderos_runtime/provider/) defines frozen structured generation requests/responses and an offline deterministic Mock Provider. It supports exact fixtures, simulated failures, output-schema validation, correlation, and idempotency metadata without network access, API keys, real models, Provider registry, Activities, execution, persistence, or Kernel mutation.
 
 [`founderos_runtime.evaluation`](src/founderos_runtime/evaluation/) defines frozen rules, requests, findings, results, and a pure deterministic Evaluation Runner. It supports required fields, schemas, minimum lengths, regexes, custom rules, score thresholds, and hard-blocking severity without invoking Providers, executing Workflows, recording Approvals, persisting `evl_` records, or mutating runtime state.
+
+[`founderos_runtime.planner`](src/founderos_runtime/planner/) converts one validated Workspace Workflow into an immutable, deterministic Execution Plan. It resolves exact Agent and Artifact references, orders steps by Artifact dependencies, adds declared Evaluation and Approval checkpoints, and reports non-authoritative transition intent. It does not execute steps, call Providers or Tools, approve work, persist records, or mutate the Workspace or Kernel. The earlier state-aware lifecycle planner remains available through the package root for CLI and vertical-slice compatibility.
 
 ## Developer Setup and Testing
 

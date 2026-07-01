@@ -1,4 +1,4 @@
-"""Deterministic, read-only orchestration planning for FounderOS."""
+"""Legacy deterministic, state-oriented runtime planning preserved for v0.1 flows."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from .state_machine import KNOWN_STATES, RouteRequirement, StateMachine
 
 
 class PlanningError(ValueError):
-    """Execution planning cannot continue from the supplied context."""
+    """Execution planning cannot continue from the supplied state context."""
 
 
 @dataclass(frozen=True)
@@ -32,8 +32,6 @@ class ExecutionPlan:
 
 
 class ArtifactPlanner:
-    """Compare required artifact types with approved completed artifacts."""
-
     def required(self, rule: PlanningRule) -> tuple[str, ...]:
         return tuple(sorted(set(rule.required_artifacts)))
 
@@ -43,15 +41,11 @@ class ArtifactPlanner:
 
 
 class AgentRouter:
-    """Return stable agent-role recommendations without invoking agents or models."""
-
     def recommend(self, rule: PlanningRule) -> tuple[str, ...]:
         return tuple(sorted(set(rule.agent_roles)))
 
 
 class WorkflowSelector:
-    """Select a canonical workflow and explain why progress is blocked."""
-
     def __init__(self, state_machine: StateMachine) -> None:
         self.state_machine = state_machine
 
@@ -75,7 +69,7 @@ class WorkflowSelector:
 
 
 class Planner:
-    """Combine read-only context, artifacts, routing, agents, and state rules."""
+    """Legacy state-context Planner retained for Founder Setup and Discovery v1."""
 
     def __init__(self, state_machine: StateMachine) -> None:
         self.state_machine = state_machine

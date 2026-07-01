@@ -474,3 +474,23 @@ Status: Accepted by PR-007.
 Decision: PR-007 does not persist EvaluationResult, invoke Providers, execute Workflows, record human Approval, call the Planner, or mutate Kernel state.
 Reason: A future authorized lifecycle service must explicitly translate assessment output into runtime Evaluation evidence and authoritative Events.
 Status: Accepted by PR-007.
+
+## D-096
+Decision: PR-008 introduces a Workspace-based Planner under `founderos_runtime.planner`, while the earlier state-aware lifecycle Planner remains an explicit compatibility component.
+Reason: Manifest planning and live Project-state routing answer different questions; preserving the established API avoids breaking the CLI and vertical slices while keeping the new contract boundary coherent.
+Status: Accepted by PR-008.
+
+## D-097
+Decision: Execution Plans are immutable read-only projections whose transition requests are intent, never authorization or Kernel mutation authority.
+Reason: Planning must remain deterministic and independently inspectable before authorization, Activity execution, Approval, persistence, or state mutation occurs.
+Status: Accepted by PR-008.
+
+## D-098
+Decision: Planner step order is a stable topological sort over declared Artifact dependencies, with manifest position and step ID as deterministic tie-breakers.
+Reason: Artifact data flow is the declarative dependency vocabulary already available in Workflow manifests; adding an unrelated orchestration graph would create competing semantics.
+Status: Accepted by PR-008.
+
+## D-099
+Decision: Declared Evaluations and Approvals absent from explicit Workflow steps become synthetic immutable checkpoints in the plan.
+Reason: Quality and human gates must be visible to a future executor even when a manifest declares them at Workflow level rather than as executable steps.
+Status: Accepted by PR-008.
