@@ -1,24 +1,24 @@
 # CURRENT_SPRINT
 
-Sprint: Durable Activity and Side-Effect Contracts (Milestone 12D)
+Sprint: Minimal First-Party App Package Contract (Milestone 12E)
 
 ## Goal
-Define durable contracts for bounded, recoverable future Provider and Tool activities without executing either capability.
+Define immutable bundled App package identity, compatibility, and asset-index contracts without creating an App registry runtime.
 
 ## Tasks
-- Define Activity identity, exact references, attempts, leases, and deadlines
-- Define cancellation, retry classification, and idempotency
-- Define input/output and external-effect receipts
-- Define crash recovery, reconciliation, and compensation semantics
-- Define correlation with commands, runs, outputs, approvals, decisions, transitions, and Events
+- Define package identity, version, and compatible Kernel contract range
+- Index exact Workflow and Agent definition versions
+- Index Artifact schemas, prompts, Evaluation rubrics, policies, fixtures, tests, and documentation
+- Define immutable package content digest and configuration overlay boundary
+- Define historical resolution and first-party bundled trust semantics
 
 ## Definition of Done
-Activity and side-effect contracts are precise enough for later adapters without adding Provider or Tool execution.
+First-party App packaging is precise enough to drive a future Validation slice without duplicating Workflow execution semantics.
 
 ## Out of Scope
-Provider implementation
-Tool implementation
+App registry runtime
+Provider or Tool execution
 Validation Runtime
-App package/runtime implementation
+Marketplace or third-party installation
 Web UI
 Cloud/multi-user execution

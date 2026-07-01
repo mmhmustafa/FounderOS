@@ -147,15 +147,19 @@
 - [x] Add redaction, future enterprise compatibility, diagrams, and an authorization ADR
 - [x] Preserve runtime behavior by keeping contracts outside the active ContractRegistry
 
-## Milestone 12D - Durable Activity and Side-Effect Contracts (Next)
+## Milestone 12D - Durable Activity and Side-Effect Contracts
 
-- [ ] Define activity attempts, leases, deadlines, cancellation, and retry classification
-- [ ] Define external-effect idempotency, receipts, reconciliation, and correlation
-- [ ] Keep Provider and Tool integrations out of scope
+- [x] Define Activity, Request, Result, Record, category, status, attempt, and policy concepts
+- [x] Define retry, timeout, cancellation, compensation, lease, receipt, and failure semantics
+- [x] Define stable idempotency, replay, ambiguous-outcome, and reconciliation rules
+- [x] Define ActivityExecutor, ActivityRegistry, ActivityService, policy evaluator, and audit reader placeholder interfaces
+- [x] Define Activity audit Events, correlation, redaction, and observability
+- [x] Add RFC-0001, placeholder Draft 2020-12 contracts, and ADR-002
+- [x] Keep executors, Providers, Tools, queues, workers, and runtime behavior out of scope
 
 Authorization runtime enforcement remains mandatory before Provider or Tool execution. Milestone 12C defines the boundary but intentionally does not wire it into current services.
 
-## Milestone 12E - Minimal First-Party App Package Contract
+## Milestone 12E - Minimal First-Party App Package Contract (Next)
 
 - [ ] Define package identity, Kernel compatibility, asset index, configuration, and historical resolution
 - [ ] Reuse existing Agent and Workflow definitions and registries

@@ -462,12 +462,13 @@ No Agent OS runtime, App registry runtime, Provider integration, Tool implementa
 
 Executable enforcement remains required before Provider or Tool execution; Milestone 12C intentionally changes no current runtime behavior.
 
-### Milestone 12D — Durable Activity and Side-Effect Contracts — next
+### Milestone 12D — Durable Activity and Side-Effect Contracts — RFC proposed
 
-- Specify activities, attempts, leases, deadlines, cancellation, idempotency, receipts, reconciliation, and correlation.
-- Do not integrate a Provider or Tool.
+- RFC-0001 specifies Activity requests/results, lifecycle records, attempts, leases, deadlines, cancellation, idempotency, receipts, reconciliation, compensation, audit, and correlation.
+- ADR-002 isolates every external side effect from Kernel transactions.
+- Placeholder contracts remain outside the active runtime registry; no Provider, Tool, executor, queue, worker, or side effect is implemented.
 
-### Milestone 12E — Minimal First-Party App Package Contract
+### Milestone 12E — Minimal First-Party App Package Contract — next
 
 - Define package identity, Kernel compatibility, asset index, configuration overlay, historical resolution, and bundled trust.
 - Reuse existing Agent and Workflow contracts and registries.
@@ -534,6 +535,10 @@ Agent, Workflow, knowledge, Provider, and Tool capabilities are modules or outbo
 
 The first package-defined Validation vertical slice determines the minimum App, Agent, Workflow, prompt, Provider, and evidence extensions. Speculative marketplace-scale abstractions are deferred.
 
+### AD-v0.2-07 — External side effects use durable Activities
+
+Every external operation is represented by durable intent before execution, runs outside Kernel transactions, and returns an immutable result/receipt for Kernel validation and recording. Replay never re-executes an Activity; retries preserve one logical identity; ambiguous effects require reconciliation.
+
 ## 21. Remaining Risks
 
 - The authorization capability vocabulary is specified but not yet enforced by runtime services.
@@ -545,6 +550,6 @@ The first package-defined Validation vertical slice determines the minimum App, 
 
 ## 22. Immediate Next Step
 
-Proceed with **Milestone 12D: Durable Activity and Side-Effect Contracts**.
+Proceed with **Milestone 12E: Minimal First-Party App Package Contract** only after accepting RFC-0001 and confirming where authorization and Activity enforcement will be adopted before executable Provider or Tool work.
 
-Do not create App registries, Agent OS runtimes, Provider adapters, Tools, Knowledge services, or Validation behavior during 12D. Authorization enforcement remains a required implementation gate before any Provider or Tool execution.
+Do not create an App registry runtime, Agent OS runtime, Provider adapter, Tool executor, Knowledge service, or Validation behavior during 12E. Authorization and durable Activity enforcement remain required before any Provider or Tool execution.

@@ -25,6 +25,15 @@
 - Added ADR-001 establishing that authorization precedes protected mutation while the Kernel and State Machine retain sole mutation authority.
 - Clarified that authorization, authentication, and human Approval are separate concerns and that Milestone 12C changes no runtime behavior.
 
+### RFC-0001 - Durable Activity and Side-Effect Contracts
+
+- Defined durable Activity intent, result, lifecycle record, categories, statuses, attempts, policies, and audit facts for all future external operations.
+- Defined effectively-once idempotency, deterministic retry, timeout, lease, cancellation, ambiguous-outcome reconciliation, and separate compensation semantics.
+- Added placeholder ActivityExecutor, ActivityRegistry, ActivityService, ActivityPolicyEvaluator, and ActivityAuditReader interfaces without runtime implementation.
+- Added seven non-loaded Draft 2020-12 Activity schemas and reserved authoritative Activity Event types.
+- Added ADR-002 requiring external execution outside Kernel transactions and prohibiting executor repository/Event mutation.
+- Updated the v0.2 Blueprint, runtime boundaries, observability, roadmap, sprint, project context, decisions, and README without adding any executor, Provider, Tool, or side effect.
+
 ### Milestone 11 - Developer Experience and Test Stability
 
 - Added official PowerShell and POSIX test scripts with per-test progress and slow-test diagnostics.

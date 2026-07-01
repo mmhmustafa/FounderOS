@@ -50,7 +50,7 @@ Terminal statuses are `succeeded`, `failed`, and `cancelled`. Terminal WorkflowR
 - `request_approval` creates an Approval; the engine waits for a human decision.
 - `record_decision` delegates to the Decision Engine.
 - `request_transition` delegates to the State Machine only after workflow success.
-- External model/tool calls occur outside Project mutation transactions.
+- Future external model/tool work must create a durable ActivityRequest and execute through the RFC-0001 Activity boundary outside Project mutation transactions.
 
 ## Idempotency
 
@@ -83,4 +83,4 @@ Transient failures create new attempts within policy limits. Input/evidence fail
 
 ## Next Step
 
-Define authorization policy before implementing Validation.
+Define the minimal first-party App package contract while preserving Workflow as the executable unit.

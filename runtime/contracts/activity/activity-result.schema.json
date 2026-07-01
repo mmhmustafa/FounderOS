@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://founderos.dev/contracts/activity/activity-result.schema.json",
+  "title": "FounderOS ActivityResult Contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id", "activity_id", "attempt", "outcome", "output_refs", "output_digest",
+    "started_at", "completed_at", "submitted_at"
+  ],
+  "properties": {
+    "id": { "type": "string", "pattern": "^ars_[0-7][0-9A-HJKMNP-TV-Z]{25}$" },
+    "activity_id": { "$ref": "activity-common.schema.json#/$defs/activityId" },
+    "attempt": { "type": "integer", "minimum": 1 },
+    "outcome": { "$ref": "activity-common.schema.json#/$defs/terminalOutcome" },
+    "output_refs": {
+      "type": "array",
+      "items": { "$ref": "activity-common.schema.json#/$defs/contentReference" },
+      "uniqueItems": true
+    },
+    "output_digest": { "$ref": "activity-common.schema.json#/$defs/digest" },
+    "external_receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["system", "receipt_digest", "idempotency_key_acknowledged"],
+      "properties": {
+        "system": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "external_request_id": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "receipt_digest": { "$ref": "activity-common.schema.json#/$defs/digest" },
+        "idempotency_key_acknowledged": { "type": "boolean" }
+      }
+    },
+    "failure": { "$ref": "activity-common.schema.json#/$defs/failure" },
+    "usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "cost_usd": { "type": "number", "minimum": 0 },
+        "input_units": { "type": "integer", "minimum": 0 },
+        "output_units": { "type": "integer", "minimum": 0 },
+        "duration_ms": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "started_at": { "$ref": "activity-common.schema.json#/$defs/utcTimestamp" },
+    "completed_at": { "$ref": "activity-common.schema.json#/$defs/utcTimestamp" },
+    "submitted_at": { "$ref": "activity-common.schema.json#/$defs/utcTimestamp" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "outcome": { "const": "succeeded" } }, "required": ["outcome"] },
+      "then": { "not": { "required": ["failure"] } },
+      "else": { "required": ["failure"] }
+    }
+  ]
+}

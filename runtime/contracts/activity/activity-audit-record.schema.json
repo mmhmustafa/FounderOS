@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://founderos.dev/contracts/activity/activity-audit-record.schema.json",
+  "title": "FounderOS ActivityAuditRecord Contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id", "activity_id", "project_id", "sequence", "event_type", "actor", "event_id",
+    "correlation_id", "payload_digest", "occurred_at"
+  ],
+  "properties": {
+    "id": { "type": "string", "pattern": "^aua_[0-7][0-9A-HJKMNP-TV-Z]{25}$" },
+    "activity_id": { "$ref": "activity-common.schema.json#/$defs/activityId" },
+    "project_id": { "type": "string", "pattern": "^prj_[0-7][0-9A-HJKMNP-TV-Z]{25}$" },
+    "sequence": { "type": "integer", "minimum": 1 },
+    "event_type": {
+      "type": "string",
+      "enum": [
+        "activity.requested", "activity.authorized", "activity.authorization_denied", "activity.scheduled",
+        "activity.started", "activity.cancellation_requested", "activity.succeeded", "activity.failed",
+        "activity.cancelled", "activity.retry_scheduled", "activity.result_recorded", "activity.result_rejected",
+        "activity.compensation_requested", "activity.reconciliation_required"
+      ]
+    },
+    "status_from": { "$ref": "activity-common.schema.json#/$defs/activityStatus" },
+    "status_to": { "$ref": "activity-common.schema.json#/$defs/activityStatus" },
+    "attempt": { "type": "integer", "minimum": 1 },
+    "actor": { "$ref": "../authorization/authorization-common.schema.json#/$defs/actor" },
+    "event_id": { "type": "string", "pattern": "^evt_[0-7][0-9A-HJKMNP-TV-Z]{25}$" },
+    "correlation_id": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "payload_digest": { "$ref": "activity-common.schema.json#/$defs/digest" },
+    "occurred_at": { "$ref": "activity-common.schema.json#/$defs/utcTimestamp" }
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://founderos.dev/contracts/activity/activity-request.schema.json",
+  "title": "FounderOS ActivityRequest Contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id", "contract_version", "project_id", "requested_by", "activity_type", "operation", "target",
+    "input_refs", "input_digest", "idempotency", "policy_ref", "correlation_id", "requested_at"
+  ],
+  "properties": {
+    "id": { "$ref": "activity-common.schema.json#/$defs/activityId" },
+    "contract_version": { "$ref": "activity-common.schema.json#/$defs/semver" },
+    "project_id": { "type": "string", "pattern": "^prj_[0-7][0-9A-HJKMNP-TV-Z]{25}$" },
+    "workflow_run_id": { "type": "string", "pattern": "^wfr_[0-7][0-9A-HJKMNP-TV-Z]{25}$" },
+    "requested_by": { "$ref": "../authorization/authorization-common.schema.json#/$defs/actor" },
+    "activity_type": { "$ref": "activity-common.schema.json#/$defs/activityType" },
+    "operation": { "type": "string", "pattern": "^[a-z][a-z0-9_.-]{1,199}$" },
+    "target": { "$ref": "activity-common.schema.json#/$defs/target" },
+    "input_refs": {
+      "type": "array",
+      "items": { "$ref": "activity-common.schema.json#/$defs/contentReference" },
+      "uniqueItems": true
+    },
+    "input_digest": { "$ref": "activity-common.schema.json#/$defs/digest" },
+    "idempotency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scope", "key", "request_fingerprint"],
+      "properties": {
+        "scope": { "type": "string", "const": "project_activity_operation" },
+        "key": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "request_fingerprint": { "$ref": "activity-common.schema.json#/$defs/digest" }
+      }
+    },
+    "policy_ref": { "$ref": "activity-common.schema.json#/$defs/policyRef" },
+    "correlation_id": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "causation_event_id": { "type": "string", "pattern": "^evt_[0-7][0-9A-HJKMNP-TV-Z]{25}$" },
+    "compensates_activity_id": { "$ref": "activity-common.schema.json#/$defs/activityId" },
+    "requested_at": { "$ref": "activity-common.schema.json#/$defs/utcTimestamp" }
+  }
+}

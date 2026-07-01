@@ -28,6 +28,8 @@ Founder Brief content is omitted by default. Approval rationale and known sensit
 
 Audit checks confirm gap-free Event sequences, deterministic Project replay equality, and resolution of transition Events to Transition records. Checks report only; they never repair or mutate state.
 
+RFC-0001 reserves future Activity Events and ActivityAuditRecords so audit can trace command, WorkflowRun, ActivityRequest, attempt, external receipt, ActivityResult, and downstream Artifact/Decision/Transition consumption. No Activity telemetry or Event is emitted by the current runtime.
+
 ## Risks
 
 - Correlation timing measures persisted Event timestamps, not CPU or external wall-clock phases.

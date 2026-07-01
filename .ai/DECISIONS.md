@@ -289,3 +289,33 @@ Status: Accepted.
 Decision: Milestone 12C authorization schemas remain under a non-loaded contract subdirectory and are not registered, persisted, or enforced by the current runtime.
 Reason: The milestone was explicitly limited to architecture, contracts, documentation, and placeholder interfaces; future adoption requires deliberate compatibility, persistence, service-wiring, and acceptance-test work.
 Status: Accepted.
+
+## D-059
+Decision: Every future external operation is represented by a durable ActivityRequest before execution and executes outside all FounderOS Kernel mutation transactions.
+Reason: External systems cannot join Kernel transactions and introduce unbounded latency, nondeterminism, partial failure, and side effects that must not be repeated by replay.
+Status: Proposed by RFC-0001.
+
+## D-060
+Decision: One logical Activity retains one immutable request and idempotency identity across all attempts; retries do not create new logical Activities.
+Reason: Stable identity allows command and Workflow replay to reuse recorded outcomes without duplicating external effects.
+Status: Proposed by RFC-0001.
+
+## D-061
+Decision: FounderOS claims effectively-once rather than exactly-once external behavior, using durable intent, stable idempotency, bounded attempts, receipts, and reconciliation.
+Reason: Exactly-once execution cannot be guaranteed across a local transaction and an independent external system.
+Status: Proposed by RFC-0001.
+
+## D-062
+Decision: Ambiguous or non-idempotent external writes are never blindly retried; they require reconciliation, while compensation is a separate linked and newly authorized Activity.
+Reason: A timeout or lost response may occur after an effect succeeded, and rewriting the original Activity would destroy historical truth.
+Status: Proposed by RFC-0001.
+
+## D-063
+Decision: ActivityExecutors perform only external work and return immutable results/receipts; a future Kernel Activity service alone owns ActivityRecord mutation and authoritative Activity Events.
+Reason: Workflows, Agents, Providers, Tools, and workers must not become alternate repository, Event, or Project-state authorities.
+Status: Proposed by RFC-0001.
+
+## D-064
+Decision: Event and Workflow replay reconstruct Activity state and consume recorded results but never invoke an ActivityExecutor.
+Reason: Replay must remain deterministic and cannot repeat nondeterministic or destructive side effects.
+Status: Proposed by RFC-0001.

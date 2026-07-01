@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://founderos.dev/contracts/activity/activity-common.schema.json",
+  "title": "FounderOS Activity Common Types",
+  "$defs": {
+    "semver": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+    },
+    "utcTimestamp": { "type": "string", "format": "date-time", "pattern": "Z$" },
+    "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "scalar": { "type": ["string", "number", "integer", "boolean", "null"] },
+    "activityId": { "type": "string", "pattern": "^act_[0-7][0-9A-HJKMNP-TV-Z]{25}$" },
+    "activityType": {
+      "type": "string",
+      "enum": ["ai", "filesystem", "network", "git", "browser", "shell", "python", "docker", "cloud", "notification", "human_approval"]
+    },
+    "activityStatus": {
+      "type": "string",
+      "enum": ["requested", "authorized", "scheduled", "executing", "cancellation_requested", "succeeded", "failed", "cancelled", "recorded"]
+    },
+    "terminalOutcome": { "type": "string", "enum": ["succeeded", "failed", "cancelled"] },
+    "effectClass": {
+      "type": "string",
+      "enum": ["none", "read_only", "idempotent_write", "reversible_write", "non_idempotent_write", "security_sensitive"]
+    },
+    "failureClass": {
+      "type": "string",
+      "enum": [
+        "retryable", "non_retryable", "compensatable", "timeout", "authorization_denied",
+        "validation_failure", "external_failure", "cancelled", "ambiguous_outcome", "lease_lost", "retry_exhausted"
+      ]
+    },
+    "outcomeKnowledge": { "type": "string", "enum": ["occurred", "not_occurred", "unknown"] },
+    "contentReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["uri", "digest"],
+      "properties": {
+        "uri": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "digest": { "$ref": "#/$defs/digest" },
+        "media_type": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "schema_id": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "schema_version": { "$ref": "#/$defs/semver" }
+      }
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "id": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "uri": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "attributes": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/scalar" },
+          "maxProperties": 25
+        }
+      }
+    },
+    "failure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["class", "code", "retryable", "outcome_knowledge", "message"],
+      "properties": {
+        "class": { "$ref": "#/$defs/failureClass" },
+        "code": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{2,99}$" },
+        "retryable": { "type": "boolean" },
+        "outcome_knowledge": { "$ref": "#/$defs/outcomeKnowledge" },
+        "message": { "type": "string", "minLength": 1, "maxLength": 1000 },
+        "details_digest": { "$ref": "#/$defs/digest" },
+        "external_code": { "type": "string", "minLength": 1, "maxLength": 200 }
+      }
+    },
+    "policyRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^acp_[0-7][0-9A-HJKMNP-TV-Z]{25}$" },
+        "version": { "$ref": "#/$defs/semver" }
+      }
+    },
+    "retryPolicyRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^rtp_[0-7][0-9A-HJKMNP-TV-Z]{25}$" },
+        "version": { "$ref": "#/$defs/semver" }
+      }
+    }
+  }
+}

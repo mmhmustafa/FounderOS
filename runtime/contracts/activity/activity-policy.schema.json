@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://founderos.dev/contracts/activity/activity-policy.schema.json",
+  "title": "FounderOS ActivityPolicy Contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id", "version", "status", "name", "effect_class", "retry_policy_ref", "timeout_policy",
+    "cancellation", "compensation", "requires_human_approval", "budgets", "created_at", "updated_at"
+  ],
+  "properties": {
+    "id": { "type": "string", "pattern": "^acp_[0-7][0-9A-HJKMNP-TV-Z]{25}$" },
+    "version": { "$ref": "activity-common.schema.json#/$defs/semver" },
+    "status": { "type": "string", "enum": ["active", "deprecated"] },
+    "name": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "effect_class": { "$ref": "activity-common.schema.json#/$defs/effectClass" },
+    "retry_policy_ref": { "$ref": "activity-common.schema.json#/$defs/retryPolicyRef" },
+    "timeout_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["queue_timeout_seconds", "execution_timeout_seconds", "total_timeout_seconds"],
+      "properties": {
+        "queue_timeout_seconds": { "type": "integer", "minimum": 1, "maximum": 604800 },
+        "execution_timeout_seconds": { "type": "integer", "minimum": 1, "maximum": 604800 },
+        "total_timeout_seconds": { "type": "integer", "minimum": 1, "maximum": 1209600 }
+      }
+    },
+    "cancellation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["supported", "grace_period_seconds"],
+      "properties": {
+        "supported": { "type": "boolean" },
+        "grace_period_seconds": { "type": "integer", "minimum": 0, "maximum": 86400 }
+      }
+    },
+    "compensation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["supported"],
+      "properties": {
+        "supported": { "type": "boolean" },
+        "operation": { "type": "string", "pattern": "^[a-z][a-z0-9_.-]{1,199}$" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "supported": { "const": true } }, "required": ["supported"] },
+          "then": { "required": ["operation"] },
+          "else": { "not": { "required": ["operation"] } }
+        }
+      ]
+    },
+    "requires_human_approval": { "type": "boolean" },
+    "budgets": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["max_cost_usd", "max_output_bytes"],
+      "properties": {
+        "max_cost_usd": { "type": "number", "minimum": 0 },
+        "max_output_bytes": { "type": "integer", "minimum": 0, "maximum": 1073741824 }
+      }
+    },
+    "created_at": { "$ref": "activity-common.schema.json#/$defs/utcTimestamp" },
+    "updated_at": { "$ref": "activity-common.schema.json#/$defs/utcTimestamp" }
+  }
+}

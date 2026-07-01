@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://founderos.dev/contracts/activity/retry-policy.schema.json",
+  "title": "FounderOS RetryPolicy Contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id", "version", "status", "name", "max_attempts", "backoff", "retryable_failure_classes",
+    "retry_ambiguous_outcome", "created_at", "updated_at"
+  ],
+  "properties": {
+    "id": { "type": "string", "pattern": "^rtp_[0-7][0-9A-HJKMNP-TV-Z]{25}$" },
+    "version": { "$ref": "activity-common.schema.json#/$defs/semver" },
+    "status": { "type": "string", "enum": ["active", "deprecated"] },
+    "name": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "max_attempts": { "type": "integer", "minimum": 1, "maximum": 100 },
+    "backoff": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["strategy", "initial_delay_seconds", "maximum_delay_seconds", "multiplier"],
+      "properties": {
+        "strategy": { "type": "string", "enum": ["none", "fixed", "exponential"] },
+        "initial_delay_seconds": { "type": "number", "minimum": 0, "maximum": 86400 },
+        "maximum_delay_seconds": { "type": "number", "minimum": 0, "maximum": 604800 },
+        "multiplier": { "type": "number", "minimum": 1, "maximum": 100 }
+      }
+    },
+    "retryable_failure_classes": {
+      "type": "array",
+      "items": { "$ref": "activity-common.schema.json#/$defs/failureClass" },
+      "uniqueItems": true
+    },
+    "retry_ambiguous_outcome": { "const": false },
+    "created_at": { "$ref": "activity-common.schema.json#/$defs/utcTimestamp" },
+    "updated_at": { "$ref": "activity-common.schema.json#/$defs/utcTimestamp" }
+  }
+}

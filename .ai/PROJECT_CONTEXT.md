@@ -53,9 +53,10 @@ Runtime:
 - Stable cross-platform pytest setup with official developer test scripts and standard cache behavior
 - FounderOS v0.2 Architecture Review Board and revised implementation-gated Blueprint
 - Runtime authorization architecture, placeholder contracts, deterministic policy semantics, and ADR
+- RFC-0001 durable Activity/side-effect architecture, placeholder contracts, lifecycle, replay, failure semantics, and ADR
 
 ## Current Milestone
-Milestone 12D: define durable Activity and side-effect contracts without implementing Provider or Tool execution.
+Milestone 12E: define the minimal bundled first-party App package contract without implementing an App registry runtime.
 
 ## Planned
 - Durable persistence adapters
@@ -64,7 +65,7 @@ Milestone 12D: define durable Activity and side-effect contracts without impleme
 - Knowledge Entry schema and executable Knowledge Base
 - Executable authorization enforcement at application and Kernel mutation boundaries
 - Authorization decision persistence/audit integration and acceptance tests
-- Durable activity and external side-effect contracts
+- Executable durable Activity service, persistence, scheduling, and enforcement
 - Minimal bundled first-party App package contract
 - Deterministic fake structured-generation Provider
 - Validation and Product runtimes
@@ -77,6 +78,8 @@ The Planner remains read-only. Founder Setup consumes its recommendation and coo
 For v0.2, an App is a package of existing definitions and assets, while Workflow remains the executable unit. FounderOS remains a modular monolith; the Kernel is the sole runtime mutation authority, and authorization precedes Provider or Tool execution.
 
 Milestone 12C defines authorization contracts only. Current services do not yet enforce them, and existing runtime Actor schemas remain unchanged. Runtime enforcement is a required future gate before Provider or Tool execution.
+
+RFC-0001 defines durable Activity contracts only. The current runtime does not record, schedule, execute, retry, cancel, compensate, or audit Activities. Activity and authorization enforcement remain mandatory before Provider or Tool execution.
 
 ## Long-term Goal
 Evolve FounderOS into a web application with persistent project state and AI orchestration.

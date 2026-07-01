@@ -31,6 +31,12 @@ CLI mutation commands may include an explicit idempotency key. Format v2 persist
 
 Local-store failure checkpoints exercise every multi-file write phase. A failed write releases its lock and must leave either a valid primary or a recoverable validated backup.
 
+## Future Activity Boundary
+
+RFC-0001 requires every external side effect to begin as a Kernel-recorded ActivityRequest. Execution occurs outside Kernel transactions through an ActivityExecutor, which returns an immutable ActivityResult and receipt. A future Kernel Activity service alone may mutate ActivityRecord state and append authoritative Activity Events.
+
+Workflows, Agents, Providers, Tools, and executors cannot write repositories or Events directly. Event replay reuses recorded results and never invokes an executor. These are placeholder contracts only; no current service implements them.
+
 ## Risks
 
 - Artifact approval and its Event are not a database transaction; the in-memory boundary relies on runtime locking and local-store recovery.
@@ -40,4 +46,4 @@ Local-store failure checkpoints exercise every multi-file write phase. A failed 
 
 ## Next Step
 
-Define durable Activity and external side-effect contracts without implementing Provider or Tool execution.
+Define the minimal first-party App package contract without adding an App registry runtime.

@@ -49,6 +49,10 @@ This folder is the machine-valid boundary between the FounderOS architecture and
 
 - `authorization/` — Milestone 12C placeholder AuthorizationRequest, AuthorizationDecision, PolicyRule, and AuthorizationPolicy schemas. They are intentionally outside the current runtime registry and do not change executable behavior.
 
+### Future durable Activity contracts
+
+- `activity/` — RFC-0001 placeholder ActivityRequest, ActivityResult, RetryPolicy, ActivityPolicy, ActivityRecord, and ActivityAuditRecord schemas. They are intentionally outside the current runtime registry and implement no executor or side effect.
+
 ## Canonical Conventions
 
 ### Identifiers

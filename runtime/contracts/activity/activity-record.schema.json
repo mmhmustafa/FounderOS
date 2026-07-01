@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://founderos.dev/contracts/activity/activity-record.schema.json",
+  "title": "FounderOS ActivityRecord Contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id", "revision", "activity_id", "project_id", "status", "request_digest", "policy_ref",
+    "attempt_count", "correlation_id", "created_at", "updated_at"
+  ],
+  "properties": {
+    "id": { "type": "string", "pattern": "^acr_[0-7][0-9A-HJKMNP-TV-Z]{25}$" },
+    "revision": { "type": "integer", "minimum": 1 },
+    "activity_id": { "$ref": "activity-common.schema.json#/$defs/activityId" },
+    "project_id": { "type": "string", "pattern": "^prj_[0-7][0-9A-HJKMNP-TV-Z]{25}$" },
+    "status": { "$ref": "activity-common.schema.json#/$defs/activityStatus" },
+    "request_digest": { "$ref": "activity-common.schema.json#/$defs/digest" },
+    "policy_ref": { "$ref": "activity-common.schema.json#/$defs/policyRef" },
+    "authorization_decision_id": { "type": "string", "pattern": "^azd_[0-7][0-9A-HJKMNP-TV-Z]{25}$" },
+    "approval_ids": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^apr_[0-7][0-9A-HJKMNP-TV-Z]{25}$" },
+      "uniqueItems": true
+    },
+    "attempt_count": { "type": "integer", "minimum": 0 },
+    "current_attempt": { "type": "integer", "minimum": 1 },
+    "lease": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["owner_id", "token_digest", "acquired_at", "expires_at"],
+      "properties": {
+        "owner_id": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "token_digest": { "$ref": "activity-common.schema.json#/$defs/digest" },
+        "acquired_at": { "$ref": "activity-common.schema.json#/$defs/utcTimestamp" },
+        "expires_at": { "$ref": "activity-common.schema.json#/$defs/utcTimestamp" }
+      }
+    },
+    "terminal_result_id": { "type": "string", "pattern": "^ars_[0-7][0-9A-HJKMNP-TV-Z]{25}$" },
+    "terminal_outcome": { "$ref": "activity-common.schema.json#/$defs/terminalOutcome" },
+    "correlation_id": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "scheduled_at": { "$ref": "activity-common.schema.json#/$defs/utcTimestamp" },
+    "started_at": { "$ref": "activity-common.schema.json#/$defs/utcTimestamp" },
+    "cancellation_requested_at": { "$ref": "activity-common.schema.json#/$defs/utcTimestamp" },
+    "terminal_at": { "$ref": "activity-common.schema.json#/$defs/utcTimestamp" },
+    "recorded_at": { "$ref": "activity-common.schema.json#/$defs/utcTimestamp" },
+    "created_at": { "$ref": "activity-common.schema.json#/$defs/utcTimestamp" },
+    "updated_at": { "$ref": "activity-common.schema.json#/$defs/utcTimestamp" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "enum": ["authorized", "scheduled", "executing", "cancellation_requested", "succeeded", "failed", "cancelled", "recorded"] } }, "required": ["status"] },
+      "then": { "required": ["authorization_decision_id"] }
+    },
+    {
+      "if": { "properties": { "status": { "enum": ["executing", "cancellation_requested"] } }, "required": ["status"] },
+      "then": { "required": ["current_attempt", "lease", "started_at"] }
+    },
+    {
+      "if": { "properties": { "status": { "enum": ["succeeded", "failed", "cancelled", "recorded"] } }, "required": ["status"] },
+      "then": { "required": ["terminal_result_id", "terminal_outcome", "terminal_at"] }
+    },
+    {
+      "if": { "properties": { "status": { "const": "recorded" } }, "required": ["status"] },
+      "then": { "required": ["recorded_at"] }
+    }
+  ]
+}
