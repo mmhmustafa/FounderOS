@@ -249,7 +249,16 @@ Authorization runtime enforcement remains mandatory before Provider or Tool exec
 - [x] Preserve transition intent as a non-authoritative request
 - [x] Add no Workflow execution, persistence, CLI, or Kernel mutation
 
-### PR-009 - Plan Validation and Authorization Request Foundation (Next)
+### PR-009 - Founder Journey Runner Foundation
+
+- [x] Ask the Workspace Planner for one immutable Execution Plan
+- [x] Execute deterministic sequential Agent tasks through Mock Provider only
+- [x] Run Evaluation checkpoints and stop on critical findings
+- [x] Return immutable in-memory Journey results and ordered logs
+- [x] Explicitly skip Approval, transition, and Activity execution
+- [x] Add no persistence, CLI, real Provider, or Project/Kernel mutation
+
+### PR-010 - Plan Validation and Authorization Request Foundation (Next)
 
 - [ ] Validate plan references, ordering, checkpoints, and requested capabilities
 - [ ] Translate planned actions into deterministic authorization requests

@@ -1,6 +1,6 @@
 # CURRENT_SPRINT
 
-Sprint: Plan Validation and Authorization Request Foundation (PR-009)
+Sprint: Plan Validation and Authorization Request Foundation (PR-010)
 
 ## Goal
 Define the deterministic boundary that validates a PR-008 Execution Plan and translates its requested capabilities into authorization requests without executing the plan.
@@ -10,6 +10,7 @@ Define the deterministic boundary that validates a PR-008 Execution Plan and tra
 - PR-006 Mock Provider Foundation
 - PR-007 Evaluation Contract and Runner Foundation
 - PR-008 Planner Foundation
+- PR-009 Founder Journey Runner Foundation
 
 ## Expected Scope
 - Validate plan structure, references, ordering, and checkpoint invariants

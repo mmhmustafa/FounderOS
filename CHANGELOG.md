@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### PR-009 - Founder Journey Runner Foundation
+
+- Added an in-memory deterministic Journey Runner that consumes one Workspace Planner Execution Plan without replanning.
+- Added immutable JourneyResult values containing completed/skipped steps, Evaluation results, generated Artifacts, ordered logs, and execution metadata.
+- Added sequential Mock Provider Agent-task execution and deterministic Evaluation checkpoints with critical-failure stopping.
+- Explicitly skipped Approval, transition-request, and Activity execution rather than claiming unavailable authority or side effects.
+- Added 10 tests covering Discovery orchestration, Provider calls, Evaluation success/failure, unknown and empty plans, determinism, summaries, multiple Agent steps, Artifact results, and Workspace non-mutation.
+- Added no persistence, CLI, real Provider, human interaction, asynchronous execution, Event recording, or Project/Kernel state mutation.
+
 ### PR-008 - Planner Foundation
 
 - Added a read-only Workspace Planner that produces immutable deterministic Execution Plans from validated Workflow manifests.

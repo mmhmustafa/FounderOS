@@ -494,3 +494,23 @@ Status: Accepted by PR-008.
 Decision: Declared Evaluations and Approvals absent from explicit Workflow steps become synthetic immutable checkpoints in the plan.
 Reason: Quality and human gates must be visible to a future executor even when a manifest declares them at Workflow level rather than as executable steps.
 Status: Accepted by PR-008.
+
+## D-100
+Decision: PR-009 Journey Runner consumes exactly one Planner result and never replans, retries, branches, or reorders steps during a run.
+Reason: Separating decision from performance preserves deterministic plan semantics and prevents execution-time policy from silently becoming a second Planner.
+Status: Accepted by PR-009.
+
+## D-101
+Decision: Journey Runner accepts only the in-process deterministic Mock Provider and retains all generated Artifacts, Evaluations, and logs in an immutable result.
+Reason: PR-009 proves orchestration composition without network access, durable side effects, persistence, credentials, or Kernel mutation.
+Status: Accepted by PR-009.
+
+## D-102
+Decision: Approval, transition-request, and Activity-request steps are recorded as skipped rather than simulated or applied.
+Reason: Human Approval, authorization, durable Activities, and State Machine mutation require boundaries that this test harness does not own.
+Status: Accepted by PR-009.
+
+## D-103
+Decision: Until rubric assets are loadable, every required Journey evaluation applies the Evaluation Runner's non-empty check plus a critical non-null subject rule.
+Reason: The runner must stop deterministically on critical absence without inventing the domain semantics of a referenced but unloaded rubric.
+Status: Accepted by PR-009.

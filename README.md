@@ -42,8 +42,9 @@ Completed foundations:
 - PR-006 immutable Provider contracts and a deterministic offline Mock Provider
 - PR-007 immutable Evaluation contracts and deterministic quality-rule runner
 - PR-008 deterministic Workspace Planner with immutable execution plans, dependency ordering, and quality/approval checkpoints
+- PR-009 deterministic in-memory Journey Runner over Planner, Mock Provider, and Evaluation
 
-Next: PR-009 Plan Validation and Authorization Request Foundation, keeping execution and Kernel mutation out of scope.
+Next: PR-010 Plan Validation and Authorization Request Foundation before any durable or external execution.
 
 Most lifecycle agent, prompt, template, domain, and roadmap files remain explicitly marked as planned placeholders. No web application, Validation, or Product module has been implemented; Discovery is currently deterministic and local-only.
 
@@ -71,7 +72,9 @@ The revised [`FounderOS v0.2 Blueprint`](architecture/FounderOS_v0.2_Blueprint.m
 
 [`founderos_runtime.evaluation`](src/founderos_runtime/evaluation/) defines frozen rules, requests, findings, results, and a pure deterministic Evaluation Runner. It supports required fields, schemas, minimum lengths, regexes, custom rules, score thresholds, and hard-blocking severity without invoking Providers, executing Workflows, recording Approvals, persisting `evl_` records, or mutating runtime state.
 
-[`founderos_runtime.planner`](src/founderos_runtime/planner/) converts one validated Workspace Workflow into an immutable, deterministic Execution Plan. It resolves exact Agent and Artifact references, orders steps by Artifact dependencies, adds declared Evaluation and Approval checkpoints, and reports non-authoritative transition intent. It does not execute steps, call Providers or Tools, approve work, persist records, or mutate the Workspace or Kernel. The earlier state-aware lifecycle planner remains available through the package root for CLI and vertical-slice compatibility.
+[ounderos_runtime.planner](src/founderos_runtime/planner/) converts one validated Workspace Workflow into an immutable, deterministic Execution Plan. It resolves exact Agent and Artifact references, orders steps by Artifact dependencies, adds declared Evaluation and Approval checkpoints, and reports non-authoritative transition intent. It does not execute steps, call Providers or Tools, approve work, persist records, or mutate the Workspace or Kernel. The earlier state-aware lifecycle planner remains available through the package root for CLI and vertical-slice compatibility.
+
+[ounderos_runtime.journey](src/founderos_runtime/journey/) is a deterministic in-memory orchestration harness. It asks the Workspace Planner for one plan, executes sequential Agent tasks through MockProvider, runs deterministic Evaluation checkpoints, stops on critical findings, and returns an immutable JourneyResult. Approval, transition, and Activity steps are explicitly skipped; no files, Events, repositories, Project state, real Providers, or external systems are touched.
 
 ## Developer Setup and Testing
 
