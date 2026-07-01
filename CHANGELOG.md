@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### PR-003 - App Package Manifest Schema Foundation
+
+- Added a self-contained JSON Schema Draft 2020-12 App Package Manifest contract expressed as YAML.
+- Added a valid Discovery App example indexing the Discovery Workflow, Product Manager and Market Research Agents, Opportunity Report schema, prompt pack, Evaluation rule, policy requirement, deterministic fixture, and documentation.
+- Added namespaced package identity, Semantic Versioning, canonical runtime/dependency ranges, first-party publisher metadata, content digest shape, safe package-relative paths, and immutable exact definition references.
+- Added deterministic structural and semantic tests for required fields, identity, versions, maturity, non-empty Workflow/Agent indexes, duplicate Workflow IDs, runtime compatibility, dependency format, and prohibited execution/runtime-authority fields.
+- Kept the App contract outside the active runtime registry; no loader, registry, marketplace, plugin installation, Workflow execution, Provider, Tool, CLI, or runtime behavior changed.
+
 ### PR-002 - Workflow Manifest Schema Foundation
 
 - Added a self-contained JSON Schema Draft 2020-12 Workflow Manifest contract expressed as YAML.

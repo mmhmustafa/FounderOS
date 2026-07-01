@@ -87,4 +87,4 @@ The current `ContractRegistry` is non-recursive and does not load this directory
 
 ## Risks and Next Step
 
-No package resolver currently proves that referenced Agent or rubric versions exist, and no runtime adopts this manifest. The next PR should define the minimal first-party App Package Manifest that indexes exact Workflow, Agent, schema, rubric, policy, fixture, and documentation assets without implementing an App registry.
+No package resolver currently proves that referenced Agent or rubric versions exist, and no runtime adopts this manifest. PR-003 now defines the first-party App Package Manifest that indexes exact Workflow, Agent, schema, prompt, rubric, fixture, and documentation assets; loading and resolution remain deferred.

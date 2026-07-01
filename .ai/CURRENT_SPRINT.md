@@ -1,19 +1,19 @@
 # CURRENT_SPRINT
 
-Sprint: Minimal First-Party App Package Manifest Foundation (PR-003)
+Sprint: Prompt Pack Manifest Schema Foundation (PR-004)
 
 ## Goal
-Define an immutable, independently validated first-party App Package Manifest that indexes exact Workflow and Agent definitions plus supporting assets without introducing execution or registry behavior.
+Define immutable, versioned prompt-pack metadata and safe asset references without implementing prompt rendering or Provider integration.
 
 ## Prerequisites Completed
 - PR-001 Agent Manifest Schema Foundation
 - PR-002 Workflow Manifest Schema Foundation
+- PR-003 App Package Manifest Schema Foundation
 
 ## Expected Scope
-- Package identity, version, Kernel compatibility, first-party trust declaration, and content digest
-- Exact Workflow and Agent definition references
-- Schema, prompt, rubric, policy, fixture, test, documentation, and configuration-overlay references
-- No App registry, installation, execution, Provider, Tool, CLI, Web UI, or marketplace behavior
+- Prompt-pack identity, version, purpose, variables, input/output schema references, safety/data-handling metadata, and template asset references
+- Deterministic schema validation and a first-party example
+- No prompt renderer, Provider integration, model configuration, Agent execution, App loading, CLI, or Web UI
 
 ## Definition of Done
-A bundled first-party App package can be validated as an immutable asset index without duplicating Workflow execution semantics or Kernel mutation authority.
+Apps can index a precise prompt-pack contract while prompt content remains a separate immutable asset and no execution capability is introduced.

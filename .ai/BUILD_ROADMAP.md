@@ -197,12 +197,19 @@ Authorization runtime enforcement remains mandatory before Provider or Tool exec
 - [x] Add a Discovery example and deterministic structural/semantic validation
 - [x] Preserve all existing runtime behavior
 
-### PR-003 - Minimal First-Party App Package Manifest Foundation (Next)
+### PR-003 - Minimal First-Party App Package Manifest Foundation
 
-- [ ] Define immutable package identity, Kernel compatibility, and bundled trust metadata
-- [ ] Index exact Workflow and Agent definitions plus schemas, prompts, rubrics, policies, fixtures, tests, and documentation
-- [ ] Define content digest and configuration overlay boundaries
-- [ ] Add contract examples and deterministic validation without implementing an App registry
+- [x] Define immutable namespaced package identity, runtime compatibility, and bundled first-party trust metadata
+- [x] Index exact Workflow and Agent definitions plus schemas, prompts, rubrics, fixtures, and documentation
+- [x] Define content digest shape, bounded dependencies, and safe package-relative paths
+- [x] Add a Discovery App example and deterministic structural/semantic validation
+- [x] Preserve all existing runtime behavior
+
+### PR-004 - Prompt Pack Manifest Schema Foundation (Next)
+
+- [ ] Define immutable prompt-pack identity, version, variables, input/output schema references, and safety metadata
+- [ ] Keep prompt text in referenced package assets rather than embedding it in Agent, Workflow, or App manifests
+- [ ] Add deterministic examples and validation without rendering prompts or invoking Providers
 
 ## Deferred Runtime Hardening
 

@@ -354,3 +354,23 @@ Status: Accepted by PR-002.
 Decision: PR-002 Workflow Manifest contracts and semantic validation remain outside the active runtime registry and do not replace the v0.1 Workflow runtime schema.
 Reason: This PR establishes independently testable package contracts while intentionally deferring loading, registry, coordination, execution, migration, and runtime adoption.
 Status: Accepted by PR-002.
+
+## D-072
+Decision: An App Package Manifest is an immutable, versioned asset index and never an executable process or runtime mutation authority.
+Reason: Packaging exact Workflows, Agents, schemas, prompts, Evaluation rules, fixtures, and documentation enables composition without duplicating Workflow execution or Kernel ownership.
+Status: Accepted by PR-003.
+
+## D-073
+Decision: App packages use stable namespaced identities such as `founderos.discovery` rather than a new runtime-entity ULID prefix.
+Reason: App is a packaging/deployment concept, not a sixth persisted core object, and namespaced identities support future publisher and marketplace boundaries.
+Status: Accepted by PR-003.
+
+## D-074
+Decision: Initial App runtime and dependency compatibility use the canonical bounded form `>=X.Y.Z <A.B.C`, and published package assets are identified by an exact SHA-256 digest shape.
+Reason: A deliberately narrow compatibility grammar and immutable content identity are deterministic and reviewable without prematurely implementing a package manager or canonical archive algorithm.
+Status: Accepted by PR-003.
+
+## D-075
+Decision: PR-003 accepts bundled `first_party` publisher trust only and keeps App contracts outside the active runtime registry.
+Reason: Signing, third-party trust, installation, dependency resolution, marketplace behavior, loading, and execution require later security and lifecycle architecture and are not implied by a schema-valid package.
+Status: Accepted by PR-003.

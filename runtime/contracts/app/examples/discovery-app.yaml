@@ -1,0 +1,52 @@
+id: founderos.discovery
+name: FounderOS Discovery
+version: 1.0.0
+description: Packages the definitions and assets needed for the deterministic FounderOS Discovery capability.
+domain: b2b_saas_discovery
+status: active
+maturity: experimental
+compatible_runtime: '>=0.1.0 <1.0.0'
+publisher:
+  id: founderos.platform
+  name: FounderOS
+  trust: first_party
+content_digest: sha256:8ef5d50bf6387f0cc03a7f9d7ab56023f15a45cdbb99ec619631934a537f26ca
+workflows:
+  - id: wfl_01ARZ3NDEKTSV4RRFFQ69G5FAW
+    version: 1.0.0
+    manifest_ref: workflows/discovery-workflow.yaml
+agents:
+  - id: agt_01ARZ3NDEKTSV4RRFFQ69G5FAV
+    version: 1.0.0
+    manifest_ref: agents/product-manager.yaml
+  - id: agt_01ARZ3NDEKTSV4RRFFQ69G5FAX
+    version: 1.0.0
+    manifest_ref: agents/market-research.yaml
+artifacts:
+  - id: opportunity_report
+    version: 1.0.0
+    schema_ref: schemas/opportunity-report.schema.json
+prompts:
+  - id: discovery_research
+    version: 1.0.0
+    path: prompts/discovery-research.v1.md
+evaluations:
+  - id: opportunity_quality
+    version: 1.0.0
+    path: evaluations/opportunity-quality.v1.yaml
+policies:
+  - id: discovery_capabilities
+    version: 1.0.0
+    path: policies/discovery-capabilities.v1.yaml
+fixtures:
+  - id: deterministic_opportunities
+    path: fixtures/discovery-opportunities.json
+    sha256: 87f58de7fe0d4259a3e591b5c7a51651b73d559d3049f3ef0743922b290b8aa4
+documentation:
+  - id: discovery_guide
+    path: docs/discovery.md
+dependencies: []
+tags:
+  - discovery
+  - b2b_saas
+  - first_party

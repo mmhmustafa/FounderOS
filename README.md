@@ -36,8 +36,9 @@ Completed foundations:
 - RFC-0001 durable Activity and side-effect contracts with idempotency, retry, cancellation, compensation, receipts, and audit semantics
 - PR-001 Agent Manifest schema with an independently validated Product Manager definition
 - PR-002 Workflow Manifest schema with lifecycle/utility boundaries and a validated Discovery definition
+- PR-003 App Package Manifest schema with immutable first-party asset indexing and a validated Discovery App
 
-Next: PR-003 Minimal First-Party App Package Manifest Foundation, indexing exact definitions and assets without implementing an App registry.
+Next: PR-004 Prompt Pack Manifest Schema Foundation, defining versioned prompt assets without rendering or Provider integration.
 
 Most lifecycle agent, prompt, template, domain, and roadmap files remain explicitly marked as planned placeholders. No web application, Validation, or Product module has been implemented; Discovery is currently deterministic and local-only.
 
@@ -54,6 +55,8 @@ The revised [`FounderOS v0.2 Blueprint`](architecture/FounderOS_v0.2_Blueprint.m
 [`runtime/contracts/agent/`](runtime/contracts/agent/) contains the first v0.3 package contract: a strict, versioned Agent Manifest schema and Product Manager example. Manifests declare stateless role metadata and constraints; they contain no prompts, secrets, memory, runtime state, Provider/model configuration, or execution behavior. The current runtime loader does not load this subdirectory.
 
 [`runtime/contracts/workflow/`](runtime/contracts/workflow/) defines the strict, versioned Workflow Manifest and a conceptual Discovery example. Lifecycle Workflows may declare transition intent; utility Workflows are structurally barred from doing so. Manifests coordinate declarations only: they do not execute steps, grant authorization, perform Activities, create Approvals, or mutate Project state. The current runtime loader does not load this subdirectory.
+
+[`runtime/contracts/app/`](runtime/contracts/app/) defines the strict, versioned App Package Manifest and a Discovery App example. Apps index exact Workflow and Agent definitions plus schemas, prompts, Evaluation rules, policy requirements, fixtures, documentation, and bounded dependencies. Apps are packaging only: they do not execute, grant capabilities, own memory, call Providers or Tools, or mutate the runtime. The current runtime loader does not load this subdirectory.
 
 ## Developer Setup and Testing
 

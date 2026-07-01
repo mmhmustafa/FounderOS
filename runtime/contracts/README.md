@@ -61,6 +61,10 @@ This folder is the machine-valid boundary between the FounderOS architecture and
 
 - `workflow/workflow.schema.yaml` - PR-002's independently validated, versioned Workflow Manifest contract and Discovery example. It defines declarative process coordination and lifecycle/utility boundaries without replacing the active `workflow.schema.json` contract or implementing execution.
 
+### App package contracts
+
+- `app/app.schema.yaml` - PR-003's independently validated, versioned App Package Manifest contract and Discovery App example. It indexes exact definitions and assets without adding an App runtime, registry, installer, or execution authority.
+
 ## Canonical Conventions
 
 ### Identifiers
