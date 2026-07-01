@@ -65,6 +65,10 @@ This folder is the machine-valid boundary between the FounderOS architecture and
 
 - `app/app.schema.yaml` - PR-003's independently validated, versioned App Package Manifest contract and Discovery App example. It indexes exact definitions and assets without adding an App runtime, registry, installer, or execution authority.
 
+### Manifest loading
+
+`src/founderos_runtime/manifest_loader/` provides explicit Agent, Workflow, and App YAML loading with structural and semantic validation. It is separate from the active runtime `ContractRegistry`: loading returns a defensive object but performs no registration, resolution, installation, execution, or mutation.
+
 ## Canonical Conventions
 
 ### Identifiers

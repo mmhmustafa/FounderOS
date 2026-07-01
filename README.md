@@ -37,8 +37,9 @@ Completed foundations:
 - PR-001 Agent Manifest schema with an independently validated Product Manager definition
 - PR-002 Workflow Manifest schema with lifecycle/utility boundaries and a validated Discovery definition
 - PR-003 App Package Manifest schema with immutable first-party asset indexing and a validated Discovery App
+- PR-004 deterministic Manifest Loader for explicit Agent, Workflow, and App YAML validation
 
-Next: PR-004 Prompt Pack Manifest Schema Foundation, defining versioned prompt assets without rendering or Provider integration.
+Next: PR-005 Bounded Manifest Discovery Foundation, locating supported manifests under explicit roots without registration or execution.
 
 Most lifecycle agent, prompt, template, domain, and roadmap files remain explicitly marked as planned placeholders. No web application, Validation, or Product module has been implemented; Discovery is currently deterministic and local-only.
 
@@ -52,11 +53,13 @@ The revised [`FounderOS v0.2 Blueprint`](architecture/FounderOS_v0.2_Blueprint.m
 
 [`RFC-0001`](docs/rfcs/RFC-0001-durable-activity-and-side-effect-contracts.md) defines the required boundary for future external operations. Workflows create durable Activity intent through a future Kernel service; executors run outside Kernel transactions and submit immutable results/receipts. Replay reuses recorded results and never repeats an external effect. Placeholder schemas under `runtime/contracts/activity/` are intentionally not loaded or implemented.
 
-[`runtime/contracts/agent/`](runtime/contracts/agent/) contains the first v0.3 package contract: a strict, versioned Agent Manifest schema and Product Manager example. Manifests declare stateless role metadata and constraints; they contain no prompts, secrets, memory, runtime state, Provider/model configuration, or execution behavior. The current runtime loader does not load this subdirectory.
+[`runtime/contracts/agent/`](runtime/contracts/agent/) contains the first v0.3 package contract: a strict, versioned Agent Manifest schema and Product Manager example. Manifests declare stateless role metadata and constraints; they contain no prompts, secrets, memory, runtime state, Provider/model configuration, or execution behavior.
 
-[`runtime/contracts/workflow/`](runtime/contracts/workflow/) defines the strict, versioned Workflow Manifest and a conceptual Discovery example. Lifecycle Workflows may declare transition intent; utility Workflows are structurally barred from doing so. Manifests coordinate declarations only: they do not execute steps, grant authorization, perform Activities, create Approvals, or mutate Project state. The current runtime loader does not load this subdirectory.
+[`runtime/contracts/workflow/`](runtime/contracts/workflow/) defines the strict, versioned Workflow Manifest and a conceptual Discovery example. Lifecycle Workflows may declare transition intent; utility Workflows are structurally barred from doing so. Manifests coordinate declarations only: they do not execute steps, grant authorization, perform Activities, create Approvals, or mutate Project state.
 
-[`runtime/contracts/app/`](runtime/contracts/app/) defines the strict, versioned App Package Manifest and a Discovery App example. Apps index exact Workflow and Agent definitions plus schemas, prompts, Evaluation rules, policy requirements, fixtures, documentation, and bounded dependencies. Apps are packaging only: they do not execute, grant capabilities, own memory, call Providers or Tools, or mutate the runtime. The current runtime loader does not load this subdirectory.
+[`runtime/contracts/app/`](runtime/contracts/app/) defines the strict, versioned App Package Manifest and a Discovery App example. Apps index exact Workflow and Agent definitions plus schemas, prompts, Evaluation rules, policy requirements, fixtures, documentation, and bounded dependencies. Apps are packaging only: they do not execute, grant capabilities, own memory, call Providers or Tools, or mutate the runtime.
+
+[`founderos_runtime.manifest_loader`](src/founderos_runtime/manifest_loader/) explicitly loads and validates requested Agent, Workflow, and App YAML paths. It returns defensive parsed objects and typed deterministic errors; it performs no discovery, caching, registration, reference resolution, execution, authorization, persistence, or Kernel mutation.
 
 ## Developer Setup and Testing
 
@@ -100,7 +103,7 @@ The direct runner command is also supported:
 
 ## Runtime Foundation
 
-FounderOS uses `jsonschema` 4.x as its only runtime dependency. The package lives in `src/founderos_runtime/`.
+FounderOS uses `jsonschema` 4.x for contract validation and PyYAML 6.x for safe manifest parsing. The package lives in `src/founderos_runtime/`.
 
 The runtime can currently validate contracts, create Projects in memory, execute Founder Setup, persist a structured Founder Brief in memory, require human approval, enforce optimistic revisions and transition guards, append ordered Events, and replay Project state.
 

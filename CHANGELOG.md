@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### PR-004 - Manifest Loader Foundation
+
+- Added a stateless `founderos_runtime.manifest_loader` package with explicit Agent, Workflow, and App loading APIs.
+- Added safe YAML parsing, per-kind schema selection, Draft 2020-12 validation, and established Workflow/App semantic validation.
+- Added typed missing-file, read, malformed-YAML, invalid-schema, and validation exceptions carrying deterministic `file`, `field`, and `reason` details.
+- Added 13 tests covering valid manifests, missing files, malformed YAML/UTF-8, invalid schemas, structural failures, unknown/missing fields, error messages, semantic regressions, deterministic selection, and no caching.
+- Promoted PyYAML from development-only to a runtime dependency because manifest parsing is now executable behavior.
+- Added no discovery, registry, resolution, installation, execution, Provider, Tool, CLI, State Machine, persistence, or Kernel integration.
+
 ### PR-003 - App Package Manifest Schema Foundation
 
 - Added a self-contained JSON Schema Draft 2020-12 App Package Manifest contract expressed as YAML.

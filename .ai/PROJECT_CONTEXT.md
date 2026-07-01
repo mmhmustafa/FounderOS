@@ -57,9 +57,10 @@ Runtime:
 - PR-001 versioned Agent Manifest schema, Product Manager example, and independent deterministic validation
 - PR-002 versioned Workflow Manifest schema, Discovery example, lifecycle/utility boundaries, and semantic reference validation
 - PR-003 versioned App Package Manifest schema, Discovery App example, first-party asset index, and package-boundary validation
+- PR-004 stateless Manifest Loader with safe YAML parsing, deterministic structural/semantic validation, and typed contextual errors
 
 ## Current Milestone
-PR-004: define versioned Prompt Pack Manifest metadata without implementing rendering or Provider integration.
+PR-005: discover and validate supported manifests beneath bounded roots without implementing a registry or execution.
 
 ## Planned
 - Durable persistence adapters
@@ -70,6 +71,7 @@ PR-004: define versioned Prompt Pack Manifest metadata without implementing rend
 - Authorization decision persistence/audit integration and acceptance tests
 - Executable durable Activity service, persistence, scheduling, and enforcement
 - Minimal bundled first-party App package contract
+- Bounded Manifest Discovery service
 - Versioned Prompt Pack Manifest contract
 - Deterministic fake structured-generation Provider
 - Validation and Product runtimes

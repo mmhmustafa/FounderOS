@@ -58,7 +58,7 @@ Install development dependencies and run the focused contract tests:
 .\.venv\Scripts\python.exe -m pytest tests/test_agent_manifest_schema.py -q
 ```
 
-The schema is intentionally below a non-recursive contract subdirectory. The current runtime `ContractRegistry` does not load it, so PR-001 adds independent validation without changing runtime behavior.
+The active runtime `ContractRegistry` remains non-recursive and does not adopt this definition. PR-004's explicit Manifest Loader can validate a requested Agent Manifest path without registering or executing it.
 
 ## Dependencies
 

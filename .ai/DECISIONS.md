@@ -374,3 +374,28 @@ Status: Accepted by PR-003.
 Decision: PR-003 accepts bundled `first_party` publisher trust only and keeps App contracts outside the active runtime registry.
 Reason: Signing, third-party trust, installation, dependency resolution, marketplace behavior, loading, and execution require later security and lifecycle architecture and are not implied by a schema-valid package.
 Status: Accepted by PR-003.
+
+## D-076
+Decision: Executable manifest loading lives under `src/founderos_runtime/manifest_loader/`, while `runtime/contracts/` remains the authoritative schema and specification source.
+Reason: Python behavior belongs in the established runtime package, and duplicating schemas into code would create competing contract authorities.
+Status: Accepted by PR-004.
+
+## D-077
+Decision: The Manifest Loader is stateless and uncached; every call rereads and validates the exact schema and requested YAML file before returning a defensive object.
+Reason: Determinism and immediate contract-file fidelity matter more than premature optimization, while caching would introduce invalidation and hidden lifecycle semantics.
+Status: Accepted by PR-004.
+
+## D-078
+Decision: Manifest loading applies both Draft 2020-12 structural validation and the semantic cross-field invariants established by the Workflow and App contract PRs.
+Reason: Returning a structurally valid but referentially contradictory object as “validated” would weaken the package contracts before a registry exists.
+Status: Accepted by PR-004.
+
+## D-079
+Decision: Manifest Loader failures are typed and carry deterministic `file`, `field`, and `reason` details.
+Reason: Callers and tests need actionable diagnostics without parsing generic YAML, filesystem, or jsonschema exception text.
+Status: Accepted by PR-004.
+
+## D-080
+Decision: PyYAML is a runtime dependency beginning with PR-004.
+Reason: Safe YAML parsing is now production loader behavior rather than test-only contract tooling.
+Status: Accepted by PR-004.

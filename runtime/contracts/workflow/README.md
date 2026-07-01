@@ -60,7 +60,7 @@ JSON Schema validates shape, enums, lifecycle/utility transition boundaries, exa
 4. transition Approval references resolve to required manifest Approval declarations; and
 5. IDs for steps, Artifacts, Evaluations, and Approvals are unique in their scopes.
 
-PR-002 exercises these semantic invariants in contract tests only. No loader or runtime validator is introduced.
+PR-002 established these semantic invariants in contract tests. PR-004's explicit Manifest Loader now applies the same invariants when a Workflow Manifest path is requested, without registering or executing it.
 
 ## Identity, Compatibility, and Recovery
 
@@ -75,7 +75,7 @@ Recovery declarations bound attempts and state what a future coordinator should 
 .\.venv\Scripts\python.exe -m pytest tests/test_workflow_manifest_schema.py -q
 ```
 
-The current `ContractRegistry` is non-recursive and does not load this directory. The active `workflow.schema.json`, runtime services, Planner, Discovery implementation, CLI, and persistence behavior remain unchanged.
+The active `ContractRegistry` remains non-recursive and does not adopt this definition. PR-004's explicit Manifest Loader validates a requested path only; the active `workflow.schema.json`, runtime services, Planner, Discovery implementation, CLI, and persistence behavior remain unchanged.
 
 ## Dependencies
 

@@ -205,7 +205,22 @@ Authorization runtime enforcement remains mandatory before Provider or Tool exec
 - [x] Add a Discovery App example and deterministic structural/semantic validation
 - [x] Preserve all existing runtime behavior
 
-### PR-004 - Prompt Pack Manifest Schema Foundation (Next)
+### PR-004 - Manifest Loader Foundation
+
+- [x] Add explicit Agent, Workflow, and App YAML loading APIs
+- [x] Validate schemas, structure, and established semantic invariants deterministically
+- [x] Return defensive parsed objects and typed file/field/reason failures
+- [x] Keep loading stateless, uncached, read-only, and independent from Kernel, execution, Providers, and registries
+- [x] Add comprehensive loader and regression tests
+
+### PR-005 - Bounded Manifest Discovery Foundation (Next)
+
+- [ ] Discover only supported manifest filenames beneath explicit trusted roots
+- [ ] Reject unsafe roots, symlink escapes, ambiguous kinds, and duplicate physical paths
+- [ ] Delegate every discovered file to PR-004 loading and validation
+- [ ] Return deterministic read-only discovery results without registration, version resolution, or execution
+
+### PR-006 - Prompt Pack Manifest Schema Foundation
 
 - [ ] Define immutable prompt-pack identity, version, variables, input/output schema references, and safety metadata
 - [ ] Keep prompt text in referenced package assets rather than embedding it in Agent, Workflow, or App manifests

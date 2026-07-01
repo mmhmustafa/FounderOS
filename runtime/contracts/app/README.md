@@ -71,7 +71,7 @@ JSON Schema validates structure, enums, exact reference forms, safe paths, compa
 .\.venv\Scripts\python.exe -m pytest tests/test_app_manifest_schema.py -q
 ```
 
-The current `ContractRegistry` is non-recursive and does not load this directory. No loader, registry, installation, execution, CLI, Provider, Tool, marketplace, or runtime behavior is introduced.
+The active `ContractRegistry` remains non-recursive and does not adopt this definition. PR-004's explicit Manifest Loader validates a requested App Manifest path without registry, installation, execution, CLI, Provider, Tool, marketplace, or Kernel behavior.
 
 ## Dependencies
 
