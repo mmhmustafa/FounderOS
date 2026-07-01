@@ -34,8 +34,9 @@ Completed foundations:
 - Architecture-reviewed and revised FounderOS v0.2 Blueprint with explicit App, Workflow, Kernel, policy, and outbound-port boundaries
 - Runtime authorization architecture with deterministic default-deny contracts and a Kernel-boundary ADR
 - RFC-0001 durable Activity and side-effect contracts with idempotency, retry, cancellation, compensation, receipts, and audit semantics
+- PR-001 Agent Manifest schema with an independently validated Product Manager definition
 
-Next: minimal bundled first-party App package contract (Milestone 12E).
+Next: PR-002 Workflow Manifest Schema Foundation, preserving Workflow as the executable unit without implementing execution.
 
 Most lifecycle agent, prompt, template, domain, and roadmap files remain explicitly marked as planned placeholders. No web application, Validation, or Product module has been implemented; Discovery is currently deterministic and local-only.
 
@@ -48,6 +49,8 @@ The revised [`FounderOS v0.2 Blueprint`](architecture/FounderOS_v0.2_Blueprint.m
 [`runtime/authorization.md`](runtime/authorization.md) defines Actor, Action, Resource, Effect, Condition, Policy, AuthorizationRequest, AuthorizationDecision, and deterministic PolicyEngine semantics. The related schemas are placeholders under `runtime/contracts/authorization/`; they are intentionally not loaded or enforced by the current runtime. Authorization is not authentication, does not replace human Approval, and an allow decision never mutates Kernel state.
 
 [`RFC-0001`](docs/rfcs/RFC-0001-durable-activity-and-side-effect-contracts.md) defines the required boundary for future external operations. Workflows create durable Activity intent through a future Kernel service; executors run outside Kernel transactions and submit immutable results/receipts. Replay reuses recorded results and never repeats an external effect. Placeholder schemas under `runtime/contracts/activity/` are intentionally not loaded or implemented.
+
+[`runtime/contracts/agent/`](runtime/contracts/agent/) contains the first v0.3 package contract: a strict, versioned Agent Manifest schema and Product Manager example. Manifests declare stateless role metadata and constraints; they contain no prompts, secrets, memory, runtime state, Provider/model configuration, or execution behavior. The current runtime loader does not load this subdirectory.
 
 ## Developer Setup and Testing
 

@@ -1,24 +1,17 @@
 # CURRENT_SPRINT
 
-Sprint: Minimal First-Party App Package Contract (Milestone 12E)
+Sprint: Workflow Manifest Schema Foundation (PR-002)
 
 ## Goal
-Define immutable bundled App package identity, compatibility, and asset-index contracts without creating an App registry runtime.
+Define a versioned, independently validated Workflow Manifest that references exact Agent Manifest versions while preserving Workflow as the sole executable process definition.
 
-## Tasks
-- Define package identity, version, and compatible Kernel contract range
-- Index exact Workflow and Agent definition versions
-- Index Artifact schemas, prompts, Evaluation rubrics, policies, fixtures, tests, and documentation
-- Define immutable package content digest and configuration overlay boundary
-- Define historical resolution and first-party bundled trust semantics
+## Prerequisite Completed
+PR-001 added the strict Agent Manifest schema, Product Manager example, and deterministic contract tests without changing runtime behavior.
+
+## Expected Scope
+- Workflow identity, version, lifecycle/utility classification, inputs, outputs, steps, quality gates, failure policy, and exact Agent references
+- Contract-only examples and deterministic schema validation
+- No loader, registry, coordinator, execution, Provider, Tool, memory, CLI, or UI behavior
 
 ## Definition of Done
-First-party App packaging is precise enough to drive a future Validation slice without duplicating Workflow execution semantics.
-
-## Out of Scope
-App registry runtime
-Provider or Tool execution
-Validation Runtime
-Marketplace or third-party installation
-Web UI
-Cloud/multi-user execution
+Workflow metadata can reference exact Agent definitions and be validated independently without introducing a second execution or mutation authority.

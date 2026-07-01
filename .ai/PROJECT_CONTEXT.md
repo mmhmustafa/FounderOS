@@ -54,9 +54,10 @@ Runtime:
 - FounderOS v0.2 Architecture Review Board and revised implementation-gated Blueprint
 - Runtime authorization architecture, placeholder contracts, deterministic policy semantics, and ADR
 - RFC-0001 durable Activity/side-effect architecture, placeholder contracts, lifecycle, replay, failure semantics, and ADR
+- PR-001 versioned Agent Manifest schema, Product Manager example, and independent deterministic validation
 
 ## Current Milestone
-Milestone 12E: define the minimal bundled first-party App package contract without implementing an App registry runtime.
+PR-002: define a versioned Workflow Manifest schema that references exact Agent Manifest versions without implementing execution.
 
 ## Planned
 - Durable persistence adapters
@@ -67,6 +68,7 @@ Milestone 12E: define the minimal bundled first-party App package contract witho
 - Authorization decision persistence/audit integration and acceptance tests
 - Executable durable Activity service, persistence, scheduling, and enforcement
 - Minimal bundled first-party App package contract
+- Versioned Workflow Manifest contract
 - Deterministic fake structured-generation Provider
 - Validation and Product runtimes
 - Web application and database persistence

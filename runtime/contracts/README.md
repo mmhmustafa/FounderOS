@@ -53,6 +53,10 @@ This folder is the machine-valid boundary between the FounderOS architecture and
 
 - `activity/` — RFC-0001 placeholder ActivityRequest, ActivityResult, RetryPolicy, ActivityPolicy, ActivityRecord, and ActivityAuditRecord schemas. They are intentionally outside the current runtime registry and implement no executor or side effect.
 
+### Agent package contracts
+
+- `agent/agent.schema.yaml` - PR-001's independently validated, versioned Agent Manifest contract and Product Manager example. It is intentionally outside the current runtime registry and does not replace or alter the active `agent.schema.json` runtime definition contract.
+
 ## Canonical Conventions
 
 ### Identifiers

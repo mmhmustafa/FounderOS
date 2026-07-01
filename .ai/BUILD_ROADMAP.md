@@ -159,7 +159,7 @@
 
 Authorization runtime enforcement remains mandatory before Provider or Tool execution. Milestone 12C defines the boundary but intentionally does not wire it into current services.
 
-## Milestone 12E - Minimal First-Party App Package Contract (Next)
+## Milestone 12E - Minimal First-Party App Package Contract (Deferred)
 
 - [ ] Define package identity, Kernel compatibility, asset index, configuration, and historical resolution
 - [ ] Reuse existing Agent and Workflow definitions and registries
@@ -176,6 +176,24 @@ Authorization runtime enforcement remains mandatory before Provider or Tool exec
 - [ ] Package Validation as the first bundled first-party App
 - [ ] Reuse Kernel Artifact, Evaluation, Approval, Decision, Transition, Event, replay, and audit boundaries
 - [ ] Demonstrate value from `OPPORTUNITY_SELECTED` without Web, marketplace, broad Tools, or real Providers
+
+## FounderOS v0.3 Contract Foundations
+
+### PR-001 - Agent Manifest Schema Foundation
+
+- [x] Add a strict, versioned Agent Manifest schema outside the active runtime loader
+- [x] Add a valid Product Manager example
+- [x] Define status, maturity, capabilities, Artifact ports, constraints, Tool categories, Provider-neutral preferences, Evaluation, and handoff metadata
+- [x] Prohibit prompts, secrets, model configuration, runtime state, memory, and conversation history
+- [x] Add deterministic independent schema validation tests
+- [x] Preserve all existing runtime behavior
+
+### PR-002 - Workflow Manifest Schema Foundation (Next)
+
+- [ ] Define the versioned Workflow Manifest contract
+- [ ] Reference exact Agent Manifest IDs and versions
+- [ ] Preserve lifecycle versus utility Workflow semantics
+- [ ] Add contract examples and deterministic validation without implementing execution
 
 ## Deferred Runtime Hardening
 

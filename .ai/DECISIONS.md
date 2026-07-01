@@ -319,3 +319,18 @@ Status: Proposed by RFC-0001.
 Decision: Event and Workflow replay reconstruct Activity state and consume recorded results but never invoke an ActivityExecutor.
 Reason: Replay must remain deterministic and cannot repeat nondeterministic or destructive side effects.
 Status: Proposed by RFC-0001.
+
+## D-065
+Decision: An Agent Manifest is an immutable, versioned, stateless package definition validated independently from runtime Agent execution records.
+Reason: Apps and Workflows need exact, reviewable role/capability contracts without embedding prompts, secrets, memory, model configuration, runtime state, or a competing execution authority.
+Status: Accepted by PR-001.
+
+## D-066
+Decision: Agent Manifest Tool categories and Provider preferences declare maximum requirements only; they never grant authorization or select an executor, Provider, or model.
+Reason: Authorization must remain deny-by-default, Providers and Tools remain outbound capabilities, and the Kernel remains the sole runtime mutation authority.
+Status: Accepted by PR-001.
+
+## D-067
+Decision: PR-001 Agent Manifest contracts remain in a non-loaded contract subdirectory and do not replace the active v0.1 Agent runtime schema.
+Reason: Independent contract validation is required now, while loader, registry, compatibility mapping, execution, and runtime migration are explicitly deferred.
+Status: Accepted by PR-001.

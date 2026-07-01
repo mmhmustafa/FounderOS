@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### PR-001 - Agent Manifest Schema Foundation
+
+- Added a self-contained JSON Schema Draft 2020-12 Agent Manifest contract expressed as YAML.
+- Added a valid Product Manager manifest with explicit capabilities, Artifact ports, constraints, Tool-category ceiling, Provider-neutral preferences, Evaluation, handoff, status, and maturity.
+- Added deterministic schema tests for required fields, canonical IDs, Semantic Versioning, maturity, Tool categories, capabilities, prohibited runtime/prompt fields, and the example.
+- Added PyYAML only to development dependencies; the runtime dependency set and runtime contract loader are unchanged.
+- Documented the stateless Agent boundary and its relationships to Apps, Workflows, Providers, Tools, authorization, memory, and the Kernel.
+
 ### Milestone 12A - FounderOS v0.2 Architecture Review Board
 
 - Added a formal five-perspective architecture review of the draft FounderOS v0.2 Blueprint.

@@ -15,6 +15,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
   "pytest>=8,<10",
+  "PyYAML>=6,<7",
 ]
 
 [project.scripts]

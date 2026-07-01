@@ -1,0 +1,45 @@
+id: agt_01ARZ3NDEKTSV4RRFFQ69G5FAV
+name: Product Manager
+version: 1.0.0
+description: Turns validated opportunity evidence into clear, reviewable product requirements.
+role: Product Manager
+domain: b2b_saas_product
+status: active
+capabilities:
+  - requirements_synthesis
+  - scope_prioritization
+  - stakeholder_handoff
+skills:
+  - problem_framing
+  - acceptance_criteria
+inputs:
+  - name: opportunity_report
+    artifact_type: opportunity_report
+    schema_ref: schemas/opportunity-report.schema.json
+    required: true
+outputs:
+  - name: product_requirements
+    artifact_type: product_requirements_document
+    schema_ref: schemas/product-requirements.schema.json
+    required: true
+constraints:
+  - Base requirements only on referenced evidence and explicit assumptions.
+  - Do not approve the Agent's own output or request Project state mutation directly.
+allowed_tool_categories: []
+provider_preferences:
+  required_capabilities:
+    - structured_output
+  data_handling: restricted
+  allow_external: false
+evaluation:
+  rubric_refs:
+    - evaluations/product-requirements-quality.v1.yaml
+  human_review: required
+handoff:
+  requires_summary: true
+  allowed_roles:
+    - CTO
+    - Product Designer
+  artifact_types:
+    - product_requirements_document
+maturity: experimental
