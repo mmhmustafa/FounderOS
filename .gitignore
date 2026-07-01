@@ -12,3 +12,9 @@ build/
 dist/
 *.egg-info/
 .founderos/
+# ------------------------------------------------
+# FounderOS Generated Deliverables
+# ------------------------------------------------
+
+deliverables/*
+!deliverables/.gitkeep
