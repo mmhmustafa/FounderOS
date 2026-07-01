@@ -334,3 +334,23 @@ Status: Accepted by PR-001.
 Decision: PR-001 Agent Manifest contracts remain in a non-loaded contract subdirectory and do not replace the active v0.1 Agent runtime schema.
 Reason: Independent contract validation is required now, while loader, registry, compatibility mapping, execution, and runtime migration are explicitly deferred.
 Status: Accepted by PR-001.
+
+## D-068
+Decision: A Workflow Manifest is an immutable, versioned, declarative executable-process definition, while WorkflowRun remains the record of execution and the manifest never executes itself.
+Reason: Steps, exact Agents, Artifacts, Evaluations, Approvals, recovery, and transition intent need one inspectable definition without creating a second coordinator or mutation authority.
+Status: Accepted by PR-002.
+
+## D-069
+Decision: Lifecycle Workflow Manifests require an exit state and transition intent; utility Workflow Manifests require both values to be null.
+Reason: Utility work may produce records through Kernel services but must be structurally incapable of requesting a change to `Project.current_state`.
+Status: Accepted by PR-002.
+
+## D-070
+Decision: Workflow transition intent is a non-authoritative request that must match declared entry/exit states and resolve required Approval references before reaching the State Machine.
+Reason: Workflow completion, a manifest declaration, or an Approval requirement cannot bypass authorization, runtime evidence, guards, current Approval records, or the State Machine's sole state-mutation authority.
+Status: Accepted by PR-002.
+
+## D-071
+Decision: PR-002 Workflow Manifest contracts and semantic validation remain outside the active runtime registry and do not replace the v0.1 Workflow runtime schema.
+Reason: This PR establishes independently testable package contracts while intentionally deferring loading, registry, coordination, execution, migration, and runtime adoption.
+Status: Accepted by PR-002.

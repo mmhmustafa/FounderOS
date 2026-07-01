@@ -69,4 +69,4 @@ The schema is intentionally below a non-recursive contract subdirectory. The cur
 
 ## Risks and Next Step
 
-The manifest is not yet resolved from App packages, registered, loaded, authorized, or executed. A later PR should define the minimal Workflow Manifest schema that references exact Agent manifest IDs and versions, without implementing execution.
+The manifest is not yet resolved from App packages, registered, loaded, authorized, or executed. PR-002 now defines a Workflow Manifest that references exact Agent IDs and versions; a later adoption boundary must still resolve those references without replacing historical runtime definitions.

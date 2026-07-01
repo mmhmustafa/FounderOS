@@ -1,0 +1,350 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+$id: https://founderos.dev/contracts/workflow/workflow.schema.yaml
+title: FounderOS Workflow Manifest
+description: Immutable, versioned declarative definition of an executable process.
+type: object
+additionalProperties: false
+required:
+  - id
+  - name
+  - version
+  - description
+  - status
+  - maturity
+  - workflow_type
+  - domain
+  - entry_state
+  - exit_state
+  - required_agents
+  - optional_agents
+  - required_artifacts
+  - produced_artifacts
+  - steps
+  - evaluations
+  - approvals
+  - transition_intent
+  - recovery
+  - compatibility
+properties:
+  id:
+    type: string
+    pattern: ^wfl_[0-7][0-9A-HJKMNP-TV-Z]{25}$
+    description: Immutable canonical Workflow definition ID.
+  name:
+    type: string
+    minLength: 1
+    maxLength: 160
+  version:
+    $ref: '#/$defs/semver'
+  description:
+    type: string
+    minLength: 1
+    maxLength: 1000
+  status:
+    type: string
+    enum: [draft, active, deprecated, retired]
+  maturity:
+    type: string
+    enum: [experimental, beta, stable, deprecated]
+  workflow_type:
+    type: string
+    enum: [lifecycle, utility]
+  domain:
+    type: string
+    minLength: 1
+    maxLength: 120
+  entry_state:
+    $ref: '#/$defs/stateCode'
+  exit_state:
+    oneOf:
+      - $ref: '#/$defs/stateCode'
+      - type: 'null'
+  required_agents:
+    type: array
+    uniqueItems: true
+    items:
+      $ref: '#/$defs/agentRef'
+  optional_agents:
+    type: array
+    uniqueItems: true
+    items:
+      $ref: '#/$defs/agentRef'
+  required_artifacts:
+    type: array
+    uniqueItems: true
+    items:
+      $ref: '#/$defs/artifactDeclaration'
+  produced_artifacts:
+    type: array
+    uniqueItems: true
+    items:
+      $ref: '#/$defs/artifactDeclaration'
+  steps:
+    type: array
+    minItems: 1
+    items:
+      $ref: '#/$defs/step'
+  evaluations:
+    type: array
+    uniqueItems: true
+    items:
+      $ref: '#/$defs/evaluationRequirement'
+  approvals:
+    type: array
+    uniqueItems: true
+    items:
+      $ref: '#/$defs/approvalRequirement'
+  transition_intent:
+    oneOf:
+      - $ref: '#/$defs/transitionIntent'
+      - type: 'null'
+  recovery:
+    $ref: '#/$defs/recoveryPolicy'
+  compatibility:
+    $ref: '#/$defs/compatibility'
+allOf:
+  - if:
+      properties:
+        workflow_type:
+          const: lifecycle
+      required: [workflow_type]
+    then:
+      properties:
+        exit_state:
+          $ref: '#/$defs/stateCode'
+        transition_intent:
+          $ref: '#/$defs/transitionIntent'
+  - if:
+      properties:
+        workflow_type:
+          const: utility
+      required: [workflow_type]
+    then:
+      properties:
+        exit_state:
+          type: 'null'
+        transition_intent:
+          type: 'null'
+$defs:
+  semver:
+    type: string
+    pattern: '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$'
+  slug:
+    type: string
+    pattern: '^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$'
+    maxLength: 120
+  pathRef:
+    type: string
+    minLength: 1
+    maxLength: 500
+    pattern: '^(?![a-zA-Z][a-zA-Z0-9+.-]*://)(?!/)(?!.*(?:^|/)\.\.(?:/|$)).+$'
+  stateCode:
+    type: string
+    enum:
+      - NO_PROJECT
+      - FOUNDER_SETUP
+      - FOUNDER_BRIEF_COMPLETE
+      - DISCOVERY_RUNNING
+      - OPPORTUNITY_SELECTED
+      - VALIDATION_RUNNING
+      - VALIDATION_PASSED
+      - PRODUCT_DESIGN_RUNNING
+      - PRD_COMPLETE
+      - ARCHITECTURE_RUNNING
+      - ARCHITECTURE_COMPLETE
+      - AI_DESIGN_RUNNING
+      - AI_ARCHITECTURE_COMPLETE
+      - DEVELOPMENT_PLANNING
+      - SPRINT_READY
+      - MVP_BUILDING
+      - QA_RUNNING
+      - READY_FOR_BETA
+      - LAUNCH_RUNNING
+      - CUSTOMERS_ACQUIRED
+      - CEO_REVIEW
+      - SCALING
+  agentRef:
+    type: object
+    additionalProperties: false
+    required: [id, version, role]
+    properties:
+      id:
+        type: string
+        pattern: ^agt_[0-7][0-9A-HJKMNP-TV-Z]{25}$
+      version:
+        $ref: '#/$defs/semver'
+      role:
+        type: string
+        minLength: 1
+        maxLength: 120
+  artifactDeclaration:
+    type: object
+    additionalProperties: false
+    required: [id, artifact_type, schema_ref]
+    properties:
+      id:
+        $ref: '#/$defs/slug'
+      artifact_type:
+        $ref: '#/$defs/slug'
+      schema_ref:
+        $ref: '#/$defs/pathRef'
+  step:
+    type: object
+    additionalProperties: false
+    required:
+      - id
+      - name
+      - type
+      - required_agent
+      - input_artifacts
+      - output_artifacts
+      - activity_type
+      - requires_approval
+      - on_success
+      - on_failure
+    properties:
+      id:
+        $ref: '#/$defs/slug'
+      name:
+        type: string
+        minLength: 1
+        maxLength: 160
+      type:
+        type: string
+        enum:
+          - human_input
+          - agent_task
+          - evaluation
+          - approval
+          - activity_request
+          - artifact_creation
+          - transition_request
+      required_agent:
+        oneOf:
+          - $ref: '#/$defs/agentRef'
+          - type: 'null'
+      input_artifacts:
+        type: array
+        uniqueItems: true
+        items:
+          $ref: '#/$defs/slug'
+      output_artifacts:
+        type: array
+        uniqueItems: true
+        items:
+          $ref: '#/$defs/slug'
+      activity_type:
+        oneOf:
+          - type: string
+            enum: [ai, filesystem, network, git, browser, shell, python, docker, cloud, notification, human_approval]
+          - type: 'null'
+      requires_approval:
+        type: boolean
+      on_success:
+        type: string
+        enum: [continue, complete_workflow, request_transition]
+      on_failure:
+        type: string
+        enum: [retry, pause, fail, request_human, recover]
+    allOf:
+      - if:
+          properties:
+            type:
+              const: agent_task
+          required: [type]
+        then:
+          properties:
+            required_agent:
+              $ref: '#/$defs/agentRef'
+      - if:
+          properties:
+            type:
+              const: activity_request
+          required: [type]
+        then:
+          properties:
+            activity_type:
+              type: string
+              enum: [ai, filesystem, network, git, browser, shell, python, docker, cloud, notification, human_approval]
+        else:
+          properties:
+            activity_type:
+              type: 'null'
+  evaluationRequirement:
+    type: object
+    additionalProperties: false
+    required: [id, type, subject_artifact, rubric_ref, required]
+    properties:
+      id:
+        $ref: '#/$defs/slug'
+      type:
+        type: string
+        enum: [schema, deterministic, grounding, security, model, human]
+      subject_artifact:
+        $ref: '#/$defs/slug'
+      rubric_ref:
+        $ref: '#/$defs/pathRef'
+      required:
+        type: boolean
+  approvalRequirement:
+    type: object
+    additionalProperties: false
+    required: [id, subject_type, subject_ref, approver_type, required]
+    properties:
+      id:
+        $ref: '#/$defs/slug'
+      subject_type:
+        type: string
+        enum: [artifact, evaluation, transition]
+      subject_ref:
+        $ref: '#/$defs/slug'
+      approver_type:
+        type: string
+        const: human
+      required:
+        type: boolean
+  transitionIntent:
+    type: object
+    additionalProperties: false
+    required: [from_state, to_state, approval_refs]
+    properties:
+      from_state:
+        $ref: '#/$defs/stateCode'
+      to_state:
+        $ref: '#/$defs/stateCode'
+      approval_refs:
+        type: array
+        minItems: 1
+        uniqueItems: true
+        items:
+          $ref: '#/$defs/slug'
+    description: A request only; the State Machine remains the sole transition authority.
+  recoveryPolicy:
+    type: object
+    additionalProperties: false
+    required: [max_attempts, on_step_failure, on_workflow_failure, resume_strategy]
+    properties:
+      max_attempts:
+        type: integer
+        minimum: 1
+        maximum: 10
+      on_step_failure:
+        type: string
+        enum: [retry, pause, fail, request_human]
+      on_workflow_failure:
+        type: string
+        enum: [pause, fail, request_human]
+      resume_strategy:
+        type: string
+        enum: [from_failed_step, from_last_completed_step, manual]
+  compatibility:
+    type: object
+    additionalProperties: false
+    required: [minimum_kernel_contract, maximum_kernel_contract_exclusive, agent_manifest_schema_version]
+    properties:
+      minimum_kernel_contract:
+        $ref: '#/$defs/semver'
+      maximum_kernel_contract_exclusive:
+        $ref: '#/$defs/semver'
+      agent_manifest_schema_version:
+        $ref: '#/$defs/semver'

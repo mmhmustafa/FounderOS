@@ -55,9 +55,10 @@ Runtime:
 - Runtime authorization architecture, placeholder contracts, deterministic policy semantics, and ADR
 - RFC-0001 durable Activity/side-effect architecture, placeholder contracts, lifecycle, replay, failure semantics, and ADR
 - PR-001 versioned Agent Manifest schema, Product Manager example, and independent deterministic validation
+- PR-002 versioned Workflow Manifest schema, Discovery example, lifecycle/utility boundaries, and semantic reference validation
 
 ## Current Milestone
-PR-002: define a versioned Workflow Manifest schema that references exact Agent Manifest versions without implementing execution.
+PR-003: define a minimal first-party App Package Manifest without implementing registry, installation, or execution behavior.
 
 ## Planned
 - Durable persistence adapters
@@ -68,7 +69,7 @@ PR-002: define a versioned Workflow Manifest schema that references exact Agent 
 - Authorization decision persistence/audit integration and acceptance tests
 - Executable durable Activity service, persistence, scheduling, and enforcement
 - Minimal bundled first-party App package contract
-- Versioned Workflow Manifest contract
+- Minimal first-party App Package Manifest contract
 - Deterministic fake structured-generation Provider
 - Validation and Product runtimes
 - Web application and database persistence

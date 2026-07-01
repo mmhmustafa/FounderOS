@@ -1,17 +1,19 @@
 # CURRENT_SPRINT
 
-Sprint: Workflow Manifest Schema Foundation (PR-002)
+Sprint: Minimal First-Party App Package Manifest Foundation (PR-003)
 
 ## Goal
-Define a versioned, independently validated Workflow Manifest that references exact Agent Manifest versions while preserving Workflow as the sole executable process definition.
+Define an immutable, independently validated first-party App Package Manifest that indexes exact Workflow and Agent definitions plus supporting assets without introducing execution or registry behavior.
 
-## Prerequisite Completed
-PR-001 added the strict Agent Manifest schema, Product Manager example, and deterministic contract tests without changing runtime behavior.
+## Prerequisites Completed
+- PR-001 Agent Manifest Schema Foundation
+- PR-002 Workflow Manifest Schema Foundation
 
 ## Expected Scope
-- Workflow identity, version, lifecycle/utility classification, inputs, outputs, steps, quality gates, failure policy, and exact Agent references
-- Contract-only examples and deterministic schema validation
-- No loader, registry, coordinator, execution, Provider, Tool, memory, CLI, or UI behavior
+- Package identity, version, Kernel compatibility, first-party trust declaration, and content digest
+- Exact Workflow and Agent definition references
+- Schema, prompt, rubric, policy, fixture, test, documentation, and configuration-overlay references
+- No App registry, installation, execution, Provider, Tool, CLI, Web UI, or marketplace behavior
 
 ## Definition of Done
-Workflow metadata can reference exact Agent definitions and be validated independently without introducing a second execution or mutation authority.
+A bundled first-party App package can be validated as an immutable asset index without duplicating Workflow execution semantics or Kernel mutation authority.

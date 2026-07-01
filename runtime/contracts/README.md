@@ -57,6 +57,10 @@ This folder is the machine-valid boundary between the FounderOS architecture and
 
 - `agent/agent.schema.yaml` - PR-001's independently validated, versioned Agent Manifest contract and Product Manager example. It is intentionally outside the current runtime registry and does not replace or alter the active `agent.schema.json` runtime definition contract.
 
+### Workflow package contracts
+
+- `workflow/workflow.schema.yaml` - PR-002's independently validated, versioned Workflow Manifest contract and Discovery example. It defines declarative process coordination and lifecycle/utility boundaries without replacing the active `workflow.schema.json` contract or implementing execution.
+
 ## Canonical Conventions
 
 ### Identifiers

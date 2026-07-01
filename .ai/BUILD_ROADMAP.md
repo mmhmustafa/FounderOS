@@ -188,12 +188,21 @@ Authorization runtime enforcement remains mandatory before Provider or Tool exec
 - [x] Add deterministic independent schema validation tests
 - [x] Preserve all existing runtime behavior
 
-### PR-002 - Workflow Manifest Schema Foundation (Next)
+### PR-002 - Workflow Manifest Schema Foundation
 
-- [ ] Define the versioned Workflow Manifest contract
-- [ ] Reference exact Agent Manifest IDs and versions
-- [ ] Preserve lifecycle versus utility Workflow semantics
-- [ ] Add contract examples and deterministic validation without implementing execution
+- [x] Define the versioned Workflow Manifest contract
+- [x] Reference exact Agent Manifest IDs and versions
+- [x] Preserve lifecycle versus utility Workflow semantics
+- [x] Define steps, Artifact declarations, Evaluations, Approvals, transition intent, recovery, and compatibility
+- [x] Add a Discovery example and deterministic structural/semantic validation
+- [x] Preserve all existing runtime behavior
+
+### PR-003 - Minimal First-Party App Package Manifest Foundation (Next)
+
+- [ ] Define immutable package identity, Kernel compatibility, and bundled trust metadata
+- [ ] Index exact Workflow and Agent definitions plus schemas, prompts, rubrics, policies, fixtures, tests, and documentation
+- [ ] Define content digest and configuration overlay boundaries
+- [ ] Add contract examples and deterministic validation without implementing an App registry
 
 ## Deferred Runtime Hardening
 

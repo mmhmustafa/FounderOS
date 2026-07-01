@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### PR-002 - Workflow Manifest Schema Foundation
+
+- Added a self-contained JSON Schema Draft 2020-12 Workflow Manifest contract expressed as YAML.
+- Added a valid conceptual Discovery Workflow with exact Agent references, Artifact declarations, ordered steps, Evaluation and Approval requirements, transition intent, recovery, and compatibility bounds.
+- Structurally separated lifecycle Workflows, which require transition intent, from utility Workflows, which require null exit state and transition intent.
+- Added deterministic structural and semantic tests for required fields, canonical IDs, Semantic Versioning, enums, step types, lifecycle/utility rules, and step-to-Agent reference integrity.
+- Kept the new schema outside the active runtime registry; no Workflow loader, registry, execution engine, Planner, CLI, Discovery implementation, persistence, or runtime behavior changed.
+
 ### PR-001 - Agent Manifest Schema Foundation
 
 - Added a self-contained JSON Schema Draft 2020-12 Agent Manifest contract expressed as YAML.

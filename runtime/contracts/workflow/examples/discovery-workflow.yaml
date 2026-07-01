@@ -1,0 +1,115 @@
+id: wfl_01ARZ3NDEKTSV4RRFFQ69G5FAW
+name: Discovery Workflow
+version: 1.0.0
+description: Produces and evaluates a deterministic Opportunity Report from an approved Founder Brief.
+status: active
+maturity: experimental
+workflow_type: lifecycle
+domain: b2b_saas_discovery
+entry_state: FOUNDER_BRIEF_COMPLETE
+exit_state: OPPORTUNITY_SELECTED
+required_agents:
+  - id: agt_01ARZ3NDEKTSV4RRFFQ69G5FAV
+    version: 1.0.0
+    role: Product Manager
+  - id: agt_01ARZ3NDEKTSV4RRFFQ69G5FAX
+    version: 1.0.0
+    role: Market Research Agent
+optional_agents: []
+required_artifacts:
+  - id: founder_brief
+    artifact_type: founder_brief
+    schema_ref: schemas/founder-brief.schema.json
+produced_artifacts:
+  - id: opportunity_report
+    artifact_type: opportunity_report
+    schema_ref: schemas/opportunity-report.schema.json
+steps:
+  - id: collect_opportunity_candidates
+    name: Collect Opportunity Candidates
+    type: human_input
+    required_agent: null
+    input_artifacts:
+      - founder_brief
+    output_artifacts: []
+    activity_type: null
+    requires_approval: false
+    on_success: continue
+    on_failure: request_human
+  - id: score_opportunities
+    name: Score Opportunity Candidates
+    type: agent_task
+    required_agent:
+      id: agt_01ARZ3NDEKTSV4RRFFQ69G5FAX
+      version: 1.0.0
+      role: Market Research Agent
+    input_artifacts:
+      - founder_brief
+    output_artifacts:
+      - opportunity_report
+    activity_type: null
+    requires_approval: false
+    on_success: continue
+    on_failure: fail
+  - id: evaluate_opportunity_report
+    name: Evaluate Opportunity Report
+    type: evaluation
+    required_agent:
+      id: agt_01ARZ3NDEKTSV4RRFFQ69G5FAV
+      version: 1.0.0
+      role: Product Manager
+    input_artifacts:
+      - opportunity_report
+    output_artifacts: []
+    activity_type: null
+    requires_approval: false
+    on_success: continue
+    on_failure: request_human
+  - id: approve_opportunity
+    name: Approve Selected Opportunity
+    type: approval
+    required_agent: null
+    input_artifacts:
+      - opportunity_report
+    output_artifacts: []
+    activity_type: null
+    requires_approval: true
+    on_success: continue
+    on_failure: pause
+  - id: request_opportunity_selected
+    name: Request Opportunity Selected Transition
+    type: transition_request
+    required_agent: null
+    input_artifacts:
+      - opportunity_report
+    output_artifacts: []
+    activity_type: null
+    requires_approval: true
+    on_success: request_transition
+    on_failure: request_human
+evaluations:
+  - id: opportunity_quality
+    type: deterministic
+    subject_artifact: opportunity_report
+    rubric_ref: evaluations/opportunity-quality.v1.yaml
+    required: true
+approvals:
+  - id: opportunity_selection_approval
+    subject_type: artifact
+    subject_ref: opportunity_report
+    approver_type: human
+    required: true
+transition_intent:
+  from_state: FOUNDER_BRIEF_COMPLETE
+  to_state: OPPORTUNITY_SELECTED
+  approval_refs:
+    - opportunity_selection_approval
+recovery:
+  max_attempts: 1
+  on_step_failure: request_human
+  on_workflow_failure: pause
+  resume_strategy: from_last_completed_step
+compatibility:
+  minimum_kernel_contract: 0.1.0
+  maximum_kernel_contract_exclusive: 1.0.0
+  agent_manifest_schema_version: 1.0.0
