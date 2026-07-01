@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### PR-007 - Evaluation Contract and Runner Foundation
+
+- Added immutable EvaluationRule, EvaluationRequest, EvaluationFinding, and EvaluationResult contracts with explicit severity and rule-type enums.
+- Added a pure deterministic Evaluation Runner with non-empty content, expected-schema, required-field, schema, minimum-length, regex, and injected custom-rule evaluation.
+- Defined unweighted six-decimal scoring, configurable minimum score, and hard blocking for failed error/critical findings.
+- Added typed configuration, request, and custom-execution failures with no generic runtime mutation behavior.
+- Added 12 tests covering successful assessment, missing fields, empty content, schema mismatch, length, regex, custom rules, deterministic ordering/scoring, multiple findings, critical blocking, invalid configuration, and empty rule lists.
+- Kept assessment results separate from persisted runtime Evaluation records and added no Approval, Planner, Workflow/Provider/Tool execution, CLI, persistence, Event, or Kernel mutation.
+
 ### PR-006 - Mock Provider Foundation
 
 - Added immutable `ProviderRequest`, `ProviderResponse`, `ProviderStatus`, and structured `ProviderError` contracts.

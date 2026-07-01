@@ -1,22 +1,20 @@
 # CURRENT_SPRINT
 
-Sprint: Prompt Pack Manifest Schema Foundation (PR-007)
+Sprint: Evaluation Rubric Manifest Schema Foundation (PR-008)
 
 ## Goal
-Define immutable, versioned prompt-pack metadata and safe template references without implementing prompt rendering or real Provider integration.
+Define immutable, versioned declarative Evaluation rubrics that map exactly to the deterministic PR-007 runner without adding Workflow execution or persistence.
 
 ## Prerequisites Completed
-- PR-001 Agent Manifest Schema Foundation
-- PR-002 Workflow Manifest Schema Foundation
-- PR-003 App Package Manifest Schema Foundation
-- PR-004 Manifest Loader Foundation
-- PR-005 Workspace Foundation
+- PR-001 through PR-005 manifest and Workspace foundations
 - PR-006 Mock Provider Foundation
+- PR-007 Evaluation Contract and Runner Foundation
 
 ## Expected Scope
-- Prompt-pack identity, version, purpose, variables, input/output schema references, and safety/data-handling metadata
-- Package-relative immutable template references and deterministic validation
-- No prompt rendering, Provider registry, real model configuration, network, Agent/Workflow execution, CLI, or Web UI
+- Rubric identity, version, target type, score threshold, and deterministic Evaluation rules
+- Validation for rule parameters supported by PR-007
+- One first-party example plus Manifest Loader/Workspace support only if required
+- No Workflow/Agent execution, Provider invocation, human Approval, CLI, persistence, Event, or Kernel mutation
 
 ## Definition of Done
-Apps can index a precise validated prompt-pack contract while prompt content remains a separate immutable asset and no real Provider or execution capability is introduced.
+Apps can package a validated rubric whose rules can be translated directly into PR-007 Evaluation contracts without introducing another scoring or execution model.

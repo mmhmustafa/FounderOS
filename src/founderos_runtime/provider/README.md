@@ -89,4 +89,4 @@ No real models, API keys, network, streaming, embeddings, prompt rendering, Prov
 
 The default fallback is an echo envelope rather than generated content. Fixtures match exact operation and input only. There is no Provider protocol/registry, durable Activity adapter, prompt pack contract, usage/cost accounting, streaming, cancellation, or concurrency behavior.
 
-PR-007 should define the Prompt Pack Manifest schema postponed by PR-006. It should keep template text in immutable referenced assets and add no rendering or real Provider integration.
+PR-007's deterministic Evaluation Runner can now assess explicitly supplied Provider output without invoking the Provider itself or persisting evidence. PR-008 should define a versioned Evaluation Rubric Manifest so these rules can be packaged declaratively without adding Workflow execution or Kernel mutation.

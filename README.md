@@ -40,8 +40,9 @@ Completed foundations:
 - PR-004 deterministic Manifest Loader for explicit Agent, Workflow, and App YAML validation
 - PR-005 read-only Workspace for bounded discovery, relationships, compatibility, and deterministic queries
 - PR-006 immutable Provider contracts and a deterministic offline Mock Provider
+- PR-007 immutable Evaluation contracts and deterministic quality-rule runner
 
-Next: PR-007 Prompt Pack Manifest Schema Foundation, defining immutable prompt metadata without rendering or real Provider integration.
+Next: PR-008 Evaluation Rubric Manifest Schema Foundation, packaging deterministic rules without Workflow execution or persistence.
 
 Most lifecycle agent, prompt, template, domain, and roadmap files remain explicitly marked as planned placeholders. No web application, Validation, or Product module has been implemented; Discovery is currently deterministic and local-only.
 
@@ -66,6 +67,8 @@ The revised [`FounderOS v0.2 Blueprint`](architecture/FounderOS_v0.2_Blueprint.m
 [`founderos_runtime.workspace`](src/founderos_runtime/workspace/) builds a fresh read-only semantic snapshot from validated manifests beneath one bounded project root. It detects duplicates, missing exact references, runtime/dependency incompatibility, and App dependency cycles, then exposes sorted defensive query results. It has no registry lifecycle, execution, Provider, Tool, authorization, memory, persistence, CLI, or Kernel mutation behavior.
 
 [`founderos_runtime.provider`](src/founderos_runtime/provider/) defines frozen structured generation requests/responses and an offline deterministic Mock Provider. It supports exact fixtures, simulated failures, output-schema validation, correlation, and idempotency metadata without network access, API keys, real models, Provider registry, Activities, execution, persistence, or Kernel mutation.
+
+[`founderos_runtime.evaluation`](src/founderos_runtime/evaluation/) defines frozen rules, requests, findings, results, and a pure deterministic Evaluation Runner. It supports required fields, schemas, minimum lengths, regexes, custom rules, score thresholds, and hard-blocking severity without invoking Providers, executing Workflows, recording Approvals, persisting `evl_` records, or mutating runtime state.
 
 ## Developer Setup and Testing
 

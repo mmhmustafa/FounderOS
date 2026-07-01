@@ -60,9 +60,10 @@ Runtime:
 - PR-004 stateless Manifest Loader with safe YAML parsing, deterministic structural/semantic validation, and typed contextual errors
 - PR-005 read-only Workspace with bounded discovery, exact manifest relationships, compatibility checks, cycle detection, and deterministic queries
 - PR-006 immutable Provider contracts and deterministic offline Mock Provider with fixtures, error simulation, schema checks, and no runtime mutation
+- PR-007 immutable Evaluation contracts and deterministic quality runner with built-in/custom rules, scoring, and no persisted evidence mutation
 
 ## Current Milestone
-PR-007: define versioned Prompt Pack Manifest metadata without implementing rendering or real Provider integration.
+PR-008: define versioned Evaluation Rubric Manifest metadata that maps to the deterministic runner without execution or persistence.
 
 ## Planned
 - Durable persistence adapters
@@ -73,6 +74,7 @@ PR-007: define versioned Prompt Pack Manifest metadata without implementing rend
 - Authorization decision persistence/audit integration and acceptance tests
 - Executable durable Activity service, persistence, scheduling, and enforcement
 - Minimal bundled first-party App package contract
+- Versioned Evaluation Rubric Manifest contract
 - Versioned Prompt Pack Manifest contract
 - Deterministic fake structured-generation Provider
 - Validation and Product runtimes

@@ -231,7 +231,23 @@ Authorization runtime enforcement remains mandatory before Provider or Tool exec
 - [x] Require no network, API keys, real Provider SDK, registry, execution, Activity, or Kernel integration
 - [x] Add comprehensive deterministic and isolation tests
 
-### PR-007 - Prompt Pack Manifest Schema Foundation (Next)
+### PR-007 - Evaluation Contract and Runner Foundation
+
+- [x] Define immutable Evaluation rules, requests, findings, results, severities, and rule types
+- [x] Add deterministic content, expected-schema, required-field, schema, minimum-length, regex, and custom-rule checks
+- [x] Define configurable score thresholds and hard-blocking error/critical semantics
+- [x] Keep assessment separate from persisted runtime Evaluation records and human Approval
+- [x] Add comprehensive deterministic contract and runner tests
+- [x] Preserve all Planner, Workflow, Provider, Tool, CLI, persistence, and Kernel behavior
+
+### PR-008 - Evaluation Rubric Manifest Schema Foundation (Next)
+
+- [ ] Define immutable rubric identity, version, rules, score threshold, and target contract metadata
+- [ ] Map declarative rule parameters exactly to the PR-007 runner
+- [ ] Add Manifest Loader and Workspace support only as required for validation/query
+- [ ] Add no Workflow execution, human Approval, persistence, or Kernel mutation
+
+### PR-009 - Prompt Pack Manifest Schema Foundation
 
 - [ ] Define immutable prompt-pack identity, version, variables, input/output schema references, and safety metadata
 - [ ] Keep prompt text in referenced package assets rather than embedding it in Agent, Workflow, or App manifests

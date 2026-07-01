@@ -70,6 +70,6 @@ Workspace cannot execute Workflows or Agents, select or invoke Providers, call T
 - Directory symlink hardening is limited by platform filesystem semantics; manifest symlinks and resolved root escapes are rejected.
 - One active manifest per logical ID is allowed; side-by-side versions require a future registry/version resolver.
 
-## Recommended PR-007
+## Recommended PR-008
 
-Define the Prompt Pack Manifest schema postponed by PR-006, including immutable template references, variables, input/output schema references, safety/data-handling metadata, and deterministic validation. Do not render prompts or integrate real Providers.
+Define a versioned Evaluation Rubric Manifest that packages deterministic rules for the PR-007 runner. Keep Workspace read-only and do not add Workflow execution, human Approval, persistence, or Kernel mutation.

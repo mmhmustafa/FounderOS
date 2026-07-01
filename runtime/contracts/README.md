@@ -73,6 +73,8 @@ This folder is the machine-valid boundary between the FounderOS architecture and
 
 `src/founderos_runtime/provider/` defines immutable structured generation contracts and a deterministic offline Mock Provider. It does not add a real Provider adapter, registry, prompt renderer, Activity integration, or runtime mutation path.
 
+`src/founderos_runtime/evaluation/` defines immutable quality-assessment contracts and a pure deterministic runner. Its `EvaluationResult` is not the persisted `evl_` runtime record and performs no repository, Event, Approval, Workflow, or state mutation.
+
 ## Canonical Conventions
 
 ### Identifiers

@@ -449,3 +449,28 @@ Status: Accepted by PR-006.
 Decision: PR-006 does not wire MockProvider into Workflows, Agents, Workspace, authorization, Activities, Kernel services, persistence, or CLI behavior.
 Reason: Provider invocation must eventually pass through authorization and RFC-0001 durable Activity boundaries; a deterministic test adapter must not bypass those gates.
 Status: Accepted by PR-006.
+
+## D-091
+Decision: PR-007 EvaluationRule, EvaluationRequest, EvaluationFinding, and EvaluationResult are immutable pure assessment contracts distinct from persisted runtime `evl_` Evaluation records.
+Reason: Quality logic must be testable without implicitly creating durable evidence, Events, approvals, or Kernel mutation.
+Status: Accepted by PR-007.
+
+## D-092
+Decision: Evaluation always applies a non-empty-content finding, optionally applies the request's expected schema, then evaluates declared rules in lexicographic rule-ID order.
+Reason: Fixed ordering and explicit built-ins produce stable findings independent of caller rule ordering.
+Status: Accepted by PR-007.
+
+## D-093
+Decision: Evaluation score is the unweighted passed-finding ratio rounded to six decimals; overall pass also requires no failed error or critical finding.
+Reason: Transparent scoring avoids premature weighting while severity preserves hard quality and safety gates even under a relaxed score threshold.
+Status: Accepted by PR-007.
+
+## D-094
+Decision: Custom Evaluation rules are injected named pure callables receiving defensive copies and must return bool or `(bool, message)`.
+Reason: Narrow injection supports deterministic domain checks without dynamic code loading, global registration, Provider calls, or runtime mutation.
+Status: Accepted by PR-007.
+
+## D-095
+Decision: PR-007 does not persist EvaluationResult, invoke Providers, execute Workflows, record human Approval, call the Planner, or mutate Kernel state.
+Reason: A future authorized lifecycle service must explicitly translate assessment output into runtime Evaluation evidence and authoritative Events.
+Status: Accepted by PR-007.
