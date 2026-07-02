@@ -43,8 +43,9 @@ Completed foundations:
 - PR-007 immutable Evaluation contracts and deterministic quality-rule runner
 - PR-008 deterministic Workspace Planner with immutable execution plans, dependency ordering, and quality/approval checkpoints
 - PR-009 deterministic in-memory Journey Runner over Planner, Mock Provider, and Evaluation
+- PR-010 deterministic ExecutionPlan validation and plan-scoped authorization preflight
 
-Next: PR-010 Plan Validation and Authorization Request Foundation before any durable or external execution.
+Next: PR-011 Evaluation Rubric Manifest and Loader Foundation, replacing the Journey harness's minimal evaluation floor without adding real Providers or persistence.
 
 Most lifecycle agent, prompt, template, domain, and roadmap files remain explicitly marked as planned placeholders. No web application, Validation, or Product module has been implemented; Discovery is currently deterministic and local-only.
 
@@ -72,9 +73,11 @@ The revised [`FounderOS v0.2 Blueprint`](architecture/FounderOS_v0.2_Blueprint.m
 
 [`founderos_runtime.evaluation`](src/founderos_runtime/evaluation/) defines frozen rules, requests, findings, results, and a pure deterministic Evaluation Runner. It supports required fields, schemas, minimum lengths, regexes, custom rules, score thresholds, and hard-blocking severity without invoking Providers, executing Workflows, recording Approvals, persisting `evl_` records, or mutating runtime state.
 
-[ounderos_runtime.planner](src/founderos_runtime/planner/) converts one validated Workspace Workflow into an immutable, deterministic Execution Plan. It resolves exact Agent and Artifact references, orders steps by Artifact dependencies, adds declared Evaluation and Approval checkpoints, and reports non-authoritative transition intent. It does not execute steps, call Providers or Tools, approve work, persist records, or mutate the Workspace or Kernel. The earlier state-aware lifecycle planner remains available through the package root for CLI and vertical-slice compatibility.
+[`founderos_runtime.planner`](src/founderos_runtime/planner/) converts one validated Workspace Workflow into an immutable, deterministic Execution Plan. It resolves exact Agent and Artifact references, orders steps by Artifact dependencies, adds declared Evaluation and Approval checkpoints, and reports non-authoritative transition intent. It does not execute steps, call Providers or Tools, approve work, persist records, or mutate the Workspace or Kernel. The earlier state-aware lifecycle planner remains available through the package root for CLI and vertical-slice compatibility.
 
-[ounderos_runtime.journey](src/founderos_runtime/journey/) is a deterministic in-memory orchestration harness. It asks the Workspace Planner for one plan, executes sequential Agent tasks through MockProvider, runs deterministic Evaluation checkpoints, stops on critical findings, and returns an immutable JourneyResult. Approval, transition, and Activity steps are explicitly skipped; no files, Events, repositories, Project state, real Providers, or external systems are touched.
+[`founderos_runtime.journey`](src/founderos_runtime/journey/) is a deterministic in-memory orchestration harness. It asks the Workspace Planner for one plan, executes sequential Agent tasks through `MockProvider`, runs deterministic Evaluation checkpoints, stops on critical findings, and returns an immutable `JourneyResult`. Approval, transition, and Activity steps are explicitly skipped; no files, Events, repositories, Project state, real Providers, or external systems are touched.
+
+[`founderos_runtime.validation`](src/founderos_runtime/validation/) verifies Workflow, Agent, Artifact, ID, dependency-order, cycle, and Evaluation-checkpoint invariants on an immutable ExecutionPlan. [`founderos_runtime.authorization`](src/founderos_runtime/authorization/) then applies fixed deterministic default-deny capability policies. Validation, authorization, Approval, and execution remain distinct: neither preflight component executes work, performs human Approval, persists data, or grants Kernel mutation authority.
 
 ## Developer Setup and Testing
 
@@ -109,7 +112,7 @@ The direct runner command is also supported:
 
 ### Windows Test Troubleshooting
 
-- A normal full run currently takes roughly 80–90 seconds. The official script prints every test so expected work does not look like a stalled process.
+- A normal full run currently takes roughly 80Ã¢â‚¬â€œ90 seconds. The official script prints every test so expected work does not look like a stalled process.
 - Pytest uses its standard ignored `.pytest_cache` directory. If it reports `Access is denied`, inspect `icacls .pytest_cache`; a protected non-inheriting ACL is invalid for this workspace.
 - Repair that disposable cache with `icacls .pytest_cache /reset /T /C`. This restores inherited workspace permissions without redirecting or disabling pytest's cache provider.
 - Stale writer-lock inspection uses a non-signalling Win32 process query. It does not use POSIX-style `os.kill(pid, 0)` on Windows.
@@ -158,7 +161,7 @@ founderos discovery --input opportunities.json --idempotency-key discovery-1
 founderos approve-opportunity --rationale "Highest deterministic score" --idempotency-key select-1
 ```
 
-Discovery input is either a candidate array or `{ "candidates": [...] }`. Each candidate supplies a problem, target user, six integer scores from 0–10, assumptions, and risks. `total_score` is the deterministic unweighted sum.
+Discovery input is either a candidate array or `{ "candidates": [...] }`. Each candidate supplies a problem, target user, six integer scores from 0Ã¢â‚¬â€œ10, assumptions, and risks. `total_score` is the deterministic unweighted sum.
 
 Mutation commands accept `--idempotency-key KEY`. Reusing the same key for the same command returns its persisted result without duplicating Projects, Artifacts, Approvals, runs, transitions, or Events. Reusing a key for another command is rejected.
 

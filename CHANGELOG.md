@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### PR-010 - Plan Validation and Authorization Foundation
+
+- Added deterministic PlanValidator and immutable ValidationReport contracts covering Workflow, Agent, Artifact, duplicate-ID, dependency-cycle/order, and Evaluation-checkpoint integrity.
+- Added a pure AuthorizationEngine with missing-validation denial, unknown-capability denial, high-risk Approval-gate requirements, and safe-plan allowance.
+- Integrated both gates into JourneyRunner before any Provider or Evaluation step; denied journeys return descriptive immutable results and perform no work.
+- Added 15 focused tests plus preserved all existing Journey behavior.
+- Added no human Approval, persistence, CLI, real Provider, network call, runtime Event, or Project/Kernel mutation.
+
 ### PR-009 - Founder Journey Runner Foundation
 
 - Added an in-memory deterministic Journey Runner that consumes one Workspace Planner Execution Plan without replanning.

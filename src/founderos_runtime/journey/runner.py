@@ -6,6 +6,7 @@ from collections.abc import Mapping
 import re
 from typing import Any
 
+from founderos_runtime.authorization import AuthorizationDecision, AuthorizationEngine
 from founderos_runtime.evaluation import (
     EvaluationRequest,
     EvaluationResult,
@@ -18,6 +19,7 @@ from founderos_runtime.planner import Planner, PlannerWorkflowNotFoundError
 from founderos_runtime.planner.execution_plan import ExecutionPlan, ExecutionStep
 from founderos_runtime.provider import MockProvider, ProviderRequest, ProviderStatus
 from founderos_runtime.provider import thaw as provider_thaw
+from founderos_runtime.validation import PlanValidator, ValidationReport
 from founderos_runtime.workspace import Workspace
 
 from .exceptions import JourneyEmptyPlanError, JourneyInvalidPlanError, JourneyWorkflowNotFoundError
@@ -39,6 +41,8 @@ class JourneyRunner:
         provider: MockProvider | None = None,
         evaluation_runner: EvaluationRunner | None = None,
         planner: Planner | None = None,
+        validator: PlanValidator | None = None,
+        authorization_engine: AuthorizationEngine | None = None,
     ) -> None:
         if not isinstance(workspace, Workspace):
             raise TypeError("JourneyRunner requires a Workspace")
@@ -46,12 +50,18 @@ class JourneyRunner:
         self._provider = provider or MockProvider()
         self._evaluation_runner = evaluation_runner or EvaluationRunner()
         self._planner = planner or Planner(workspace)
+        self._validator = validator or PlanValidator(workspace)
+        self._authorization_engine = authorization_engine or AuthorizationEngine()
         if not isinstance(self._provider, MockProvider):
             raise TypeError("JourneyRunner provider must be a MockProvider")
         if not isinstance(self._evaluation_runner, EvaluationRunner):
             raise TypeError("evaluation_runner must be an EvaluationRunner")
         if not isinstance(self._planner, Planner):
             raise TypeError("planner must be a Workspace Planner")
+        if not isinstance(self._validator, PlanValidator):
+            raise TypeError("validator must be a PlanValidator")
+        if not isinstance(self._authorization_engine, AuthorizationEngine):
+            raise TypeError("authorization_engine must be an AuthorizationEngine")
 
     def run(self, workflow_id: str) -> JourneyResult:
         try:
@@ -60,6 +70,19 @@ class JourneyRunner:
             raise JourneyWorkflowNotFoundError(str(error)) from error
         if not plan.steps:
             raise JourneyEmptyPlanError(f"workflow {workflow_id!r} produced an empty plan")
+
+        validation = self._validator.validate(plan)
+        if not validation.valid:
+            return self._preflight_failure(plan, "plan_validation_failed", validation, None)
+        authorization = self._authorization_engine.authorize(plan, validation)
+        if not authorization.allowed:
+            return self._preflight_failure(
+                plan, "plan_authorization_denied", validation, authorization
+            )
+        preflight = {
+            "validation": validation.to_dict(),
+            "authorization": authorization.to_dict(),
+        }
 
         completed: list[str] = []
         skipped: list[str] = []
@@ -84,7 +107,7 @@ class JourneyRunner:
                     log.append({"index": len(log), "step_id": step.id, "event": "journey_stopped"})
                     return self._result(
                         plan, JourneyStatus.FAILED, completed, skipped, evaluations,
-                        artifacts, generated, log, "critical_evaluation_failure",
+                        artifacts, generated, log, "critical_evaluation_failure", preflight,
                     )
             elif step.type in _SKIPPED_TYPES:
                 skipped.append(step.id)
@@ -113,7 +136,7 @@ class JourneyRunner:
 
         return self._result(
             plan, JourneyStatus.SUCCEEDED, completed, skipped, evaluations,
-            artifacts, generated, log, None,
+            artifacts, generated, log, None, preflight,
         )
 
     def summary(self) -> dict[str, Any]:
@@ -128,6 +151,8 @@ class JourneyRunner:
             "deterministic": True,
             "in_memory_only": True,
             "workspace_read_only": True,
+            "preflight_validation": True,
+            "preflight_authorization": True,
         }
 
     def _run_agent(
@@ -259,6 +284,7 @@ class JourneyRunner:
         generated: set[str],
         log: list[Mapping[str, Any]],
         stopped_reason: str | None,
+        preflight: Mapping[str, Any],
     ) -> JourneyResult:
         return JourneyResult(
             workflow_id=plan.workflow_id,
@@ -275,6 +301,36 @@ class JourneyRunner:
                 "stopped_reason": stopped_reason,
                 "persistence": False,
                 "state_mutation": False,
+                **preflight,
             },
         )
 
+    @staticmethod
+    def _preflight_failure(
+        plan: ExecutionPlan,
+        stopped_reason: str,
+        validation: ValidationReport,
+        authorization: AuthorizationDecision | None,
+    ) -> JourneyResult:
+        event = "validation_failed" if authorization is None else "authorization_denied"
+        return JourneyResult(
+            workflow_id=plan.workflow_id,
+            status=JourneyStatus.FAILED,
+            completed_steps=(),
+            skipped_steps=tuple(step.id for step in plan.steps),
+            evaluation_results=(),
+            generated_artifacts={},
+            execution_log=(
+                {"index": 0, "step_id": None, "event": event, "reason": stopped_reason},
+            ),
+            metadata={
+                "journey_runner_version": JOURNEY_RUNNER_VERSION,
+                "planner_version": plan.metadata["planner_version"],
+                "workflow_version": plan.metadata["workflow_version"],
+                "stopped_reason": stopped_reason,
+                "persistence": False,
+                "state_mutation": False,
+                "validation": validation.to_dict(),
+                "authorization": authorization.to_dict() if authorization is not None else None,
+            },
+        )

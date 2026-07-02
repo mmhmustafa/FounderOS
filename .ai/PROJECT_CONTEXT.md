@@ -63,9 +63,10 @@ Runtime:
 - PR-007 immutable Evaluation contracts and deterministic quality runner with built-in/custom rules, scoring, and no persisted evidence mutation
 - PR-008 immutable Workspace Execution Plans with exact reference resolution, dependency ordering, checkpoints, and no execution or mutation
 - PR-009 deterministic in-memory Journey Runner with Mock Provider Agent tasks, Evaluation checkpoints, critical stopping, and no persistence or state mutation
+- PR-010 deterministic Plan Validation and plan-scoped Authorization preflight before Journey execution
 
 ## Current Milestone
-PR-010: validate Execution Plans and derive authorization requests before expanding execution beyond the deterministic in-memory harness.
+PR-011: define and load deterministic Evaluation rubric assets without adding real Providers, persistence, or runtime mutation.
 
 ## Planned
 - Durable persistence adapters

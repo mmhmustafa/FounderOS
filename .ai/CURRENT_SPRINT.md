@@ -1,22 +1,19 @@
 # CURRENT_SPRINT
 
-Sprint: Plan Validation and Authorization Request Foundation (PR-010)
+Sprint: Evaluation Rubric Manifest and Loader Foundation (PR-011)
 
 ## Goal
-Define the deterministic boundary that validates a PR-008 Execution Plan and translates its requested capabilities into authorization requests without executing the plan.
+Define loadable deterministic Evaluation rubric assets so Journey quality checks use declared rules instead of a minimal built-in availability floor.
 
 ## Prerequisites Completed
-- PR-001 through PR-005 manifest and Workspace foundations
-- PR-006 Mock Provider Foundation
-- PR-007 Evaluation Contract and Runner Foundation
-- PR-008 Planner Foundation
-- PR-009 Founder Journey Runner Foundation
+- PR-001 through PR-009 platform and Journey foundations
+- PR-010 Plan Validation and Authorization Foundation
 
 ## Expected Scope
-- Validate plan structure, references, ordering, and checkpoint invariants
-- Derive authorization requests for planned actions without evaluating policy or executing actions
-- Preserve the Kernel as sole mutation authority
-- No Workflow execution, Provider or Tool invocation, Approval execution, CLI, persistence, Event, or state mutation
+- Immutable rubric identity, version, target, score threshold, and deterministic rules
+- Validation for rule parameters supported by the existing Evaluation Runner
+- Loader integration for exact Workflow rubric references
+- No real Provider, human Approval, persistence, CLI, Event, or Kernel mutation
 
 ## Definition of Done
-A deterministic plan can be checked and expressed as authorization intent before any future executor is introduced.
+A validated Workflow Evaluation reference resolves to an exact deterministic rubric that can be translated directly into existing Evaluation contracts without introducing another execution or scoring model.

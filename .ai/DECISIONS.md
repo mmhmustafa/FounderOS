@@ -514,3 +514,23 @@ Status: Accepted by PR-009.
 Decision: Until rubric assets are loadable, every required Journey evaluation applies the Evaluation Runner's non-empty check plus a critical non-null subject rule.
 Reason: The runner must stop deterministically on critical absence without inventing the domain semantics of a referenced but unloaded rubric.
 Status: Accepted by PR-009.
+
+## D-104
+Decision: PlanValidator is a pure Workspace-aware preflight that reports all deterministic structural findings without executing or authorizing the plan.
+Reason: Structural coherence and permission are independent questions; combining them would obscure whether a plan is malformed or merely disallowed.
+Status: Accepted by PR-010.
+
+## D-105
+Decision: PR-010 AuthorizationEngine is plan-scoped, fixed-policy, default-deny, and consumes a valid ValidationReport before evaluating capabilities.
+Reason: A small deterministic gate proves ordering and denial semantics without pretending to implement users, RBAC, tenant policy, persistence, or the full Milestone 12C Actor/Resource model.
+Status: Accepted by PR-010.
+
+## D-106
+Decision: High-risk Activity or transition intent requires declared Approval references, but authorization never treats those declarations as completed human Approval.
+Reason: Authorization may require evidence; only the Approval lifecycle and owning Kernel guard can establish that the evidence exists and is valid.
+Status: Accepted by PR-010.
+
+## D-107
+Decision: JourneyRunner validates and authorizes its single immutable ExecutionPlan before executing any in-memory step and never replans after either decision.
+Reason: Preflight denial must guarantee zero Provider calls and preserve the Planner/Journey separation established by PR-008 and PR-009.
+Status: Accepted by PR-010.

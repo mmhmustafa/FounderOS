@@ -22,7 +22,7 @@ The Journey Runner performs the narrow in-memory journey described by that exist
 
 ## Not the Production Runtime Executor
 
-This runner is a deterministic platform harness, not the future production Runtime Executor. It has no durable Activities, authorization enforcement, persistence, leases, retries, compensation, human interaction, parallelism, Project state, Kernel repositories, or Event recording.
+This runner is a deterministic platform harness, not the future production Runtime Executor. PR-010 adds plan-scoped validation and authorization preflight, but there are still no durable Activities, Actor/RBAC enforcement, persistence, leases, retries, compensation, human interaction, parallelism, Project state, Kernel repositories, or Event recording.
 
 Approval, transition-request, and Activity-request steps are explicitly logged as skipped because executing them would cross those missing boundaries. A successful Journey result therefore means the in-scope deterministic steps completed; it does not mean a human approved anything or Project state changed.
 
@@ -54,7 +54,7 @@ Approval, transition-request, and Activity-request steps are explicitly logged a
 
 Rubric references are not loaded, required input Artifact content is unavailable, Provider failures currently raise a typed Journey plan/execution error, and the runner supports only sequential synchronous execution. Approval or transition completion cannot be claimed.
 
-## Recommended PR-010
+## Recommended PR-011
 
-Add Plan Validation and Authorization Request derivation before expanding this harness toward executable side effects. Provider invocation beyond the in-process Mock Provider must additionally pass through RFC-0001 durable Activity boundaries. Do not add real Providers, Tools, persistence, or Kernel mutation in that PR.
+Add Evaluation Rubric Manifest loading so declared Workflow quality rules replace the current minimal non-null floor. Provider invocation beyond the in-process Mock Provider must still pass through RFC-0001 durable Activity boundaries. Do not add real Providers, Tools, persistence, or Kernel mutation in that PR.
 

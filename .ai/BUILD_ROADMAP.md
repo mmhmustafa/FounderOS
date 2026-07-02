@@ -258,11 +258,20 @@ Authorization runtime enforcement remains mandatory before Provider or Tool exec
 - [x] Explicitly skip Approval, transition, and Activity execution
 - [x] Add no persistence, CLI, real Provider, or Project/Kernel mutation
 
-### PR-010 - Plan Validation and Authorization Request Foundation (Next)
+### PR-010 - Plan Validation and Authorization Foundation
 
-- [ ] Validate plan references, ordering, checkpoints, and requested capabilities
-- [ ] Translate planned actions into deterministic authorization requests
-- [ ] Add no policy enforcement, execution, persistence, or Kernel mutation
+- [x] Validate Workflow, Agent, Artifact, ID, dependency, order, and Evaluation checkpoint integrity
+- [x] Apply deterministic missing-validation, unknown-capability, high-risk, and safe-plan policies
+- [x] Gate Journey execution on validation and authorization decisions
+- [x] Return descriptive failures without Provider calls or mutation
+- [x] Add no human Approval, persistence, CLI, real Provider, or Kernel mutation
+
+### PR-011 - Evaluation Rubric Manifest and Loader Foundation (Next)
+
+- [ ] Define immutable rubric identity, version, target, threshold, and deterministic rule metadata
+- [ ] Load and validate rubric assets referenced by Workflow Evaluations
+- [ ] Map rubric rules exactly to the existing deterministic Evaluation Runner
+- [ ] Add no real Provider, human Approval, persistence, or Kernel mutation
 
 ## Deferred Runtime Hardening
 
