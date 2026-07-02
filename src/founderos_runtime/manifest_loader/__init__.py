@@ -8,7 +8,13 @@ from .exceptions import (
     ManifestValidationError,
     ManifestYamlError,
 )
-from .loader import ManifestLoader, load_agent_manifest, load_app_manifest, load_workflow_manifest
+from .loader import (
+    ManifestLoader,
+    load_agent_manifest,
+    load_app_manifest,
+    load_evaluation_rubric_manifest,
+    load_workflow_manifest,
+)
 
 __all__ = [
     "ManifestFileNotFoundError",
@@ -20,5 +26,6 @@ __all__ = [
     "ManifestYamlError",
     "load_agent_manifest",
     "load_app_manifest",
+    "load_evaluation_rubric_manifest",
     "load_workflow_manifest",
 ]

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### PR-011 - Evaluation Rubric Manifest and Loader Foundation
+
+- Added a strict versioned Evaluation Rubric schema and deterministic Opportunity Report example.
+- Extended the stateless Manifest Loader with explicit Evaluation Rubric loading and existing typed validation errors.
+- Added immutable EvaluationRubric translation into existing EvaluationRule, EvaluationRequest, and EvaluationRunner contracts.
+- Added 11 tests covering schema failures, loading, valid and invalid Artifact evaluation, deterministic scoring, Provider isolation, and runtime non-mutation.
+- Added no Journey execution changes, human Approval, persistence, CLI, real Provider, network access, or runtime state mutation.
+
 ### PR-010 - Plan Validation and Authorization Foundation
 
 - Added deterministic PlanValidator and immutable ValidationReport contracts covering Workflow, Agent, Artifact, duplicate-ID, dependency-cycle/order, and Evaluation-checkpoint integrity.

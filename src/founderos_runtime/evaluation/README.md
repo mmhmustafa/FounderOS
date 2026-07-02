@@ -94,3 +94,9 @@ No human Approval, planning, Workflow/Agent execution, Provider execution, Tool 
 Scoring is unweighted. Regex uses Python's local regular-expression engine without timeout controls. Custom-handler purity cannot be mechanically guaranteed. Evaluation rubrics are constructed in Python rather than loaded from package manifests. Results are not persisted or correlated with runtime Evaluation IDs.
 
 PR-008 should define the versioned Evaluation Rubric Manifest schema and loader/Workspace support needed to package these rules declaratively. It must not add Workflow execution, real Providers, human Approval, or Kernel mutation.
+
+## Evaluation Rubrics
+
+PR-011 adds versioned declarative Evaluation Rubrics under `runtime/contracts/evaluation/`. `EvaluationRubricLoader` validates a rubric through the stateless Manifest Loader, converts its rules into existing immutable `EvaluationRule` objects, and configures the existing runner threshold. A rubric declares quality policy; it does not execute itself or grant Approval.
+
+Workflow rubric path resolution and Journey adoption remain deferred to PR-012.

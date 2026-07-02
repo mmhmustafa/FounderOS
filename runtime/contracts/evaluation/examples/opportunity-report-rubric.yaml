@@ -1,0 +1,65 @@
+id: rub_01ARZ3NDEKTSV4RRFFQ69G5FAY
+name: Opportunity Report Quality
+version: 1.0.0
+description: Deterministic minimum quality gate for a structured Opportunity Report.
+status: active
+maturity: experimental
+applies_to:
+  artifact_type: opportunity_report
+  schema_ref: schemas/opportunity-report.schema.json
+rules:
+  - id: opportunity.candidates_required
+    name: Candidates Required
+    description: The report must include candidate opportunities.
+    severity: critical
+    type: required_field
+    parameters:
+      field: candidates
+  - id: opportunity.candidate_count
+    name: Candidate Count
+    description: At least one candidate must be present.
+    severity: error
+    type: minimum_length
+    parameters:
+      field: candidates
+      minimum: 1
+  - id: opportunity.selection_required
+    name: Selection Required
+    description: The report must name its selected opportunity.
+    severity: critical
+    type: required_field
+    parameters:
+      field: selected_opportunity
+  - id: opportunity.problem_present
+    name: Selected Problem Present
+    description: The selected opportunity must describe a non-empty problem.
+    severity: error
+    type: regex
+    parameters:
+      field: selected_opportunity.problem
+      pattern: .+
+  - id: opportunity.structure
+    name: Opportunity Report Structure
+    description: The report must retain its minimum object structure.
+    severity: error
+    type: schema
+    parameters:
+      schema:
+        type: object
+        required: [candidates, selected_opportunity]
+        properties:
+          candidates:
+            type: array
+            minItems: 1
+          selected_opportunity:
+            type: object
+            required: [problem]
+scoring:
+  method: passed_finding_ratio
+  precision: 6
+  blocking_severities: [error, critical]
+pass_threshold: 1.0
+metadata:
+  owner: founderos.discovery
+  deterministic: true
+

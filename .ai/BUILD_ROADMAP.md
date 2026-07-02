@@ -266,12 +266,20 @@ Authorization runtime enforcement remains mandatory before Provider or Tool exec
 - [x] Return descriptive failures without Provider calls or mutation
 - [x] Add no human Approval, persistence, CLI, real Provider, or Kernel mutation
 
-### PR-011 - Evaluation Rubric Manifest and Loader Foundation (Next)
+### PR-011 - Evaluation Rubric Manifest and Loader Foundation
 
-- [ ] Define immutable rubric identity, version, target, threshold, and deterministic rule metadata
-- [ ] Load and validate rubric assets referenced by Workflow Evaluations
-- [ ] Map rubric rules exactly to the existing deterministic Evaluation Runner
-- [ ] Add no real Provider, human Approval, persistence, or Kernel mutation
+- [x] Define immutable rubric identity, version, target, threshold, and deterministic rule metadata
+- [x] Add an Opportunity Report rubric example
+- [x] Load and validate rubric manifests through the stateless Manifest Loader
+- [x] Map rubric rules exactly to the existing deterministic Evaluation Runner
+- [x] Add no real Provider, human Approval, persistence, or Kernel mutation
+
+### PR-012 - Journey Rubric Resolution Foundation (Next)
+
+- [ ] Resolve exact Workflow Evaluation rubric references from bounded package assets
+- [ ] Replace the Journey harness's minimal built-in quality floor with loaded rubric rules
+- [ ] Preserve deterministic validation and authorization preflight
+- [ ] Add no persistence, real Provider, human Approval, CLI, or Kernel mutation
 
 ## Deferred Runtime Hardening
 

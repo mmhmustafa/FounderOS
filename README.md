@@ -44,8 +44,9 @@ Completed foundations:
 - PR-008 deterministic Workspace Planner with immutable execution plans, dependency ordering, and quality/approval checkpoints
 - PR-009 deterministic in-memory Journey Runner over Planner, Mock Provider, and Evaluation
 - PR-010 deterministic ExecutionPlan validation and plan-scoped authorization preflight
+- PR-011 versioned Evaluation Rubric manifests, loading, and deterministic rule translation
 
-Next: PR-011 Evaluation Rubric Manifest and Loader Foundation, replacing the Journey harness's minimal evaluation floor without adding real Providers or persistence.
+Next: PR-012 Journey Rubric Resolution Foundation, resolving exact Workflow rubric references without adding persistence or real Providers.
 
 Most lifecycle agent, prompt, template, domain, and roadmap files remain explicitly marked as planned placeholders. No web application, Validation, or Product module has been implemented; Discovery is currently deterministic and local-only.
 
@@ -78,6 +79,8 @@ The revised [`FounderOS v0.2 Blueprint`](architecture/FounderOS_v0.2_Blueprint.m
 [`founderos_runtime.journey`](src/founderos_runtime/journey/) is a deterministic in-memory orchestration harness. It asks the Workspace Planner for one plan, executes sequential Agent tasks through `MockProvider`, runs deterministic Evaluation checkpoints, stops on critical findings, and returns an immutable `JourneyResult`. Approval, transition, and Activity steps are explicitly skipped; no files, Events, repositories, Project state, real Providers, or external systems are touched.
 
 [`founderos_runtime.validation`](src/founderos_runtime/validation/) verifies Workflow, Agent, Artifact, ID, dependency-order, cycle, and Evaluation-checkpoint invariants on an immutable ExecutionPlan. [`founderos_runtime.authorization`](src/founderos_runtime/authorization/) then applies fixed deterministic default-deny capability policies. Validation, authorization, Approval, and execution remain distinct: neither preflight component executes work, performs human Approval, persists data, or grants Kernel mutation authority.
+
+[`runtime/contracts/evaluation/`](runtime/contracts/evaluation/) defines reusable versioned Evaluation Rubrics. [`founderos_runtime.evaluation`](src/founderos_runtime/evaluation/) loads a validated rubric into the existing deterministic `EvaluationRule` and `EvaluationRunner` model. Rubrics declare quality gates but do not execute Workflows, call Providers, perform Approval, persist evidence, or mutate runtime state.
 
 ## Developer Setup and Testing
 

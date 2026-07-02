@@ -83,3 +83,7 @@ except ManifestLoaderError as error:
 The default contract lookup expects the source-tree `runtime/contracts/` directory, matching the current editable/local deployment. Wheel resource packaging is not defined yet. File-size limits, YAML alias limits, referenced-asset resolution, digest verification, and registry semantics remain future work.
 
 PR-005's read-only Workspace now performs bounded discovery and delegates every supported file to this loader before building a semantic snapshot. The loader itself remains path-explicit, stateless, uncached, and independent from Workspace indexing.
+
+## Evaluation Rubrics
+
+PR-011 adds the explicit `load_evaluation_rubric_manifest` API. It uses the same safe YAML, Draft 2020-12 schema, typed error, no-cache, and defensive-copy behavior as Agent, Workflow, and App loading. Conversion into executable Evaluation contracts remains owned by `founderos_runtime.evaluation`.

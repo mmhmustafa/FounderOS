@@ -534,3 +534,23 @@ Status: Accepted by PR-010.
 Decision: JourneyRunner validates and authorizes its single immutable ExecutionPlan before executing any in-memory step and never replans after either decision.
 Reason: Preflight denial must guarantee zero Provider calls and preserve the Planner/Journey separation established by PR-008 and PR-009.
 Status: Accepted by PR-010.
+
+## D-108
+Decision: Evaluation Rubric manifests are immutable declarative assets that translate directly into existing EvaluationRule objects and the EvaluationRunner score threshold.
+Reason: Reusable quality gates must not introduce a competing rule language, scoring engine, or execution authority.
+Status: Accepted by PR-011.
+
+## D-109
+Decision: Rubric loading extends the stateless Manifest Loader with an explicit kind and returns an immutable EvaluationRubric through the Evaluation package.
+Reason: Structural validation remains centralized while Evaluation-specific conversion and rule-configuration validation stay with the owning domain module.
+Status: Accepted by PR-011.
+
+## D-110
+Decision: The initial rubric scoring contract fixes passed-finding ratio, six-decimal precision, and error/critical blocking to the current EvaluationRunner behavior.
+Reason: Declarative configuration may select a threshold but cannot claim unsupported scoring behavior or weaken established blocking semantics.
+Status: Accepted by PR-011.
+
+## D-111
+Decision: PR-011 does not change Journey execution or resolve Workflow rubric paths.
+Reason: Schema/loading correctness is independently reviewable; bounded asset resolution and Journey adoption belong to PR-012.
+Status: Accepted by PR-011.

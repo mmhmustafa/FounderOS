@@ -21,6 +21,7 @@ SCHEMA_PATHS = {
     "agent": Path("agent") / "agent.schema.yaml",
     "workflow": Path("workflow") / "workflow.schema.yaml",
     "app": Path("app") / "app.schema.yaml",
+    "evaluation_rubric": Path("evaluation") / "evaluation-rubric.schema.yaml",
 }
 
 
@@ -83,6 +84,9 @@ class ManifestLoader:
     def load_app_manifest(self, path: str | Path) -> dict[str, Any]:
         return self._load("app", path)
 
+    def load_evaluation_rubric_manifest(self, path: str | Path) -> dict[str, Any]:
+        return self._load("evaluation_rubric", path)
+
     def _load(self, kind: str, path: str | Path) -> dict[str, Any]:
         manifest_path = Path(path)
         schema_path = self.contract_directory / SCHEMA_PATHS[kind]
@@ -102,3 +106,6 @@ def load_workflow_manifest(path: str | Path) -> dict[str, Any]:
 
 def load_app_manifest(path: str | Path) -> dict[str, Any]:
     return ManifestLoader().load_app_manifest(path)
+
+def load_evaluation_rubric_manifest(path: str | Path) -> dict[str, Any]:
+    return ManifestLoader().load_evaluation_rubric_manifest(path)

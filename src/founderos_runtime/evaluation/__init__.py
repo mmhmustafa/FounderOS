@@ -16,6 +16,8 @@ from .exceptions import (
     EvaluationRequestError,
 )
 from .runner import EvaluationRunner
+from .rubric import EvaluationRubric
+from .rubric_loader import EvaluationRubricLoader, load_evaluation_rubric
 from .rules import CustomRule
 
 __all__ = [
@@ -29,7 +31,10 @@ __all__ = [
     "EvaluationResult",
     "EvaluationRule",
     "EvaluationRunner",
+    "EvaluationRubric",
+    "EvaluationRubricLoader",
     "RuleType",
     "Severity",
     "thaw",
+    "load_evaluation_rubric",
 ]
