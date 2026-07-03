@@ -67,9 +67,10 @@ Runtime:
 - PR-011 versioned Evaluation Rubric manifests, loading, and deterministic rule translation
 - PR-012 first-party deterministic Discovery package and in-memory end-to-end platform composition
 - PR-013 FounderOS CLI Alpha with deterministic Doctor and Discovery demo commands
+- EPIC-001 / PR-014 Atlas vendor-neutral Discovery Engine and in-memory topology foundation
 
 ## Current Milestone
-PR-014: define reusable Prompt Pack manifests without adding real Providers, execution behavior, persistence, or runtime mutation.
+PR-015: reconcile multiple fixture-only Atlas device observations without adding live transport, credentials, persistence, GUI, or device mutation.
 
 ## Planned
 - Durable persistence adapters

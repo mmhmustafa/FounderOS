@@ -47,8 +47,9 @@ Completed foundations:
 - PR-011 versioned Evaluation Rubric manifests, loading, and deterministic rule translation
 - PR-012 first-party deterministic Discovery package and fully in-memory platform vertical slice
 - PR-013 standard-library FounderOS CLI Alpha over the deterministic Discovery vertical slice
+- EPIC-001 / PR-014 Atlas vendor-neutral Discovery Engine and in-memory topology foundation
 
-Next: PR-014 Prompt Pack Manifest Foundation, defining reusable versioned prompt assets without adding real Providers or execution behavior.
+Next: PR-015 Atlas Multi-Device Topology Reconciliation, extending fixture-only discovery across multiple observations without live transport or persistence.
 
 Most lifecycle agent, prompt, template, domain, and roadmap files remain explicitly marked as planned placeholders. No web application, Validation, or Product module has been implemented; Discovery is currently deterministic and local-only.
 
@@ -109,6 +110,14 @@ founderos help
 `demo discovery` invokes the existing PR-012 helper; it does not implement its own planning, validation, authorization, execution, or Evaluation logic. Output is deterministic plain text with no ANSI styling. The demo uses the offline Mock Provider and writes no Project state or files.
 
 The earlier persistence-oriented local Project commands remain available for compatibility. A future Web UI should call the same runtime/application boundaries rather than invoking the CLI or duplicating its orchestration.
+
+## Atlas Discovery Foundation
+
+Atlas is the first flagship first-party networking App built on FounderOS. FounderOS remains the platform runtime; [`founderos_atlas`](src/founderos_atlas/) owns network models, fixture parsers, normalized facts, and topology projection.
+
+[`apps/atlas/`](apps/atlas/) packages the Atlas manifests and deterministic Cisco IOS fixtures. The reference adapter parses already-collected `show version`, `show ip interface brief`, and `show cdp neighbors detail` text into immutable vendor-neutral `DiscoveryResult` values. `TopologyGraph` projects devices as nodes and observed neighbors as directed edges.
+
+Cisco IOS is a reference adapter, not the Atlas product boundary. PR-014 performs no SSH, SNMP, credential handling, network connection, persistence, device mutation, AI call, API, or GUI work. Any future collection transport must remain separate and cross FounderOS authorization and durable Activity boundaries.
 
 ## Developer Setup and Testing
 

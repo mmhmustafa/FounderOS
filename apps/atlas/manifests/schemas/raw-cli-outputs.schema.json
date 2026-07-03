@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Atlas Raw CLI Outputs",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["show version", "show ip interface brief", "show cdp neighbors detail"],
+  "properties": {
+    "show version": {"type": "string", "minLength": 1},
+    "show ip interface brief": {"type": "string", "minLength": 1},
+    "show cdp neighbors detail": {"type": "string", "minLength": 1}
+  }
+}

@@ -1,19 +1,19 @@
 # CURRENT_SPRINT
 
-Sprint: Prompt Pack Manifest Foundation (PR-014)
+Sprint: Atlas Multi-Device Topology Reconciliation (PR-015)
 
 ## Goal
-Define reusable, versioned, declarative prompt assets without introducing real Provider integration or execution behavior.
+Reconcile multiple fixture-only DiscoveryResults into a coherent deterministic topology without live transport or persistence.
 
 ## Prerequisites Completed
-- PR-001 through PR-012 platform and deterministic Discovery foundations
-- PR-013 FounderOS CLI Alpha
+- PR-001 through PR-013 FounderOS platform, Journey, and CLI foundations
+- EPIC-001 / PR-014 Atlas Discovery Engine Foundation
 
 ## Expected Scope
-- Prompt Pack schema and independently loadable examples
-- Explicit prompt inputs, outputs, roles, and compatibility metadata
-- Separation from Agent manifests, Provider selection, secrets, and runtime state
-- No real Provider, prompt execution, persistence, CLI expansion, or Kernel mutation
+- Multiple checked-in device fixture sets
+- Deterministic identity and bidirectional neighbor reconciliation
+- Explicit unresolved, conflicting, and partial observation semantics
+- No SSH, SNMP, credentials, persistence, GUI, API, or device mutation
 
 ## Definition of Done
-A Prompt Pack contract can be validated independently and is precise enough for later deterministic rendering without embedding execution authority.
+Multiple fixture observations produce a stable topology with explainable reconciliation results and no external side effects.

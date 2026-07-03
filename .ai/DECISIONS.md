@@ -584,3 +584,23 @@ Status: Accepted by PR-013.
 Decision: The former `founderos_runtime.cli` module becomes a package, while existing local Project commands remain behind an unchanged compatibility adapter.
 Reason: Introducing the public Alpha surface must not break the established persistence-oriented CLI or duplicate its application-facade behavior.
 Status: Accepted by PR-013.
+
+## D-118
+Decision: Atlas is a first-party App/domain package under `apps/atlas` and `founderos_atlas`; it does not live inside or rename `founderos_runtime`.
+Reason: FounderOS owns platform orchestration and authority while Atlas owns networking semantics, preserving a reusable runtime and a replaceable flagship product boundary.
+Status: Accepted by EPIC-001 / PR-014.
+
+## D-119
+Decision: Discovery adapters parse caller-supplied command output only and contain no SSH, SNMP, credential, retry, or connection behavior.
+Reason: Deterministic normalization and external collection have different failure, authorization, security, and durability requirements; future transport must use authorized durable Activities.
+Status: Accepted by EPIC-001 / PR-014.
+
+## D-120
+Decision: Cisco IOS is the first reference adapter, not a consumer-facing Atlas abstraction or product boundary.
+Reason: Concrete fixtures make the contract testable while vendor-neutral models and the adapter interface prevent one vendor's syntax from leaking into topology consumers.
+Status: Accepted by EPIC-001 / PR-014.
+
+## D-121
+Decision: TopologyGraph treats identical duplicate observations as idempotent and rejects conflicting facts for the same identity.
+Reason: Silent last-write-wins would make topology depend on input order and hide data-quality conflicts that later reconciliation must explain.
+Status: Accepted by EPIC-001 / PR-014.

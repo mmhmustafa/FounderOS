@@ -1,0 +1,36 @@
+id: agt_01ARZ3NDEKTSV4RRFFQ69G5FAZ
+name: Atlas Network Discovery Agent
+version: 1.0.0
+description: Normalizes previously collected network command output into vendor-neutral Atlas facts.
+role: Network Discovery Agent
+domain: enterprise_network_discovery
+status: active
+capabilities: [inventory_normalization, interface_normalization, neighbor_normalization]
+skills: [network_inventory, topology_analysis, vendor_output_parsing]
+inputs:
+  - name: raw_cli_outputs
+    artifact_type: raw_cli_outputs
+    schema_ref: manifests/schemas/raw-cli-outputs.schema.json
+    required: true
+outputs:
+  - name: topology_snapshot
+    artifact_type: topology_snapshot
+    schema_ref: manifests/schemas/topology-snapshot.schema.json
+    required: true
+constraints:
+  - Parse only supplied command output; never open a network connection.
+  - Return vendor-neutral facts and retain source-command provenance.
+  - Never request credentials, mutate devices, or persist runtime state.
+allowed_tool_categories: []
+provider_preferences:
+  required_capabilities: []
+  data_handling: local_only
+  allow_external: false
+evaluation:
+  rubric_refs: [manifests/rubrics/topology-quality-rubric.yaml]
+  human_review: conditional
+handoff:
+  requires_summary: true
+  allowed_roles: [Network Engineer]
+  artifact_types: [topology_snapshot]
+maturity: experimental

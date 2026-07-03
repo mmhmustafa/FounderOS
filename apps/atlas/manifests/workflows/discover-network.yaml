@@ -1,0 +1,64 @@
+id: wfl_01ARZ3NDEKTSV4RRFFQ69G5FAZ
+name: Atlas Deterministic Network Discovery
+version: 1.0.0
+description: Normalizes supplied fixture command output and evaluates one topology snapshot.
+status: active
+maturity: experimental
+workflow_type: utility
+domain: enterprise_network_discovery
+entry_state: NO_PROJECT
+exit_state: null
+required_agents:
+  - id: agt_01ARZ3NDEKTSV4RRFFQ69G5FAZ
+    version: 1.0.0
+    role: Network Discovery Agent
+optional_agents: []
+required_artifacts:
+  - id: raw_cli_outputs
+    artifact_type: raw_cli_outputs
+    schema_ref: manifests/schemas/raw-cli-outputs.schema.json
+produced_artifacts:
+  - id: topology_snapshot
+    artifact_type: topology_snapshot
+    schema_ref: manifests/schemas/topology-snapshot.schema.json
+steps:
+  - id: normalize_network_facts
+    name: Normalize Network Facts
+    type: agent_task
+    required_agent:
+      id: agt_01ARZ3NDEKTSV4RRFFQ69G5FAZ
+      version: 1.0.0
+      role: Network Discovery Agent
+    input_artifacts: [raw_cli_outputs]
+    output_artifacts: [topology_snapshot]
+    activity_type: null
+    requires_approval: false
+    on_success: continue
+    on_failure: fail
+  - id: evaluate_topology_snapshot
+    name: Evaluate Topology Snapshot
+    type: evaluation
+    required_agent: null
+    input_artifacts: [topology_snapshot]
+    output_artifacts: []
+    activity_type: null
+    requires_approval: false
+    on_success: complete_workflow
+    on_failure: fail
+evaluations:
+  - id: topology_quality
+    type: deterministic
+    subject_artifact: topology_snapshot
+    rubric_ref: manifests/rubrics/topology-quality-rubric.yaml
+    required: true
+approvals: []
+transition_intent: null
+recovery:
+  max_attempts: 1
+  on_step_failure: fail
+  on_workflow_failure: pause
+  resume_strategy: from_last_completed_step
+compatibility:
+  minimum_kernel_contract: 0.1.0
+  maximum_kernel_contract_exclusive: 1.0.0
+  agent_manifest_schema_version: 1.0.0

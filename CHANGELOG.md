@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### EPIC-001 / PR-014 - Atlas Discovery Engine Foundation
+
+- Added Atlas as a first-party FounderOS networking App package while retaining both names as internal codenames.
+- Added immutable vendor-neutral Device, Interface, Neighbor, Fact, and DiscoveryResult models plus a transport-free DiscoveryAdapter contract.
+- Added a deterministic Cisco IOS reference parser for checked-in `show version`, `show ip interface brief`, and `show cdp neighbors detail` fixtures.
+- Added an in-memory DiscoveryEngine and deterministic TopologyGraph with idempotent identical duplicates and explicit conflict rejection.
+- Added valid Atlas App, utility Workflow, Agent, Artifact schema, Evaluation Rubric, fixture, and documentation assets.
+- Added 12 tests covering parsing, normalization, engine behavior, graph behavior, errors, manifest validation, network isolation, fixture-only inputs, and determinism.
+- Added no SSH, SNMP, credentials, persistence, database, GUI, API, device mutation, real AI Provider, live multi-hop discovery, cloud discovery, logs, or change intelligence.
+
 ### PR-013 - FounderOS CLI Alpha
 
 - Added a standard-library, plain-text public CLI package with `version`, `doctor`, `demo discovery`, and `help` commands.

@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Atlas Topology Snapshot",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["device", "interfaces", "neighbors"],
+  "properties": {
+    "device": {"type": "object"},
+    "interfaces": {"type": "array", "minItems": 1},
+    "neighbors": {"type": "array"}
+  }
+}

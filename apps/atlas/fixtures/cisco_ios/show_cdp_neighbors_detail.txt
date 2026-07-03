@@ -1,0 +1,18 @@
+-------------------------
+Device ID: dist-sw-01
+Entry address(es):
+  IP address: 10.0.0.2
+Platform: cisco WS-C9300-24T,  Capabilities: Router Switch IGMP
+Interface: GigabitEthernet1/0/48,  Port ID (outgoing port): GigabitEthernet1/0/24
+Holdtime : 131 sec
+
+Version :
+Cisco IOS XE Software, Version 17.09.04a
+
+-------------------------
+Device ID: ap-01
+Entry address(es):
+  IP address: 10.0.0.21
+Platform: cisco C9120AXI,  Capabilities: Trans-Bridge Source-Route-Bridge
+Interface: GigabitEthernet1/0/1,  Port ID (outgoing port): GigabitEthernet0
+Holdtime : 142 sec

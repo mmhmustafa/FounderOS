@@ -1,0 +1,10 @@
+Cisco IOS Software, C2960X Software (C2960X-UNIVERSALK9-M), Version 15.2(7)E10, RELEASE SOFTWARE (fc3)
+Technical Support: http://www.cisco.com/techsupport
+Copyright (c) 1986-2024 by Cisco Systems, Inc.
+
+access-sw-01 uptime is 12 weeks, 3 days, 4 hours, 18 minutes
+System returned to ROM by power-on
+System image file is "flash:/c2960x-universalk9-mz.152-7.E10.bin"
+
+cisco WS-C2960X-48FPS-L (APM86XXX) processor (revision V02) with 524288K bytes of memory.
+Processor board ID FOC1234X0YZ

@@ -290,12 +290,22 @@ Authorization runtime enforcement remains mandatory before Provider or Tool exec
 - [x] Preserve established local Project CLI behavior through a compatibility adapter
 - [x] Add no persistence for the demo, real Provider, Web UI, or Kernel mutation
 
-### PR-014 - Prompt Pack Manifest Foundation (Next)
+### EPIC-001 / PR-014 - Atlas Discovery Engine Foundation
 
-- [ ] Define a reusable versioned Prompt Pack manifest contract
-- [ ] Keep prompts separate from Agent identity, Provider selection, secrets, and runtime state
-- [ ] Add deterministic loading and validation without prompt execution
-- [ ] Add no real Provider, Tool, persistence, or Kernel mutation
+- [x] Add Atlas as a first-party App package separate from the FounderOS runtime
+- [x] Define immutable vendor-neutral Device, Interface, Neighbor, Fact, and DiscoveryResult models
+- [x] Add a transport-free DiscoveryAdapter and deterministic Cisco IOS fixture parser
+- [x] Add in-memory DiscoveryEngine and TopologyGraph components
+- [x] Validate Atlas manifests and prove fixture-only, network-free deterministic behavior
+- [x] Add no SSH, SNMP, credentials, persistence, GUI, API, device mutation, or real AI
+
+### PR-015 - Atlas Multi-Device Topology Reconciliation (Next)
+
+- [ ] Add multiple checked-in device observation fixtures
+- [ ] Resolve device identity and reconcile reciprocal neighbor observations deterministically
+- [ ] Represent unresolved, conflicting, and partial observations explicitly
+- [ ] Preserve transport-free, in-memory, vendor-neutral boundaries
+- [ ] Add no live network access, credentials, persistence, GUI, or device mutation
 
 ## Deferred Runtime Hardening
 

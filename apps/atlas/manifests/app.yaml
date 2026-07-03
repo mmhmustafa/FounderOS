@@ -1,0 +1,49 @@
+id: founderos.atlas
+name: Atlas Network Discovery
+version: 0.1.0
+description: Packages the deterministic vendor-neutral Atlas network discovery foundation.
+domain: enterprise_network_discovery
+status: active
+maturity: experimental
+compatible_runtime: '>=0.3.0 <1.0.0'
+publisher:
+  id: founderos.platform
+  name: FounderOS
+  trust: first_party
+content_digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+workflows:
+  - id: wfl_01ARZ3NDEKTSV4RRFFQ69G5FAZ
+    version: 1.0.0
+    manifest_ref: manifests/workflows/discover-network.yaml
+agents:
+  - id: agt_01ARZ3NDEKTSV4RRFFQ69G5FAZ
+    version: 1.0.0
+    manifest_ref: manifests/agents/network-discovery-agent.yaml
+artifacts:
+  - id: raw_cli_outputs
+    version: 1.0.0
+    schema_ref: manifests/schemas/raw-cli-outputs.schema.json
+  - id: topology_snapshot
+    version: 1.0.0
+    schema_ref: manifests/schemas/topology-snapshot.schema.json
+prompts: []
+evaluations:
+  - id: topology_quality
+    version: 1.0.0
+    path: manifests/rubrics/topology-quality-rubric.yaml
+policies: []
+fixtures:
+  - id: cisco_ios_show_version
+    path: fixtures/cisco_ios/show_version.txt
+    sha256: c973cc32df0efe4b39db2ea6f29359d6532ab501a989621b7fe2621d2bdd43e6
+  - id: cisco_ios_show_ip_interface_brief
+    path: fixtures/cisco_ios/show_ip_interface_brief.txt
+    sha256: c501df6d2f371315acd309e899a325d399c72a6f2fe8a9b84bc7c137c6ba7970
+  - id: cisco_ios_show_cdp_neighbors_detail
+    path: fixtures/cisco_ios/show_cdp_neighbors_detail.txt
+    sha256: 99a620c11d49270a6cd3140156516f77ac4958df70b3e01db84fd9f9fa2e39ce
+documentation:
+  - id: atlas_readme
+    path: README.md
+dependencies: []
+tags: [atlas, networking, discovery, topology, deterministic]
