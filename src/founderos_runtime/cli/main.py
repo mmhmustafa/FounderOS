@@ -5,15 +5,24 @@ from __future__ import annotations
 from collections.abc import Sequence
 import sys
 
+from founderos_atlas.demo import run_atlas_discovery_demo
 from founderos_runtime.demo import run_discovery_vertical_slice
 
 from . import legacy
-from .commands import DiscoveryRunner, discovery_command, doctor_command, help_command, version_command
+from .commands import (
+    AtlasDiscoveryRunner,
+    DiscoveryRunner,
+    atlas_discovery_command,
+    discovery_command,
+    doctor_command,
+    help_command,
+    version_command,
+)
 from .exceptions import CliError
 from .render import render_error
 
 
-_PUBLIC_COMMANDS = {"version", "doctor", "demo", "help", "-h", "--help"}
+_PUBLIC_COMMANDS = {"version", "doctor", "demo", "atlas", "help", "-h", "--help"}
 _LEGACY_COMMANDS = {
     "new", "status", "plan", "founder-brief", "approve", "decisions", "events",
     "health", "recover", "audit", "runs", "transitions", "discovery",
@@ -25,6 +34,7 @@ def main(
     argv: Sequence[str] | None = None,
     *,
     discovery_runner: DiscoveryRunner = run_discovery_vertical_slice,
+    atlas_discovery_runner: AtlasDiscoveryRunner = run_atlas_discovery_demo,
 ) -> int:
     arguments = list(sys.argv[1:] if argv is None else argv)
     if not arguments:
@@ -40,6 +50,12 @@ def main(
     elif arguments == ["demo", "discovery"]:
         try:
             code, output = discovery_command(discovery_runner)
+        except CliError as error:
+            print(render_error(str(error)), file=sys.stderr)
+            return 1
+    elif arguments == ["atlas", "demo", "discovery"]:
+        try:
+            code, output = atlas_discovery_command(atlas_discovery_runner)
         except CliError as error:
             print(render_error(str(error)), file=sys.stderr)
             return 1

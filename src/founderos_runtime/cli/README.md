@@ -8,12 +8,15 @@ The CLI is FounderOS v0.3 Alpha's first public presentation boundary. It parses 
 founderos version
 founderos doctor
 founderos demo discovery
+founderos atlas demo discovery
 founderos help
 ```
 
 ## Philosophy and Boundaries
 
 The CLI owns no planning, validation, authorization, Journey execution, Provider behavior, Evaluation rules, Artifact creation, or state mutation. `demo discovery` delegates once to the PR-012 Discovery helper, which remains the composition source of truth.
+
+`atlas demo discovery` delegates to Atlas's fixture-only demo helper. Atlas owns fixture loading, Discovery Engine invocation, and Topology Graph construction; the FounderOS CLI only routes and renders the returned domain values.
 
 `doctor` verifies that the bundled Discovery Workspace loads and that deterministic Evaluation and Mock Provider components are importable. It does not call a network, execute a Journey, or mutate runtime state.
 

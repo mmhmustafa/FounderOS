@@ -18,6 +18,16 @@ Input is a mapping containing `show version`, `show ip interface brief`, and `sh
 
 There is no SSH, SNMP, credential handling, device mutation, persistence, database, real AI Provider, API, GUI, live multi-hop discovery, cloud discovery, log ingestion, or change intelligence. Real device collection must later use authorized durable Activity/transport boundaries; it must not be added to parsers.
 
+## Running the Atlas Discovery Demo
+
+Install FounderOS in editable mode, then run:
+
+```powershell
+founderos atlas demo discovery
+```
+
+The command reads only the bundled Cisco IOS fixture files, invokes the existing `DiscoveryEngine`, builds an in-memory `TopologyGraph`, and prints normalized device and topology facts. It performs no network access, credential handling, persistence, device mutation, or AI call.
+
 ## Next Step
 
 Add a fixture-driven multi-device discovery Journey and topology reconciliation contract before considering any live transport.

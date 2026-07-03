@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### PR-014.1 - Atlas Discovery CLI Demo
+
+- Added `founderos atlas demo discovery` as a thin console demonstration over the existing fixture-only Atlas Discovery Engine.
+- Added deterministic plain-text rendering for normalized device, interface, neighbor, topology, and summary information without exposing Python representations.
+- Added one CLI integration test covering successful exit, expected report text, and network isolation.
+- Added no parser changes, SSH, SNMP, credentials, persistence, AI Provider, API, GUI, or device mutation.
+
 ### EPIC-001 / PR-014 - Atlas Discovery Engine Foundation
 
 - Added Atlas as a first-party FounderOS networking App package while retaining both names as internal codenames.

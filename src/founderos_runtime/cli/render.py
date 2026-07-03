@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
+from founderos_atlas.discovery import DiscoveryResult
+from founderos_atlas.topology import TopologyGraph
 from founderos_runtime.journey import JourneyResult
 
 
@@ -19,12 +21,14 @@ def render_help() -> str:
             "  founderos version",
             "  founderos doctor",
             "  founderos demo discovery",
+            "  founderos atlas demo discovery",
             "  founderos help",
             "",
             "Commands:",
             "  version         Show the FounderOS Alpha version.",
             "  doctor          Check deterministic demo dependencies.",
             "  demo discovery  Run the in-memory Discovery vertical slice.",
+            "  atlas demo discovery  Run fixture-only Atlas network discovery.",
             "  help            Show this help.",
         )
     )
@@ -68,3 +72,42 @@ def render_discovery(result: JourneyResult) -> str:
 
 def render_error(message: str) -> str:
     return f"Error: {message}"
+
+
+def render_atlas_discovery(result: DiscoveryResult, graph: TopologyGraph) -> str:
+    device = result.device
+    neighbors = graph.neighbors(device.device_id)
+    tree_lines = [device.hostname]
+    for index, neighbor in enumerate(neighbors):
+        branch = "`--" if index == len(neighbors) - 1 else "|--"
+        tree_lines.append(f" {branch} {neighbor.remote_hostname}")
+    summary = graph.summary()
+    return "\n".join(
+        (
+            "=" * 48,
+            "Atlas Discovery Demo",
+            "=" * 48,
+            "",
+            "Loading Cisco IOS fixtures...",
+            "Device discovered.",
+            "",
+            f"Hostname: {device.hostname}",
+            f"Vendor: {device.vendor.title()}",
+            f"Platform: {device.platform}",
+            f"Operating system: {device.os_name} {device.os_version}",
+            f"Interfaces: {len(result.interfaces)}",
+            f"Neighbors: {len(result.neighbors)}",
+            "",
+            "Building topology...",
+            "",
+            "Topology",
+            *tree_lines,
+            "",
+            "Summary",
+            f"Devices: {summary['device_count']}",
+            f"Edges: {summary['edge_count']}",
+            "",
+            "Discovery completed successfully.",
+            "=" * 48,
+        )
+    )
