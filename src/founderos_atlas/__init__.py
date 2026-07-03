@@ -9,7 +9,12 @@ from .discovery import (
     NetworkInterface,
     NetworkNeighbor,
 )
-from .topology import TopologyGraph, TopologyReconciler
+from .topology import (
+    TopologyGraph,
+    TopologyReconciler,
+    TopologySnapshot,
+    TopologySnapshotExporter,
+)
 
 __all__ = [
     "DiscoveryAdapter",
@@ -21,4 +26,6 @@ __all__ = [
     "NetworkNeighbor",
     "TopologyGraph",
     "TopologyReconciler",
+    "TopologySnapshot",
+    "TopologySnapshotExporter",
 ]

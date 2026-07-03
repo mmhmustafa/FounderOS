@@ -39,6 +39,9 @@ class AtlasDiscoveryCliDemoTests(unittest.TestCase):
         self.assertIn("`-- router-01", output)
         self.assertIn("Devices: 1", output)
         self.assertIn("Edges: 3", output)
+        self.assertIn("Topology Snapshot", output)
+        self.assertIn("Snapshot ID: atlas-topology:", output)
+        self.assertIn("Schema version: 1.0.0", output)
         self.assertIn("Discovery completed successfully.", output)
         self.assertNotIn("NetworkDevice(", output)
 

@@ -8,30 +8,30 @@ applies_to:
   artifact_type: topology_snapshot
   schema_ref: schemas/topology-snapshot.schema.json
 rules:
-  - id: topology.device_required
-    name: Device Required
-    description: A topology snapshot must identify its discovered device.
+  - id: topology.devices_required
+    name: Devices Required
+    description: A topology snapshot must include its canonical devices collection.
     severity: critical
     type: required_field
-    parameters: {field: device}
-  - id: topology.interfaces_required
-    name: Interfaces Required
-    description: A topology snapshot must include normalized interfaces.
+    parameters: {field: devices}
+  - id: topology.device_count
+    name: Device Count
+    description: At least one canonical device must be present.
     severity: critical
-    type: required_field
-    parameters: {field: interfaces}
-  - id: topology.interface_count
-    name: Interface Count
-    description: At least one normalized interface must be present.
-    severity: error
     type: minimum_length
-    parameters: {field: interfaces, minimum: 1}
-  - id: topology.neighbors_required
-    name: Neighbors Required
-    description: Neighbor observations must be explicit, including an empty collection.
+    parameters: {field: devices, minimum: 1}
+  - id: topology.edges_required
+    name: Edges Required
+    description: The snapshot must explicitly include observed edges.
     severity: error
     type: required_field
-    parameters: {field: neighbors}
+    parameters: {field: edges}
+  - id: topology.warnings_required
+    name: Warnings Required
+    description: Reconciliation warnings must be explicit, including an empty collection.
+    severity: error
+    type: required_field
+    parameters: {field: warnings}
 scoring:
   method: passed_finding_ratio
   precision: 6

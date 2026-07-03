@@ -36,6 +36,14 @@ Reconciliation preserves normalized interfaces, device metadata, and all unique 
 
 `TopologyGraph` now supports `merge_discovery_result()`, `merge_graph()`, `device_count()`, `edge_count()`, `find_device()`, `interfaces()`, `neighbors()`, `warnings()`, and an expanded `summary()`.
 
+## Topology Snapshot Contract
+
+`TopologySnapshot.from_graph()` converts the current reconciled graph into an immutable, versioned Artifact-shaped value. It contains canonical devices and their interfaces, directed edges, reconciliation warnings, device/edge counts, and deterministic metadata.
+
+Snapshot IDs are SHA-256 content addresses over canonical snapshot content. `created_at` is optional and never reads the system clock; callers may supply a deterministic timestamp when their workflow owns one. `TopologySnapshotExporter` returns defensive dictionaries, canonical formatted JSON, or human-readable Markdown entirely in memory.
+
+The contract is described by `manifests/schemas/topology-snapshot.schema.json`, and the Atlas topology rubric now evaluates its `devices`, `edges`, and `warnings` collections.
+
 ## Next Step
 
-Define a versioned Topology Snapshot Artifact and deterministic quality rubric before considering persistence, visualization, or live transport.
+Add deterministic Topology Snapshot comparison and change classification before considering persistence, visualization, or live transport.

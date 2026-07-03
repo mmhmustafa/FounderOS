@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 from founderos_atlas.discovery import DiscoveryResult
-from founderos_atlas.topology import TopologyGraph
+from founderos_atlas.topology import TopologyGraph, TopologySnapshot
 from founderos_runtime.journey import JourneyResult
 
 
@@ -74,7 +74,11 @@ def render_error(message: str) -> str:
     return f"Error: {message}"
 
 
-def render_atlas_discovery(result: DiscoveryResult, graph: TopologyGraph) -> str:
+def render_atlas_discovery(
+    result: DiscoveryResult,
+    graph: TopologyGraph,
+    snapshot: TopologySnapshot,
+) -> str:
     device = result.device
     neighbors = tuple(
         sorted(
@@ -122,6 +126,13 @@ def render_atlas_discovery(result: DiscoveryResult, graph: TopologyGraph) -> str
             "Summary",
             f"Devices: {summary['device_count']}",
             f"Edges: {summary['edge_count']}",
+            "",
+            "Topology Snapshot",
+            f"Snapshot ID: {snapshot.snapshot_id}",
+            f"Devices: {snapshot.device_count}",
+            f"Edges: {snapshot.edge_count}",
+            f"Warnings: {len(snapshot.warnings)}",
+            f"Schema version: {snapshot.metadata['schema_version']}",
             "",
             "Discovery completed successfully.",
             "=" * 48,

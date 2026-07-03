@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### EPIC-001 / PR-016 - Atlas Topology Snapshot Contract
+
+- Added immutable content-addressed TopologySnapshot creation from reconciled TopologyGraph values.
+- Included canonical devices/interfaces, directed edges, reconciliation warnings, optional deterministic timestamps, counts, and versioned metadata.
+- Added pure defensive dictionary, stable JSON, and human-readable Markdown exports.
+- Replaced the preliminary topology schema with a complete versioned Snapshot contract and aligned the topology quality rubric.
+- Extended the Atlas CLI demo with snapshot ID, device, edge, warning, and schema-version summary.
+- Added 12 tests covering construction, content, warnings, defensive exports, JSON/Markdown, timestamps, ordering, schema validation, content addressing, and no file writes.
+- Added no persistence, database, SSH, SNMP, GUI, AI, live discovery, or graph database.
+
 ### EPIC-001 / PR-015 - Atlas Multi-Device Topology Reconciliation
 
 - Added `TopologyReconciler` for deterministic merging of multiple DiscoveryResult observations.

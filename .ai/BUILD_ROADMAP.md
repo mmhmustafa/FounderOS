@@ -308,12 +308,21 @@ Authorization runtime enforcement remains mandatory before Provider or Tool exec
 - [x] Extend the CLI demo with before/after reconciliation output
 - [x] Preserve transport-free, in-memory, vendor-neutral boundaries
 
-### PR-016 - Atlas Topology Snapshot Contract and Evaluation (Next)
+### PR-016 - Atlas Topology Snapshot Contract and Evaluation
 
-- [ ] Define deterministic serialization for reconciled topology snapshots
-- [ ] Add a versioned Topology Snapshot Artifact schema
-- [ ] Evaluate identity, relationship, warning, and provenance completeness with a deterministic rubric
-- [ ] Keep snapshots in memory with no database, GUI, live transport, or device mutation
+- [x] Define immutable deterministic TopologySnapshot creation from reconciled graphs
+- [x] Add content-addressed IDs and optional caller-supplied deterministic timestamps
+- [x] Add defensive dictionary, stable JSON, and human-readable Markdown exports
+- [x] Replace the preliminary schema with a complete versioned Topology Snapshot contract
+- [x] Align the deterministic topology rubric and CLI demo summary
+- [x] Keep snapshots in memory with no database, GUI, live transport, or device mutation
+
+### PR-017 - Atlas Topology Snapshot Diff and Change Classification (Next)
+
+- [ ] Compare two versioned snapshots deterministically
+- [ ] Classify added, removed, and changed devices, interfaces, edges, and warnings
+- [ ] Produce machine-readable and human-readable change reports
+- [ ] Add no persistence, GUI, live transport, AI, or automated remediation
 
 ## Deferred Runtime Hardening
 

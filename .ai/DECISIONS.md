@@ -619,3 +619,18 @@ Status: Accepted by EPIC-001 / PR-015.
 Decision: Reconciled topology retains interfaces, compatible metadata, unique directed neighbor observations, identity aliases, and warning evidence entirely in memory.
 Reason: Removing duplicate nodes without preserving their evidence would produce a smaller but less truthful graph and block later Digital Twin evolution.
 Status: Accepted by EPIC-001 / PR-015.
+
+## D-125
+Decision: Atlas Topology Snapshot IDs are SHA-256 content addresses over canonical devices, edges, warnings, metadata, and optional created_at content.
+Reason: Snapshot identity must remain stable across replay and process boundaries without randomness, persistence, or a central ID allocator.
+Status: Accepted by EPIC-001 / PR-016.
+
+## D-126
+Decision: TopologySnapshot.created_at is nullable and caller-supplied; snapshot construction never reads the system clock.
+Reason: Hidden clock access would make otherwise identical in-memory snapshots differ and obscure which workflow owns observation time.
+Status: Accepted by EPIC-001 / PR-016.
+
+## D-127
+Decision: TopologySnapshotExporter produces defensive values or strings only and performs no file writes or runtime mutation.
+Reason: Serialization is a pure projection; persistence, Artifact lifecycle, and delivery channels require separate authorized boundaries.
+Status: Accepted by EPIC-001 / PR-016.

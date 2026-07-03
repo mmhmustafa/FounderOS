@@ -1,12 +1,89 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://founderos.local/atlas/topology-snapshot/1.0.0",
   "title": "Atlas Topology Snapshot",
   "type": "object",
   "additionalProperties": false,
-  "required": ["device", "interfaces", "neighbors"],
+  "required": ["snapshot_id", "created_at", "device_count", "edge_count", "devices", "edges", "warnings", "metadata"],
   "properties": {
-    "device": {"type": "object"},
-    "interfaces": {"type": "array", "minItems": 1},
-    "neighbors": {"type": "array"}
+    "snapshot_id": {"type": "string", "pattern": "^atlas-topology:[0-9a-f]{64}$"},
+    "created_at": {"type": ["string", "null"], "minLength": 1},
+    "device_count": {"type": "integer", "minimum": 0},
+    "edge_count": {"type": "integer", "minimum": 0},
+    "devices": {"type": "array", "items": {"$ref": "#/$defs/device"}},
+    "edges": {"type": "array", "items": {"$ref": "#/$defs/edge"}},
+    "warnings": {"type": "array", "items": {"$ref": "#/$defs/warning"}},
+    "metadata": {
+      "type": "object",
+      "required": ["schema_version", "input_device_count", "duplicates_removed", "warning_count", "deterministic", "in_memory_only"],
+      "properties": {
+        "schema_version": {"const": "1.0.0"},
+        "input_device_count": {"type": "integer", "minimum": 0},
+        "duplicates_removed": {"type": "integer", "minimum": 0},
+        "warning_count": {"type": "integer", "minimum": 0},
+        "deterministic": {"const": true},
+        "in_memory_only": {"const": true}
+      },
+      "additionalProperties": true
+    }
+  },
+  "$defs": {
+    "metadata": {"type": "object", "additionalProperties": true},
+    "interface": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "ip_address", "status", "protocol_status", "description", "metadata"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "ip_address": {"type": ["string", "null"]},
+        "status": {"type": "string", "minLength": 1},
+        "protocol_status": {"type": ["string", "null"]},
+        "description": {"type": ["string", "null"]},
+        "metadata": {"$ref": "#/$defs/metadata"}
+      }
+    },
+    "device": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["device_id", "hostname", "management_ip", "vendor", "platform", "os_name", "os_version", "serial_number", "interfaces", "metadata"],
+      "properties": {
+        "device_id": {"type": "string", "minLength": 1},
+        "hostname": {"type": "string", "minLength": 1},
+        "management_ip": {"type": "string", "format": "ip"},
+        "vendor": {"type": "string", "minLength": 1},
+        "platform": {"type": "string", "minLength": 1},
+        "os_name": {"type": "string", "minLength": 1},
+        "os_version": {"type": "string", "minLength": 1},
+        "serial_number": {"type": ["string", "null"]},
+        "interfaces": {"type": "array", "items": {"$ref": "#/$defs/interface"}},
+        "metadata": {"$ref": "#/$defs/metadata"}
+      }
+    },
+    "edge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["local_device_id", "local_interface", "remote_hostname", "remote_interface", "remote_management_ip", "protocol", "metadata"],
+      "properties": {
+        "local_device_id": {"type": "string", "minLength": 1},
+        "local_interface": {"type": "string", "minLength": 1},
+        "remote_hostname": {"type": "string", "minLength": 1},
+        "remote_interface": {"type": ["string", "null"]},
+        "remote_management_ip": {"type": ["string", "null"]},
+        "protocol": {"enum": ["cdp", "lldp", "manual", "inferred"]},
+        "metadata": {"$ref": "#/$defs/metadata"}
+      }
+    },
+    "warning": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "device_id", "field", "existing_value", "incoming_value"],
+      "properties": {
+        "code": {"type": "string", "minLength": 1},
+        "device_id": {"type": "string", "minLength": 1},
+        "field": {"type": "string", "minLength": 1},
+        "existing_value": {"type": "string"},
+        "incoming_value": {"type": "string"}
+      }
+    }
   }
 }

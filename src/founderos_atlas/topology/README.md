@@ -33,6 +33,27 @@ Atlas never uses last-write-wins. When matching observations disagree, the canon
 
 This graph is not yet a Digital Twin. Reconciliation establishes canonical identity and preserved observations, but future evolution still requires bidirectional link resolution, observation timestamps, provenance/version history, confidence, persistence, change events, and authorization.
 
+## Topology Snapshot
+
+`TopologySnapshot` is an immutable point-in-time projection of one reconciled graph. It includes:
+
+- content-addressed `snapshot_id`;
+- optional caller-supplied deterministic `created_at`;
+- canonical devices with normalized interfaces;
+- directed neighbor edges;
+- structured reconciliation warnings; and
+- schema version, observation, duplicate, warning, deterministic, and in-memory metadata.
+
+The default snapshot ID is `atlas-topology:<sha256>`, calculated from canonical JSON content without randomness or clock access. Equal graph content and metadata therefore produce the same ID regardless of process or caller ordering.
+
+`TopologySnapshotExporter` provides three pure projections:
+
+- `to_dict()` returns a defensive JSON-compatible mapping;
+- `to_json()` returns stable sorted, indented JSON; and
+- `to_markdown()` returns a human-readable device, edge, and warning report.
+
+Exporters return strings or values only. They never write files, persist snapshots, call FounderOS runtime services, or perform network access.
+
 ## Boundaries
 
 The graph performs no discovery, network access, persistence, topology mutation outside its own process, device configuration, planning, or FounderOS runtime mutation.

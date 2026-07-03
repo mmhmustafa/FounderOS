@@ -70,9 +70,10 @@ Runtime:
 - EPIC-001 / PR-014 Atlas vendor-neutral Discovery Engine and in-memory topology foundation
 - PR-014.1 Atlas fixture-only Discovery CLI demonstration
 - EPIC-001 / PR-015 Atlas multi-device topology reconciliation with deterministic conflict evidence
+- EPIC-001 / PR-016 content-addressed Atlas Topology Snapshot contract and in-memory exports
 
 ## Current Milestone
-PR-016: define a deterministic Atlas Topology Snapshot Artifact and quality Evaluation without adding live transport, persistence, GUI, or device mutation.
+PR-017: compare Atlas Topology Snapshots and classify structural changes without adding live transport, persistence, GUI, AI, or remediation.
 
 ## Planned
 - Durable persistence adapters
