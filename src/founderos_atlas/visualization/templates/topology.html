@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Atlas Topology Viewer</title>
+  <script src="__CYTOSCAPE_CDN__"></script>
+  <style>
+    :root { color-scheme: light; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; color: #172033; background: #f3f6fb; }
+    header { display: flex; gap: 16px; align-items: center; padding: 14px 18px; background: #111827; color: white; }
+    header h1 { margin: 0; font-size: 18px; white-space: nowrap; }
+    #search { flex: 1; max-width: 440px; border: 0; border-radius: 6px; padding: 9px 11px; }
+    button { border: 1px solid #94a3b8; border-radius: 6px; padding: 8px 12px; background: white; cursor: pointer; }
+    main { display: grid; grid-template-columns: minmax(0, 1fr) 300px; height: calc(100vh - 62px); }
+    #cy { min-height: 520px; background: white; }
+    aside { overflow: auto; padding: 18px; border-left: 1px solid #dbe2ea; background: #f8fafc; }
+    aside h2 { margin-top: 0; font-size: 17px; }
+    .field { margin-bottom: 12px; }
+    .field strong { display: block; color: #475569; font-size: 12px; text-transform: uppercase; }
+    #tooltip { position: fixed; display: none; z-index: 10; pointer-events: none; padding: 7px 9px; border-radius: 5px; background: #111827; color: white; font-size: 12px; }
+    .summary { margin-left: auto; color: #cbd5e1; font-size: 12px; }
+    @media (max-width: 760px) { main { grid-template-columns: 1fr; } aside { display: none; } .summary { display: none; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Atlas Topology Viewer</h1>
+    <input id="search" type="search" placeholder="Search hostname, IP, vendor, or platform" aria-label="Search topology">
+    <button id="fit" type="button">Fit graph</button>
+    <span class="summary" id="summary"></span>
+  </header>
+  <main>
+    <div id="cy" aria-label="Interactive topology graph"></div>
+    <aside id="details">
+      <h2>Node details</h2>
+      <p>Click a node to inspect its normalized information.</p>
+    </aside>
+  </main>
+  <div id="tooltip"></div>
+  <script>
+    const topologyElements = __TOPOLOGY_ELEMENTS__;
+    const snapshotSummary = __SNAPSHOT_SUMMARY__;
+    document.getElementById('summary').textContent = `${snapshotSummary.device_count} discovered devices · ${snapshotSummary.edge_count} edges`;
+
+    const cy = cytoscape({
+      container: document.getElementById('cy'),
+      elements: [...topologyElements.nodes, ...topologyElements.edges],
+      layout: { name: 'cose', animate: false, fit: true, padding: 40 },
+      minZoom: 0.25,
+      maxZoom: 3,
+      style: [
+        { selector: 'node', style: {
+          'background-color': 'data(color)', 'label': 'data(label)', 'color': '#172033',
+          'font-size': 11, 'text-valign': 'bottom', 'text-margin-y': 7,
+          'width': 44, 'height': 44, 'border-width': 2, 'border-color': '#ffffff'
+        }},
+        { selector: 'node[kind = "observed"]', style: { 'shape': 'diamond', 'border-style': 'dashed' }},
+        { selector: 'edge', style: {
+          'width': 2, 'line-color': '#94a3b8', 'target-arrow-color': '#94a3b8',
+          'target-arrow-shape': 'triangle', 'curve-style': 'bezier'
+        }},
+        { selector: '.search-muted', style: { 'opacity': 0.18 }},
+        { selector: '.search-match', style: { 'border-color': '#f59e0b', 'border-width': 5, 'opacity': 1 }}
+      ]
+    });
+
+    const details = document.getElementById('details');
+    const tooltip = document.getElementById('tooltip');
+    const escapeHtml = value => String(value).replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+    const nodeDetails = data => `
+      <h2>${escapeHtml(data.label)}</h2>
+      <div class="field"><strong>Kind</strong>${escapeHtml(data.kind)}</div>
+      <div class="field"><strong>Management IP</strong>${escapeHtml(data.management_ip)}</div>
+      <div class="field"><strong>Vendor</strong>${escapeHtml(data.vendor)}</div>
+      <div class="field"><strong>Platform</strong>${escapeHtml(data.platform)}</div>
+      <div class="field"><strong>Operating system</strong>${escapeHtml(data.os)}</div>
+      <div class="field"><strong>Interfaces</strong>${escapeHtml(data.interfaces)}</div>`;
+
+    cy.on('tap', 'node', event => { details.innerHTML = nodeDetails(event.target.data()); });
+    cy.on('mouseover', 'node', event => {
+      tooltip.textContent = `${event.target.data('label')} · ${event.target.data('management_ip')}`;
+      tooltip.style.display = 'block';
+    });
+    cy.on('mousemove', event => {
+      if (event.originalEvent) {
+        tooltip.style.left = `${event.originalEvent.clientX + 12}px`;
+        tooltip.style.top = `${event.originalEvent.clientY + 12}px`;
+      }
+    });
+    cy.on('mouseout', 'node', () => { tooltip.style.display = 'none'; });
+    document.getElementById('fit').addEventListener('click', () => cy.fit(undefined, 40));
+    document.getElementById('search').addEventListener('input', event => {
+      const query = event.target.value.trim().toLowerCase();
+      cy.nodes().removeClass('search-match search-muted');
+      if (!query) return;
+      cy.nodes().forEach(node => {
+        const data = node.data();
+        const haystack = [data.label, data.management_ip, data.vendor, data.platform, data.os].join(' ').toLowerCase();
+        node.addClass(haystack.includes(query) ? 'search-match' : 'search-muted');
+      });
+    });
+  </script>
+</body>
+</html>

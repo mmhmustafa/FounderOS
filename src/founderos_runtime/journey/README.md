@@ -39,6 +39,7 @@ Approval, transition-request, and Activity-request steps are explicitly logged a
 - An injected resolver may map an exact Workflow Evaluation declaration to an `EvaluationRubric`; otherwise the established critical non-null floor remains for compatibility.
 - A failed critical finding stops the Journey immediately and returns a failed result.
 - Local human-input and Artifact-creation declarations complete deterministically without I/O.
+- An exact `artifact_creation` step may use a caller-injected deterministic builder. The Runner supplies defensive declared inputs, requires exactly the planned outputs, and retains execution-log and Evaluation control.
 - Approval, transition, and Activity execution remain skipped and visible in the log.
 
 ## Relationships
@@ -55,7 +56,7 @@ Approval, transition-request, and Activity-request steps are explicitly logged a
 
 ## Known Limitations
 
-Rubric resolution is caller-supplied rather than a global registry, Provider failures currently raise a typed Journey plan/execution error, and the runner supports only sequential synchronous execution. Approval or transition completion cannot be claimed.
+Rubric resolution and deterministic Artifact builders are caller-supplied rather than globally registered, Provider failures currently raise a typed Journey plan/execution error, and the runner supports only sequential synchronous execution. Approval or transition completion cannot be claimed.
 
 ## Recommended PR-013
 

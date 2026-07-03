@@ -1,15 +1,17 @@
 # CURRENT_SPRINT
 
-Sprint: Atlas Topology Snapshot Diff and Change Classification (PR-017)
+Sprint: Atlas Topology Change Set Foundation (PR-019)
 
 ## Goal
-Compare two Atlas Topology Snapshots deterministically and explain their structural changes without persistence or remediation.
+Extract deterministic Snapshot comparison into a reusable immutable change-evidence contract without persistence or remediation.
 
 ## Prerequisites Completed
 - PR-001 through PR-013 FounderOS platform, Journey, and CLI foundations
 - EPIC-001 / PR-014 and PR-014.1 Atlas Discovery and CLI foundations
 - EPIC-001 / PR-015 multi-device topology reconciliation
 - EPIC-001 / PR-016 versioned content-addressed Topology Snapshot contract
+- EPIC-001 / PR-017 interactive Snapshot viewer and CLI demo
+- EPIC-002 / PR-018 evaluated Morning Brief utility Journey
 
 ## Expected Scope
 - Deterministic device, interface, edge, warning, and metadata comparison

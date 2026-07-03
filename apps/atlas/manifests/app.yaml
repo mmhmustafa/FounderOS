@@ -15,6 +15,9 @@ workflows:
   - id: wfl_01ARZ3NDEKTSV4RRFFQ69G5FAZ
     version: 1.0.0
     manifest_ref: manifests/workflows/discover-network.yaml
+  - id: wfl_01ARZ3NDEKTSV4RRFFQ69G5FBY
+    version: 1.0.0
+    manifest_ref: manifests/workflows/morning-brief.yaml
 agents:
   - id: agt_01ARZ3NDEKTSV4RRFFQ69G5FAZ
     version: 1.0.0
@@ -26,11 +29,20 @@ artifacts:
   - id: topology_snapshot
     version: 1.0.0
     schema_ref: manifests/schemas/topology-snapshot.schema.json
+  - id: topology_snapshot_set
+    version: 1.0.0
+    schema_ref: manifests/schemas/topology-snapshot-set.schema.json
+  - id: morning_brief
+    version: 1.0.0
+    schema_ref: manifests/schemas/morning-brief.schema.json
 prompts: []
 evaluations:
   - id: topology_quality
     version: 1.0.0
     path: manifests/rubrics/topology-quality-rubric.yaml
+  - id: morning_brief_quality
+    version: 1.0.0
+    path: manifests/rubrics/morning-brief-rubric.yaml
 policies: []
 fixtures:
   - id: cisco_ios_show_version

@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://founderos.dev/apps/atlas/schemas/morning-brief.schema.json",
+  "title": "Atlas Morning Brief",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "overall_status", "generated_at", "summary", "device_count", "edge_count",
+    "new_devices", "removed_devices", "changed_devices", "warnings",
+    "reconciliation_conflicts", "recommendations", "metadata"
+  ],
+  "properties": {
+    "overall_status": {"type": "string", "minLength": 1},
+    "generated_at": {"type": "string", "minLength": 1},
+    "summary": {"type": "string", "minLength": 1},
+    "device_count": {"type": "integer", "minimum": 0},
+    "edge_count": {"type": "integer", "minimum": 0},
+    "new_devices": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "removed_devices": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "changed_devices": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "warnings": {"type": "array", "items": {"type": "object"}},
+    "reconciliation_conflicts": {"type": "array", "items": {"type": "object"}},
+    "recommendations": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "metadata": {"type": "object"}
+  }
+}

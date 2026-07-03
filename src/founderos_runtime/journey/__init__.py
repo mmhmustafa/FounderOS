@@ -7,9 +7,10 @@ from .exceptions import (
     JourneyWorkflowNotFoundError,
 )
 from .journey_result import JourneyResult, JourneyStatus, thaw
-from .runner import JOURNEY_RUNNER_VERSION, JourneyRunner
+from .runner import ArtifactBuilder, JOURNEY_RUNNER_VERSION, JourneyRunner
 
 __all__ = [
+    "ArtifactBuilder",
     "JOURNEY_RUNNER_VERSION",
     "JourneyEmptyPlanError",
     "JourneyError",
@@ -20,4 +21,3 @@ __all__ = [
     "JourneyWorkflowNotFoundError",
     "thaw",
 ]
-

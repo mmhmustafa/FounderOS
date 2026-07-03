@@ -634,3 +634,38 @@ Status: Accepted by EPIC-001 / PR-016.
 Decision: TopologySnapshotExporter produces defensive values or strings only and performs no file writes or runtime mutation.
 Reason: Serialization is a pure projection; persistence, Artifact lifecycle, and delivery channels require separate authorized boundaries.
 Status: Accepted by EPIC-001 / PR-016.
+
+## D-128
+Decision: Atlas visualization is a pure TopologySnapshot adapter; observed neighbors without discovered device records are rendered as visibly lightweight nodes only.
+Reason: A useful graph should retain reported connectivity without inventing authoritative NetworkDevice facts or mutating the Snapshot contract.
+Status: Accepted by EPIC-001 / PR-017.
+
+## D-129
+Decision: The viewer uses a pinned Cytoscape.js CDN release in otherwise standalone plain HTML, while Python performs no network access.
+Reason: This delivers a reviewable interactive viewer without adding a JavaScript build system or vendored dependency; offline browser bundling remains a future delivery concern.
+Status: Accepted by EPIC-001 / PR-017.
+
+## D-130
+Decision: HTML rendering remains pure; output-file creation and default-browser launch belong exclusively to the CLI adapter.
+Reason: Separating projection from delivery preserves deterministic tests and prevents visualization code from acquiring persistence or operating-system side effects.
+Status: Accepted by EPIC-001 / PR-017.
+
+## D-131
+Decision: Morning Brief is an Atlas utility Workflow executed through the existing FounderOS Workspace, Planner, validation, authorization, Journey Runner, and Evaluation pipeline.
+Reason: The first operational Atlas Journey must prove platform reuse without becoming a second executor or requesting a Project lifecycle transition.
+Status: Accepted by EPIC-002 / PR-018.
+
+## D-132
+Decision: JourneyRunner supports exact caller-injected deterministic builders only for declared artifact_creation step IDs and validates their output keys against the ExecutionPlan.
+Reason: Pure domain Artifact computation needs a non-Provider execution seam while the Runner must retain control of ordering, inputs, quality gates, logs, and immutable results.
+Status: Accepted by EPIC-002 / PR-018.
+
+## D-133
+Decision: MorningBrief.generated_at uses an explicit caller value, then the current Snapshot timestamp, then the literal `unrecorded`; it never reads the system clock.
+Reason: Repeat execution over identical Snapshot inputs must produce identical operational Artifacts.
+Status: Accepted by EPIC-002 / PR-018.
+
+## D-134
+Decision: Morning Brief computation and Evaluation remain in memory; only the CLI may deliver the resulting Markdown file.
+Reason: Artifact semantics and presentation delivery are separate responsibilities, and PR-018 does not introduce runtime persistence.
+Status: Accepted by EPIC-002 / PR-018.

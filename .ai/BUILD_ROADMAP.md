@@ -317,12 +317,31 @@ Authorization runtime enforcement remains mandatory before Provider or Tool exec
 - [x] Align the deterministic topology rubric and CLI demo summary
 - [x] Keep snapshots in memory with no database, GUI, live transport, or device mutation
 
-### PR-017 - Atlas Topology Snapshot Diff and Change Classification (Next)
+### PR-017 - Atlas Interactive Topology Viewer
 
-- [ ] Compare two versioned snapshots deterministically
+- [x] Render a TopologySnapshot as deterministic Cytoscape nodes and edges
+- [x] Add a plain-HTML interactive viewer with layout, pan, zoom, fit, details, tooltips, and search
+- [x] Add `founderos atlas demo topology` as a thin fixture-only delivery adapter
+- [x] Write one standalone HTML document and open it through the default browser
+- [x] Keep discovery, reconciliation, Snapshot creation, and visualization responsibilities separated
+- [x] Add no persistence, GUI framework, live transport, AI, authentication, or editing
+
+### EPIC-002 / PR-018 - Atlas Morning Brief Journey
+
+- [x] Define a declarative Atlas Morning Brief utility Workflow
+- [x] Compare a current Snapshot with an optional previous Snapshot deterministically
+- [x] Produce an immutable structured MorningBrief and human-readable Markdown
+- [x] Execute through Workspace, Planner, plan validation, authorization, Journey Runner, and Evaluation
+- [x] Add deterministic quality rules and a scored Evaluation result
+- [x] Add `founderos atlas morning-brief` with CLI-owned Markdown delivery
+- [x] Add no AI, network access, persistence, scheduling, notifications, GUI, or state mutation
+
+### EPIC-002 / PR-019 - Atlas Topology Change Set Foundation (Next)
+
+- [ ] Extract reusable deterministic Snapshot comparison from Morning Brief composition
 - [ ] Classify added, removed, and changed devices, interfaces, edges, and warnings
-- [ ] Produce machine-readable and human-readable change reports
-- [ ] Add no persistence, GUI, live transport, AI, or automated remediation
+- [ ] Produce immutable machine-readable change evidence for multiple operational Journeys
+- [ ] Add no persistence, live transport, AI, scheduling, or automated remediation
 
 ## Deferred Runtime Hardening
 

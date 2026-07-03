@@ -71,9 +71,11 @@ Runtime:
 - PR-014.1 Atlas fixture-only Discovery CLI demonstration
 - EPIC-001 / PR-015 Atlas multi-device topology reconciliation with deterministic conflict evidence
 - EPIC-001 / PR-016 content-addressed Atlas Topology Snapshot contract and in-memory exports
+- EPIC-001 / PR-017 interactive plain-HTML Atlas Topology Snapshot viewer and CLI demo
+- EPIC-002 / PR-018 Atlas Morning Brief utility Workflow through FounderOS Journey and Evaluation infrastructure
 
 ## Current Milestone
-PR-017: compare Atlas Topology Snapshots and classify structural changes without adding live transport, persistence, GUI, AI, or remediation.
+PR-019: extract reusable Atlas Topology Change Set evidence without adding live transport, persistence, AI, scheduling, or remediation.
 
 ## Planned
 - Durable persistence adapters

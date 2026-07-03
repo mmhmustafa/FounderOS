@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from copy import deepcopy
 import re
 from typing import Any
 
@@ -31,6 +32,7 @@ JOURNEY_RUNNER_VERSION = "1.0.0"
 _SKIPPED_TYPES = {"approval", "transition_request", "activity_request"}
 _LOCAL_TYPES = {"human_input", "artifact_creation"}
 RubricResolver = Callable[[Mapping[str, Any]], EvaluationRubric | None]
+ArtifactBuilder = Callable[[ExecutionStep, Mapping[str, Any]], Mapping[str, Any]]
 
 
 class JourneyRunner:
@@ -46,6 +48,7 @@ class JourneyRunner:
         validator: PlanValidator | None = None,
         authorization_engine: AuthorizationEngine | None = None,
         rubric_resolver: RubricResolver | None = None,
+        artifact_builders: Mapping[str, ArtifactBuilder] | None = None,
     ) -> None:
         if not isinstance(workspace, Workspace):
             raise TypeError("JourneyRunner requires a Workspace")
@@ -56,6 +59,7 @@ class JourneyRunner:
         self._validator = validator or PlanValidator(workspace)
         self._authorization_engine = authorization_engine or AuthorizationEngine()
         self._rubric_resolver = rubric_resolver
+        self._artifact_builders = dict(artifact_builders or {})
         if not isinstance(self._provider, MockProvider):
             raise TypeError("JourneyRunner provider must be a MockProvider")
         if not isinstance(self._evaluation_runner, EvaluationRunner):
@@ -68,6 +72,11 @@ class JourneyRunner:
             raise TypeError("authorization_engine must be an AuthorizationEngine")
         if self._rubric_resolver is not None and not callable(self._rubric_resolver):
             raise TypeError("rubric_resolver must be callable")
+        if any(
+            not isinstance(step_id, str) or not step_id or not callable(builder)
+            for step_id, builder in self._artifact_builders.items()
+        ):
+            raise TypeError("artifact_builders must map non-empty step ids to callables")
 
     def run(
         self,
@@ -139,15 +148,20 @@ class JourneyRunner:
                     }
                 )
             elif step.type in _LOCAL_TYPES:
-                for artifact_id in step.produced_artifacts:
-                    artifacts[artifact_id] = {
-                        "artifact_id": artifact_id,
-                        "source": step.type,
-                        "step_id": step.id,
-                    }
-                    generated.add(artifact_id)
+                if step.type == "artifact_creation" and step.id in self._artifact_builders:
+                    self._run_artifact_builder(step, artifacts, generated, log)
+                else:
+                    for artifact_id in step.produced_artifacts:
+                        artifacts[artifact_id] = {
+                            "artifact_id": artifact_id,
+                            "source": step.type,
+                            "step_id": step.id,
+                        }
+                        generated.add(artifact_id)
+                    log.append(
+                        {"index": len(log), "step_id": step.id, "event": "step_completed"}
+                    )
                 completed.append(step.id)
-                log.append({"index": len(log), "step_id": step.id, "event": "step_completed"})
             else:
                 raise JourneyInvalidPlanError(
                     f"step {step.id!r} has unsupported type {step.type!r}"
@@ -156,6 +170,47 @@ class JourneyRunner:
         return self._result(
             plan, JourneyStatus.SUCCEEDED, completed, skipped, evaluations,
             artifacts, generated, log, None, preflight,
+        )
+
+    def _run_artifact_builder(
+        self,
+        step: ExecutionStep,
+        artifacts: dict[str, Any],
+        generated: set[str],
+        log: list[dict[str, Any]],
+    ) -> None:
+        builder = self._artifact_builders[step.id]
+        inputs = {
+            artifact_id: deepcopy(artifacts[artifact_id])
+            for artifact_id in step.required_artifacts
+        }
+        output = builder(step, inputs)
+        if not isinstance(output, Mapping):
+            raise JourneyInvalidPlanError(
+                f"artifact builder for step {step.id!r} must return a mapping"
+            )
+        expected = set(step.produced_artifacts)
+        actual = set(output)
+        if actual != expected:
+            missing = sorted(expected - actual)
+            unexpected = sorted(actual - expected)
+            detail = (
+                f"missing output {missing[0]!r}" if missing
+                else f"unexpected output {unexpected[0]!r}"
+            )
+            raise JourneyInvalidPlanError(
+                f"artifact builder for step {step.id!r} returned {detail}"
+            )
+        for artifact_id in sorted(expected):
+            artifacts[artifact_id] = deepcopy(output[artifact_id])
+            generated.add(artifact_id)
+        log.append(
+            {
+                "index": len(log),
+                "step_id": step.id,
+                "event": "artifact_created",
+                "produced_artifacts": sorted(expected),
+            }
         )
 
     def summary(self) -> dict[str, Any]:

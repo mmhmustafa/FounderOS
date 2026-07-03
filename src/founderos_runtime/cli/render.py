@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 from founderos_atlas.discovery import DiscoveryResult
+from founderos_atlas.journeys import MorningBriefJourneyResult
 from founderos_atlas.topology import TopologyGraph, TopologySnapshot
 from founderos_runtime.journey import JourneyResult
 
@@ -22,6 +23,8 @@ def render_help() -> str:
             "  founderos doctor",
             "  founderos demo discovery",
             "  founderos atlas demo discovery",
+            "  founderos atlas demo topology",
+            "  founderos atlas morning-brief",
             "  founderos help",
             "",
             "Commands:",
@@ -29,6 +32,8 @@ def render_help() -> str:
             "  doctor          Check deterministic demo dependencies.",
             "  demo discovery  Run the in-memory Discovery vertical slice.",
             "  atlas demo discovery  Run fixture-only Atlas network discovery.",
+            "  atlas demo topology  Generate and open the Atlas topology viewer.",
+            "  atlas morning-brief  Generate an evaluated Atlas operational brief.",
             "  help            Show this help.",
         )
     )
@@ -72,6 +77,38 @@ def render_discovery(result: JourneyResult) -> str:
 
 def render_error(message: str) -> str:
     return f"Error: {message}"
+
+
+def render_atlas_topology(path: str) -> str:
+    return "\n".join(
+        (
+            "Atlas Topology Viewer",
+            "",
+            f"HTML generated: {path}",
+            "Browser launch requested.",
+        )
+    )
+
+
+def render_atlas_morning_brief(result: MorningBriefJourneyResult, path: str) -> str:
+    brief = result.brief
+    return "\n".join(
+        (
+            "Atlas Morning Brief",
+            "",
+            f"Network status: {brief.overall_status}",
+            f"Devices: {brief.device_count}",
+            f"Connections: {brief.edge_count}",
+            f"New devices: {len(brief.new_devices)}",
+            f"Removed devices: {len(brief.removed_devices)}",
+            f"Changed devices: {len(brief.changed_devices)}",
+            f"Warnings: {len(brief.warnings)}",
+            f"Quality score: {result.evaluation.score:.2f}",
+            f"Journey status: {result.journey_result.status.value}",
+            "",
+            f"Artifact saved: {path}",
+        )
+    )
 
 
 def render_atlas_discovery(

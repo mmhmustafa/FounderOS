@@ -33,6 +33,8 @@ class FounderOSAlphaCliTests(unittest.TestCase):
         code, output, error = self.invoke("help")
         self.assertEqual(0, code)
         self.assertIn("founderos demo discovery", output)
+        self.assertIn("founderos atlas demo topology", output)
+        self.assertIn("founderos atlas morning-brief", output)
         self.assertIn("founderos doctor", output)
         self.assertEqual("", error)
 

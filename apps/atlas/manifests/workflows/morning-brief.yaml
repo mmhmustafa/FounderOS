@@ -1,0 +1,58 @@
+id: wfl_01ARZ3NDEKTSV4RRFFQ69G5FBY
+name: Atlas Morning Brief
+version: 1.0.0
+description: Compares deterministic topology snapshots and produces an evaluated operational Morning Brief.
+status: active
+maturity: experimental
+workflow_type: utility
+domain: enterprise_network_operations
+entry_state: NO_PROJECT
+exit_state: null
+required_agents: []
+optional_agents: []
+required_artifacts:
+  - id: topology_snapshots
+    artifact_type: topology_snapshot_set
+    schema_ref: manifests/schemas/topology-snapshot-set.schema.json
+produced_artifacts:
+  - id: morning_brief
+    artifact_type: morning_brief
+    schema_ref: manifests/schemas/morning-brief.schema.json
+steps:
+  - id: generate_morning_brief
+    name: Generate Morning Brief
+    type: artifact_creation
+    required_agent: null
+    input_artifacts: [topology_snapshots]
+    output_artifacts: [morning_brief]
+    activity_type: null
+    requires_approval: false
+    on_success: continue
+    on_failure: fail
+  - id: evaluate_morning_brief
+    name: Evaluate Morning Brief
+    type: evaluation
+    required_agent: null
+    input_artifacts: [morning_brief]
+    output_artifacts: []
+    activity_type: null
+    requires_approval: false
+    on_success: complete_workflow
+    on_failure: fail
+evaluations:
+  - id: morning_brief_quality
+    type: deterministic
+    subject_artifact: morning_brief
+    rubric_ref: manifests/rubrics/morning-brief-rubric.yaml
+    required: true
+approvals: []
+transition_intent: null
+recovery:
+  max_attempts: 1
+  on_step_failure: fail
+  on_workflow_failure: pause
+  resume_strategy: from_last_completed_step
+compatibility:
+  minimum_kernel_contract: 0.1.0
+  maximum_kernel_contract_exclusive: 1.0.0
+  agent_manifest_schema_version: 1.0.0

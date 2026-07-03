@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+### EPIC-002 / PR-018 - Atlas Morning Brief Journey
+
+- Added Atlas's first operational utility Workflow and immutable `MorningBrief` Artifact model.
+- Added deterministic current/previous Snapshot comparison, status, warning/conflict evidence, recommendations, and Markdown rendering.
+- Extended `JourneyRunner` with exact, injected deterministic builders for declared `artifact_creation` steps while preserving planning, validation, authorization, ordering, Evaluation, and result ownership.
+- Added a declarative Morning Brief Workflow, Artifact schemas, and deterministic quality rubric.
+- Added `founderos atlas morning-brief` to run fixture snapshots through FounderOS Journey infrastructure and deliver `morning_brief.md`.
+- Added 11 acceptance tests covering current-only operation, comparison, recommendations, Markdown, Workspace loading, Journey execution, Evaluation, schema conformance, determinism, CLI delivery, and network isolation.
+- Added no AI, LLM, live network access, persistence, scheduling, email, notification, GUI, or Project state mutation.
+
+### EPIC-001 / PR-017 - Atlas Interactive Topology Viewer
+
+- Added a pure deterministic `TopologySnapshot` to Cytoscape element and standalone HTML renderer.
+- Added a responsive plain-HTML viewer with automatic layout, pan, zoom, fit, vendor colors, hover tooltips, click details, and search highlighting.
+- Added `founderos atlas demo topology` to reuse fixture discovery, reconciliation, and Snapshot creation before writing `atlas_topology.html` and opening the default browser.
+- Kept observed remote neighbors as explicitly lightweight visualization nodes rather than fabricating discovered device records.
+- Added focused renderer and CLI tests covering conversion, HTML behavior, determinism, CDN isolation, network isolation, output delivery, and browser launch injection.
+- Added no SSH, SNMP, persistence, database, AI, authentication, real-time update, topology editing, or GUI framework.
+
 ### EPIC-001 / PR-016 - Atlas Topology Snapshot Contract
 
 - Added immutable content-addressed TopologySnapshot creation from reconciled TopologyGraph values.

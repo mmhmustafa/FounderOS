@@ -44,6 +44,32 @@ Snapshot IDs are SHA-256 content addresses over canonical snapshot content. `cre
 
 The contract is described by `manifests/schemas/topology-snapshot.schema.json`, and the Atlas topology rubric now evaluates its `devices`, `edges`, and `warnings` collections.
 
+## Topology Viewer Demo
+
+Run the interactive viewer from an editable installation:
+
+```powershell
+founderos atlas demo topology
+```
+
+The command reuses the fixture-only Discovery Engine, reconciliation, and snapshot pipeline. It writes `atlas_topology.html` in the current directory and asks the default browser to open it. The page supports pan, zoom, fit, deterministic node and edge rendering, vendor colors, hover details, click-through device information, and search highlighting.
+
+The renderer is a pure Snapshot-to-HTML adapter. It does not discover devices, mutate the graph, persist topology state, or make a Python network request. The generated page loads the pinned Cytoscape.js browser library from a CDN, so first-time interactive viewing requires browser access to that single asset.
+
+## Morning Brief Journey
+
+Run Atlas's first operational FounderOS Journey:
+
+```powershell
+founderos atlas morning-brief
+```
+
+The command loads deterministic fixture snapshots, then invokes the declared utility Workflow through FounderOS Workspace, Planner, plan validation, authorization, Journey Runner, and Evaluation boundaries. It prints an operational summary and writes `morning_brief.md` in the current directory.
+
+`MorningBrief` contains overall status, deterministic generation time, topology counts, new/removed/changed devices, warnings, reconciliation conflicts, recommendations, and source Snapshot metadata. The current Snapshot is required; a previous Snapshot is optional. When no timestamp is supplied by the caller or Snapshot, the Artifact records `unrecorded` rather than reading the system clock.
+
+The Journey performs no AI call, network access, Project state transition, persistence, scheduling, email, notification, or GUI operation. Markdown file delivery belongs to the CLI, not the Journey.
+
 ## Next Step
 
-Add deterministic Topology Snapshot comparison and change classification before considering persistence, visualization, or live transport.
+Extract a reusable deterministic Topology Change Set contract for richer operational journeys before considering persistence or live transport.

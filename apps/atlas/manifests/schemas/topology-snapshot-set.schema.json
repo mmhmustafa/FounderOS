@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://founderos.dev/apps/atlas/schemas/topology-snapshot-set.schema.json",
+  "title": "Atlas Topology Snapshot Set",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["current", "previous"],
+  "properties": {
+    "current": {"$ref": "topology-snapshot.schema.json"},
+    "previous": {
+      "oneOf": [
+        {"$ref": "topology-snapshot.schema.json"},
+        {"type": "null"}
+      ]
+    }
+  }
+}

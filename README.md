@@ -48,8 +48,12 @@ Completed foundations:
 - PR-012 first-party deterministic Discovery package and fully in-memory platform vertical slice
 - PR-013 standard-library FounderOS CLI Alpha over the deterministic Discovery vertical slice
 - EPIC-001 / PR-014 Atlas vendor-neutral Discovery Engine and in-memory topology foundation
+- EPIC-001 / PR-015 deterministic multi-device topology reconciliation
+- EPIC-001 / PR-016 content-addressed Topology Snapshot contracts and exports
+- EPIC-001 / PR-017 interactive plain-HTML Atlas Topology Viewer
+- EPIC-002 / PR-018 evaluated Atlas Morning Brief utility Journey
 
-Next: PR-015 Atlas Multi-Device Topology Reconciliation, extending fixture-only discovery across multiple observations without live transport or persistence.
+Next: PR-019 Atlas Topology Change Set Foundation, extracting reusable structural change evidence without live transport or persistence.
 
 Most lifecycle agent, prompt, template, domain, and roadmap files remain explicitly marked as planned placeholders. No web application, Validation, or Product module has been implemented; Discovery is currently deterministic and local-only.
 
@@ -104,6 +108,9 @@ The public v0.3 Alpha commands are deliberately thin and use only the Python sta
 founderos version
 founderos doctor
 founderos demo discovery
+founderos atlas demo discovery
+founderos atlas demo topology
+founderos atlas morning-brief
 founderos help
 ```
 
@@ -118,6 +125,10 @@ Atlas is the first flagship first-party networking App built on FounderOS. Found
 [`apps/atlas/`](apps/atlas/) packages the Atlas manifests and deterministic Cisco IOS fixtures. The reference adapter parses already-collected `show version`, `show ip interface brief`, and `show cdp neighbors detail` text into immutable vendor-neutral `DiscoveryResult` values. `TopologyGraph` projects devices as nodes and observed neighbors as directed edges.
 
 Cisco IOS is a reference adapter, not the Atlas product boundary. PR-014 performs no SSH, SNMP, credential handling, network connection, persistence, device mutation, AI call, API, or GUI work. Any future collection transport must remain separate and cross FounderOS authorization and durable Activity boundaries.
+
+`founderos atlas demo topology` runs the fixture-only Atlas pipeline, creates a reconciled Snapshot, writes `atlas_topology.html`, and opens its interactive Cytoscape.js view. The renderer remains a pure Snapshot projection; only the CLI writes and opens the file. The generated page uses a pinned Cytoscape.js CDN asset and supports pan, zoom, fit, vendor styling, details, tooltips, and search.
+
+`founderos atlas morning-brief` runs Atlas's deterministic utility Workflow through FounderOS planning, validation, authorization, Journey execution, and Evaluation. It prints operational status and quality score, then writes `morning_brief.md`; the Journey itself remains entirely in memory and performs no AI or network call.
 
 ## Developer Setup and Testing
 

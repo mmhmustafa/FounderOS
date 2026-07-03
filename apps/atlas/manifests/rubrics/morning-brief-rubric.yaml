@@ -1,0 +1,45 @@
+id: rub_01ARZ3NDEKTSV4RRFFQ69G5FBY
+name: Atlas Morning Brief Quality
+version: 1.0.0
+description: Deterministic completeness and operational usefulness checks for an Atlas Morning Brief.
+status: active
+maturity: experimental
+applies_to:
+  artifact_type: morning_brief
+  schema_ref: schemas/morning-brief.schema.json
+rules:
+  - id: morning_brief.summary
+    name: Summary Generated
+    description: The brief must contain a non-empty operational summary.
+    severity: critical
+    type: minimum_length
+    parameters: {field: summary, minimum: 1}
+  - id: morning_brief.warnings
+    name: Warnings Present
+    description: The brief must explicitly include its warnings collection, even when empty.
+    severity: error
+    type: required_field
+    parameters: {field: warnings}
+  - id: morning_brief.recommendation
+    name: Recommendation Generated
+    description: The brief must contain at least one deterministic recommendation.
+    severity: critical
+    type: minimum_length
+    parameters: {field: recommendations, minimum: 1}
+  - id: morning_brief.completeness
+    name: Core Fields Complete
+    description: The brief must contain its status and topology counts.
+    severity: critical
+    type: schema
+    parameters:
+      schema:
+        type: object
+        required: [overall_status, generated_at, device_count, edge_count, new_devices, removed_devices, changed_devices]
+scoring:
+  method: passed_finding_ratio
+  precision: 6
+  blocking_severities: [error, critical]
+pass_threshold: 1.0
+metadata:
+  owner: founderos.atlas
+  deterministic: true
