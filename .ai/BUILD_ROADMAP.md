@@ -282,12 +282,20 @@ Authorization runtime enforcement remains mandatory before Provider or Tool exec
 - [x] Prove deterministic output, network isolation, and persistence/runtime non-mutation
 - [x] Add no CLI, real Provider, human Approval execution, persistence, Web UI, or Kernel mutation
 
-### PR-013 - Demo CLI Foundation (Next)
+### PR-013 - FounderOS CLI Alpha
 
-- [ ] Add one thin command over the existing Discovery demo helper
-- [ ] Present deterministic Journey status, Artifacts, Evaluations, and skipped gates
-- [ ] Keep orchestration, validation, authorization, and execution out of the CLI layer
-- [ ] Add no persistence, real Provider, Web UI, or Kernel mutation
+- [x] Add `version`, `doctor`, `demo discovery`, and `help` through a standard-library CLI package
+- [x] Present deterministic Journey progress, Artifact, Evaluation, status, and duration information
+- [x] Keep orchestration, validation, authorization, and execution in existing runtime components
+- [x] Preserve established local Project CLI behavior through a compatibility adapter
+- [x] Add no persistence for the demo, real Provider, Web UI, or Kernel mutation
+
+### PR-014 - Prompt Pack Manifest Foundation (Next)
+
+- [ ] Define a reusable versioned Prompt Pack manifest contract
+- [ ] Keep prompts separate from Agent identity, Provider selection, secrets, and runtime state
+- [ ] Add deterministic loading and validation without prompt execution
+- [ ] Add no real Provider, Tool, persistence, or Kernel mutation
 
 ## Deferred Runtime Hardening
 

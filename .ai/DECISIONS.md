@@ -569,3 +569,18 @@ Status: Accepted by PR-012.
 Decision: A successful PR-012 Journey means all executable in-memory steps and rubric checks completed; declared Approval and transition intent remain skipped and grant no Project-state authority.
 Reason: Human Approval, durable evidence, Events, and Kernel mutation are intentionally absent and must not be implied by a demo result.
 Status: Accepted by PR-012.
+
+## D-115
+Decision: The v0.3 Alpha CLI is a plain-text standard-library adapter that delegates Discovery exactly once to the PR-012 demo helper.
+Reason: Public presentation must not become a second Planner, validator, authorization engine, executor, or Evaluation implementation.
+Status: Accepted by PR-013.
+
+## D-116
+Decision: Alpha demo output reports execution duration as unrecorded instead of measuring wall-clock time.
+Reason: Wall-clock timing would make deterministic output vary and would add observability semantics that the in-memory JourneyResult does not own.
+Status: Accepted by PR-013.
+
+## D-117
+Decision: The former `founderos_runtime.cli` module becomes a package, while existing local Project commands remain behind an unchanged compatibility adapter.
+Reason: Introducing the public Alpha surface must not break the established persistence-oriented CLI or duplicate its application-facade behavior.
+Status: Accepted by PR-013.

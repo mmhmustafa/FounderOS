@@ -4,7 +4,7 @@ FounderOS is an AI operating system for helping technical founders discover, val
 
 ## Current Version
 
-v0.1-alpha
+v0.3 Alpha
 
 ## Current Status
 
@@ -46,8 +46,9 @@ Completed foundations:
 - PR-010 deterministic ExecutionPlan validation and plan-scoped authorization preflight
 - PR-011 versioned Evaluation Rubric manifests, loading, and deterministic rule translation
 - PR-012 first-party deterministic Discovery package and fully in-memory platform vertical slice
+- PR-013 standard-library FounderOS CLI Alpha over the deterministic Discovery vertical slice
 
-Next: PR-013 Demo CLI Foundation, a thin presentation layer over the existing Discovery demo helper without orchestration duplication, persistence, or real Providers.
+Next: PR-014 Prompt Pack Manifest Foundation, defining reusable versioned prompt assets without adding real Providers or execution behavior.
 
 Most lifecycle agent, prompt, template, domain, and roadmap files remain explicitly marked as planned placeholders. No web application, Validation, or Product module has been implemented; Discovery is currently deterministic and local-only.
 
@@ -93,6 +94,21 @@ from founderos_runtime.demo import run_discovery_vertical_slice
 result = run_discovery_vertical_slice()
 assert result.status.value == "succeeded"
 ```
+
+## FounderOS CLI Alpha
+
+The public v0.3 Alpha commands are deliberately thin and use only the Python standard library:
+
+```powershell
+founderos version
+founderos doctor
+founderos demo discovery
+founderos help
+```
+
+`demo discovery` invokes the existing PR-012 helper; it does not implement its own planning, validation, authorization, execution, or Evaluation logic. Output is deterministic plain text with no ANSI styling. The demo uses the offline Mock Provider and writes no Project state or files.
+
+The earlier persistence-oriented local Project commands remain available for compatibility. A future Web UI should call the same runtime/application boundaries rather than invoking the CLI or duplicating its orchestration.
 
 ## Developer Setup and Testing
 

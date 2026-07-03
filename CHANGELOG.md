@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### PR-013 - FounderOS CLI Alpha
+
+- Added a standard-library, plain-text public CLI package with `version`, `doctor`, `demo discovery`, and `help` commands.
+- Kept planning, validation, authorization, Journey execution, Mock Provider behavior, and Evaluation in their existing runtime components; the CLI delegates once and only renders results.
+- Preserved the established local Project CLI commands through an unchanged compatibility adapter while replacing the former single-module layout with a package.
+- Added deterministic Doctor checks for runtime availability, bundled manifest loading, Evaluation, and Mock Provider availability.
+- Added 10 tests covering commands, successful and failed demo behavior, deterministic output, exit codes, rendering, network isolation, and runtime/file non-mutation.
+- Added no interactive prompts, persistence for the Alpha demo, real AI, configuration system, plugins, marketplace, authentication, Web UI, or Kernel mutation.
+
 ### PR-012 - Discovery Vertical Slice Foundation
 
 - Added a complete first-party Discovery example package containing Agent, Workflow, App, Evaluation Rubric, input, schema, expected-output, and Mock Provider fixture assets.

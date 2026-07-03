@@ -8,8 +8,8 @@ from pathlib import Path
 import sys
 from typing import Any, Sequence
 
-from .application import FounderOSApplication
-from .errors import RuntimeFoundationError
+from ..application import FounderOSApplication
+from ..errors import RuntimeFoundationError
 
 
 def build_parser() -> argparse.ArgumentParser:

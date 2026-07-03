@@ -1,19 +1,19 @@
 # CURRENT_SPRINT
 
-Sprint: Demo CLI Foundation (PR-013)
+Sprint: Prompt Pack Manifest Foundation (PR-014)
 
 ## Goal
-Expose the proven in-memory Discovery demo through a thin, deterministic presentation boundary without duplicating planning or execution logic.
+Define reusable, versioned, declarative prompt assets without introducing real Provider integration or execution behavior.
 
 ## Prerequisites Completed
-- PR-001 through PR-011 platform, Journey, validation, authorization, and rubric foundations
-- PR-012 deterministic Discovery vertical slice
+- PR-001 through PR-012 platform and deterministic Discovery foundations
+- PR-013 FounderOS CLI Alpha
 
 ## Expected Scope
-- Minimal demo command over `run_discovery_vertical_slice`
-- Stable human-readable or JSON result projection
-- No orchestration logic in the presentation layer
-- No real Provider, human Approval execution, persistence, Web UI, Event, or Kernel mutation
+- Prompt Pack schema and independently loadable examples
+- Explicit prompt inputs, outputs, roles, and compatibility metadata
+- Separation from Agent manifests, Provider selection, secrets, and runtime state
+- No real Provider, prompt execution, persistence, CLI expansion, or Kernel mutation
 
 ## Definition of Done
-The Discovery journey can be demonstrated from one thin command while all decisions and execution remain inside existing platform components.
+A Prompt Pack contract can be validated independently and is precise enough for later deterministic rendering without embedding execution authority.
