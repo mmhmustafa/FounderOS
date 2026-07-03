@@ -1,19 +1,20 @@
 # CURRENT_SPRINT
 
-Sprint: Atlas Multi-Device Topology Reconciliation (PR-015)
+Sprint: Atlas Topology Snapshot Contract and Evaluation (PR-016)
 
 ## Goal
-Reconcile multiple fixture-only DiscoveryResults into a coherent deterministic topology without live transport or persistence.
+Define a versioned, deterministically serializable and evaluable Artifact contract for reconciled Atlas topology.
 
 ## Prerequisites Completed
 - PR-001 through PR-013 FounderOS platform, Journey, and CLI foundations
-- EPIC-001 / PR-014 Atlas Discovery Engine Foundation
+- EPIC-001 / PR-014 and PR-014.1 Atlas Discovery and CLI foundations
+- EPIC-001 / PR-015 multi-device topology reconciliation
 
 ## Expected Scope
-- Multiple checked-in device fixture sets
-- Deterministic identity and bidirectional neighbor reconciliation
-- Explicit unresolved, conflicting, and partial observation semantics
-- No SSH, SNMP, credentials, persistence, GUI, API, or device mutation
+- Canonical deterministic Topology Snapshot representation
+- Versioned Artifact schema and fixture
+- Deterministic topology quality Evaluation rubric
+- No SSH, SNMP, credentials, persistence, graph database, GUI, or device mutation
 
 ## Definition of Done
-Multiple fixture observations produce a stable topology with explainable reconciliation results and no external side effects.
+A reconciled graph can be serialized and evaluated reproducibly as a versioned Artifact without adding persistence or external side effects.

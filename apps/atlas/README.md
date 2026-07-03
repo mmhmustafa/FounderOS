@@ -26,8 +26,16 @@ Install FounderOS in editable mode, then run:
 founderos atlas demo discovery
 ```
 
-The command reads only the bundled Cisco IOS fixture files, invokes the existing `DiscoveryEngine`, builds an in-memory `TopologyGraph`, and prints normalized device and topology facts. It performs no network access, credential handling, persistence, device mutation, or AI call.
+The command reads only the bundled Cisco IOS fixture files, invokes the existing `DiscoveryEngine`, creates a second deterministic mock observation, reconciles both observations into an in-memory `TopologyGraph`, and prints normalized device and topology facts. It performs no network access, credential handling, persistence, device mutation, or AI call.
+
+## Topology Reconciliation
+
+`TopologyReconciler` merges multiple `DiscoveryResult` observations into one coherent graph. Device identity matching is deterministic and follows this priority: hostname, management IP, serial number when present, then explicit device ID. Results are sorted before merge so input order cannot choose a different canonical device.
+
+Reconciliation preserves normalized interfaces, device metadata, and all unique neighbor observations. Identical devices and relationships are idempotent. If matching observations disagree about a device, interface, or metadata value, Atlas keeps the deterministic canonical value and records a structured warning; it never silently overwrites the conflict.
+
+`TopologyGraph` now supports `merge_discovery_result()`, `merge_graph()`, `device_count()`, `edge_count()`, `find_device()`, `interfaces()`, `neighbors()`, `warnings()`, and an expanded `summary()`.
 
 ## Next Step
 
-Add a fixture-driven multi-device discovery Journey and topology reconciliation contract before considering any live transport.
+Define a versioned Topology Snapshot Artifact and deterministic quality rubric before considering persistence, visualization, or live transport.

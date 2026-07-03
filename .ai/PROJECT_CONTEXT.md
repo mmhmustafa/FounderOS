@@ -68,9 +68,11 @@ Runtime:
 - PR-012 first-party deterministic Discovery package and in-memory end-to-end platform composition
 - PR-013 FounderOS CLI Alpha with deterministic Doctor and Discovery demo commands
 - EPIC-001 / PR-014 Atlas vendor-neutral Discovery Engine and in-memory topology foundation
+- PR-014.1 Atlas fixture-only Discovery CLI demonstration
+- EPIC-001 / PR-015 Atlas multi-device topology reconciliation with deterministic conflict evidence
 
 ## Current Milestone
-PR-015: reconcile multiple fixture-only Atlas device observations without adding live transport, credentials, persistence, GUI, or device mutation.
+PR-016: define a deterministic Atlas Topology Snapshot Artifact and quality Evaluation without adding live transport, persistence, GUI, or device mutation.
 
 ## Planned
 - Durable persistence adapters

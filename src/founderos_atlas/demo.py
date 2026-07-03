@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
-from .discovery import DiscoveryEngine, DiscoveryResult
+from .discovery import DiscoveryEngine, DiscoveryResult, NetworkNeighbor
 from .discovery.adapters import CiscoIOSAdapter
-from .topology import TopologyGraph
+from .topology import TopologyGraph, TopologyReconciler
 
 
 def atlas_app_root() -> Path:
@@ -27,6 +28,28 @@ def run_atlas_discovery_demo() -> tuple[DiscoveryResult, TopologyGraph]:
         ).read_text(encoding="utf-8"),
     }
     result = DiscoveryEngine(CiscoIOSAdapter()).discover(raw_outputs)
-    graph = TopologyGraph()
-    graph.add_result(result)
+    second_device_id = "fixture-session:access-sw-01"
+    secondary_neighbor = NetworkNeighbor(
+        local_device_id=second_device_id,
+        local_interface="GigabitEthernet1/0/3",
+        remote_hostname="router-01",
+        remote_interface="GigabitEthernet0/0",
+        remote_management_ip="10.0.0.254",
+        protocol="cdp",
+        metadata={"source": "secondary_mock_observation"},
+    )
+    second_result = replace(
+        result,
+        device=replace(
+            result.device,
+            device_id=second_device_id,
+            metadata={**dict(result.device.metadata), "discovery_session": "secondary"},
+        ),
+        neighbors=tuple(
+            replace(neighbor, local_device_id=second_device_id)
+            for neighbor in result.neighbors
+        ) + (secondary_neighbor,),
+        metadata={**dict(result.metadata), "discovery_session": "secondary"},
+    )
+    graph = TopologyReconciler().reconcile((result, second_result))
     return result, graph

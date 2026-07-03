@@ -76,7 +76,15 @@ def render_error(message: str) -> str:
 
 def render_atlas_discovery(result: DiscoveryResult, graph: TopologyGraph) -> str:
     device = result.device
-    neighbors = graph.neighbors(device.device_id)
+    neighbors = tuple(
+        sorted(
+            graph.neighbors(device.device_id),
+            key=lambda item: (
+                item.remote_hostname.casefold(),
+                (item.remote_interface or "").casefold(),
+            ),
+        )
+    )
     tree_lines = [device.hostname]
     for index, neighbor in enumerate(neighbors):
         branch = "`--" if index == len(neighbors) - 1 else "|--"
@@ -99,6 +107,14 @@ def render_atlas_discovery(result: DiscoveryResult, graph: TopologyGraph) -> str
             f"Neighbors: {len(result.neighbors)}",
             "",
             "Building topology...",
+            "",
+            "Before reconciliation",
+            f"Devices: {summary['input_device_count']}",
+            "",
+            "After reconciliation",
+            f"Devices: {summary['device_count']}",
+            f"Duplicates removed: {summary['duplicates_removed']}",
+            f"Warnings: {summary['warning_count']}",
             "",
             "Topology",
             *tree_lines,

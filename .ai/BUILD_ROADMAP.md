@@ -299,13 +299,21 @@ Authorization runtime enforcement remains mandatory before Provider or Tool exec
 - [x] Validate Atlas manifests and prove fixture-only, network-free deterministic behavior
 - [x] Add no SSH, SNMP, credentials, persistence, GUI, API, device mutation, or real AI
 
-### PR-015 - Atlas Multi-Device Topology Reconciliation (Next)
+### PR-015 - Atlas Multi-Device Topology Reconciliation
 
-- [ ] Add multiple checked-in device observation fixtures
-- [ ] Resolve device identity and reconcile reciprocal neighbor observations deterministically
-- [ ] Represent unresolved, conflicting, and partial observations explicitly
-- [ ] Preserve transport-free, in-memory, vendor-neutral boundaries
-- [ ] Add no live network access, credentials, persistence, GUI, or device mutation
+- [x] Reconcile multiple fixture/mock DiscoveryResult observations through deterministic identity priority
+- [x] Preserve unique interfaces, metadata, and neighbor relationships on canonical devices
+- [x] Add identity-aware result/graph merge, lookup, counts, warnings, and summaries
+- [x] Record deterministic conflicts without silent overwrite
+- [x] Extend the CLI demo with before/after reconciliation output
+- [x] Preserve transport-free, in-memory, vendor-neutral boundaries
+
+### PR-016 - Atlas Topology Snapshot Contract and Evaluation (Next)
+
+- [ ] Define deterministic serialization for reconciled topology snapshots
+- [ ] Add a versioned Topology Snapshot Artifact schema
+- [ ] Evaluate identity, relationship, warning, and provenance completeness with a deterministic rubric
+- [ ] Keep snapshots in memory with no database, GUI, live transport, or device mutation
 
 ## Deferred Runtime Hardening
 

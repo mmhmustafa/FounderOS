@@ -604,3 +604,18 @@ Status: Accepted by EPIC-001 / PR-014.
 Decision: TopologyGraph treats identical duplicate observations as idempotent and rejects conflicting facts for the same identity.
 Reason: Silent last-write-wins would make topology depend on input order and hide data-quality conflicts that later reconciliation must explain.
 Status: Accepted by EPIC-001 / PR-014.
+
+## D-122
+Decision: Atlas device identity matching uses hostname, management IP, serial number when present, then explicit device ID, in that fixed priority.
+Reason: Human-recognizable and routable identities provide stronger cross-session matching than adapter-local IDs, while the explicit order keeps behavior reviewable and deterministic.
+Status: Accepted by EPIC-001 / PR-015.
+
+## D-123
+Decision: TopologyReconciler sorts observations before choosing a canonical device and records structured warnings for conflicting facts rather than overwriting them.
+Reason: Reconciliation output must not depend on caller order, and unresolved disagreement must remain visible for future policy rather than being destroyed.
+Status: Accepted by EPIC-001 / PR-015.
+
+## D-124
+Decision: Reconciled topology retains interfaces, compatible metadata, unique directed neighbor observations, identity aliases, and warning evidence entirely in memory.
+Reason: Removing duplicate nodes without preserving their evidence would produce a smaller but less truthful graph and block later Digital Twin evolution.
+Status: Accepted by EPIC-001 / PR-015.

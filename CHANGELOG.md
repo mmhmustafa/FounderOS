@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### EPIC-001 / PR-015 - Atlas Multi-Device Topology Reconciliation
+
+- Added `TopologyReconciler` for deterministic merging of multiple DiscoveryResult observations.
+- Extended TopologyGraph with identity-aware result/graph merge, device and edge counts, identity lookup, interface retention, structured warnings, and reconciliation summaries.
+- Defined hostname, management-IP, serial-number, and explicit-ID matching priority with stable canonical selection.
+- Preserved unique interfaces, metadata, and neighbor observations while deduplicating devices and edges.
+- Added deterministic conflict warnings instead of silent overwrite.
+- Extended the Atlas CLI demo with before/after reconciliation counts, duplicate removal, warnings, and merged topology.
+- Added 12 tests covering identity matching, preservation, conflicts, graph merge, summary correctness, determinism, duplicate removal, and fixture-only operation.
+- Added no SSH, SNMP, live discovery, persistence, graph database, GUI, AI, or cloud discovery.
+
 ### PR-014.1 - Atlas Discovery CLI Demo
 
 - Added `founderos atlas demo discovery` as a thin console demonstration over the existing fixture-only Atlas Discovery Engine.
