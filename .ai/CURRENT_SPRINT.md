@@ -1,19 +1,19 @@
 # CURRENT_SPRINT
 
-Sprint: Journey Rubric Resolution Foundation (PR-012)
+Sprint: Demo CLI Foundation (PR-013)
 
 ## Goal
-Resolve exact Workflow Evaluation rubric references so Journey quality checks use declared reusable rules instead of a minimal built-in availability floor.
+Expose the proven in-memory Discovery demo through a thin, deterministic presentation boundary without duplicating planning or execution logic.
 
 ## Prerequisites Completed
-- PR-001 through PR-010 platform, Journey, validation, and authorization foundations
-- PR-011 Evaluation Rubric Manifest and Loader Foundation
+- PR-001 through PR-011 platform, Journey, validation, authorization, and rubric foundations
+- PR-012 deterministic Discovery vertical slice
 
 ## Expected Scope
-- Bounded exact rubric reference resolution
-- Journey integration using existing EvaluationRubric and EvaluationRunner contracts
-- Validation and authorization behavior preserved before execution
-- No real Provider, human Approval, persistence, CLI, Event, or Kernel mutation
+- Minimal demo command over `run_discovery_vertical_slice`
+- Stable human-readable or JSON result projection
+- No orchestration logic in the presentation layer
+- No real Provider, human Approval execution, persistence, Web UI, Event, or Kernel mutation
 
 ## Definition of Done
-A validated Workflow Evaluation reference resolves to an exact rubric and Journey execution uses its rules without introducing another scoring model or runtime mutation boundary.
+The Discovery journey can be demonstrated from one thin command while all decisions and execution remain inside existing platform components.

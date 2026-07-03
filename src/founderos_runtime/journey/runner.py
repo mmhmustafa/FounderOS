@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 import re
 from typing import Any
 
@@ -10,6 +10,7 @@ from founderos_runtime.authorization import AuthorizationDecision, Authorization
 from founderos_runtime.evaluation import (
     EvaluationRequest,
     EvaluationResult,
+    EvaluationRubric,
     EvaluationRule,
     EvaluationRunner,
     RuleType,
@@ -29,6 +30,7 @@ from .journey_result import JourneyResult, JourneyStatus
 JOURNEY_RUNNER_VERSION = "1.0.0"
 _SKIPPED_TYPES = {"approval", "transition_request", "activity_request"}
 _LOCAL_TYPES = {"human_input", "artifact_creation"}
+RubricResolver = Callable[[Mapping[str, Any]], EvaluationRubric | None]
 
 
 class JourneyRunner:
@@ -43,6 +45,7 @@ class JourneyRunner:
         planner: Planner | None = None,
         validator: PlanValidator | None = None,
         authorization_engine: AuthorizationEngine | None = None,
+        rubric_resolver: RubricResolver | None = None,
     ) -> None:
         if not isinstance(workspace, Workspace):
             raise TypeError("JourneyRunner requires a Workspace")
@@ -52,6 +55,7 @@ class JourneyRunner:
         self._planner = planner or Planner(workspace)
         self._validator = validator or PlanValidator(workspace)
         self._authorization_engine = authorization_engine or AuthorizationEngine()
+        self._rubric_resolver = rubric_resolver
         if not isinstance(self._provider, MockProvider):
             raise TypeError("JourneyRunner provider must be a MockProvider")
         if not isinstance(self._evaluation_runner, EvaluationRunner):
@@ -62,8 +66,15 @@ class JourneyRunner:
             raise TypeError("validator must be a PlanValidator")
         if not isinstance(self._authorization_engine, AuthorizationEngine):
             raise TypeError("authorization_engine must be an AuthorizationEngine")
+        if self._rubric_resolver is not None and not callable(self._rubric_resolver):
+            raise TypeError("rubric_resolver must be callable")
 
-    def run(self, workflow_id: str) -> JourneyResult:
+    def run(
+        self,
+        workflow_id: str,
+        *,
+        input_artifacts: Mapping[str, Any] | None = None,
+    ) -> JourneyResult:
         try:
             plan = self._planner.plan(workflow_id)
         except PlannerWorkflowNotFoundError as error:
@@ -87,10 +98,18 @@ class JourneyRunner:
         completed: list[str] = []
         skipped: list[str] = []
         evaluations: list[EvaluationResult] = []
+        supplied_artifacts = dict(input_artifacts or {})
+        required_ids = {item.id for item in plan.required_artifacts}
+        unknown_inputs = sorted(set(supplied_artifacts) - required_ids)
+        if unknown_inputs:
+            raise JourneyInvalidPlanError(
+                f"input artifact {unknown_inputs[0]!r} is not required by the plan"
+            )
         artifacts: dict[str, Any] = {
             item.id: {"artifact_id": item.id, "source": "required_input"}
             for item in plan.required_artifacts
         }
+        artifacts.update(supplied_artifacts)
         generated: set[str] = set()
         log: list[dict[str, Any]] = []
 
@@ -212,6 +231,33 @@ class JourneyRunner:
         log: list[dict[str, Any]],
     ) -> EvaluationResult:
         subject_id = self._evaluation_subject(plan, step)
+        declaration = self._evaluation_declaration(plan, step, subject_id)
+        rubric = self._rubric_resolver(declaration) if self._rubric_resolver else None
+        if rubric is not None:
+            request = rubric.request(
+                f"evaluation.{plan.workflow_id}.{step.id}",
+                artifacts[subject_id],
+                metadata={
+                    "workflow_id": plan.workflow_id,
+                    "step_id": step.id,
+                    "subject_artifact": subject_id,
+                    "plan_step_index": position,
+                },
+            )
+            result = rubric.runner().run(request)
+            log.append(
+                {
+                    "index": len(log),
+                    "step_id": step.id,
+                    "event": "evaluation_completed",
+                    "request_id": request.request_id,
+                    "passed": result.passed,
+                    "score": result.score,
+                    "rubric_id": rubric.id,
+                    "rubric_version": rubric.version,
+                }
+            )
+            return result
         rule_id = "journey." + re.sub(r"[^a-z0-9._-]", "_", step.id.lower())
         request = EvaluationRequest(
             request_id=f"evaluation.{plan.workflow_id}.{step.id}",
@@ -245,6 +291,28 @@ class JourneyRunner:
             }
         )
         return result
+
+    @staticmethod
+    def _evaluation_declaration(
+        plan: ExecutionPlan,
+        step: ExecutionStep,
+        subject_id: str,
+    ) -> Mapping[str, Any]:
+        candidates = [
+            declaration
+            for declaration in plan.evaluations
+            if declaration.get("subject_artifact") == subject_id
+        ]
+        if step.id.startswith("evaluation."):
+            declaration_id = step.id.removeprefix("evaluation.")
+            exact = [item for item in candidates if item.get("id") == declaration_id]
+            if exact:
+                return exact[0]
+        if len(candidates) != 1:
+            raise JourneyInvalidPlanError(
+                f"evaluation step {step.id!r} does not resolve exactly one declaration"
+            )
+        return candidates[0]
 
     @staticmethod
     def _evaluation_subject(plan: ExecutionPlan, step: ExecutionStep) -> str:

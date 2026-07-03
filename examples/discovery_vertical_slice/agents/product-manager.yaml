@@ -1,0 +1,36 @@
+id: agt_01ARZ3NDEKTSV4RRFFQ69G5FAV
+name: Discovery Product Manager
+version: 1.0.0
+description: Evaluates deterministic Discovery evidence and prepares it for human review.
+role: Product Manager
+domain: b2b_saas_discovery
+status: active
+capabilities: [opportunity_evaluation, evidence_review]
+skills: [problem_framing, quality_assessment]
+inputs:
+  - name: opportunity_report
+    artifact_type: opportunity_report
+    schema_ref: schemas/opportunity-report.schema.json
+    required: true
+outputs:
+  - name: evaluation_summary
+    artifact_type: evaluation_summary
+    schema_ref: schemas/evaluation-summary.schema.json
+    required: true
+constraints:
+  - Evaluate only the structured evidence supplied by the Workflow.
+  - Never approve the Agent's own output or mutate Project state.
+allowed_tool_categories: []
+provider_preferences:
+  required_capabilities: [structured_output]
+  data_handling: local_only
+  allow_external: false
+evaluation:
+  rubric_refs: [rubrics/opportunity-report-rubric.yaml]
+  human_review: required
+handoff:
+  requires_summary: true
+  allowed_roles: [Founder]
+  artifact_types: [opportunity_report]
+maturity: experimental
+

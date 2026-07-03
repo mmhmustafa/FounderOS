@@ -274,12 +274,20 @@ Authorization runtime enforcement remains mandatory before Provider or Tool exec
 - [x] Map rubric rules exactly to the existing deterministic Evaluation Runner
 - [x] Add no real Provider, human Approval, persistence, or Kernel mutation
 
-### PR-012 - Journey Rubric Resolution Foundation (Next)
+### PR-012 - Discovery Vertical Slice Foundation
 
-- [ ] Resolve exact Workflow Evaluation rubric references from bounded package assets
-- [ ] Replace the Journey harness's minimal built-in quality floor with loaded rubric rules
-- [ ] Preserve deterministic validation and authorization preflight
-- [ ] Add no persistence, real Provider, human Approval, CLI, or Kernel mutation
+- [x] Add a complete first-party Discovery package with exact Agent, Workflow, App, rubric, schema, input, and fixture assets
+- [x] Compose Workspace, Planner, Plan Validation, Authorization, Journey Runner, Mock Provider, and Evaluation Rubric in memory
+- [x] Supply the Founder Brief as an actual in-memory input Artifact and resolve the exact bounded rubric reference
+- [x] Prove deterministic output, network isolation, and persistence/runtime non-mutation
+- [x] Add no CLI, real Provider, human Approval execution, persistence, Web UI, or Kernel mutation
+
+### PR-013 - Demo CLI Foundation (Next)
+
+- [ ] Add one thin command over the existing Discovery demo helper
+- [ ] Present deterministic Journey status, Artifacts, Evaluations, and skipped gates
+- [ ] Keep orchestration, validation, authorization, and execution out of the CLI layer
+- [ ] Add no persistence, real Provider, Web UI, or Kernel mutation
 
 ## Deferred Runtime Hardening
 

@@ -45,8 +45,9 @@ Completed foundations:
 - PR-009 deterministic in-memory Journey Runner over Planner, Mock Provider, and Evaluation
 - PR-010 deterministic ExecutionPlan validation and plan-scoped authorization preflight
 - PR-011 versioned Evaluation Rubric manifests, loading, and deterministic rule translation
+- PR-012 first-party deterministic Discovery package and fully in-memory platform vertical slice
 
-Next: PR-012 Journey Rubric Resolution Foundation, resolving exact Workflow rubric references without adding persistence or real Providers.
+Next: PR-013 Demo CLI Foundation, a thin presentation layer over the existing Discovery demo helper without orchestration duplication, persistence, or real Providers.
 
 Most lifecycle agent, prompt, template, domain, and roadmap files remain explicitly marked as planned placeholders. No web application, Validation, or Product module has been implemented; Discovery is currently deterministic and local-only.
 
@@ -81,6 +82,17 @@ The revised [`FounderOS v0.2 Blueprint`](architecture/FounderOS_v0.2_Blueprint.m
 [`founderos_runtime.validation`](src/founderos_runtime/validation/) verifies Workflow, Agent, Artifact, ID, dependency-order, cycle, and Evaluation-checkpoint invariants on an immutable ExecutionPlan. [`founderos_runtime.authorization`](src/founderos_runtime/authorization/) then applies fixed deterministic default-deny capability policies. Validation, authorization, Approval, and execution remain distinct: neither preflight component executes work, performs human Approval, persists data, or grants Kernel mutation authority.
 
 [`runtime/contracts/evaluation/`](runtime/contracts/evaluation/) defines reusable versioned Evaluation Rubrics. [`founderos_runtime.evaluation`](src/founderos_runtime/evaluation/) loads a validated rubric into the existing deterministic `EvaluationRule` and `EvaluationRunner` model. Rubrics declare quality gates but do not execute Workflows, call Providers, perform Approval, persist evidence, or mutate runtime state.
+
+[`examples/discovery_vertical_slice/`](examples/discovery_vertical_slice/) is the first complete first-party package fixture. Its helper composes the Workspace, Planner, plan validation, authorization, Journey Runner, Mock Provider fixture, and Opportunity Report rubric entirely in memory. It proves the platform seams with deterministic output; Approval and transition intent remain visible but deliberately unexecuted.
+
+Run the demo from Python:
+
+```python
+from founderos_runtime.demo import run_discovery_vertical_slice
+
+result = run_discovery_vertical_slice()
+assert result.status.value == "succeeded"
+```
 
 ## Developer Setup and Testing
 

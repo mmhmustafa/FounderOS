@@ -1,0 +1,54 @@
+{
+  "format_version": "1.0.0",
+  "responses": [
+    {
+      "operation": "journey.agent_task",
+      "input": {
+        "workflow_id": "wfl_01ARZ3NDEKTSV4RRFFQ69G5FAW",
+        "step_id": "score_opportunities",
+        "agent": {
+          "id": "agt_01ARZ3NDEKTSV4RRFFQ69G5FAX",
+          "version": "1.0.0",
+          "role": "Market Research Agent"
+        },
+        "artifacts": {
+          "founder_brief": {
+            "founder_profile": "Senior infrastructure engineer building a bootstrapped B2B SaaS",
+            "experience": ["network operations", "security automation", "Python"],
+            "constraints": ["solo founder", "twelve-week MVP", "no external data collection"],
+            "target_market": "Small managed service providers"
+          }
+        }
+      },
+      "output": {
+        "candidates": [
+          {
+            "problem": "Small MSPs review firewall policy changes manually and inconsistently.",
+            "target_user": "Network engineers at small managed service providers",
+            "score": 0.88,
+            "assumptions": ["Teams can export sanitized policy snapshots"],
+            "risks": ["Vendor configuration formats vary"]
+          },
+          {
+            "problem": "Client network documentation becomes stale after routine changes.",
+            "target_user": "Operations leads at small managed service providers",
+            "score": 0.76,
+            "assumptions": ["Change records are available locally"],
+            "risks": ["Documentation conventions differ"]
+          }
+        ],
+        "selected_opportunity": {
+          "problem": "Small MSPs review firewall policy changes manually and inconsistently.",
+          "target_user": "Network engineers at small managed service providers",
+          "score": 0.88,
+          "rationale": "Strong founder fit, bounded local inputs, and a twelve-week deterministic MVP path."
+        },
+        "source": "founderos.mock.fixture"
+      },
+      "metadata": {
+        "fixture_id": "discovery-opportunity-report-v1"
+      }
+    }
+  ]
+}
+

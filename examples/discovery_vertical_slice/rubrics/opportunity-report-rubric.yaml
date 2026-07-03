@@ -1,0 +1,43 @@
+id: rub_01ARZ3NDEKTSV4RRFFQ69G5FAY
+name: Opportunity Report Quality
+version: 1.0.0
+description: Deterministic quality gate for the Discovery demo Opportunity Report.
+status: active
+maturity: experimental
+applies_to:
+  artifact_type: opportunity_report
+  schema_ref: schemas/opportunity-report.schema.json
+rules:
+  - id: opportunity.candidates_required
+    name: Candidates Required
+    description: The report must include candidate opportunities.
+    severity: critical
+    type: required_field
+    parameters: {field: candidates}
+  - id: opportunity.candidate_count
+    name: Candidate Count
+    description: At least one candidate must be present.
+    severity: error
+    type: minimum_length
+    parameters: {field: candidates, minimum: 1}
+  - id: opportunity.selection_required
+    name: Selection Required
+    description: The report must name its selected opportunity.
+    severity: critical
+    type: required_field
+    parameters: {field: selected_opportunity}
+  - id: opportunity.problem_present
+    name: Selected Problem Present
+    description: The selected opportunity must describe a non-empty problem.
+    severity: error
+    type: regex
+    parameters: {field: selected_opportunity.problem, pattern: .+}
+scoring:
+  method: passed_finding_ratio
+  precision: 6
+  blocking_severities: [error, critical]
+pass_threshold: 1.0
+metadata:
+  owner: founderos.discovery.demo
+  deterministic: true
+

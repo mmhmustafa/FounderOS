@@ -1,0 +1,43 @@
+id: founderos.discovery.demo
+name: FounderOS Discovery Vertical Slice
+version: 1.0.0
+description: Packages the deterministic assets used by the first end-to-end Discovery demonstration.
+domain: b2b_saas_discovery
+status: active
+maturity: experimental
+compatible_runtime: '>=0.1.0 <1.0.0'
+publisher:
+  id: founderos.platform
+  name: FounderOS
+  trust: first_party
+content_digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+workflows:
+  - id: wfl_01ARZ3NDEKTSV4RRFFQ69G5FAW
+    version: 1.0.0
+    manifest_ref: workflows/discovery-workflow.yaml
+agents:
+  - id: agt_01ARZ3NDEKTSV4RRFFQ69G5FAV
+    version: 1.0.0
+    manifest_ref: agents/product-manager.yaml
+  - id: agt_01ARZ3NDEKTSV4RRFFQ69G5FAX
+    version: 1.0.0
+    manifest_ref: agents/market-research.yaml
+artifacts:
+  - id: opportunity_report
+    version: 1.0.0
+    schema_ref: schemas/opportunity-report.schema.json
+prompts: []
+evaluations:
+  - id: opportunity_quality
+    version: 1.0.0
+    path: rubrics/opportunity-report-rubric.yaml
+policies: []
+fixtures:
+  - id: discovery_provider_responses
+    path: fixtures/mock-provider-responses.json
+    sha256: '0ba96f5081f25057b9660bc9c5c9efdc3d863b8ff2729c6e7ce5b3b9478fe231'
+documentation:
+  - id: discovery_vertical_slice
+    path: README.md
+dependencies: []
+tags: [discovery, demo, deterministic]

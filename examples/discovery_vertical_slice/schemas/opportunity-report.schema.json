@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["candidates", "selected_opportunity", "source"],
+  "properties": {
+    "candidates": {"type": "array", "minItems": 1},
+    "selected_opportunity": {
+      "type": "object",
+      "required": ["problem", "target_user", "score", "rationale"]
+    },
+    "source": {"const": "founderos.mock.fixture"}
+  }
+}
+

@@ -1,0 +1,36 @@
+id: agt_01ARZ3NDEKTSV4RRFFQ69G5FAX
+name: Deterministic Market Research Agent
+version: 1.0.0
+description: Produces a fixture-backed Opportunity Report from a structured Founder Brief.
+role: Market Research Agent
+domain: b2b_saas_discovery
+status: active
+capabilities: [opportunity_generation, evidence_synthesis]
+skills: [market_segmentation, problem_scoring]
+inputs:
+  - name: founder_brief
+    artifact_type: founder_brief
+    schema_ref: schemas/founder-brief.schema.json
+    required: true
+outputs:
+  - name: opportunity_report
+    artifact_type: opportunity_report
+    schema_ref: schemas/opportunity-report.schema.json
+    required: true
+constraints:
+  - Use only the supplied Founder Brief and deterministic fixture response.
+  - Do not access a network or claim external market evidence.
+allowed_tool_categories: []
+provider_preferences:
+  required_capabilities: [structured_output]
+  data_handling: local_only
+  allow_external: false
+evaluation:
+  rubric_refs: [rubrics/opportunity-report-rubric.yaml]
+  human_review: required
+handoff:
+  requires_summary: true
+  allowed_roles: [Product Manager, Founder]
+  artifact_types: [opportunity_report]
+maturity: experimental
+

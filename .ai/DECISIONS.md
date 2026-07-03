@@ -554,3 +554,18 @@ Status: Accepted by PR-011.
 Decision: PR-011 does not change Journey execution or resolve Workflow rubric paths.
 Reason: Schema/loading correctness is independently reviewable; bounded asset resolution and Journey adoption belong to PR-012.
 Status: Accepted by PR-011.
+
+## D-112
+Decision: The first-party Discovery vertical slice is a bounded example package and demo helper, not a registry, marketplace installation, or new execution authority.
+Reason: A concrete package proves manifest relationships and orchestration composition without creating lifecycle or deployment semantics before they are needed.
+Status: Accepted by PR-012.
+
+## D-113
+Decision: Journey Runner may receive explicit in-memory input Artifact values and an injected exact rubric resolver; unknown input IDs and escaping rubric paths are rejected.
+Reason: Real fixture data and declared quality gates are required for an honest vertical slice, while caller injection preserves read-only boundaries and avoids global registries or filesystem discovery inside the runner.
+Status: Accepted by PR-012.
+
+## D-114
+Decision: A successful PR-012 Journey means all executable in-memory steps and rubric checks completed; declared Approval and transition intent remain skipped and grant no Project-state authority.
+Reason: Human Approval, durable evidence, Events, and Kernel mutation are intentionally absent and must not be implied by a demo result.
+Status: Accepted by PR-012.

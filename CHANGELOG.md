@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### PR-012 - Discovery Vertical Slice Foundation
+
+- Added a complete first-party Discovery example package containing Agent, Workflow, App, Evaluation Rubric, input, schema, expected-output, and Mock Provider fixture assets.
+- Added a small in-memory demo helper that composes Workspace, Planner, Plan Validation, Authorization, Journey Runner, Mock Provider, and the declared Evaluation Rubric.
+- Extended Journey Runner with optional caller-supplied input Artifacts and exact injected rubric resolution while preserving its deterministic default behavior.
+- Added 12 tests covering package loading, planning, validation, authorization, execution, fixture output, rubric assessment, result contents, determinism, network isolation, and persistence/runtime non-mutation.
+- Added no CLI, real Provider, persistence, human Approval execution, Web UI, authentication, marketplace, Event recording, or Project/Kernel mutation.
+
 ### PR-011 - Evaluation Rubric Manifest and Loader Foundation
 
 - Added a strict versioned Evaluation Rubric schema and deterministic Opportunity Report example.

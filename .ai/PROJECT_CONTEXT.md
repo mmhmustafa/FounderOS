@@ -64,9 +64,11 @@ Runtime:
 - PR-008 immutable Workspace Execution Plans with exact reference resolution, dependency ordering, checkpoints, and no execution or mutation
 - PR-009 deterministic in-memory Journey Runner with Mock Provider Agent tasks, Evaluation checkpoints, critical stopping, and no persistence or state mutation
 - PR-010 deterministic Plan Validation and plan-scoped Authorization preflight before Journey execution
+- PR-011 versioned Evaluation Rubric manifests, loading, and deterministic rule translation
+- PR-012 first-party deterministic Discovery package and in-memory end-to-end platform composition
 
 ## Current Milestone
-PR-011: define and load deterministic Evaluation rubric assets without adding real Providers, persistence, or runtime mutation.
+PR-013: add a thin Demo CLI over the proven Discovery helper without duplicating orchestration or adding persistence, real Providers, or runtime mutation.
 
 ## Planned
 - Durable persistence adapters

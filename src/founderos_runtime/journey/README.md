@@ -11,7 +11,10 @@ from founderos_runtime.journey import JourneyRunner
 from founderos_runtime.workspace import Workspace
 
 workspace = Workspace.load("path/to/project")
-result = JourneyRunner(workspace).run("wfl_...")
+result = JourneyRunner(workspace, rubric_resolver=resolver).run(
+    "wfl_...",
+    input_artifacts={"art_founder_brief": founder_brief},
+)
 ```
 
 ## Planner Versus Journey Runner
@@ -29,11 +32,11 @@ Approval, transition-request, and Activity-request steps are explicitly logged a
 ## Execution Semantics
 
 - The Planner is called once per run.
-- Required Workflow Artifacts are represented as deterministic in-memory input references because the API accepts no Artifact payloads.
+- Required Workflow Artifacts use explicit caller-supplied in-memory values when provided; otherwise deterministic references preserve compatibility. Unknown input Artifact IDs are rejected.
 - `agent_task` steps call `MockProvider` with exact Workflow, step, Agent, input-reference, correlation, and idempotency metadata.
 - Provider output is assigned to each declared output Artifact in memory.
 - `evaluation` steps run after their Artifact dependencies and retain complete `EvaluationResult` values.
-- Required evaluations currently enforce a critical non-null subject floor plus Evaluation Runner's built-in non-empty check.
+- An injected resolver may map an exact Workflow Evaluation declaration to an `EvaluationRubric`; otherwise the established critical non-null floor remains for compatibility.
 - A failed critical finding stops the Journey immediately and returns a failed result.
 - Local human-input and Artifact-creation declarations complete deterministically without I/O.
 - Approval, transition, and Activity execution remain skipped and visible in the log.
@@ -52,9 +55,8 @@ Approval, transition-request, and Activity-request steps are explicitly logged a
 
 ## Known Limitations
 
-Rubric references are not loaded, required input Artifact content is unavailable, Provider failures currently raise a typed Journey plan/execution error, and the runner supports only sequential synchronous execution. Approval or transition completion cannot be claimed.
+Rubric resolution is caller-supplied rather than a global registry, Provider failures currently raise a typed Journey plan/execution error, and the runner supports only sequential synchronous execution. Approval or transition completion cannot be claimed.
 
-## Recommended PR-011
+## Recommended PR-013
 
-Add Evaluation Rubric Manifest loading so declared Workflow quality rules replace the current minimal non-null floor. Provider invocation beyond the in-process Mock Provider must still pass through RFC-0001 durable Activity boundaries. Do not add real Providers, Tools, persistence, or Kernel mutation in that PR.
-
+Add a thin Demo CLI over the completed Discovery helper. Provider invocation beyond the in-process Mock Provider must still pass through RFC-0001 durable Activity boundaries. Do not add real Providers, Tools, persistence, or Kernel mutation in that PR.
