@@ -18,3 +18,10 @@ dist/
 
 deliverables/*
 !deliverables/.gitkeep
+# ------------------------------------------------
+# Atlas CLI Generated Artifacts (demo and live runs)
+# ------------------------------------------------
+
+/atlas_topology.html
+/topology_snapshot.json
+/morning_brief.md
