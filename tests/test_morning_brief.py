@@ -48,7 +48,11 @@ class MorningBriefTests(unittest.TestCase):
     def test_recommendations_are_actionable(self) -> None:
         brief = build_morning_brief(self.current, self.previous)
         self.assertEqual(
-            ("Review access-sw-01 configuration and topology changes.",),
+            (
+                "Confirm the new adjacency between access-sw-01 and router-01 "
+                "is expected.",
+                "Review access-sw-01 configuration and topology changes.",
+            ),
             brief.recommendations,
         )
 

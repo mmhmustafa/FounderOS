@@ -17,6 +17,7 @@ from .commands import (
     MorningBriefRunner,
     PromptReader,
     TransportFactory,
+    atlas_compare_command,
     atlas_discover_command,
     atlas_discovery_command,
     atlas_morning_brief_command,
@@ -51,6 +52,8 @@ def main(
     atlas_input_reader: PromptReader | None = None,
     atlas_password_reader: PromptReader | None = None,
     atlas_snapshot_output: str | Path = "topology_snapshot.json",
+    atlas_compare_json_output: str | Path = "change_report.json",
+    atlas_compare_markdown_output: str | Path = "change_report.md",
 ) -> int:
     arguments = list(sys.argv[1:] if argv is None else argv)
     if not arguments:
@@ -96,6 +99,23 @@ def main(
                 snapshot_output=atlas_snapshot_output,
                 brief_output=atlas_morning_brief_output,
                 browser_opener=atlas_browser_opener,
+            )
+        except CliError as error:
+            print(render_error(str(error)), file=sys.stderr)
+            return 1
+    elif arguments[:2] == ["atlas", "compare"]:
+        if len(arguments) != 4:
+            print(
+                render_error("Usage: founderos atlas compare <previous.json> <current.json>"),
+                file=sys.stderr,
+            )
+            return 2
+        try:
+            code, output = atlas_compare_command(
+                arguments[2],
+                arguments[3],
+                json_output=atlas_compare_json_output,
+                markdown_output=atlas_compare_markdown_output,
             )
         except CliError as error:
             print(render_error(str(error)), file=sys.stderr)

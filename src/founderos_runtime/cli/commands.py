@@ -5,9 +5,15 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import replace
 import getpass
+import json
 from pathlib import Path
 import webbrowser
 
+from founderos_atlas.change import (
+    ChangeDetector,
+    render_change_report_json,
+    render_change_report_markdown,
+)
 from founderos_atlas.demo import run_atlas_discovery_demo
 from founderos_atlas.discovery import AtlasDiscoveryError, DiscoveryResult, MultiHopConfig
 from founderos_atlas.journeys import MorningBriefJourney, MorningBriefJourneyResult
@@ -29,6 +35,7 @@ from founderos_runtime.workspace import WorkspaceError
 from .exceptions import CliError
 from .render import (
     VERSION_TEXT,
+    render_atlas_compare,
     render_atlas_discover,
     render_atlas_discovery,
     render_atlas_topology,
@@ -182,6 +189,45 @@ def atlas_discover_command(
         str(snapshot_destination),
         str(brief_destination),
     )
+
+
+def atlas_compare_command(
+    previous_path: str | Path,
+    current_path: str | Path,
+    *,
+    json_output: str | Path = "change_report.json",
+    markdown_output: str | Path = "change_report.md",
+) -> tuple[int, str]:
+    previous = _load_snapshot_file(previous_path)
+    current = _load_snapshot_file(current_path)
+    try:
+        report = ChangeDetector().compare(previous, current)
+        json_destination = Path(json_output).resolve()
+        json_destination.write_text(render_change_report_json(report), encoding="utf-8")
+        markdown_destination = Path(markdown_output).resolve()
+        markdown_destination.write_text(
+            render_change_report_markdown(report), encoding="utf-8"
+        )
+    except (OSError, TypeError, ValueError) as error:
+        raise CliError(f"Atlas snapshot comparison failed: {error}") from error
+    return 0, render_atlas_compare(
+        report, str(json_destination), str(markdown_destination)
+    )
+
+
+def _load_snapshot_file(path: str | Path) -> dict:
+    resolved = Path(path)
+    try:
+        text = resolved.read_text(encoding="utf-8")
+    except OSError as error:
+        raise CliError(f"Could not read snapshot file {resolved}: {error}") from error
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as error:
+        raise CliError(f"{resolved} is not valid JSON: {error}") from error
+    if not isinstance(data, dict):
+        raise CliError(f"{resolved} does not contain a topology snapshot object")
+    return data
 
 
 def _read_limit(read_input: PromptReader, prompt: str, default: int) -> int:

@@ -11,6 +11,7 @@ from founderos_runtime.evaluation import EvaluationResult, load_evaluation_rubri
 from founderos_runtime.journey import JourneyResult, JourneyRunner, JourneyStatus
 from founderos_runtime.workspace import Workspace
 
+from founderos_atlas.change import ChangeDetector
 from founderos_atlas.demo import atlas_app_root
 from founderos_atlas.topology import TopologySnapshot
 
@@ -128,6 +129,12 @@ def build_morning_brief(
     recommendations = _recommendations(
         removed_devices, changed_devices, warnings, conflicts
     )
+    change_report = None
+    if previous is not None:
+        change_report = ChangeDetector().compare(previous, current)
+        recommendations = recommendations + tuple(
+            item for item in change_report.recommendations if item not in recommendations
+        )
     status = "Attention Required" if removed_devices or changed_devices or warnings else "Healthy"
     baseline = "No comparison baseline was supplied." if previous is None else (
         f"Detected {len(new_devices)} new, {len(removed_devices)} removed, and "
@@ -155,6 +162,11 @@ def build_morning_brief(
             "previous_snapshot_id": previous.snapshot_id if previous is not None else None,
             "deterministic": True,
             "in_memory_only": True,
+            **(
+                {"change_report": change_report.to_dict()}
+                if change_report is not None
+                else {}
+            ),
         },
     )
 

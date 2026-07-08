@@ -116,6 +116,26 @@ class MorningBrief:
             "\n".join(f"- {value}" for value in self.recommendations)
             if self.recommendations else "- No immediate action required."
         )
+        change_lines: tuple[str, ...] = ()
+        change_report = self.metadata.get("change_report")
+        if isinstance(change_report, Mapping):
+            counts = change_report.get("severity_counts") or {}
+            entries = tuple(change_report.get("changes") or ())
+            detail_lines = tuple(
+                f"- [{str(entry.get('severity', '')).title()}] {entry.get('description')} "
+                f"— {entry.get('recommendation')}"
+                for entry in entries
+            ) or ("- No changes detected.",)
+            change_lines = (
+                "## Change Intelligence",
+                "",
+                f"- Changes detected: {change_report.get('change_count', 0)}",
+                f"- High: {counts.get('high', 0)} | Medium: {counts.get('medium', 0)} "
+                f"| Low: {counts.get('low', 0)} | Info: {counts.get('info', 0)}",
+                "",
+                *detail_lines,
+                "",
+            )
         return "\n".join(
             (
                 "# Good Morning",
@@ -151,6 +171,7 @@ class MorningBrief:
                 "",
                 names(self.changed_devices),
                 "",
+                *change_lines,
                 "## Warnings",
                 "",
                 str(len(self.warnings)),

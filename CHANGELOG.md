@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### EPIC-002 / PR-022 - Change Intelligence Foundation
+
+- Added `founderos_atlas/change/`: deterministic topology and inventory change detection between two `TopologySnapshot` values (objects or `topology_snapshot.json` dicts) — not configuration diff.
+- Detected changes: new devices (low), removed devices (high), hostname renames (medium, matched by serial/IP/device-ID so renames are never remove-plus-add), management IP (medium), platform (high), OS version (medium), interface count (low), lost neighbors (medium), gained neighbors (low), and discovery failures (medium, recorded via `failed_hosts` snapshot metadata).
+- Every `Change` carries category, severity, description, and recommendation; reports sort deterministically by severity/category/subject and compare byte-identically.
+- Neighbor comparison operates on undirected logical links (renames translated first), so directional CDP pairs and renames never produce false neighbor churn; links involving new/removed devices are suppressed in favor of the device-level change.
+- Added `founderos atlas compare <previous.json> <current.json>` printing a severity summary and writing `change_report.json` and `change_report.md`.
+- Morning Brief with a previous snapshot now embeds the change report in metadata, folds change recommendations into the brief, and renders a Change Intelligence markdown section — the `MorningBrief` schema is unchanged.
+- Topology viewer optionally highlights new (green), changed (orange), and removed (red ghost) devices when a change report is supplied; rendering is unchanged without one.
+- Added 25 tests covering identical snapshots, each change type, rename semantics, no false positives, logical-link dedupe, JSON/Markdown generation, determinism, Morning Brief integration and journey evaluation, viewer highlighting, and the compare CLI.
+- Added no running-config diff, AI, GUI redesign, persistence database, SNMP, or NETCONF.
+
 ### EPIC-002 / PR-021.1 - Canonical Device Identity & Relationship Reconciliation
 
 - Added a vendor-neutral identity package (`founderos_atlas/identity/`): `DeviceIdentity` (all observed identifiers), `CanonicalDevice` (one merged identity with aliases and discovery history), and `IdentityResolver` with union-find clustering.

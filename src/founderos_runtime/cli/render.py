@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
+from founderos_atlas.change import SEVERITY_ORDER, ChangeReport
 from founderos_atlas.discovery import DiscoveryResult, MultiHopDiscoveryReport
 from founderos_atlas.journeys import MorningBriefJourneyResult
 from founderos_atlas.topology import TopologyGraph, TopologySnapshot
@@ -26,6 +27,7 @@ def render_help() -> str:
             "  founderos atlas demo topology",
             "  founderos atlas morning-brief",
             "  founderos atlas discover",
+            "  founderos atlas compare <previous.json> <current.json>",
             "  founderos help",
             "",
             "Commands:",
@@ -36,6 +38,7 @@ def render_help() -> str:
             "  atlas demo topology  Generate and open the Atlas topology viewer.",
             "  atlas morning-brief  Generate an evaluated Atlas operational brief.",
             "  atlas discover  Discover a live Cisco IOS/IOS-XE device over read-only SSH.",
+            "  atlas compare   Compare two topology snapshots into a change report.",
             "  help            Show this help.",
         )
     )
@@ -178,6 +181,40 @@ def render_atlas_discover(
             "Browser launch requested.",
             "",
             "Live discovery completed successfully.",
+            "=" * 48,
+        )
+    )
+
+
+def render_atlas_compare(
+    report: ChangeReport,
+    json_path: str,
+    markdown_path: str,
+) -> str:
+    counts = report.severity_counts
+    change_lines = [
+        f"[{change.severity}] {change.description}" for change in report.changes
+    ] or ["No changes detected between the two snapshots."]
+    return "\n".join(
+        (
+            "=" * 48,
+            "Atlas Change Report",
+            "=" * 48,
+            "",
+            f"Previous snapshot: {report.previous_snapshot_id}",
+            f"Current snapshot: {report.current_snapshot_id}",
+            "",
+            f"Changes detected: {report.change_count}",
+            " | ".join(
+                f"{severity.title()}: {counts[severity]}" for severity in SEVERITY_ORDER
+            ),
+            "",
+            *change_lines,
+            "",
+            f"Change report saved: {json_path}",
+            f"Change report saved: {markdown_path}",
+            "",
+            "Comparison completed successfully.",
             "=" * 48,
         )
     )

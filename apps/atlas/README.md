@@ -153,6 +153,30 @@ credentials — including CML node management addresses.
 | Neighbor skipped with `no management IP advertised over CDP` | The neighbor does not advertise an address Atlas can connect to; discover it directly by its management IP |
 | Unknown platform/os fields with warnings | Identity fallback engaged; discovery still completes and warnings list what could not be parsed |
 
+## Change Intelligence
+
+Compare any two topology snapshots into a classified, deterministic change
+report — topology and inventory change detection, not configuration diff:
+
+```powershell
+founderos atlas compare previous_snapshot.json current_snapshot.json
+```
+
+The command prints a severity summary and writes `change_report.json` and
+`change_report.md` in the current directory. Detected changes cover new and
+removed devices, hostname renames (matched by serial/IP so a rename is never
+misreported as remove-plus-add), management IP, platform, and OS version
+changes, interface count changes, lost/gained neighbor adjacencies, and
+discovery failures recorded by the run. Every change carries a category,
+severity, description, and recommendation.
+
+When `founderos atlas morning-brief` (or the Morning Brief Journey) receives
+a previous snapshot, the brief automatically embeds the change report: a
+Change Intelligence section with a severity summary, each detected change,
+and its recommendation. The topology viewer can additionally highlight new
+(green), changed (orange), and removed (red) devices when a comparison is
+supplied to the renderer. See `src/founderos_atlas/change/README.md`.
+
 ## Next Step
 
 Extract a reusable deterministic Topology Change Set contract for richer operational journeys before considering persistence or live transport.

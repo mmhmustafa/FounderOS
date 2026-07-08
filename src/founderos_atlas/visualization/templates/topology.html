@@ -57,6 +57,9 @@
           'width': 44, 'height': 44, 'border-width': 2, 'border-color': '#ffffff'
         }},
         { selector: 'node[kind = "observed"]', style: { 'shape': 'diamond', 'border-style': 'dashed' }},
+        { selector: 'node[change = "new"]', style: { 'border-color': '#16a34a', 'border-width': 5 }},
+        { selector: 'node[change = "changed"]', style: { 'border-color': '#f59e0b', 'border-width': 5 }},
+        { selector: 'node[change = "removed"]', style: { 'border-color': '#dc2626', 'border-width': 5, 'border-style': 'dashed', 'opacity': 0.75 }},
         { selector: 'edge', style: {
           'width': 2, 'line-color': '#94a3b8', 'curve-style': 'bezier'
         }},

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from hashlib import sha256
 import json
 from pathlib import Path
@@ -22,10 +23,15 @@ _VENDOR_COLORS = {
 
 
 class TopologyRenderer:
-    def __init__(self, snapshot: TopologySnapshot) -> None:
+    def __init__(
+        self,
+        snapshot: TopologySnapshot,
+        change_report: Any | None = None,
+    ) -> None:
         if not isinstance(snapshot, TopologySnapshot):
             raise TypeError("snapshot must be a TopologySnapshot")
         self._snapshot = snapshot
+        self._change = _change_highlights(change_report)
 
     def elements(self) -> dict[str, list[dict[str, Any]]]:
         """Return deterministic Cytoscape nodes and edges without rendering HTML.
@@ -45,21 +51,41 @@ class TopologyRenderer:
         for device in self._snapshot.devices:
             device_id = str(device["device_id"])
             vendor = str(device["vendor"])
-            nodes[device_id] = {
-                "data": {
-                    "id": device_id,
-                    "label": str(device["hostname"]),
-                    "hostname": str(device["hostname"]),
-                    "aliases": list(_device_aliases(device)),
-                    "management_ip": str(device["management_ip"]),
-                    "vendor": vendor,
-                    "platform": str(device["platform"]),
-                    "os": f"{device['os_name']} {device['os_version']}",
-                    "interfaces": len(device["interfaces"]),
-                    "kind": "discovered",
-                    "color": _vendor_color(vendor),
-                }
+            node_data = {
+                "id": device_id,
+                "label": str(device["hostname"]),
+                "hostname": str(device["hostname"]),
+                "aliases": list(_device_aliases(device)),
+                "management_ip": str(device["management_ip"]),
+                "vendor": vendor,
+                "platform": str(device["platform"]),
+                "os": f"{device['os_name']} {device['os_version']}",
+                "interfaces": len(device["interfaces"]),
+                "kind": "discovered",
+                "color": _vendor_color(vendor),
             }
+            if self._change is not None:
+                node_data["change"] = self._change_status(str(device["hostname"]))
+            nodes[device_id] = {"data": node_data}
+        if self._change is not None:
+            for hostname in self._change["removed"]:
+                ghost_id = f"removed:{hostname.casefold()}"
+                nodes[ghost_id] = {
+                    "data": {
+                        "id": ghost_id,
+                        "label": hostname,
+                        "hostname": hostname,
+                        "aliases": [],
+                        "management_ip": "unknown",
+                        "vendor": "unknown",
+                        "platform": "no longer discovered",
+                        "os": "unknown",
+                        "interfaces": 0,
+                        "kind": "removed",
+                        "change": "removed",
+                        "color": "#dc2626",
+                    }
+                }
 
         logical_edges: dict[tuple, dict[str, Any]] = {}
         for edge in self._snapshot.edges:
@@ -123,6 +149,15 @@ class TopologyRenderer:
             "edges": sorted(edges, key=lambda item: item["data"]["id"]),
         }
 
+    def _change_status(self, hostname: str) -> str:
+        assert self._change is not None
+        key = hostname.casefold()
+        if key in self._change["new"]:
+            return "new"
+        if key in self._change["changed"]:
+            return "changed"
+        return "none"
+
     def render(self) -> str:
         template_path = Path(__file__).resolve().parent / "templates" / "topology.html"
         template = template_path.read_text(encoding="utf-8")
@@ -138,6 +173,29 @@ class TopologyRenderer:
         return template.replace("__CYTOSCAPE_CDN__", CYTOSCAPE_CDN).replace(
             "__TOPOLOGY_ELEMENTS__", elements_json
         ).replace("__SNAPSHOT_SUMMARY__", summary_json)
+
+
+def _change_highlights(change_report: Any | None) -> dict[str, Any] | None:
+    """Normalize an optional ChangeReport (object or dict) into highlight sets."""
+
+    if change_report is None:
+        return None
+    if hasattr(change_report, "to_dict"):
+        change_report = change_report.to_dict()
+    if not isinstance(change_report, Mapping):
+        raise TypeError("change_report must be a ChangeReport, mapping, or None")
+    return {
+        "new": {str(name).casefold() for name in change_report.get("new_devices") or ()},
+        "changed": {
+            str(name).casefold() for name in change_report.get("changed_devices") or ()
+        },
+        "removed": tuple(
+            sorted(
+                {str(name) for name in change_report.get("removed_devices") or ()},
+                key=str.casefold,
+            )
+        ),
+    }
 
 
 def _device_aliases(device: Any) -> tuple[str, ...]:

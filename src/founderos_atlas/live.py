@@ -73,6 +73,7 @@ def run_multihop_discovery(
     resolution = IdentityResolver().resolve(report.results)
     canonical_results = resolution.canonicalize(report.results)
     graph = TopologyReconciler().reconcile(canonical_results)
+    failed_hosts = tuple(sorted(visit.host for visit in report.failed))
     snapshot = TopologySnapshot.from_graph(
         graph,
         metadata={
@@ -83,6 +84,7 @@ def run_multihop_discovery(
             "max_depth": report.config.max_depth,
             "max_devices": report.config.max_devices,
             "identity_resolution": True,
+            **({"failed_hosts": failed_hosts} if failed_hosts else {}),
         },
     )
     return report, graph, snapshot
