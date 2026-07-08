@@ -11,6 +11,7 @@ from .discovery.multihop import (
     MultiHopDiscoveryReport,
     discover_multihop,
 )
+from .identity import IdentityResolver
 from .topology import TopologyGraph, TopologyReconciler, TopologySnapshot
 from .transport import DeviceTransport
 
@@ -69,7 +70,9 @@ def run_multihop_discovery(
         adapter=adapter,
         config=config,
     )
-    graph = TopologyReconciler().reconcile(report.results)
+    resolution = IdentityResolver().resolve(report.results)
+    canonical_results = resolution.canonicalize(report.results)
+    graph = TopologyReconciler().reconcile(canonical_results)
     snapshot = TopologySnapshot.from_graph(
         graph,
         metadata={
@@ -79,6 +82,7 @@ def run_multihop_discovery(
             "discovery_mode": "multihop",
             "max_depth": report.config.max_depth,
             "max_devices": report.config.max_devices,
+            "identity_resolution": True,
         },
     )
     return report, graph, snapshot

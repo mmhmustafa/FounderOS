@@ -100,6 +100,17 @@ identity, an unreachable neighbor is recorded as failed and skipped rather
 than aborting the run, and traversal stops at the depth/device limits. Only
 the seed device is required to succeed.
 
+### Canonical device identity
+
+Real networks name the same device differently per source — `R1` in
+`show version`, `R1.atlas.local` over CDP. The identity resolver
+(`src/founderos_atlas/identity/`, see its README) clusters observations and
+references with configurable, vendor-neutral matching rules (serial number,
+management IP, hostname/FQDN), so each physical device appears exactly once,
+displayed by its canonical short name. The two directional CDP observations
+of one link render as a single connection in the viewer, and all original
+names remain available as aliases in the node details panel.
+
 The transport is read-only by architecture: only `show` commands pass the
 local allowlist, configuration mode is never entered, and `terminal length 0`
 session preparation is best-effort (devices without it still work).

@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### EPIC-002 / PR-021.1 - Canonical Device Identity & Relationship Reconciliation
+
+- Added a vendor-neutral identity package (`founderos_atlas/identity/`): `DeviceIdentity` (all observed identifiers), `CanonicalDevice` (one merged identity with aliases and discovery history), and `IdentityResolver` with union-find clustering.
+- Added configurable, ordered `MatchRule` predicates — exact serial number, shared management IP, and hostname matching (normalized equality plus bare-name == FQDN first label) — extensible for future vendors via `ExtraIdentifierMatch` (chassis ID, system MAC, UUID) without editing existing rules.
+- Added hostname normalization for matching only (`R1`, `r1`, `R1.`, `R1.atlas.local` resolve together); display preserves original casing and originals are never destroyed — they become aliases and `observed_*` metadata.
+- Wired identity resolution into live multi-hop discovery: neighbor FQDN references now resolve onto discovered devices before reconciliation, so each physical device appears exactly once.
+- Collapsed directional neighbor observations (`R1 -> SW1`, `SW1 -> R1`) into one displayed connection in the topology viewer with both interface ends; the versioned `TopologySnapshot` contract keeps directed observations unchanged.
+- Viewer displays canonical short hostnames, shows aliases in the node details panel, and includes aliases in search; distinct devices that would share a short label keep their full names (no false merges).
+- Added 17 tests covering hostname/FQDN merge, case differences, duplicate-edge collapse, alias preservation, no false merges across domains and similar names, management-IP precedence, future vendor rule extension, determinism, and the end-to-end CML scenario (two devices, one relationship).
+- Added no GUI redesign, AI, database, SNMP, NETCONF, vendor-specific hacks, or CML-specific logic; fixture demo behavior is unchanged.
+
 ### EPIC-002 / PR-021 - Atlas Multi-hop Discovery Foundation
 
 - Added `discovery/multihop.py`: deterministic breadth-first CDP neighbor traversal from one seed, speaking only through injected `DeviceTransport` factories with the same read-only guarantees.

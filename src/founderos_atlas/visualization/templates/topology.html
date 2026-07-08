@@ -58,8 +58,7 @@
         }},
         { selector: 'node[kind = "observed"]', style: { 'shape': 'diamond', 'border-style': 'dashed' }},
         { selector: 'edge', style: {
-          'width': 2, 'line-color': '#94a3b8', 'target-arrow-color': '#94a3b8',
-          'target-arrow-shape': 'triangle', 'curve-style': 'bezier'
+          'width': 2, 'line-color': '#94a3b8', 'curve-style': 'bezier'
         }},
         { selector: '.search-muted', style: { 'opacity': 0.18 }},
         { selector: '.search-match', style: { 'border-color': '#f59e0b', 'border-width': 5, 'opacity': 1 }}
@@ -72,6 +71,7 @@
     const nodeDetails = data => `
       <h2>${escapeHtml(data.label)}</h2>
       <div class="field"><strong>Kind</strong>${escapeHtml(data.kind)}</div>
+      <div class="field"><strong>Aliases</strong>${escapeHtml((data.aliases || []).join(', ') || 'None')}</div>
       <div class="field"><strong>Management IP</strong>${escapeHtml(data.management_ip)}</div>
       <div class="field"><strong>Vendor</strong>${escapeHtml(data.vendor)}</div>
       <div class="field"><strong>Platform</strong>${escapeHtml(data.platform)}</div>
@@ -97,7 +97,7 @@
       if (!query) return;
       cy.nodes().forEach(node => {
         const data = node.data();
-        const haystack = [data.label, data.management_ip, data.vendor, data.platform, data.os].join(' ').toLowerCase();
+        const haystack = [data.label, (data.aliases || []).join(' '), data.management_ip, data.vendor, data.platform, data.os].join(' ').toLowerCase();
         node.addClass(haystack.includes(query) ? 'search-match' : 'search-muted');
       });
     });
