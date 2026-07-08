@@ -25,3 +25,8 @@ deliverables/*
 /atlas_topology.html
 /topology_snapshot.json
 /morning_brief.md
+/change_report.json
+/change_report.md
+
+# Collected device configurations are sensitive material; never commit them.
+/configs/

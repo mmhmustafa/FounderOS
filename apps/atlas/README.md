@@ -129,6 +129,19 @@ A device with zero CDP neighbors is a valid result: the CLI prints
 `No neighbors discovered yet` and still produces a one-device topology,
 snapshot, and brief.
 
+### Configuration collection
+
+After a successful discovery, Atlas asks `Collect running configuration?
+[y/N]`. On `y`, every discovered device is collected over a fresh read-only
+session (`show running-config` required; startup-config, inventory, license,
+and module best-effort) and written to `configs/<hostname>/` as
+`running_config.txt` plus `configuration_metadata.json` (provenance only —
+never configuration content). Unsupported commands degrade to warnings, and
+a per-device failure never aborts the rest. Collected configurations are
+sensitive material: the CLI prints only statuses and paths, and `configs/`
+is gitignored. See `src/founderos_atlas/config/README.md` for the read-only
+and security design.
+
 ### CML / physical device note
 
 Atlas treats Cisco Modeling Labs, EVE-NG, GNS3, and physical hardware

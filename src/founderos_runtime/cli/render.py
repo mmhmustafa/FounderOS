@@ -124,6 +124,8 @@ def render_atlas_discover(
     topology_path: str,
     snapshot_path: str,
     brief_path: str,
+    *,
+    config_collections: tuple[tuple[str, str, str], ...] | None = None,
 ) -> str:
     seed = report.results[0]
     device = seed.device
@@ -144,6 +146,15 @@ def render_atlas_discover(
         f"Connected: {len(report.connected)} | Skipped: {len(report.skipped)} "
         f"| Failed: {len(report.failed)} | Neighbors observed: {report.neighbor_count}"
     )
+    config_lines = ["Configuration Collection"]
+    if config_collections is None:
+        config_lines.append("Skipped (not requested).")
+    elif not config_collections:
+        config_lines.append("No devices were available for collection.")
+    else:
+        for hostname, status, detail in config_collections:
+            separator = "-" if status == "failed" else "->"
+            config_lines.append(f"[{status}] {hostname} {separator} {detail}")
     return "\n".join(
         (
             "=" * 48,
@@ -161,6 +172,8 @@ def render_atlas_discover(
             *neighbor_lines,
             "",
             *progress_lines,
+            "",
+            *config_lines,
             "",
             "Topology",
             f"Devices: {summary['device_count']}",

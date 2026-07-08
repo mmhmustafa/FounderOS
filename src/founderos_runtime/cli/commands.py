@@ -14,6 +14,12 @@ from founderos_atlas.change import (
     render_change_report_json,
     render_change_report_markdown,
 )
+from founderos_atlas.config import (
+    AtlasConfigurationError,
+    collect_configuration,
+    safe_artifact_name,
+    write_configuration_artifacts,
+)
 from founderos_atlas.demo import run_atlas_discovery_demo
 from founderos_atlas.discovery import AtlasDiscoveryError, DiscoveryResult, MultiHopConfig
 from founderos_atlas.journeys import MorningBriefJourney, MorningBriefJourneyResult
@@ -136,6 +142,7 @@ def atlas_discover_command(
     topology_output: str | Path = "atlas_topology.html",
     snapshot_output: str | Path = "topology_snapshot.json",
     brief_output: str | Path = "morning_brief.md",
+    config_output_dir: str | Path = "configs",
     browser_opener: BrowserOpener | None = None,
 ) -> tuple[int, str]:
     read_input = input_reader or input
@@ -180,6 +187,13 @@ def atlas_discover_command(
         raise CliError(str(error)) from error
     except (AtlasDiscoveryError, OSError, RuntimeError, TypeError, ValueError) as error:
         raise CliError(f"Atlas live discovery failed: {error}") from error
+    config_collections = _collect_configurations_if_requested(
+        read_input,
+        build_transport,
+        credentials,
+        report,
+        config_output_dir,
+    )
     return 0, render_atlas_discover(
         report,
         graph,
@@ -188,7 +202,43 @@ def atlas_discover_command(
         str(topology_destination),
         str(snapshot_destination),
         str(brief_destination),
+        config_collections=config_collections,
     )
+
+
+def _collect_configurations_if_requested(
+    read_input: PromptReader,
+    build_transport: TransportFactory,
+    credentials: DeviceCredentials,
+    report,
+    config_output_dir: str | Path,
+) -> tuple[tuple[str, str, str], ...] | None:
+    """Ask once, then collect read-only configuration per discovered device.
+
+    Returns None when declined, else (hostname, status, detail) entries where
+    detail is the artifact directory or a clean failure message.
+    """
+
+    try:
+        answer = read_input("Collect running configuration? [y/N] ").strip().casefold()
+    except (EOFError, KeyboardInterrupt):
+        answer = ""
+    if answer not in ("y", "yes"):
+        return None
+    collections: list[tuple[str, str, str]] = []
+    for visit, result in zip(report.connected, report.results):
+        hostname = result.device.hostname
+        try:
+            transport = build_transport(replace(credentials, host=visit.host))
+            artifact = collect_configuration(transport, result)
+            paths = write_configuration_artifacts(
+                artifact,
+                Path(config_output_dir) / safe_artifact_name(hostname),
+            )
+            collections.append((hostname, artifact.status, str(paths.directory)))
+        except (AtlasConfigurationError, AtlasTransportError, OSError) as error:
+            collections.append((hostname, "failed", str(error)))
+    return tuple(collections)
 
 
 def atlas_compare_command(

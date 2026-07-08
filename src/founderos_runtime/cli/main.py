@@ -54,6 +54,7 @@ def main(
     atlas_snapshot_output: str | Path = "topology_snapshot.json",
     atlas_compare_json_output: str | Path = "change_report.json",
     atlas_compare_markdown_output: str | Path = "change_report.md",
+    atlas_config_output_dir: str | Path = "configs",
 ) -> int:
     arguments = list(sys.argv[1:] if argv is None else argv)
     if not arguments:
@@ -98,6 +99,7 @@ def main(
                 topology_output=atlas_topology_output,
                 snapshot_output=atlas_snapshot_output,
                 brief_output=atlas_morning_brief_output,
+                config_output_dir=atlas_config_output_dir,
                 browser_opener=atlas_browser_opener,
             )
         except CliError as error:

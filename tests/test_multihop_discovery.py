@@ -305,7 +305,7 @@ class MultiHopCliTests(unittest.TestCase):
                     atlas_transport_factory=lambda credentials: network.transport_factory(
                         credentials.host
                     ),
-                    atlas_input_reader=lambda prompt: next(replies),
+                    atlas_input_reader=lambda prompt: next(replies, ""),
                     atlas_password_reader=lambda prompt: PASSWORD,
                     atlas_topology_output=root / "atlas_topology.html",
                     atlas_snapshot_output=root / "topology_snapshot.json",

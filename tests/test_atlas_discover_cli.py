@@ -74,7 +74,7 @@ class AtlasDiscoverCliTests(unittest.TestCase):
 
         def input_reader(prompt: str) -> str:
             prompts.append(prompt)
-            return next(replies)
+            return next(replies, "")
 
         def password_reader(prompt: str) -> str:
             prompts.append(prompt)
@@ -132,6 +132,7 @@ class AtlasDiscoverCliTests(unittest.TestCase):
                 "Password: ",
                 "Max depth [1]: ",
                 "Max devices [10]: ",
+                "Collect running configuration? [y/N] ",
             ],
             prompts,
         )

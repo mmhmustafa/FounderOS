@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### EPIC-002 / PR-023 - Read-only Configuration Collection Foundation
+
+- Added `founderos_atlas/config/`: read-only collection of `show running-config` (required) plus best-effort `show startup-config`, `show inventory`, `show license summary`, and `show module` — collection and line-ending normalization only, no analysis or comparison.
+- Unsupported, denied, empty, or failed optional commands degrade to per-command statuses and warnings; a lost session skips remaining commands instead of retrying; only a running-config failure raises.
+- Added immutable `ConfigurationArtifact` with provenance metadata: hostname, vendor, platform, OS, management IP, collection time (caller-supplied, never the system clock), full command list with statuses, collection status, warnings, line count, and a SHA-256 of the running configuration.
+- Added artifact delivery: `running_config.txt`, `configuration_metadata.json` (provenance only — never configuration content), and collected optional outputs, written per device under `configs/<hostname>/`.
+- Extended `founderos atlas discover` with a `Collect running configuration? [y/N]` prompt after discovery; on yes, every discovered device is collected over a fresh read-only session and per-device failures never abort the rest.
+- Security: configuration content never reaches the console or logs; the `configs/` directory is gitignored; all commands pass the existing read-only `show` allowlist with no configuration mode and no writes.
+- Added 12 mocked-transport tests covering successful collection, unsupported commands, denied startup-config, required-failure semantics, optional-disable, read-only command enforcement, metadata generation (including no-content contract), determinism, artifact files, and the CLI confirm/decline/per-device-failure flows.
+- Added no diff, AI, compliance, backup scheduler, Git integration, or GUI redesign.
+
 ### EPIC-002 / PR-022 - Change Intelligence Foundation
 
 - Added `founderos_atlas/change/`: deterministic topology and inventory change detection between two `TopologySnapshot` values (objects or `topology_snapshot.json` dicts) — not configuration diff.
