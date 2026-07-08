@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import replace
+from datetime import datetime, timezone
 import getpass
 import json
 from pathlib import Path
@@ -21,6 +22,14 @@ from founderos_atlas.config import (
     write_configuration_artifacts,
 )
 from founderos_atlas.dashboard import DashboardRenderer, build_dashboard_summary
+from founderos_atlas.history import (
+    CONFIG_COLLECTED,
+    CONFIG_FAILED,
+    CONFIG_NOT_REQUESTED,
+    CONFIG_PARTIAL,
+    HistoryRepository,
+    generate_timeline,
+)
 from founderos_atlas.demo import run_atlas_discovery_demo
 from founderos_atlas.discovery import AtlasDiscoveryError, DiscoveryResult, MultiHopConfig
 from founderos_atlas.journeys import MorningBriefJourney, MorningBriefJourneyResult
@@ -45,6 +54,8 @@ from .render import (
     render_atlas_compare,
     render_atlas_dashboard,
     render_atlas_discover,
+    render_atlas_history,
+    render_atlas_timeline,
     render_atlas_discovery,
     render_atlas_topology,
     render_atlas_morning_brief,
@@ -60,6 +71,7 @@ BrowserOpener = Callable[[str], object]
 MorningBriefRunner = Callable[[TopologySnapshot, TopologySnapshot | None], MorningBriefJourneyResult]
 TransportFactory = Callable[[DeviceCredentials], DeviceTransport]
 PromptReader = Callable[[str], str]
+Clock = Callable[[], datetime]
 
 
 def version_command() -> tuple[int, str]:
@@ -146,10 +158,13 @@ def atlas_discover_command(
     brief_output: str | Path = "morning_brief.md",
     config_output_dir: str | Path = "configs",
     dashboard_output: str | Path = "dashboard.html",
+    history_root: str | Path = Path(".atlas") / "history",
+    clock: Clock | None = None,
     browser_opener: BrowserOpener | None = None,
 ) -> tuple[int, str]:
     read_input = input_reader or input
     read_password = password_reader or getpass.getpass
+    read_clock = clock or (lambda: datetime.now(timezone.utc))
     try:
         host = read_input("Management IP: ").strip()
         username = read_input("Username: ").strip()
@@ -160,6 +175,7 @@ def atlas_discover_command(
         raise CliError("Management IP, username, and password are all required")
     max_depth = _read_limit(read_input, "Max depth [1]: ", 1)
     max_devices = _read_limit(read_input, "Max devices [10]: ", 10)
+    started_at = read_clock()
     try:
         config = MultiHopConfig(max_depth=max_depth, max_devices=max_devices)
         credentials = DeviceCredentials(host=host, username=username, password=password)
@@ -197,13 +213,32 @@ def atlas_discover_command(
         report,
         config_output_dir,
     )
+    completed_at = read_clock()
+    history_line, record_id = _save_history(
+        history_root,
+        started_at,
+        completed_at,
+        report,
+        graph,
+        snapshot,
+        brief,
+        config_collections,
+        topology_destination,
+        snapshot_destination,
+        brief_destination,
+    )
     dashboard_line = _regenerate_dashboard(
         dashboard_output,
         topology_destination,
         snapshot_destination,
         brief_destination,
         config_output_dir,
+        history_root,
     )
+    if record_id is not None:
+        HistoryRepository(history_root).attach_artifact(
+            record_id, Path(dashboard_output).resolve()
+        )
     return 0, render_atlas_discover(
         report,
         graph,
@@ -214,7 +249,116 @@ def atlas_discover_command(
         str(brief_destination),
         config_collections=config_collections,
         dashboard_line=dashboard_line,
+        history_line=history_line,
     )
+
+
+def atlas_history_command(
+    *, history_root: str | Path = Path(".atlas") / "history"
+) -> tuple[int, str]:
+    index = HistoryRepository(history_root).load()
+    return 0, render_atlas_history(index)
+
+
+def atlas_timeline_command(
+    *,
+    history_root: str | Path = Path(".atlas") / "history",
+    output_path: str | Path = "timeline.md",
+) -> tuple[int, str]:
+    repository = HistoryRepository(history_root)
+    index = repository.load()
+    try:
+        markdown = generate_timeline(repository, index)
+        destination = Path(output_path).resolve()
+        destination.write_text(markdown, encoding="utf-8")
+    except (OSError, TypeError, ValueError) as error:
+        raise CliError(f"Atlas timeline generation failed: {error}") from error
+    return 0, render_atlas_timeline(index, str(destination))
+
+
+def _save_history(
+    history_root: str | Path,
+    started_at: datetime,
+    completed_at: datetime,
+    report,
+    graph,
+    snapshot,
+    brief,
+    config_collections: tuple[tuple[str, str, str], ...] | None,
+    topology_destination: Path,
+    snapshot_destination: Path,
+    brief_destination: Path,
+) -> tuple[str, str | None]:
+    """Best-effort preservation; never fails a successful discovery."""
+
+    try:
+        configuration_status, configured_count, config_directories = (
+            _configuration_history(config_collections)
+        )
+        record = HistoryRepository(history_root).save_discovery(
+            started_at=started_at.isoformat(timespec="seconds"),
+            completed_at=completed_at.isoformat(timespec="seconds"),
+            duration_seconds=max(0.0, (completed_at - started_at).total_seconds()),
+            device_count=graph.summary()["device_count"],
+            relationship_count=_logical_relationships(graph),
+            warning_count=len(snapshot.warnings),
+            failures=tuple(visit.host for visit in report.failed),
+            configuration_status=configuration_status,
+            configured_device_count=configured_count,
+            quality_score=brief.evaluation.score,
+            network_status=brief.brief.overall_status,
+            snapshot_id=snapshot.snapshot_id,
+            artifacts={
+                "topology_snapshot.json": snapshot_destination,
+                "morning_brief.md": brief_destination,
+                "atlas_topology.html": topology_destination,
+            },
+            config_directories=config_directories,
+        )
+    except (OSError, TypeError, ValueError) as error:
+        return f"History save failed: {error}", None
+    directory = HistoryRepository(history_root).record_directory(record.record_id)
+    return f"History saved: {directory}", record.record_id
+
+
+def _configuration_history(
+    config_collections: tuple[tuple[str, str, str], ...] | None,
+) -> tuple[str, int, dict[str, Path]]:
+    if config_collections is None:
+        return CONFIG_NOT_REQUESTED, 0, {}
+    directories = {
+        hostname: Path(detail)
+        for hostname, status, detail in config_collections
+        if status != "failed"
+    }
+    statuses = [status for _, status, _ in config_collections]
+    if statuses and all(status == "complete" for status in statuses):
+        overall = CONFIG_COLLECTED
+    elif any(status in ("complete", "partial") for status in statuses):
+        overall = CONFIG_PARTIAL
+    else:
+        overall = CONFIG_FAILED
+    return overall, len(directories), directories
+
+
+def _logical_relationships(graph) -> int:
+    hostname_by_id = {
+        device.device_id: device.hostname for device in graph.devices()
+    }
+    links = {
+        tuple(
+            sorted(
+                (
+                    hostname_by_id.get(
+                        edge.local_device_id, edge.local_device_id
+                    ).casefold(),
+                    edge.remote_hostname.casefold(),
+                )
+            )
+        )
+        for edge in graph.edges()
+    }
+    return len(links)
 
 
 def atlas_dashboard_command(
@@ -226,6 +370,8 @@ def atlas_dashboard_command(
     change_report_json: str | Path = "change_report.json",
     change_report_md: str | Path = "change_report.md",
     configs_dir: str | Path = "configs",
+    history_root: str | Path = Path(".atlas") / "history",
+    timeline_path: str | Path = "timeline.md",
     browser_opener: BrowserOpener | None = None,
 ) -> tuple[int, str]:
     try:
@@ -237,6 +383,8 @@ def atlas_dashboard_command(
             change_report_json=change_report_json,
             change_report_md=change_report_md,
             configs_dir=configs_dir,
+            history_root=history_root,
+            timeline_path=timeline_path,
             link_base=destination.parent,
         )
         destination.write_text(DashboardRenderer(summary).render(), encoding="utf-8")
@@ -253,6 +401,7 @@ def _regenerate_dashboard(
     snapshot_destination: Path,
     brief_destination: Path,
     config_output_dir: str | Path,
+    history_root: str | Path,
 ) -> str:
     """Best-effort dashboard refresh; never fails a successful discovery."""
 
@@ -265,6 +414,8 @@ def _regenerate_dashboard(
             change_report_json=destination.parent / "change_report.json",
             change_report_md=destination.parent / "change_report.md",
             configs_dir=config_output_dir,
+            history_root=history_root,
+            timeline_path=destination.parent / "timeline.md",
             link_base=destination.parent,
         )
         destination.write_text(DashboardRenderer(summary).render(), encoding="utf-8")

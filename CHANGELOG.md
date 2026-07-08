@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### EPIC-002 / PR-025 - Atlas Historical Timeline & Network Memory
+
+- Added `founderos_atlas/history/`: every successful discovery is automatically preserved under `.atlas/history/<timestamp>/` with full copies of the snapshot, viewer, Morning Brief, dashboard, collected configurations, and a self-describing `discovery_metadata.json`.
+- Metadata records start/end time, duration, device and relationship counts, warnings, failed hosts, configuration collection status, Morning Brief quality score, network status, snapshot ID, and discovery schema version.
+- Records are never overwritten (same-second collisions get numeric suffixes); corrupt records load as reported issues without breaking the rest of history; no automatic pruning by design.
+- The history layer is the only place Atlas reads the system clock, via an injectable clock; the deterministic discovery core remains clock-free.
+- Added `founderos atlas history` listing every preserved discovery (time, devices, status, duration, folder) and `founderos atlas timeline` generating `timeline.md`: day-grouped entries with device deltas, status, configuration collection, failures, and change intelligence computed between consecutive stored snapshots.
+- Dashboard integration: last discovery time now comes from history, a Recent Discoveries card lists the last five runs, and Open History / Open Timeline quick actions link the memory.
+- Historical topology viewing: each record carries its own `atlas_topology.html`; the current topology remains the default viewer.
+- The repository is artifact-oriented for future extensibility (configuration diff, incident replay, historical playback, AI reasoning) — new capabilities read record directories without storage redesign.
+- Added 15 tests covering history creation, timestamp uniqueness, newest-first loading, missing history, corrupt history, metadata round-trips, folder naming, timeline generation/empty/determinism, the history and timeline CLIs, automatic preservation on discover (fixed clocks), multi-run survival, and dashboard history integration.
+- Added no database, Git, AI, scheduler, automatic pruning, or configuration diff.
+
 ### EPIC-002 / PR-024 - Atlas Executive Dashboard
 
 - Added `founderos_atlas/dashboard/`: a deterministic operational summary computed from existing artifacts (snapshot, viewer, Morning Brief, change report, configurations) — an executive landing page, not a monitoring system.

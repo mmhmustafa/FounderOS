@@ -32,6 +32,7 @@ class DashboardRenderer:
             .replace("__TILES__", self._tiles())
             .replace("__CHANGES__", self._changes())
             .replace("__ACTIVITY__", self._activity())
+            .replace("__DISCOVERIES__", self._discoveries())
             .replace("__ACTIONS__", self._actions())
         )
 
@@ -72,6 +73,12 @@ class DashboardRenderer:
             f"          <li>{escape(entry)}</li>"
             for entry in self._summary.recent_activity
         )
+
+    def _discoveries(self) -> str:
+        entries = self._summary.recent_discoveries
+        if not entries:
+            return "          <li>No discovery history yet.</li>"
+        return "\n".join(f"          <li>{escape(entry)}</li>" for entry in entries)
 
     def _actions(self) -> str:
         fragments = []

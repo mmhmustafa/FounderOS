@@ -9,10 +9,13 @@ gracefully — an empty workspace still renders a valid dashboard.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 import json
 import os
 from pathlib import Path
 from typing import Any
+
+from founderos_atlas.history import HistoryRepository
 
 
 STATUS_HEALTHY = "Healthy"
@@ -43,6 +46,7 @@ class DashboardSummary:
     change_count: int | None
     recent_changes: tuple[str, ...]
     recent_activity: tuple[str, ...]
+    recent_discoveries: tuple[str, ...]
     actions: tuple[DashboardAction, ...]
 
 
@@ -54,6 +58,8 @@ def build_dashboard_summary(
     change_report_json: str | Path = "change_report.json",
     change_report_md: str | Path = "change_report.md",
     configs_dir: str | Path = "configs",
+    history_root: str | Path = Path(".atlas") / "history",
+    timeline_path: str | Path = "timeline.md",
     link_base: str | Path = ".",
 ) -> DashboardSummary:
     snapshot = _load_json(snapshot_path)
@@ -73,6 +79,15 @@ def build_dashboard_summary(
         failed_hosts = tuple(str(host) for host in metadata.get("failed_hosts") or ())
         snapshot_warnings = len(snapshot.get("warnings") or ())
         last_discovery = str(snapshot.get("created_at") or "unrecorded")
+
+    history = HistoryRepository(history_root).load()
+    if history.latest is not None:
+        last_discovery = _format_timestamp(history.latest.completed_at)
+    recent_discoveries = tuple(
+        f"{_format_timestamp(record.started_at)} — {record.device_count} device(s) — "
+        f"{record.network_status} — {record.duration_seconds:.1f}s"
+        for record in history.records[:5]
+    )
 
     change_count = None
     severity_counts: dict[str, int] = {}
@@ -105,6 +120,8 @@ def build_dashboard_summary(
         DashboardAction("Open Change Report", _href(Path(change_report_md), base)),
         DashboardAction("Open Configurations", _href(Path(configs_dir), base, directory=True)),
         DashboardAction("Open Snapshot", _href(Path(snapshot_path), base)),
+        DashboardAction("Open History", _href(Path(history_root), base, directory=True)),
+        DashboardAction("Open Timeline", _href(Path(timeline_path), base)),
     )
     return DashboardSummary(
         last_discovery=last_discovery,
@@ -117,6 +134,7 @@ def build_dashboard_summary(
         change_count=change_count,
         recent_changes=recent_changes,
         recent_activity=recent_activity,
+        recent_discoveries=recent_discoveries,
         actions=actions,
     )
 
@@ -209,6 +227,13 @@ def _count_configurations(configs_dir: Path) -> int:
         for entry in configs_dir.iterdir()
         if entry.is_dir() and (entry / "running_config.txt").is_file()
     )
+
+
+def _format_timestamp(value: str) -> str:
+    try:
+        return datetime.fromisoformat(value).strftime("%d-%b-%Y %H:%M")
+    except ValueError:
+        return value
 
 
 def _load_json(path: str | Path) -> dict[str, Any] | None:

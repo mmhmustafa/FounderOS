@@ -28,6 +28,10 @@ deliverables/*
 /change_report.json
 /change_report.md
 /dashboard.html
+/timeline.md
+
+# Atlas discovery history (local network memory; contains configs)
+/.atlas/
 
 # Collected device configurations are sensitive material; never commit them.
 /configs/

@@ -311,6 +311,7 @@ class MultiHopCliTests(unittest.TestCase):
                     atlas_snapshot_output=root / "topology_snapshot.json",
                     atlas_morning_brief_output=root / "morning_brief.md",
                     atlas_dashboard_output=root / "dashboard.html",
+                    atlas_history_root=root / ".atlas" / "history",
                     atlas_browser_opener=opened.append,
                 )
             artifacts = {

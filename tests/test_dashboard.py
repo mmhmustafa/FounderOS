@@ -58,6 +58,8 @@ def summary_kwargs(workdir: Path) -> dict:
         "change_report_json": workdir / "change_report.json",
         "change_report_md": workdir / "change_report.md",
         "configs_dir": workdir / "configs",
+        "history_root": workdir / ".atlas" / "history",
+        "timeline_path": workdir / "timeline.md",
         "link_base": workdir,
     }
 
@@ -76,7 +78,18 @@ class DashboardSummaryTests(unittest.TestCase):
         self.assertEqual("Warning", summary.status)
         self.assertIn("1 change(s) detected", summary.status_detail)
         self.assertIn("[low] SW1 was discovered for the first time", summary.recent_changes)
-        self.assertTrue(all(action.available for action in summary.actions))
+        availability = {action.label: action.available for action in summary.actions}
+        for label in (
+            "Open Topology",
+            "Open Morning Brief",
+            "Open Change Report",
+            "Open Configurations",
+            "Open Snapshot",
+        ):
+            self.assertTrue(availability[label], label)
+        # No history in this workspace yet.
+        self.assertFalse(availability["Open History"])
+        self.assertFalse(availability["Open Timeline"])
         hrefs = {action.label: action.href for action in summary.actions}
         self.assertEqual("atlas_topology.html", hrefs["Open Topology"])
         self.assertEqual("configs", hrefs["Open Configurations"])
@@ -209,6 +222,8 @@ class DashboardCliTests(unittest.TestCase):
                 atlas_compare_json_output=workdir / "change_report.json",
                 atlas_compare_markdown_output=workdir / "change_report.md",
                 atlas_config_output_dir=workdir / "configs",
+                atlas_history_root=workdir / ".atlas" / "history",
+                atlas_timeline_output=workdir / "timeline.md",
                 atlas_browser_opener=opened.append,
             )
         return code, stdout.getvalue(), stderr.getvalue(), opened
@@ -261,6 +276,7 @@ class DashboardCliTests(unittest.TestCase):
                     atlas_morning_brief_output=workdir / "morning_brief.md",
                     atlas_config_output_dir=workdir / "configs",
                     atlas_dashboard_output=workdir / "dashboard.html",
+                    atlas_history_root=workdir / ".atlas" / "history",
                     atlas_browser_opener=opened.append,
                 )
             self.assertEqual(0, code, stderr.getvalue())

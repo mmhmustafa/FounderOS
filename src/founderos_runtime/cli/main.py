@@ -20,6 +20,8 @@ from .commands import (
     atlas_compare_command,
     atlas_dashboard_command,
     atlas_discover_command,
+    atlas_history_command,
+    atlas_timeline_command,
     atlas_discovery_command,
     atlas_morning_brief_command,
     atlas_topology_command,
@@ -57,6 +59,9 @@ def main(
     atlas_compare_markdown_output: str | Path = "change_report.md",
     atlas_config_output_dir: str | Path = "configs",
     atlas_dashboard_output: str | Path = "dashboard.html",
+    atlas_history_root: str | Path = Path(".atlas") / "history",
+    atlas_timeline_output: str | Path = "timeline.md",
+    atlas_clock=None,
 ) -> int:
     arguments = list(sys.argv[1:] if argv is None else argv)
     if not arguments:
@@ -103,7 +108,24 @@ def main(
                 brief_output=atlas_morning_brief_output,
                 config_output_dir=atlas_config_output_dir,
                 dashboard_output=atlas_dashboard_output,
+                history_root=atlas_history_root,
+                clock=atlas_clock,
                 browser_opener=atlas_browser_opener,
+            )
+        except CliError as error:
+            print(render_error(str(error)), file=sys.stderr)
+            return 1
+    elif arguments == ["atlas", "history"]:
+        try:
+            code, output = atlas_history_command(history_root=atlas_history_root)
+        except CliError as error:
+            print(render_error(str(error)), file=sys.stderr)
+            return 1
+    elif arguments == ["atlas", "timeline"]:
+        try:
+            code, output = atlas_timeline_command(
+                history_root=atlas_history_root,
+                output_path=atlas_timeline_output,
             )
         except CliError as error:
             print(render_error(str(error)), file=sys.stderr)
@@ -118,6 +140,8 @@ def main(
                 change_report_json=atlas_compare_json_output,
                 change_report_md=atlas_compare_markdown_output,
                 configs_dir=atlas_config_output_dir,
+                history_root=atlas_history_root,
+                timeline_path=atlas_timeline_output,
                 browser_opener=atlas_browser_opener,
             )
         except CliError as error:

@@ -210,6 +210,33 @@ and snapshot. Missing artifacts degrade gracefully to "not yet generated".
 `founderos atlas discover` regenerates the dashboard automatically after
 every successful discovery. See `src/founderos_atlas/dashboard/README.md`.
 
+## Historical Timeline & Network Memory
+
+Every successful `founderos atlas discover` is automatically preserved
+under `.atlas/history/<timestamp>/` — the topology snapshot, interactive
+viewer, Morning Brief, dashboard, collected configurations, and a
+self-describing `discovery_metadata.json` (start/end time, duration,
+device and relationship counts, warnings, failures, configuration status,
+quality score, discovery version). Records are never overwritten; a
+same-second collision gets a numeric suffix, and corrupt records are
+reported without breaking the rest of history.
+
+```powershell
+founderos atlas history    # list every preserved discovery
+founderos atlas timeline   # generate timeline.md: day-grouped story with
+                           # change intelligence between consecutive runs
+```
+
+Open any record's `atlas_topology.html` to view that discovery's topology;
+the current topology remains the default viewer. The dashboard shows the
+last discovery time, the last five discoveries, and links to history and
+the timeline. The history layer is the only place Atlas reads the system
+clock (injectable for tests); the deterministic discovery core remains
+clock-free. There is no automatic pruning — retention is an operator
+decision. See `src/founderos_atlas/history/README.md` for the repository
+design and future extensibility (configuration diff, incident replay,
+historical playback, AI reasoning).
+
 ## Next Step
 
 Extract a reusable deterministic Topology Change Set contract for richer operational journeys before considering persistence or live transport.

@@ -4,9 +4,12 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
+from datetime import datetime
+
 from founderos_atlas.change import SEVERITY_ORDER, ChangeReport
 from founderos_atlas.dashboard import DashboardSummary
 from founderos_atlas.discovery import DiscoveryResult, MultiHopDiscoveryReport
+from founderos_atlas.history import HistoryIndex
 from founderos_atlas.journeys import MorningBriefJourneyResult
 from founderos_atlas.topology import TopologyGraph, TopologySnapshot
 from founderos_runtime.journey import JourneyResult
@@ -30,6 +33,8 @@ def render_help() -> str:
             "  founderos atlas discover",
             "  founderos atlas compare <previous.json> <current.json>",
             "  founderos atlas dashboard",
+            "  founderos atlas history",
+            "  founderos atlas timeline",
             "  founderos help",
             "",
             "Commands:",
@@ -42,6 +47,8 @@ def render_help() -> str:
             "  atlas discover  Discover a live Cisco IOS/IOS-XE device over read-only SSH.",
             "  atlas compare   Compare two topology snapshots into a change report.",
             "  atlas dashboard  Generate the Atlas executive dashboard.",
+            "  atlas history   List every preserved discovery.",
+            "  atlas timeline  Generate the network timeline (timeline.md).",
             "  help            Show this help.",
         )
     )
@@ -130,6 +137,7 @@ def render_atlas_discover(
     *,
     config_collections: tuple[tuple[str, str, str], ...] | None = None,
     dashboard_line: str | None = None,
+    history_line: str | None = None,
 ) -> str:
     seed = report.results[0]
     device = seed.device
@@ -195,6 +203,7 @@ def render_atlas_discover(
             f"Topology viewer saved: {topology_path}",
             f"Topology snapshot saved: {snapshot_path}",
             f"Morning brief saved: {brief_path}",
+            *((history_line,) if history_line else ()),
             *((dashboard_line,) if dashboard_line else ()),
             "Browser launch requested.",
             "",
@@ -219,6 +228,48 @@ def render_atlas_dashboard(summary: DashboardSummary, path: str) -> str:
             "Browser launch requested.",
         )
     )
+
+
+def render_atlas_history(index: HistoryIndex) -> str:
+    lines = ["Atlas Discovery History", ""]
+    if not index.records:
+        lines.append("No discovery history yet. Run: founderos atlas discover")
+    for record in index.records:
+        device_word = "Device" if record.device_count == 1 else "Devices"
+        lines.extend(
+            (
+                _history_timestamp(record.started_at),
+                f"{record.device_count} {device_word} | {record.network_status} "
+                f"| Duration: {record.duration_seconds:.1f} sec",
+                f"Folder: .atlas/history/{record.record_id}",
+                "-" * 40,
+            )
+        )
+    if index.issues:
+        lines.extend(("", "Issues:"))
+        lines.extend(f"- {issue}" for issue in index.issues)
+    return "\n".join(lines)
+
+
+def render_atlas_timeline(index: HistoryIndex, path: str) -> str:
+    return "\n".join(
+        (
+            "Atlas Network Timeline",
+            "",
+            f"Discoveries recorded: {len(index.records)}",
+            *(
+                (f"Issues: {len(index.issues)}",) if index.issues else ()
+            ),
+            f"Timeline saved: {path}",
+        )
+    )
+
+
+def _history_timestamp(value: str) -> str:
+    try:
+        return datetime.fromisoformat(value).strftime("%d-%b-%Y %H:%M")
+    except ValueError:
+        return value
 
 
 def render_atlas_compare(
