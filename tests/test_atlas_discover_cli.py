@@ -95,6 +95,7 @@ class AtlasDiscoverCliTests(unittest.TestCase):
                     atlas_topology_output=topology_path,
                     atlas_snapshot_output=snapshot_path,
                     atlas_morning_brief_output=brief_path,
+                    atlas_dashboard_output=Path(workdir) / "dashboard.html",
                     atlas_browser_opener=opened.append,
                 )
             artifacts = {

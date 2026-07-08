@@ -190,6 +190,26 @@ and its recommendation. The topology viewer can additionally highlight new
 (green), changed (orange), and removed (red) devices when a comparison is
 supplied to the renderer. See `src/founderos_atlas/change/README.md`.
 
+## Executive Dashboard
+
+Generate the Atlas operational summary — a professional landing page over
+everything Atlas has produced, not a monitoring dashboard:
+
+```powershell
+founderos atlas dashboard
+```
+
+The command writes a static, script-free `dashboard.html` in the current
+directory and opens the browser. It shows network status (Healthy / Warning
+/ Critical, or Unknown before the first discovery), summary tiles (devices,
+relationships, discovery success, configurations collected, recent
+changes), the latest change highlights, recent activity, and quick-action
+links to the topology viewer, Morning Brief, change report, configurations,
+and snapshot. Missing artifacts degrade gracefully to "not yet generated".
+
+`founderos atlas discover` regenerates the dashboard automatically after
+every successful discovery. See `src/founderos_atlas/dashboard/README.md`.
+
 ## Next Step
 
 Extract a reusable deterministic Topology Change Set contract for richer operational journeys before considering persistence or live transport.

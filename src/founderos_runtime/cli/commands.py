@@ -20,6 +20,7 @@ from founderos_atlas.config import (
     safe_artifact_name,
     write_configuration_artifacts,
 )
+from founderos_atlas.dashboard import DashboardRenderer, build_dashboard_summary
 from founderos_atlas.demo import run_atlas_discovery_demo
 from founderos_atlas.discovery import AtlasDiscoveryError, DiscoveryResult, MultiHopConfig
 from founderos_atlas.journeys import MorningBriefJourney, MorningBriefJourneyResult
@@ -42,6 +43,7 @@ from .exceptions import CliError
 from .render import (
     VERSION_TEXT,
     render_atlas_compare,
+    render_atlas_dashboard,
     render_atlas_discover,
     render_atlas_discovery,
     render_atlas_topology,
@@ -143,6 +145,7 @@ def atlas_discover_command(
     snapshot_output: str | Path = "topology_snapshot.json",
     brief_output: str | Path = "morning_brief.md",
     config_output_dir: str | Path = "configs",
+    dashboard_output: str | Path = "dashboard.html",
     browser_opener: BrowserOpener | None = None,
 ) -> tuple[int, str]:
     read_input = input_reader or input
@@ -194,6 +197,13 @@ def atlas_discover_command(
         report,
         config_output_dir,
     )
+    dashboard_line = _regenerate_dashboard(
+        dashboard_output,
+        topology_destination,
+        snapshot_destination,
+        brief_destination,
+        config_output_dir,
+    )
     return 0, render_atlas_discover(
         report,
         graph,
@@ -203,7 +213,64 @@ def atlas_discover_command(
         str(snapshot_destination),
         str(brief_destination),
         config_collections=config_collections,
+        dashboard_line=dashboard_line,
     )
+
+
+def atlas_dashboard_command(
+    *,
+    output_path: str | Path = "dashboard.html",
+    snapshot_path: str | Path = "topology_snapshot.json",
+    topology_path: str | Path = "atlas_topology.html",
+    brief_path: str | Path = "morning_brief.md",
+    change_report_json: str | Path = "change_report.json",
+    change_report_md: str | Path = "change_report.md",
+    configs_dir: str | Path = "configs",
+    browser_opener: BrowserOpener | None = None,
+) -> tuple[int, str]:
+    try:
+        destination = Path(output_path).resolve()
+        summary = build_dashboard_summary(
+            snapshot_path=snapshot_path,
+            topology_path=topology_path,
+            brief_path=brief_path,
+            change_report_json=change_report_json,
+            change_report_md=change_report_md,
+            configs_dir=configs_dir,
+            link_base=destination.parent,
+        )
+        destination.write_text(DashboardRenderer(summary).render(), encoding="utf-8")
+        opener = browser_opener or webbrowser.open
+        opener(destination.as_uri())
+    except (OSError, TypeError, ValueError) as error:
+        raise CliError(f"Atlas dashboard generation failed: {error}") from error
+    return 0, render_atlas_dashboard(summary, str(destination))
+
+
+def _regenerate_dashboard(
+    dashboard_output: str | Path,
+    topology_destination: Path,
+    snapshot_destination: Path,
+    brief_destination: Path,
+    config_output_dir: str | Path,
+) -> str:
+    """Best-effort dashboard refresh; never fails a successful discovery."""
+
+    destination = Path(dashboard_output).resolve()
+    try:
+        summary = build_dashboard_summary(
+            snapshot_path=snapshot_destination,
+            topology_path=topology_destination,
+            brief_path=brief_destination,
+            change_report_json=destination.parent / "change_report.json",
+            change_report_md=destination.parent / "change_report.md",
+            configs_dir=config_output_dir,
+            link_base=destination.parent,
+        )
+        destination.write_text(DashboardRenderer(summary).render(), encoding="utf-8")
+    except (OSError, TypeError, ValueError) as error:
+        return f"Dashboard update failed: {error}"
+    return f"Dashboard saved: {destination}"
 
 
 def _collect_configurations_if_requested(

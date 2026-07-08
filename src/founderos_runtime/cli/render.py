@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 from founderos_atlas.change import SEVERITY_ORDER, ChangeReport
+from founderos_atlas.dashboard import DashboardSummary
 from founderos_atlas.discovery import DiscoveryResult, MultiHopDiscoveryReport
 from founderos_atlas.journeys import MorningBriefJourneyResult
 from founderos_atlas.topology import TopologyGraph, TopologySnapshot
@@ -28,6 +29,7 @@ def render_help() -> str:
             "  founderos atlas morning-brief",
             "  founderos atlas discover",
             "  founderos atlas compare <previous.json> <current.json>",
+            "  founderos atlas dashboard",
             "  founderos help",
             "",
             "Commands:",
@@ -39,6 +41,7 @@ def render_help() -> str:
             "  atlas morning-brief  Generate an evaluated Atlas operational brief.",
             "  atlas discover  Discover a live Cisco IOS/IOS-XE device over read-only SSH.",
             "  atlas compare   Compare two topology snapshots into a change report.",
+            "  atlas dashboard  Generate the Atlas executive dashboard.",
             "  help            Show this help.",
         )
     )
@@ -126,6 +129,7 @@ def render_atlas_discover(
     brief_path: str,
     *,
     config_collections: tuple[tuple[str, str, str], ...] | None = None,
+    dashboard_line: str | None = None,
 ) -> str:
     seed = report.results[0]
     device = seed.device
@@ -191,10 +195,28 @@ def render_atlas_discover(
             f"Topology viewer saved: {topology_path}",
             f"Topology snapshot saved: {snapshot_path}",
             f"Morning brief saved: {brief_path}",
+            *((dashboard_line,) if dashboard_line else ()),
             "Browser launch requested.",
             "",
             "Live discovery completed successfully.",
             "=" * 48,
+        )
+    )
+
+
+def render_atlas_dashboard(summary: DashboardSummary, path: str) -> str:
+    return "\n".join(
+        (
+            "Atlas Dashboard",
+            "",
+            f"Network status: {summary.status}",
+            f"Last discovery: {summary.last_discovery}",
+            f"Devices: {summary.device_count if summary.device_count is not None else '-'}",
+            f"Relationships: {summary.relationship_count if summary.relationship_count is not None else '-'}",
+            f"Configurations collected: {summary.configurations_collected}",
+            "",
+            f"Dashboard saved: {path}",
+            "Browser launch requested.",
         )
     )
 

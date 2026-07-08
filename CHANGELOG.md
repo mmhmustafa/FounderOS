@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### EPIC-002 / PR-024 - Atlas Executive Dashboard
+
+- Added `founderos_atlas/dashboard/`: a deterministic operational summary computed from existing artifacts (snapshot, viewer, Morning Brief, change report, configurations) — an executive landing page, not a monitoring system.
+- Dashboard sections: Atlas / Enterprise Network Intelligence header with last discovery time; network status banner (Healthy / Warning / Critical, plus Unknown before the first discovery) with a one-line reason; summary tiles (devices, relationships, discovery success, configurations collected, recent changes); recent changes with severity coloring; recent activity; and quick-action links to every artifact.
+- Deterministic status logic: Critical on any high-severity change; Warning on changes, failed discovery hosts, or reconciliation warnings; Healthy otherwise.
+- Rendering reuses the template-substitution style of the topology viewer: responsive, professional, HTML-escaped, self-contained — no JavaScript at all, no frameworks, no CDN, no backend, no database, no authentication.
+- Added `founderos atlas dashboard` generating `dashboard.html` and opening the browser; missing artifacts degrade to "—" tiles and disabled quick actions, and an empty workspace still renders a valid dashboard.
+- `founderos atlas discover` automatically regenerates the dashboard after every successful discovery (best effort — a dashboard failure never fails a successful discovery); quick-action links are relative to the dashboard's directory.
+- Added 12 tests covering full-workspace summaries, missing artifacts, empty network snapshots, no-changes reports, critical status, HTML generation (including script-free and no-unreplaced-token checks), disabled actions, determinism, the dashboard CLI with and without artifacts, automatic regeneration on discover, and help listing.
+- Added no JavaScript frameworks, AI, authentication, backend server, or database.
+
 ### EPIC-002 / PR-023 - Read-only Configuration Collection Foundation
 
 - Added `founderos_atlas/config/`: read-only collection of `show running-config` (required) plus best-effort `show startup-config`, `show inventory`, `show license summary`, and `show module` — collection and line-ending normalization only, no analysis or comparison.

@@ -31,7 +31,7 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [tool.setuptools.package-data]
-founderos_atlas = ["visualization/templates/*.html"]
+founderos_atlas = ["visualization/templates/*.html", "dashboard/templates/*.html"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

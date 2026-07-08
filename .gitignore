@@ -27,6 +27,7 @@ deliverables/*
 /morning_brief.md
 /change_report.json
 /change_report.md
+/dashboard.html
 
 # Collected device configurations are sensitive material; never commit them.
 /configs/

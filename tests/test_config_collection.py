@@ -244,6 +244,7 @@ class DiscoverCliConfigCollectionTests(unittest.TestCase):
                 atlas_snapshot_output=workdir / "topology_snapshot.json",
                 atlas_morning_brief_output=workdir / "morning_brief.md",
                 atlas_config_output_dir=workdir / "configs",
+                atlas_dashboard_output=workdir / "dashboard.html",
                 atlas_browser_opener=lambda uri: None,
             )
         return code, stdout.getvalue(), stderr.getvalue()
