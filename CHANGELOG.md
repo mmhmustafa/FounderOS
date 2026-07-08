@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### EPIC-002 / PR-019 - Atlas Real Device Discovery over Read-Only SSH
+
+- Added a vendor-neutral `DeviceTransport` contract with `connect`, `disconnect`, `execute`, and `execute_many`, plus context-manager lifecycle.
+- Added a Netmiko-backed `SSHDeviceTransport` for any reachable Cisco IOS/IOS-XE device; simulators (CML, EVE-NG, GNS3) are treated as ordinary SSH endpoints with no simulator-specific logic.
+- Enforced a read-only architecture: only `show` commands pass the local allowlist, the transport never enters configuration mode, and no enable escalation occurs.
+- Added `DeviceCredentials` with the password excluded from repr; passwords are never logged, persisted, or echoed in errors or CLI output.
+- Added typed, user-friendly transport failures for authentication, timeout, SSH unavailability, unsupported platform, permission denial, and lost connections, classified without importing Netmiko.
+- Added `run_live_discovery` composing transport collection with the unchanged DiscoveryEngine, TopologyReconciler, and TopologySnapshot.
+- Added `founderos atlas discover` prompting for management IP, username, and hidden password, then delivering the topology viewer HTML, Morning Brief, and browser launch.
+- Made Netmiko an optional lazily-imported dependency (`pip install founderos-runtime[ssh]`); all automated tests run against mocks with no live devices.
+- Added no SNMP, NETCONF, RESTCONF, simulator APIs, persistence, credential storage, multi-hop discovery, or configuration commands.
+
 ### EPIC-002 / PR-018 - Atlas Morning Brief Journey
 
 - Added Atlas's first operational utility Workflow and immutable `MorningBrief` Artifact model.

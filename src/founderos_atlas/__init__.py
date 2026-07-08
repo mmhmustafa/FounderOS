@@ -15,8 +15,17 @@ from .topology import (
     TopologySnapshot,
     TopologySnapshotExporter,
 )
+from .transport import (
+    AtlasTransportError,
+    DeviceCredentials,
+    DeviceTransport,
+    SSHDeviceTransport,
+)
 
 __all__ = [
+    "AtlasTransportError",
+    "DeviceCredentials",
+    "DeviceTransport",
     "DiscoveryAdapter",
     "DiscoveryEngine",
     "DiscoveryFact",
@@ -24,6 +33,7 @@ __all__ = [
     "NetworkDevice",
     "NetworkInterface",
     "NetworkNeighbor",
+    "SSHDeviceTransport",
     "TopologyGraph",
     "TopologyReconciler",
     "TopologySnapshot",

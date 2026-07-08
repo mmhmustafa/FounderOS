@@ -3,13 +3,21 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+import getpass
 from pathlib import Path
 import webbrowser
 
 from founderos_atlas.demo import run_atlas_discovery_demo
 from founderos_atlas.discovery import AtlasDiscoveryError, DiscoveryResult
 from founderos_atlas.journeys import MorningBriefJourney, MorningBriefJourneyResult
+from founderos_atlas.live import run_live_discovery
 from founderos_atlas.topology import TopologyGraph, TopologySnapshot
+from founderos_atlas.transport import (
+    AtlasTransportError,
+    DeviceCredentials,
+    DeviceTransport,
+    SSHDeviceTransport,
+)
 from founderos_atlas.visualization import TopologyRenderer
 from founderos_runtime.demo import load_discovery_workspace, run_discovery_vertical_slice
 from founderos_runtime.evaluation import EvaluationRunner
@@ -20,6 +28,7 @@ from founderos_runtime.workspace import WorkspaceError
 from .exceptions import CliError
 from .render import (
     VERSION_TEXT,
+    render_atlas_discover,
     render_atlas_discovery,
     render_atlas_topology,
     render_atlas_morning_brief,
@@ -33,6 +42,8 @@ DiscoveryRunner = Callable[[], JourneyResult]
 AtlasDiscoveryRunner = Callable[[], tuple[DiscoveryResult, TopologyGraph, TopologySnapshot]]
 BrowserOpener = Callable[[str], object]
 MorningBriefRunner = Callable[[TopologySnapshot, TopologySnapshot | None], MorningBriefJourneyResult]
+TransportFactory = Callable[[DeviceCredentials], DeviceTransport]
+PromptReader = Callable[[str], str]
 
 
 def version_command() -> tuple[int, str]:
@@ -106,6 +117,55 @@ def atlas_topology_command(
     except (AtlasDiscoveryError, OSError, TypeError, ValueError) as error:
         raise CliError(f"Atlas topology demo failed: {error}") from error
     return 0, render_atlas_topology(str(destination))
+
+
+def atlas_discover_command(
+    *,
+    transport_factory: TransportFactory | None = None,
+    input_reader: PromptReader | None = None,
+    password_reader: PromptReader | None = None,
+    journey_runner: MorningBriefRunner | None = None,
+    topology_output: str | Path = "atlas_topology.html",
+    brief_output: str | Path = "morning_brief.md",
+    browser_opener: BrowserOpener | None = None,
+) -> tuple[int, str]:
+    read_input = input_reader or input
+    read_password = password_reader or getpass.getpass
+    try:
+        host = read_input("Management IP: ").strip()
+        username = read_input("Username: ").strip()
+        password = read_password("Password: ")
+    except (EOFError, KeyboardInterrupt) as error:
+        raise CliError("Discovery was cancelled before connecting to a device") from error
+    if not host or not username or not password:
+        raise CliError("Management IP, username, and password are all required")
+    try:
+        credentials = DeviceCredentials(host=host, username=username, password=password)
+        build_transport = transport_factory or SSHDeviceTransport
+        result, graph, snapshot = run_live_discovery(build_transport(credentials))
+        html = TopologyRenderer(snapshot).render()
+        topology_destination = Path(topology_output).resolve()
+        topology_destination.write_text(html, encoding="utf-8")
+        run_brief = journey_runner or MorningBriefJourney().run
+        brief = run_brief(snapshot, None)
+        if not isinstance(brief, MorningBriefJourneyResult):
+            raise TypeError("Atlas Morning Brief returned an invalid result")
+        brief_destination = Path(brief_output).resolve()
+        brief_destination.write_text(brief.markdown, encoding="utf-8")
+        opener = browser_opener or webbrowser.open
+        opener(topology_destination.as_uri())
+    except AtlasTransportError as error:
+        raise CliError(str(error)) from error
+    except (AtlasDiscoveryError, OSError, RuntimeError, TypeError, ValueError) as error:
+        raise CliError(f"Atlas live discovery failed: {error}") from error
+    return 0, render_atlas_discover(
+        result,
+        graph,
+        snapshot,
+        brief,
+        str(topology_destination),
+        str(brief_destination),
+    )
 
 
 def atlas_morning_brief_command(

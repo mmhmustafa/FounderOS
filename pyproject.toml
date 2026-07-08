@@ -17,6 +17,9 @@ dependencies = [
 dev = [
   "pytest>=8,<10",
 ]
+ssh = [
+  "netmiko>=4.3,<5",
+]
 
 [project.scripts]
 founderos = "founderos_runtime.cli:main"

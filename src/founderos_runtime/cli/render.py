@@ -25,6 +25,7 @@ def render_help() -> str:
             "  founderos atlas demo discovery",
             "  founderos atlas demo topology",
             "  founderos atlas morning-brief",
+            "  founderos atlas discover",
             "  founderos help",
             "",
             "Commands:",
@@ -34,6 +35,7 @@ def render_help() -> str:
             "  atlas demo discovery  Run fixture-only Atlas network discovery.",
             "  atlas demo topology  Generate and open the Atlas topology viewer.",
             "  atlas morning-brief  Generate an evaluated Atlas operational brief.",
+            "  atlas discover  Discover a live Cisco IOS/IOS-XE device over read-only SSH.",
             "  help            Show this help.",
         )
     )
@@ -107,6 +109,53 @@ def render_atlas_morning_brief(result: MorningBriefJourneyResult, path: str) -> 
             f"Journey status: {result.journey_result.status.value}",
             "",
             f"Artifact saved: {path}",
+        )
+    )
+
+
+def render_atlas_discover(
+    result: DiscoveryResult,
+    graph: TopologyGraph,
+    snapshot: TopologySnapshot,
+    brief_result: MorningBriefJourneyResult,
+    topology_path: str,
+    brief_path: str,
+) -> str:
+    device = result.device
+    summary = graph.summary()
+    brief = brief_result.brief
+    return "\n".join(
+        (
+            "=" * 48,
+            "Atlas Live Discovery",
+            "=" * 48,
+            "",
+            f"Device: {device.hostname} ({device.management_ip})",
+            f"Vendor: {device.vendor.title()}",
+            f"Platform: {device.platform}",
+            f"Operating system: {device.os_name} {device.os_version}",
+            f"Interfaces: {len(result.interfaces)}",
+            f"Neighbors: {len(result.neighbors)}",
+            "",
+            "Topology",
+            f"Devices: {summary['device_count']}",
+            f"Edges: {summary['edge_count']}",
+            f"Warnings: {summary['warning_count']}",
+            "",
+            "Topology Snapshot",
+            f"Snapshot ID: {snapshot.snapshot_id}",
+            f"Schema version: {snapshot.metadata['schema_version']}",
+            "",
+            "Morning Brief",
+            f"Network status: {brief.overall_status}",
+            f"Quality score: {brief_result.evaluation.score:.2f}",
+            "",
+            f"Topology viewer saved: {topology_path}",
+            f"Morning brief saved: {brief_path}",
+            "Browser launch requested.",
+            "",
+            "Live discovery completed successfully.",
+            "=" * 48,
         )
     )
 

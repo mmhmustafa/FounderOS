@@ -15,6 +15,9 @@ from .commands import (
     BrowserOpener,
     DiscoveryRunner,
     MorningBriefRunner,
+    PromptReader,
+    TransportFactory,
+    atlas_discover_command,
     atlas_discovery_command,
     atlas_morning_brief_command,
     atlas_topology_command,
@@ -44,6 +47,9 @@ def main(
     atlas_browser_opener: BrowserOpener | None = None,
     atlas_morning_brief_runner: MorningBriefRunner | None = None,
     atlas_morning_brief_output: str | Path = "morning_brief.md",
+    atlas_transport_factory: TransportFactory | None = None,
+    atlas_input_reader: PromptReader | None = None,
+    atlas_password_reader: PromptReader | None = None,
 ) -> int:
     arguments = list(sys.argv[1:] if argv is None else argv)
     if not arguments:
@@ -73,6 +79,20 @@ def main(
             code, output = atlas_topology_command(
                 atlas_discovery_runner,
                 output_path=atlas_topology_output,
+                browser_opener=atlas_browser_opener,
+            )
+        except CliError as error:
+            print(render_error(str(error)), file=sys.stderr)
+            return 1
+    elif arguments == ["atlas", "discover"]:
+        try:
+            code, output = atlas_discover_command(
+                transport_factory=atlas_transport_factory,
+                input_reader=atlas_input_reader,
+                password_reader=atlas_password_reader,
+                journey_runner=atlas_morning_brief_runner,
+                topology_output=atlas_topology_output,
+                brief_output=atlas_morning_brief_output,
                 browser_opener=atlas_browser_opener,
             )
         except CliError as error:
