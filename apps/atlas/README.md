@@ -79,17 +79,26 @@ pip install founderos-runtime[ssh]
 founderos atlas discover
 ```
 
-The command prompts for the management IP, username, and password (hidden,
-never stored or logged), then runs the full product pipeline:
+The command prompts for the seed management IP, username, password (hidden,
+never stored or logged), and optional traversal limits — max depth (default
+1) and max devices (default 10; press Enter to accept defaults) — then runs
+the full product pipeline:
 
 ```
 SSH collection (show version / show ip interface brief / show cdp neighbors detail)
 → DiscoveryEngine (existing parsers, unchanged)
+→ CDP neighbor traversal (breadth-first, same credentials, up to the limits)
 → TopologyGraph reconciliation
 → TopologySnapshot
 → Interactive HTML topology (opened in the default browser)
 → Morning Brief Journey
 ```
+
+Multi-hop discovery is deliberately controlled: each host is contacted at
+most once, devices reachable via multiple addresses are deduplicated by
+identity, an unreachable neighbor is recorded as failed and skipped rather
+than aborting the run, and traversal stops at the depth/device limits. Only
+the seed device is required to succeed.
 
 The transport is read-only by architecture: only `show` commands pass the
 local allowlist, configuration mode is never entered, and `terminal length 0`
@@ -129,6 +138,8 @@ credentials — including CML node management addresses.
 | `Device <ip> did not recognize 'show ...'` | Probably not a Cisco IOS/IOS-XE device; other platforms need their own adapter |
 | Parse error mentioning `adapter: CiscoIOSAdapter` | The device output shape is new to the parser. The error includes the command, missing field, and a sanitized output preview — capture the full command output and extend the adapter |
 | `No neighbors discovered yet` | Not an error: CDP is disabled or the device genuinely has no CDP neighbors (`show cdp` to confirm) |
+| `[failed] <ip> - ...` in Discovery Progress | A CDP neighbor was unreachable or rejected the shared credentials; the rest of the discovery continued. Verify SSH reachability and that the same credentials work on that device |
+| Neighbor skipped with `no management IP advertised over CDP` | The neighbor does not advertise an address Atlas can connect to; discover it directly by its management IP |
 | Unknown platform/os fields with warnings | Identity fallback engaged; discovery still completes and warnings list what could not be parsed |
 
 ## Next Step

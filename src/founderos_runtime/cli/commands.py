@@ -3,14 +3,15 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import replace
 import getpass
 from pathlib import Path
 import webbrowser
 
 from founderos_atlas.demo import run_atlas_discovery_demo
-from founderos_atlas.discovery import AtlasDiscoveryError, DiscoveryResult
+from founderos_atlas.discovery import AtlasDiscoveryError, DiscoveryResult, MultiHopConfig
 from founderos_atlas.journeys import MorningBriefJourney, MorningBriefJourneyResult
-from founderos_atlas.live import run_live_discovery
+from founderos_atlas.live import run_multihop_discovery
 from founderos_atlas.topology import TopologyGraph, TopologySnapshot, TopologySnapshotExporter
 from founderos_atlas.transport import (
     AtlasTransportError,
@@ -140,10 +141,19 @@ def atlas_discover_command(
         raise CliError("Discovery was cancelled before connecting to a device") from error
     if not host or not username or not password:
         raise CliError("Management IP, username, and password are all required")
+    max_depth = _read_limit(read_input, "Max depth [1]: ", 1)
+    max_devices = _read_limit(read_input, "Max devices [10]: ", 10)
     try:
+        config = MultiHopConfig(max_depth=max_depth, max_devices=max_devices)
         credentials = DeviceCredentials(host=host, username=username, password=password)
         build_transport = transport_factory or SSHDeviceTransport
-        result, graph, snapshot = run_live_discovery(build_transport(credentials))
+
+        def host_transport(next_host: str) -> DeviceTransport:
+            return build_transport(replace(credentials, host=next_host))
+
+        report, graph, snapshot = run_multihop_discovery(
+            host_transport, credentials.host, config=config
+        )
         html = TopologyRenderer(snapshot).render()
         topology_destination = Path(topology_output).resolve()
         topology_destination.write_text(html, encoding="utf-8")
@@ -164,7 +174,7 @@ def atlas_discover_command(
     except (AtlasDiscoveryError, OSError, RuntimeError, TypeError, ValueError) as error:
         raise CliError(f"Atlas live discovery failed: {error}") from error
     return 0, render_atlas_discover(
-        result,
+        report,
         graph,
         snapshot,
         brief,
@@ -172,6 +182,19 @@ def atlas_discover_command(
         str(snapshot_destination),
         str(brief_destination),
     )
+
+
+def _read_limit(read_input: PromptReader, prompt: str, default: int) -> int:
+    try:
+        text = read_input(prompt).strip()
+    except (EOFError, KeyboardInterrupt) as error:
+        raise CliError("Discovery was cancelled before connecting to a device") from error
+    if not text:
+        return default
+    try:
+        return int(text)
+    except ValueError as error:
+        raise CliError(f"{prompt.split(' [')[0]} must be a whole number") from error
 
 
 def atlas_morning_brief_command(

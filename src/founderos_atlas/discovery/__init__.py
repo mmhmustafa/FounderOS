@@ -15,17 +15,27 @@ from .models import (
     NetworkInterface,
     NetworkNeighbor,
 )
+from .multihop import (
+    DeviceVisit,
+    MultiHopConfig,
+    MultiHopDiscoveryReport,
+    discover_multihop,
+)
 
 __all__ = [
     "AtlasDiscoveryError",
+    "DeviceVisit",
     "DiscoveryAdapter",
     "DiscoveryEngine",
     "DiscoveryFact",
     "DiscoveryParseError",
     "DiscoveryResult",
     "MissingCommandOutputError",
+    "MultiHopConfig",
+    "MultiHopDiscoveryReport",
     "NetworkDevice",
     "NetworkInterface",
     "NetworkNeighbor",
     "UnsupportedAdapterError",
+    "discover_multihop",
 ]

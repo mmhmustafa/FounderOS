@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from founderos_atlas.discovery import DiscoveryResult
+from founderos_atlas.discovery import DiscoveryResult, MultiHopDiscoveryReport
 from founderos_atlas.journeys import MorningBriefJourneyResult
 from founderos_atlas.topology import TopologyGraph, TopologySnapshot
 from founderos_runtime.journey import JourneyResult
@@ -114,7 +114,7 @@ def render_atlas_morning_brief(result: MorningBriefJourneyResult, path: str) -> 
 
 
 def render_atlas_discover(
-    result: DiscoveryResult,
+    report: MultiHopDiscoveryReport,
     graph: TopologyGraph,
     snapshot: TopologySnapshot,
     brief_result: MorningBriefJourneyResult,
@@ -122,12 +122,25 @@ def render_atlas_discover(
     snapshot_path: str,
     brief_path: str,
 ) -> str:
-    device = result.device
+    seed = report.results[0]
+    device = seed.device
     summary = graph.summary()
     brief = brief_result.brief
-    neighbor_lines = [f"Neighbors: {len(result.neighbors)}"]
-    if not result.neighbors:
+    neighbor_lines = [f"Neighbors: {len(seed.neighbors)}"]
+    if report.neighbor_count == 0:
         neighbor_lines.append("No neighbors discovered yet")
+    progress_lines = ["Discovery Progress"]
+    progress_lines.append(
+        f"Seed: {report.seed_host} | Max depth: {report.config.max_depth} "
+        f"| Max devices: {report.config.max_devices}"
+    )
+    for visit in report.visits:
+        label = f"{visit.hostname} ({visit.host})" if visit.hostname else visit.host
+        progress_lines.append(f"[{visit.status}] {label} - {visit.detail}")
+    progress_lines.append(
+        f"Connected: {len(report.connected)} | Skipped: {len(report.skipped)} "
+        f"| Failed: {len(report.failed)} | Neighbors observed: {report.neighbor_count}"
+    )
     return "\n".join(
         (
             "=" * 48,
@@ -141,8 +154,10 @@ def render_atlas_discover(
             f"Platform: {device.platform}",
             f"Operating system: {device.os_name} {device.os_version}",
             f"Management IP: {device.management_ip}",
-            f"Interfaces: {len(result.interfaces)}",
+            f"Interfaces: {len(seed.interfaces)}",
             *neighbor_lines,
+            "",
+            *progress_lines,
             "",
             "Topology",
             f"Devices: {summary['device_count']}",

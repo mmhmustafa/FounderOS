@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### EPIC-002 / PR-021 - Atlas Multi-hop Discovery Foundation
+
+- Added `discovery/multihop.py`: deterministic breadth-first CDP neighbor traversal from one seed, speaking only through injected `DeviceTransport` factories with the same read-only guarantees.
+- Enforced conservative safety limits: default max depth 1, default max devices 10, at most one contact per host, identity-based deduplication of devices reachable via multiple addresses, and no infinite loops.
+- Made neighbor failures non-fatal: unreachable or unparseable neighbors are recorded as failed visits and traversal continues; only the seed device is required to succeed.
+- Added `run_multihop_discovery` composing traversal with the existing `TopologyReconciler`, `TopologySnapshot`, renderer, and Morning Brief Journey.
+- Extended `founderos atlas discover` with optional max depth / max devices prompts (Enter accepts defaults) and a Discovery Progress report showing connected, skipped, and failed devices with reasons, plus final counts and artifact paths.
+- Neighbors without an advertised management IP are reported once and skipped; credentials are shared for the run, never stored, and never appear in progress output.
+- Added 18 mocked-transport tests covering seed discovery, neighbor traversal, duplicate avoidance, depth/device limits, unreachable neighbors, reconciliation use, artifact generation, determinism, read-only command enforcement, and CLI limit validation.
+- Added no SNMP, NETCONF, RESTCONF, GUI, database, AI, credential vault, per-device credentials, scheduling, or CML-specific logic.
+
 ### EPIC-002 / PR-020 - Live Discovery Output Pipeline
 
 - Completed the `founderos atlas discover` product pipeline: SSH collection → DiscoveryEngine → TopologyGraph → TopologySnapshot → interactive HTML topology → Morning Brief, reusing every existing component with no business logic in the CLI.

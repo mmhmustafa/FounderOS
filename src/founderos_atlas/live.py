@@ -1,10 +1,16 @@
-"""Live single-device Atlas discovery composed from transport and engine."""
+"""Live Atlas discovery compositions built from transport and engine layers."""
 
 from __future__ import annotations
 
 from .discovery import DiscoveryEngine, DiscoveryResult
 from .discovery.adapter import DiscoveryAdapter
 from .discovery.adapters import CiscoIOSAdapter
+from .discovery.multihop import (
+    HostTransportFactory,
+    MultiHopConfig,
+    MultiHopDiscoveryReport,
+    discover_multihop,
+)
 from .topology import TopologyGraph, TopologyReconciler, TopologySnapshot
 from .transport import DeviceTransport
 
@@ -42,3 +48,37 @@ def run_live_discovery(
         },
     )
     return result, graph, snapshot
+
+
+def run_multihop_discovery(
+    transport_factory: HostTransportFactory,
+    seed_host: str,
+    *,
+    adapter: DiscoveryAdapter | None = None,
+    config: MultiHopConfig | None = None,
+) -> tuple[MultiHopDiscoveryReport, TopologyGraph, TopologySnapshot]:
+    """Discover the seed and reachable CDP neighbors, then reconcile.
+
+    Traversal lives in ``discovery.multihop``; this composition only wires it
+    to the existing reconciliation and snapshot pipeline.
+    """
+
+    report = discover_multihop(
+        seed_host,
+        transport_factory,
+        adapter=adapter,
+        config=config,
+    )
+    graph = TopologyReconciler().reconcile(report.results)
+    snapshot = TopologySnapshot.from_graph(
+        graph,
+        metadata={
+            "source": "atlas_live_discovery",
+            "transport": "ssh",
+            "read_only": True,
+            "discovery_mode": "multihop",
+            "max_depth": report.config.max_depth,
+            "max_devices": report.config.max_devices,
+        },
+    )
+    return report, graph, snapshot

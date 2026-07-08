@@ -66,7 +66,7 @@ class AtlasDiscoverCliTests(unittest.TestCase):
         self,
         *,
         transport_factory,
-        answers: tuple[str, str] = ("10.0.0.10", "atlas"),
+        answers: tuple[str, ...] = ("10.0.0.10", "atlas", "", ""),
         password: str = PASSWORD,
     ):
         prompts: list[str] = []
@@ -125,7 +125,16 @@ class AtlasDiscoverCliTests(unittest.TestCase):
 
         self.assertEqual(0, code, error)
         self.assertEqual("", error)
-        self.assertEqual(["Management IP: ", "Username: ", "Password: "], prompts)
+        self.assertEqual(
+            [
+                "Management IP: ",
+                "Username: ",
+                "Password: ",
+                "Max depth [1]: ",
+                "Max devices [10]: ",
+            ],
+            prompts,
+        )
         self.assertEqual("10.0.0.10", transports[0].credentials.host)
         self.assertEqual("atlas", transports[0].credentials.username)
         self.assertTrue(transports[0].connected)
