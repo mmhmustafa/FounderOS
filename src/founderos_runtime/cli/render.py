@@ -7,6 +7,8 @@ from collections.abc import Mapping
 from datetime import datetime
 
 from founderos_atlas.change import SEVERITY_ORDER, ChangeReport
+from founderos_atlas.config_intelligence import ConfigChangeReport
+from founderos_atlas.config_intelligence import SEVERITY_ORDER as CONFIG_SEVERITY_ORDER
 from founderos_atlas.dashboard import DashboardSummary
 from founderos_atlas.discovery import DiscoveryResult, MultiHopDiscoveryReport
 from founderos_atlas.history import HistoryIndex
@@ -35,6 +37,8 @@ def render_help() -> str:
             "  founderos atlas dashboard",
             "  founderos atlas history",
             "  founderos atlas timeline",
+            "  founderos atlas config-diff <previous> <current>",
+            "  founderos atlas config-diff --latest <hostname>",
             "  founderos help",
             "",
             "Commands:",
@@ -49,6 +53,7 @@ def render_help() -> str:
             "  atlas dashboard  Generate the Atlas executive dashboard.",
             "  atlas history   List every preserved discovery.",
             "  atlas timeline  Generate the network timeline (timeline.md).",
+            "  atlas config-diff  Compare two device configurations into a classified report.",
             "  help            Show this help.",
         )
     )
@@ -226,6 +231,42 @@ def render_atlas_dashboard(summary: DashboardSummary, path: str) -> str:
             "",
             f"Dashboard saved: {path}",
             "Browser launch requested.",
+        )
+    )
+
+
+def render_atlas_config_diff(
+    report: ConfigChangeReport, json_path: str, markdown_path: str
+) -> str:
+    counts = report.severity_counts
+    change_lines = [
+        f"[{change.severity}] {change.category}: {change.raw_diff_reference}"
+        for change in report.changes
+    ] or ["No configuration changes detected."]
+    return "\n".join(
+        (
+            "=" * 48,
+            "Atlas Configuration Change Report",
+            "=" * 48,
+            "",
+            f"Device: {report.hostname}",
+            f"Previous: {report.previous_ref}",
+            f"Current: {report.current_ref}",
+            "",
+            f"Changes detected: {report.change_count}",
+            " | ".join(
+                f"{severity.title()}: {counts[severity]}"
+                for severity in CONFIG_SEVERITY_ORDER
+            ),
+            "Secrets: masked",
+            "",
+            *change_lines,
+            "",
+            f"Report saved: {json_path}",
+            f"Report saved: {markdown_path}",
+            "",
+            "Configuration comparison completed successfully.",
+            "=" * 48,
         )
     )
 

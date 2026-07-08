@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### EPIC-002 / PR-026 - Atlas Configuration Intelligence Foundation
+
+- Added `founderos_atlas/config_intelligence/`: classified, secret-masked comparison of two device configurations — section-aware diffing (top-level sections plus indented children; global one-liners are single-line sections), not a raw line diff.
+- Classification via ordered prefix rules into interfaces, routing, OSPF, BGP, static routes, VLANs, ACLs, NAT, logging, SNMP, NTP, AAA, line/VTY access, and other; severity from a documented category map (access control and BGP high; routing/interfaces/VLAN/SNMP medium; logging/NTP/other low) plus a shutdown-toggle escalation on interfaces.
+- Every change carries hostname, category, severity, summary, recommendation, masked added/removed lines, and a raw diff reference (the section header).
+- Secret masking at diff-extraction time: any line containing password, secret, key, community, token, or credential (word-boundary, case-insensitive) is replaced entirely before models, reports, or console output exist; classification uses only the first two command tokens internally.
+- Added `founderos atlas config-diff <previous> <current>` and `founderos atlas config-diff --latest <hostname>` (compares the two most recent history records that collected that device's configuration), writing `config_change_report.json` and `config_change_report.md`.
+- Dashboard shows a Configuration Changes card (devices changed, high/medium/low counts) plus an Open Config Changes quick action when a report exists.
+- Added 22 tests covering identical configs, interface/OSPF/BGP/ACL/static-route changes, shutdown escalation, SNMP community masking, password/secret masking, mask term coverage, severity classification, VTY changes, JSON and Markdown generation, determinism, path-mode CLI, --latest history comparison, insufficient-history and usage errors, help listing, and dashboard integration.
+- Added no AI, remediation, rollback, config push, compliance engine, vendor-specific deep parser, database, or scheduler.
+
 ### EPIC-002 / PR-025 - Atlas Historical Timeline & Network Memory
 
 - Added `founderos_atlas/history/`: every successful discovery is automatically preserved under `.atlas/history/<timestamp>/` with full copies of the snapshot, viewer, Morning Brief, dashboard, collected configurations, and a self-describing `discovery_metadata.json`.

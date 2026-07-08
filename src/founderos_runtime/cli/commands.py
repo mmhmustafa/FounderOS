@@ -21,6 +21,11 @@ from founderos_atlas.config import (
     safe_artifact_name,
     write_configuration_artifacts,
 )
+from founderos_atlas.config_intelligence import (
+    compare_configurations,
+    render_config_report_json,
+    render_config_report_markdown,
+)
 from founderos_atlas.dashboard import DashboardRenderer, build_dashboard_summary
 from founderos_atlas.history import (
     CONFIG_COLLECTED,
@@ -52,6 +57,7 @@ from .exceptions import CliError
 from .render import (
     VERSION_TEXT,
     render_atlas_compare,
+    render_atlas_config_diff,
     render_atlas_dashboard,
     render_atlas_discover,
     render_atlas_history,
@@ -253,6 +259,83 @@ def atlas_discover_command(
     )
 
 
+def atlas_config_diff_command(
+    previous_path: str | Path | None = None,
+    current_path: str | Path | None = None,
+    *,
+    latest_hostname: str | None = None,
+    history_root: str | Path = Path(".atlas") / "history",
+    json_output: str | Path = "config_change_report.json",
+    markdown_output: str | Path = "config_change_report.md",
+) -> tuple[int, str]:
+    if latest_hostname is not None:
+        previous_path, current_path, previous_ref, current_ref, hostname = (
+            _latest_config_pair(history_root, latest_hostname)
+        )
+    else:
+        if previous_path is None or current_path is None:
+            raise CliError("Both a previous and a current configuration path are required")
+        previous_ref, current_ref = str(previous_path), str(current_path)
+        parent = Path(current_path).resolve().parent.name
+        hostname = parent if parent and parent != "configs" else "device"
+    previous_text = _read_config_file(previous_path)
+    current_text = _read_config_file(current_path)
+    try:
+        report = compare_configurations(
+            previous_text,
+            current_text,
+            hostname=hostname,
+            previous_ref=previous_ref,
+            current_ref=current_ref,
+        )
+        json_destination = Path(json_output).resolve()
+        json_destination.write_text(render_config_report_json(report), encoding="utf-8")
+        markdown_destination = Path(markdown_output).resolve()
+        markdown_destination.write_text(
+            render_config_report_markdown(report), encoding="utf-8"
+        )
+    except (OSError, TypeError, ValueError) as error:
+        raise CliError(f"Atlas configuration comparison failed: {error}") from error
+    return 0, render_atlas_config_diff(
+        report, str(json_destination), str(markdown_destination)
+    )
+
+
+def _latest_config_pair(
+    history_root: str | Path, hostname: str
+) -> tuple[Path, Path, str, str, str]:
+    repository = HistoryRepository(history_root)
+    safe_name = safe_artifact_name(hostname)
+    matches: list[tuple[str, Path]] = []
+    for record in repository.load().records:  # newest first
+        candidate = (
+            repository.record_directory(record.record_id)
+            / "configs"
+            / safe_name
+            / "running_config.txt"
+        )
+        if candidate.is_file():
+            matches.append((record.record_id, candidate))
+        if len(matches) == 2:
+            break
+    if len(matches) < 2:
+        raise CliError(
+            f"History holds {len(matches)} collected configuration(s) for "
+            f"{hostname}; two are required. Run discovery with configuration "
+            "collection to build history."
+        )
+    (current_id, current_file), (previous_id, previous_file) = matches
+    return previous_file, current_file, previous_id, current_id, hostname
+
+
+def _read_config_file(path: str | Path) -> str:
+    resolved = Path(path)
+    try:
+        return resolved.read_text(encoding="utf-8")
+    except OSError as error:
+        raise CliError(f"Could not read configuration file {resolved}: {error}") from error
+
+
 def atlas_history_command(
     *, history_root: str | Path = Path(".atlas") / "history"
 ) -> tuple[int, str]:
@@ -372,6 +455,8 @@ def atlas_dashboard_command(
     configs_dir: str | Path = "configs",
     history_root: str | Path = Path(".atlas") / "history",
     timeline_path: str | Path = "timeline.md",
+    config_change_report: str | Path = "config_change_report.json",
+    config_change_report_md: str | Path = "config_change_report.md",
     browser_opener: BrowserOpener | None = None,
 ) -> tuple[int, str]:
     try:
@@ -385,6 +470,8 @@ def atlas_dashboard_command(
             configs_dir=configs_dir,
             history_root=history_root,
             timeline_path=timeline_path,
+            config_change_report=config_change_report,
+            config_change_report_md=config_change_report_md,
             link_base=destination.parent,
         )
         destination.write_text(DashboardRenderer(summary).render(), encoding="utf-8")
@@ -416,6 +503,8 @@ def _regenerate_dashboard(
             configs_dir=config_output_dir,
             history_root=history_root,
             timeline_path=destination.parent / "timeline.md",
+            config_change_report=destination.parent / "config_change_report.json",
+            config_change_report_md=destination.parent / "config_change_report.md",
             link_base=destination.parent,
         )
         destination.write_text(DashboardRenderer(summary).render(), encoding="utf-8")

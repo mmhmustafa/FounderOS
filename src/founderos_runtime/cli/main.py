@@ -18,6 +18,7 @@ from .commands import (
     PromptReader,
     TransportFactory,
     atlas_compare_command,
+    atlas_config_diff_command,
     atlas_dashboard_command,
     atlas_discover_command,
     atlas_history_command,
@@ -62,6 +63,8 @@ def main(
     atlas_history_root: str | Path = Path(".atlas") / "history",
     atlas_timeline_output: str | Path = "timeline.md",
     atlas_clock=None,
+    atlas_config_diff_json_output: str | Path = "config_change_report.json",
+    atlas_config_diff_markdown_output: str | Path = "config_change_report.md",
 ) -> int:
     arguments = list(sys.argv[1:] if argv is None else argv)
     if not arguments:
@@ -115,6 +118,34 @@ def main(
         except CliError as error:
             print(render_error(str(error)), file=sys.stderr)
             return 1
+    elif arguments[:2] == ["atlas", "config-diff"]:
+        try:
+            if len(arguments) == 4 and arguments[2] == "--latest":
+                code, output = atlas_config_diff_command(
+                    latest_hostname=arguments[3],
+                    history_root=atlas_history_root,
+                    json_output=atlas_config_diff_json_output,
+                    markdown_output=atlas_config_diff_markdown_output,
+                )
+            elif len(arguments) == 4:
+                code, output = atlas_config_diff_command(
+                    arguments[2],
+                    arguments[3],
+                    json_output=atlas_config_diff_json_output,
+                    markdown_output=atlas_config_diff_markdown_output,
+                )
+            else:
+                print(
+                    render_error(
+                        "Usage: founderos atlas config-diff <previous> <current> "
+                        "| founderos atlas config-diff --latest <hostname>"
+                    ),
+                    file=sys.stderr,
+                )
+                return 2
+        except CliError as error:
+            print(render_error(str(error)), file=sys.stderr)
+            return 1
     elif arguments == ["atlas", "history"]:
         try:
             code, output = atlas_history_command(history_root=atlas_history_root)
@@ -142,6 +173,8 @@ def main(
                 configs_dir=atlas_config_output_dir,
                 history_root=atlas_history_root,
                 timeline_path=atlas_timeline_output,
+                config_change_report=atlas_config_diff_json_output,
+                config_change_report_md=atlas_config_diff_markdown_output,
                 browser_opener=atlas_browser_opener,
             )
         except CliError as error:

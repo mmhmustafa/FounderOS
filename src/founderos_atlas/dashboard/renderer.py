@@ -33,6 +33,7 @@ class DashboardRenderer:
             .replace("__CHANGES__", self._changes())
             .replace("__ACTIVITY__", self._activity())
             .replace("__DISCOVERIES__", self._discoveries())
+            .replace("__CONFIG_CHANGES__", self._configuration_changes())
             .replace("__ACTIONS__", self._actions())
         )
 
@@ -78,6 +79,15 @@ class DashboardRenderer:
         entries = self._summary.recent_discoveries
         if not entries:
             return "          <li>No discovery history yet.</li>"
+        return "\n".join(f"          <li>{escape(entry)}</li>" for entry in entries)
+
+    def _configuration_changes(self) -> str:
+        entries = self._summary.configuration_changes
+        if not entries:
+            return (
+                "          <li>No configuration change report yet. "
+                "Run: founderos atlas config-diff</li>"
+            )
         return "\n".join(f"          <li>{escape(entry)}</li>" for entry in entries)
 
     def _actions(self) -> str:

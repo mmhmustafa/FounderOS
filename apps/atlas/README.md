@@ -237,6 +237,27 @@ decision. See `src/founderos_atlas/history/README.md` for the repository
 design and future extensibility (configuration diff, incident replay,
 historical playback, AI reasoning).
 
+## Configuration Intelligence
+
+Compare two collected configurations into a classified, secret-masked
+change report — not a raw diff:
+
+```powershell
+founderos atlas config-diff configs\R1\old.txt configs\R1\running_config.txt
+founderos atlas config-diff --latest R1
+```
+
+The `--latest` form compares the two most recent discoveries in
+`.atlas/history/` that collected a configuration for that hostname. Both
+forms write `config_change_report.json` and `config_change_report.md` and
+print a severity summary. Changes are section-aware (interfaces, OSPF,
+BGP, routing, static routes, VLANs, ACLs, NAT, logging, SNMP, NTP, AAA,
+line/VTY, other) with severity and a recommendation per change. Any line
+containing `password`, `secret`, `key`, `community`, `token`, or
+`credential` is masked before it ever reaches a report. The dashboard
+shows a Configuration Changes card when a report exists. See
+`src/founderos_atlas/config_intelligence/README.md`.
+
 ## Next Step
 
 Extract a reusable deterministic Topology Change Set contract for richer operational journeys before considering persistence or live transport.

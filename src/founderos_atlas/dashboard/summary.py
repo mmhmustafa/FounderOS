@@ -47,6 +47,7 @@ class DashboardSummary:
     recent_changes: tuple[str, ...]
     recent_activity: tuple[str, ...]
     recent_discoveries: tuple[str, ...]
+    configuration_changes: tuple[str, ...]
     actions: tuple[DashboardAction, ...]
 
 
@@ -60,6 +61,8 @@ def build_dashboard_summary(
     configs_dir: str | Path = "configs",
     history_root: str | Path = Path(".atlas") / "history",
     timeline_path: str | Path = "timeline.md",
+    config_change_report: str | Path = "config_change_report.json",
+    config_change_report_md: str | Path = "config_change_report.md",
     link_base: str | Path = ".",
 ) -> DashboardSummary:
     snapshot = _load_json(snapshot_path)
@@ -100,6 +103,8 @@ def build_dashboard_summary(
             for entry in (change_report.get("changes") or ())[:5]
         )
 
+    configuration_changes = _configuration_changes(_load_json(config_change_report))
+
     status, status_detail = _network_status(
         snapshot, change_count, severity_counts, snapshot_warnings, failed_hosts
     )
@@ -122,6 +127,7 @@ def build_dashboard_summary(
         DashboardAction("Open Snapshot", _href(Path(snapshot_path), base)),
         DashboardAction("Open History", _href(Path(history_root), base, directory=True)),
         DashboardAction("Open Timeline", _href(Path(timeline_path), base)),
+        DashboardAction("Open Config Changes", _href(Path(config_change_report_md), base)),
     )
     return DashboardSummary(
         last_discovery=last_discovery,
@@ -135,6 +141,7 @@ def build_dashboard_summary(
         recent_changes=recent_changes,
         recent_activity=recent_activity,
         recent_discoveries=recent_discoveries,
+        configuration_changes=configuration_changes,
         actions=actions,
     )
 
@@ -226,6 +233,19 @@ def _count_configurations(configs_dir: Path) -> int:
         1
         for entry in configs_dir.iterdir()
         if entry.is_dir() and (entry / "running_config.txt").is_file()
+    )
+
+
+def _configuration_changes(report: dict[str, Any] | None) -> tuple[str, ...]:
+    if report is None:
+        return ()
+    counts = report.get("severity_counts") or {}
+    devices = 1 if int(report.get("change_count") or 0) else 0
+    return (
+        f"Devices changed: {devices}",
+        f"High severity: {counts.get('high', 0)}",
+        f"Medium severity: {counts.get('medium', 0)}",
+        f"Low severity: {counts.get('low', 0)}",
     )
 
 
