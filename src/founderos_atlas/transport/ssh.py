@@ -33,6 +33,11 @@ _PERMISSION_MARKERS = (
 )
 _UNSUPPORTED_MARKERS = ("invalid input detected", "% unknown command")
 
+# Session-scoped output settings sent once after connect. These do not enter
+# configuration mode and do not change device configuration; devices that do
+# not support them are tolerated.
+_SESSION_SETUP_COMMANDS = ("terminal length 0",)
+
 
 class _Connection(Protocol):
     def send_command(self, command: str, **kwargs: Any) -> Any: ...
@@ -101,6 +106,21 @@ class SSHDeviceTransport(DeviceTransport):
             raise
         except Exception as error:
             raise _classify_connect_error(error, self._credentials.host) from error
+        self._prepare_session()
+
+    def _prepare_session(self) -> None:
+        """Disable output paging where supported; continue safely where not."""
+
+        connection = self._connection
+        if connection is None:
+            return
+        for command in _SESSION_SETUP_COMMANDS:
+            try:
+                connection.send_command(command, read_timeout=self._command_timeout)
+            except Exception:
+                # Best effort only: collection still works on devices where
+                # paging setup is unsupported (Netmiko also disables paging).
+                continue
 
     def disconnect(self) -> None:
         connection, self._connection = self._connection, None

@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### EPIC-002 / PR-019.1 - Global Live Discovery Robustness
+
+- Added Cisco IOSv/virtual-platform `show version` support (banner, revision-line, and processor-line platform patterns) and derived `os_name` (IOS/IOS-XE) from the software banner.
+- Made CDP and interface data gracefully optional: zero CDP neighbors is a valid result, unparsed interfaces produce a warning instead of a crash, and adapters can declare `optional_commands`.
+- Added deterministic identity fallback: when hostname or management IP cannot be parsed, the connection address (`management_ip_hint`) anchors `device_id`, unknown fields are recorded as `unknown`, and every fallback is captured as a warning in `DiscoveryResult.metadata`.
+- Enriched `DiscoveryParseError` with adapter name, command key, missing field, a sanitized ≤300-char output preview (secrets redacted), and parser-mismatch guidance, while remaining backward compatible.
+- Added best-effort `terminal length 0` session preparation to the SSH transport; unsupported devices continue safely, raw output is preserved exactly, and no secrets appear in logs or errors.
+- Re-parented parsed neighbors onto the resolved device identity in the Discovery Engine for consistency with identity fallback.
+- Added 14 robustness tests covering IOSv parsing, zero-neighbor discovery, platform/hostname fallback warnings, diagnostic content, preview truncation, secret redaction, collector/adapter key alignment, and tolerant session preparation.
+- Added no CML-specific, physical-device-specific, or FounderOS platform changes; transport, adapter, engine, and topology layers remain separate.
+
 ### EPIC-002 / PR-019 - Atlas Real Device Discovery over Read-Only SSH
 
 - Added a vendor-neutral `DeviceTransport` contract with `connect`, `disconnect`, `execute`, and `execute_many`, plus context-manager lifecycle.

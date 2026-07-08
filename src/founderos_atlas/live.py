@@ -25,7 +25,13 @@ def run_live_discovery(
     engine = DiscoveryEngine(resolved_adapter)
     with transport:
         raw_outputs = transport.execute_many(resolved_adapter.required_commands)
-    result = engine.discover(raw_outputs)
+    # The connected address is the deterministic identity fallback when the
+    # device output does not yield a hostname or management IP.
+    host = getattr(transport, "host", None)
+    result = engine.discover(
+        raw_outputs,
+        management_ip_hint=host if isinstance(host, str) else None,
+    )
     graph = TopologyReconciler().reconcile((result,))
     snapshot = TopologySnapshot.from_graph(
         graph,

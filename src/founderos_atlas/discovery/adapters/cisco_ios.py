@@ -1,8 +1,9 @@
-"""Deterministic Cisco IOS fixture parser with no transport behavior."""
+"""Deterministic Cisco IOS/IOS-XE parser tolerant of real-world CLI variation."""
 
 from __future__ import annotations
 
 from collections.abc import Mapping
+from ipaddress import ip_address
 import re
 
 from ..adapter import DiscoveryAdapter
@@ -14,29 +15,99 @@ SHOW_VERSION = "show version"
 SHOW_INTERFACES = "show ip interface brief"
 SHOW_NEIGHBORS = "show cdp neighbors detail"
 
+ADAPTER_NAME = "CiscoIOSAdapter"
+UNKNOWN = "unknown"
+
+_HOSTNAME_PATTERN = r"(?m)^\s*([A-Za-z0-9._-]+) uptime is "
+_VERSION_PATTERN = r"Cisco IOS(?:[ -]XE)? Software.*?Version ([^,\s]+)"
+_SERIAL_PATTERN = r"(?m)^Processor board ID\s+(\S+)"
+# Real devices report the platform in several shapes; try each in order.
+_PLATFORM_PATTERNS = (
+    # Classic hardware: "cisco WS-C2960X-48FPS-L (APM86XXX) processor ..."
+    r"(?m)^cisco\s+(\S+)\s+\([^\n]+processor",
+    # Virtual platforms: "Cisco IOSv (revision 1.0) with ... memory."
+    r"(?m)^cisco\s+([A-Za-z0-9._/-]+)\s+\(revision",
+    # Banner line: "Cisco IOS Software, IOSv Software (VIOS-...), Version ..."
+    r"Cisco IOS(?:[ -]XE)? Software,\s*([A-Za-z0-9._/-]+)\s+Software",
+)
+
 
 class CiscoIOSAdapter(DiscoveryAdapter):
     vendor = "cisco"
     platform_family = "ios"
     required_commands = (SHOW_VERSION, SHOW_INTERFACES, SHOW_NEIGHBORS)
+    optional_commands = (SHOW_INTERFACES, SHOW_NEIGHBORS)
 
-    def parse_inventory(self, raw_outputs: Mapping[str, str]) -> NetworkDevice:
+    def parse_inventory(
+        self,
+        raw_outputs: Mapping[str, str],
+        management_ip_hint: str | None = None,
+    ) -> NetworkDevice:
         text = raw_outputs.get(SHOW_VERSION, "")
-        hostname = _match(text, r"(?m)^([A-Za-z0-9._-]+) uptime is ", "hostname")
-        version = _match(text, r"Cisco IOS Software.*?Version ([^,\s]+)", "IOS version")
-        platform = _match(text, r"(?m)^cisco\s+(\S+)\s+\([^\n]+processor", "platform")
-        serial = _match(text, r"(?m)^Processor board ID\s+(\S+)", "serial number")
+        warnings: list[str] = []
+
+        hostname = _search(text, _HOSTNAME_PATTERN)
+        version = _search(text, _VERSION_PATTERN)
+        serial = _search(text, _SERIAL_PATTERN)
+        platform = next(
+            (found for pattern in _PLATFORM_PATTERNS if (found := _search(text, pattern))),
+            None,
+        )
+        if re.search(r"Cisco IOS[ -]XE Software", text, re.IGNORECASE):
+            os_name = "IOS-XE"
+        elif re.search(r"Cisco IOS Software", text, re.IGNORECASE):
+            os_name = "IOS"
+        else:
+            os_name = None
+
         management_ip = self._management_ip(raw_outputs.get(SHOW_INTERFACES, ""))
+        if management_ip is None and _valid_ip(management_ip_hint):
+            management_ip = str(management_ip_hint).strip()
+            warnings.append(
+                f"management IP was not parsed from '{SHOW_INTERFACES}'; "
+                "using the connection address as a deterministic fallback"
+            )
+        if management_ip is None:
+            raise DiscoveryParseError(
+                "device identity could not be established: no management IP "
+                "was parsed and no connection address was supplied",
+                adapter=ADAPTER_NAME,
+                command=SHOW_INTERFACES,
+                field="management_ip",
+                raw_output=raw_outputs.get(SHOW_INTERFACES, ""),
+            )
+        if hostname is None:
+            warnings.append(
+                f"hostname was not parsed from '{SHOW_VERSION}'; "
+                "using the management IP as the device identity"
+            )
+        for field_name, value in (
+            ("platform", platform),
+            ("os_name", os_name),
+            ("os_version", version),
+        ):
+            if value is None:
+                warnings.append(
+                    f"{field_name} was not parsed from '{SHOW_VERSION}'; "
+                    f"recorded as '{UNKNOWN}'"
+                )
+        if serial is None:
+            warnings.append(f"serial number was not parsed from '{SHOW_VERSION}'")
+
+        metadata: dict[str, object] = {"source_command": SHOW_VERSION}
+        if warnings:
+            metadata["parse_warnings"] = tuple(warnings)
+        identity = hostname.casefold() if hostname is not None else management_ip
         return NetworkDevice(
-            device_id=f"cisco-ios:{hostname.casefold()}",
-            hostname=hostname,
+            device_id=f"cisco-ios:{identity}",
+            hostname=hostname or management_ip,
             management_ip=management_ip,
             vendor=self.vendor,
-            platform=platform,
-            os_name="Cisco IOS",
-            os_version=version,
+            platform=platform or UNKNOWN,
+            os_name=os_name or UNKNOWN,
+            os_version=version or UNKNOWN,
             serial_number=serial,
-            metadata={"source_command": SHOW_VERSION},
+            metadata=metadata,
         )
 
     def parse_interfaces(self, raw_outputs: Mapping[str, str]) -> tuple[NetworkInterface, ...]:
@@ -61,22 +132,26 @@ class CiscoIOSAdapter(DiscoveryAdapter):
                     metadata={"source_command": SHOW_INTERFACES},
                 )
             )
-        if not interfaces:
-            raise DiscoveryParseError("show ip interface brief contained no parseable interfaces")
         return tuple(interfaces)
 
     def parse_neighbors(self, raw_outputs: Mapping[str, str]) -> tuple[NetworkNeighbor, ...]:
         text = raw_outputs.get(SHOW_NEIGHBORS, "")
-        local_device_id = self.parse_inventory(raw_outputs).device_id
+        blocks = [
+            block
+            for block in re.split(r"(?m)^-{20,}\s*$", text)
+            if "Device ID:" in block
+        ]
+        if not blocks:
+            # A device with CDP disabled or no neighbors is valid, not an error.
+            return ()
+        local_device_id = self._safe_local_device_id(raw_outputs)
         neighbors: list[NetworkNeighbor] = []
-        blocks = re.split(r"(?m)^-{20,}\s*$", text)
         for block in blocks:
-            if "Device ID:" not in block:
+            remote_hostname = _search(block, r"(?m)^Device ID:\s*(\S+)")
+            local_interface = _search(block, r"(?m)^Interface:\s*([^,]+),")
+            if remote_hostname is None or local_interface is None:
+                # Skip malformed blocks rather than failing the whole discovery.
                 continue
-            remote_hostname = _match(block, r"(?m)^Device ID:\s*(\S+)", "CDP Device ID")
-            local_interface = _match(
-                block, r"(?m)^Interface:\s*([^,]+),", "CDP local interface"
-            )
             remote_interface_match = re.search(
                 r"Port ID \(outgoing port\):\s*([^\r\n]+)", block
             )
@@ -96,23 +171,41 @@ class CiscoIOSAdapter(DiscoveryAdapter):
                     },
                 )
             )
-        if not neighbors:
-            raise DiscoveryParseError("show cdp neighbors detail contained no parseable neighbors")
         return tuple(neighbors)
 
-    def _management_ip(self, text: str) -> str:
+    def _safe_local_device_id(self, raw_outputs: Mapping[str, str]) -> str:
+        try:
+            return self.parse_inventory(raw_outputs).device_id
+        except DiscoveryParseError:
+            # The engine re-parents neighbors onto the resolved device identity.
+            return f"cisco-ios:{UNKNOWN}"
+
+    def _management_ip(self, text: str) -> str | None:
         interfaces = self.parse_interfaces({SHOW_INTERFACES: text})
+        assigned = [item for item in interfaces if item.ip_address is not None]
         preferred = [
-            item for item in interfaces
-            if item.ip_address is not None and item.status == "up" and item.protocol_status == "up"
+            item for item in assigned
+            if item.status == "up" and item.protocol_status == "up"
         ]
-        if not preferred:
-            raise DiscoveryParseError("no active management IP found in show ip interface brief")
-        return preferred[0].ip_address or ""
+        for candidates in (preferred, assigned):
+            if candidates:
+                return candidates[0].ip_address
+        return None
 
 
-def _match(text: str, pattern: str, field_name: str) -> str:
+def _search(text: str, pattern: str) -> str | None:
     match = re.search(pattern, text, re.IGNORECASE | re.DOTALL)
     if not match:
-        raise DiscoveryParseError(f"show output is missing required {field_name}")
-    return match.group(1).strip()
+        return None
+    value = match.group(1).strip()
+    return value or None
+
+
+def _valid_ip(value: str | None) -> bool:
+    if not isinstance(value, str) or not value.strip():
+        return False
+    try:
+        ip_address(value.strip())
+    except ValueError:
+        return False
+    return True

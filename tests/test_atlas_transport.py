@@ -104,7 +104,8 @@ class ReadOnlyPolicyTests(unittest.TestCase):
         transport.connect()
         with self.assertRaises(ReadOnlyViolationError):
             transport.execute("configure terminal")
-        self.assertEqual([], connection.commands)
+        # Only best-effort session preparation reached the device.
+        self.assertEqual(["terminal length 0"], connection.commands)
 
 
 class CredentialSafetyTests(unittest.TestCase):
@@ -172,7 +173,7 @@ class SSHDeviceTransportTests(unittest.TestCase):
         with transport:
             collected = transport.execute_many(commands)
         self.assertEqual(list(commands), list(collected))
-        self.assertEqual(list(commands), connection.commands)
+        self.assertEqual(["terminal length 0", *commands], connection.commands)
         self.assertTrue(connection.disconnected)
 
     def test_execute_before_connect_is_rejected(self) -> None:
@@ -288,6 +289,7 @@ class LiveDiscoveryCompositionTests(unittest.TestCase):
         self.assertTrue(snapshot.metadata["read_only"])
         self.assertEqual(
             [
+                "terminal length 0",
                 "show version",
                 "show ip interface brief",
                 "show cdp neighbors detail",
