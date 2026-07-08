@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
+import json
 from pathlib import Path
+import re
 import socket
 import tempfile
 import unittest
@@ -19,17 +21,21 @@ from founderos_atlas.transport import (
 )
 from founderos_runtime.cli import main
 
+from tests.test_atlas_live_robustness import iosv_outputs
 from tests.test_atlas_transport import PASSWORD, load_fixture_outputs
 
 
 class FixtureTransport(DeviceTransport):
     """Serves bundled fixture outputs; records lifecycle for assertions."""
 
+    outputs_override: dict[str, str] | None = None
+
     def __init__(self, credentials: DeviceCredentials) -> None:
         self.credentials = credentials
         self.connected = False
         self.disconnected = False
-        self.outputs = load_fixture_outputs()
+        self.outputs = dict(self.outputs_override or load_fixture_outputs())
+        self.host = credentials.host
 
     def connect(self) -> None:
         self.connected = True
@@ -78,6 +84,7 @@ class AtlasDiscoverCliTests(unittest.TestCase):
         stdout, stderr = StringIO(), StringIO()
         with tempfile.TemporaryDirectory() as workdir:
             topology_path = Path(workdir) / "atlas_topology.html"
+            snapshot_path = Path(workdir) / "topology_snapshot.json"
             brief_path = Path(workdir) / "morning_brief.md"
             with redirect_stdout(stdout), redirect_stderr(stderr):
                 code = main(
@@ -86,16 +93,17 @@ class AtlasDiscoverCliTests(unittest.TestCase):
                     atlas_input_reader=input_reader,
                     atlas_password_reader=password_reader,
                     atlas_topology_output=topology_path,
+                    atlas_snapshot_output=snapshot_path,
                     atlas_morning_brief_output=brief_path,
                     atlas_browser_opener=opened.append,
                 )
             artifacts = {
-                "topology": topology_path.read_text(encoding="utf-8")
-                if topology_path.exists()
-                else None,
-                "brief": brief_path.read_text(encoding="utf-8")
-                if brief_path.exists()
-                else None,
+                name: path.read_text(encoding="utf-8") if path.exists() else None
+                for name, path in (
+                    ("topology", topology_path),
+                    ("snapshot", snapshot_path),
+                    ("brief", brief_path),
+                )
             }
         return code, stdout.getvalue(), stderr.getvalue(), prompts, opened, artifacts
 
@@ -123,17 +131,28 @@ class AtlasDiscoverCliTests(unittest.TestCase):
         self.assertTrue(transports[0].connected)
         self.assertTrue(transports[0].disconnected)
         self.assertIn("Atlas Live Discovery", output)
-        self.assertIn("Device: access-sw-01", output)
+        self.assertIn("Device discovered.", output)
+        self.assertIn("Hostname: access-sw-01", output)
         self.assertIn("Vendor: Cisco", output)
+        self.assertIn("Platform: WS-C2960X-48FPS-L", output)
+        self.assertIn("Management IP: 10.0.0.10", output)
+        self.assertIn("Interfaces: 4", output)
+        self.assertIn("Neighbors: 2", output)
+        self.assertNotIn("No neighbors discovered yet", output)
         self.assertIn("Snapshot ID: atlas-topology:", output)
         self.assertIn("Morning Brief", output)
         self.assertIn("Topology viewer saved:", output)
+        self.assertIn("Topology snapshot saved:", output)
         self.assertIn("Morning brief saved:", output)
         self.assertIn("Live discovery completed successfully.", output)
         self.assertEqual(1, len(opened))
         self.assertTrue(opened[0].startswith("file://"))
         self.assertIn("access-sw-01", artifacts["topology"] or "")
         self.assertIn("## Network Status", artifacts["brief"] or "")
+        snapshot = json.loads(artifacts["snapshot"] or "{}")
+        self.assertEqual(1, snapshot["device_count"])
+        self.assertEqual("access-sw-01", snapshot["devices"][0]["hostname"])
+        self.assertTrue(snapshot["snapshot_id"].startswith("atlas-topology:"))
 
     def test_password_never_appears_in_any_output(self) -> None:
         code, output, error, _, _, artifacts = self.invoke(
@@ -156,6 +175,7 @@ class AtlasDiscoverCliTests(unittest.TestCase):
         self.assertNotIn(PASSWORD, error)
         self.assertEqual([], opened)
         self.assertIsNone(artifacts["topology"])
+        self.assertIsNone(artifacts["snapshot"])
         self.assertIsNone(artifacts["brief"])
 
     def test_connection_timeout_is_reported_cleanly(self) -> None:
@@ -167,6 +187,46 @@ class AtlasDiscoverCliTests(unittest.TestCase):
         code, output, error, _, _, _ = self.invoke(transport_factory=factory)
         self.assertEqual(1, code)
         self.assertEqual(f"Error: {message}\n", error)
+
+    def test_zero_neighbor_discovery_still_generates_all_artifacts(self) -> None:
+        class LonelyDeviceTransport(FixtureTransport):
+            outputs_override = iosv_outputs(cdp="% CDP is not enabled\n")
+
+        with (
+            patch.object(socket, "create_connection", side_effect=AssertionError("network used")),
+            patch.object(urllib.request, "urlopen", side_effect=AssertionError("network used")),
+        ):
+            code, output, error, _, opened, artifacts = self.invoke(
+                transport_factory=LonelyDeviceTransport
+            )
+
+        self.assertEqual(0, code, error)
+        self.assertIn("Hostname: R1", output)
+        self.assertIn("Platform: IOSv", output)
+        self.assertIn("Neighbors: 0", output)
+        self.assertIn("No neighbors discovered yet", output)
+        self.assertIn("Live discovery completed successfully.", output)
+        self.assertEqual(1, len(opened))
+        snapshot = json.loads(artifacts["snapshot"] or "{}")
+        self.assertEqual(1, snapshot["device_count"])
+        self.assertEqual(0, snapshot["edge_count"])
+        self.assertEqual([], snapshot["edges"])
+        self.assertIn("R1", artifacts["topology"] or "")
+        self.assertIn("## Network Status", artifacts["brief"] or "")
+
+    def test_discover_output_is_deterministic(self) -> None:
+        runs = []
+        for _ in range(2):
+            code, output, error, _, _, artifacts = self.invoke(
+                transport_factory=FixtureTransport
+            )
+            self.assertEqual(0, code, error)
+            # The temporary output directory differs per run; artifact paths
+            # are the only permitted variance.
+            normalized = re.sub(r"saved: \S+", "saved: <path>", output)
+            runs.append((normalized, artifacts))
+        self.assertEqual(runs[0][0], runs[1][0])
+        self.assertEqual(runs[0][1], runs[1][1])
 
     def test_blank_answers_are_rejected_before_connecting(self) -> None:
         def factory(credentials: DeviceCredentials) -> FixtureTransport:

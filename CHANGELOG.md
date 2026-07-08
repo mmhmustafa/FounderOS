@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### EPIC-002 / PR-020 - Live Discovery Output Pipeline
+
+- Completed the `founderos atlas discover` product pipeline: SSH collection → DiscoveryEngine → TopologyGraph → TopologySnapshot → interactive HTML topology → Morning Brief, reusing every existing component with no business logic in the CLI.
+- Added `topology_snapshot.json` delivery via the existing `TopologySnapshotExporter` alongside `atlas_topology.html` and `morning_brief.md`.
+- Expanded the CLI report with hostname, platform, management IP, interface count, neighbor count, and all three artifact paths.
+- Made zero-neighbor discovery a first-class outcome: prints "No neighbors discovered yet" and still delivers a valid one-device topology, snapshot, and brief.
+- Documented the Live Discovery Workflow, expected generated files, CML/physical device equivalence, and troubleshooting in `apps/atlas/README.md`.
+- Added mocked-transport tests for snapshot/HTML/brief generation, zero-neighbor success, deterministic output, and network isolation.
+- Added no multi-hop discovery, SNMP, NETCONF, GUI, persistence, database, AI, or configuration changes.
+
 ### EPIC-002 / PR-019.1 - Global Live Discovery Robustness
 
 - Added Cisco IOSv/virtual-platform `show version` support (banner, revision-line, and processor-line platform patterns) and derived `os_name` (IOS/IOS-XE) from the software banner.

@@ -11,7 +11,7 @@ from founderos_atlas.demo import run_atlas_discovery_demo
 from founderos_atlas.discovery import AtlasDiscoveryError, DiscoveryResult
 from founderos_atlas.journeys import MorningBriefJourney, MorningBriefJourneyResult
 from founderos_atlas.live import run_live_discovery
-from founderos_atlas.topology import TopologyGraph, TopologySnapshot
+from founderos_atlas.topology import TopologyGraph, TopologySnapshot, TopologySnapshotExporter
 from founderos_atlas.transport import (
     AtlasTransportError,
     DeviceCredentials,
@@ -126,6 +126,7 @@ def atlas_discover_command(
     password_reader: PromptReader | None = None,
     journey_runner: MorningBriefRunner | None = None,
     topology_output: str | Path = "atlas_topology.html",
+    snapshot_output: str | Path = "topology_snapshot.json",
     brief_output: str | Path = "morning_brief.md",
     browser_opener: BrowserOpener | None = None,
 ) -> tuple[int, str]:
@@ -146,6 +147,10 @@ def atlas_discover_command(
         html = TopologyRenderer(snapshot).render()
         topology_destination = Path(topology_output).resolve()
         topology_destination.write_text(html, encoding="utf-8")
+        snapshot_destination = Path(snapshot_output).resolve()
+        snapshot_destination.write_text(
+            TopologySnapshotExporter(snapshot).to_json() + "\n", encoding="utf-8"
+        )
         run_brief = journey_runner or MorningBriefJourney().run
         brief = run_brief(snapshot, None)
         if not isinstance(brief, MorningBriefJourneyResult):
@@ -164,6 +169,7 @@ def atlas_discover_command(
         snapshot,
         brief,
         str(topology_destination),
+        str(snapshot_destination),
         str(brief_destination),
     )
 

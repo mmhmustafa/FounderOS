@@ -50,6 +50,7 @@ def main(
     atlas_transport_factory: TransportFactory | None = None,
     atlas_input_reader: PromptReader | None = None,
     atlas_password_reader: PromptReader | None = None,
+    atlas_snapshot_output: str | Path = "topology_snapshot.json",
 ) -> int:
     arguments = list(sys.argv[1:] if argv is None else argv)
     if not arguments:
@@ -92,6 +93,7 @@ def main(
                 password_reader=atlas_password_reader,
                 journey_runner=atlas_morning_brief_runner,
                 topology_output=atlas_topology_output,
+                snapshot_output=atlas_snapshot_output,
                 brief_output=atlas_morning_brief_output,
                 browser_opener=atlas_browser_opener,
             )

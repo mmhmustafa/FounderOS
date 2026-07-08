@@ -70,6 +70,67 @@ The command loads deterministic fixture snapshots, then invokes the declared uti
 
 The Journey performs no AI call, network access, Project state transition, persistence, scheduling, email, notification, or GUI operation. Markdown file delivery belongs to the CLI, not the Journey.
 
+## Live Discovery Workflow
+
+Discover a real, reachable Cisco IOS/IOS-XE device over read-only SSH:
+
+```powershell
+pip install founderos-runtime[ssh]
+founderos atlas discover
+```
+
+The command prompts for the management IP, username, and password (hidden,
+never stored or logged), then runs the full product pipeline:
+
+```
+SSH collection (show version / show ip interface brief / show cdp neighbors detail)
+→ DiscoveryEngine (existing parsers, unchanged)
+→ TopologyGraph reconciliation
+→ TopologySnapshot
+→ Interactive HTML topology (opened in the default browser)
+→ Morning Brief Journey
+```
+
+The transport is read-only by architecture: only `show` commands pass the
+local allowlist, configuration mode is never entered, and `terminal length 0`
+session preparation is best-effort (devices without it still work).
+
+### Expected files generated
+
+All files are written to the current directory:
+
+| File | Content |
+| --- | --- |
+| `atlas_topology.html` | Interactive topology viewer (pan, zoom, search) |
+| `topology_snapshot.json` | Canonical content-addressed `TopologySnapshot` |
+| `morning_brief.md` | Evaluated operational Morning Brief |
+
+A device with zero CDP neighbors is a valid result: the CLI prints
+`No neighbors discovered yet` and still produces a one-device topology,
+snapshot, and brief.
+
+### CML / physical device note
+
+Atlas treats Cisco Modeling Labs, EVE-NG, GNS3, and physical hardware
+identically: each is just a reachable SSH endpoint. No simulator API is
+called and no simulator-specific logic exists. Point `founderos atlas
+discover` at any management IP that answers SSH with Cisco IOS/IOS-XE
+credentials — including CML node management addresses.
+
+### Troubleshooting
+
+| Symptom | Likely cause / fix |
+| --- | --- |
+| `Netmiko is required for live SSH discovery` | Install the transport extra: `pip install founderos-runtime[ssh]` |
+| `Authentication failed for <ip>` | Verify the username/password; check the VTY login method (`login local` vs AAA) |
+| `Connection to <ip> timed out` | Device unreachable: verify the management IP, routing/VPN path, and that SSH is enabled (`ip ssh version 2`, `transport input ssh`) |
+| `SSH is unavailable on <ip>` | SSH refused: the device may only allow telnet, or a firewall blocks port 22 |
+| `Device <ip> denied 'show ...'` | The account privilege level cannot run the command; use a level with `show` access |
+| `Device <ip> did not recognize 'show ...'` | Probably not a Cisco IOS/IOS-XE device; other platforms need their own adapter |
+| Parse error mentioning `adapter: CiscoIOSAdapter` | The device output shape is new to the parser. The error includes the command, missing field, and a sanitized output preview — capture the full command output and extend the adapter |
+| `No neighbors discovered yet` | Not an error: CDP is disabled or the device genuinely has no CDP neighbors (`show cdp` to confirm) |
+| Unknown platform/os fields with warnings | Identity fallback engaged; discovery still completes and warnings list what could not be parsed |
+
 ## Next Step
 
 Extract a reusable deterministic Topology Change Set contract for richer operational journeys before considering persistence or live transport.

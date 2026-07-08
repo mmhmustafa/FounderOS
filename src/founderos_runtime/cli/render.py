@@ -119,23 +119,30 @@ def render_atlas_discover(
     snapshot: TopologySnapshot,
     brief_result: MorningBriefJourneyResult,
     topology_path: str,
+    snapshot_path: str,
     brief_path: str,
 ) -> str:
     device = result.device
     summary = graph.summary()
     brief = brief_result.brief
+    neighbor_lines = [f"Neighbors: {len(result.neighbors)}"]
+    if not result.neighbors:
+        neighbor_lines.append("No neighbors discovered yet")
     return "\n".join(
         (
             "=" * 48,
             "Atlas Live Discovery",
             "=" * 48,
             "",
-            f"Device: {device.hostname} ({device.management_ip})",
+            "Device discovered.",
+            "",
+            f"Hostname: {device.hostname}",
             f"Vendor: {device.vendor.title()}",
             f"Platform: {device.platform}",
             f"Operating system: {device.os_name} {device.os_version}",
+            f"Management IP: {device.management_ip}",
             f"Interfaces: {len(result.interfaces)}",
-            f"Neighbors: {len(result.neighbors)}",
+            *neighbor_lines,
             "",
             "Topology",
             f"Devices: {summary['device_count']}",
@@ -151,6 +158,7 @@ def render_atlas_discover(
             f"Quality score: {brief_result.evaluation.score:.2f}",
             "",
             f"Topology viewer saved: {topology_path}",
+            f"Topology snapshot saved: {snapshot_path}",
             f"Morning brief saved: {brief_path}",
             "Browser launch requested.",
             "",
