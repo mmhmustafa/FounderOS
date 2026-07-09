@@ -34,6 +34,7 @@ class DashboardRenderer:
             .replace("__ACTIVITY__", self._activity())
             .replace("__DISCOVERIES__", self._discoveries())
             .replace("__CONFIG_CHANGES__", self._configuration_changes())
+            .replace("__INCIDENT__", self._incident())
             .replace("__ACTIONS__", self._actions())
         )
 
@@ -88,6 +89,12 @@ class DashboardRenderer:
                 "          <li>No configuration change report yet. "
                 "Run: founderos atlas config-diff</li>"
             )
+        return "\n".join(f"          <li>{escape(entry)}</li>" for entry in entries)
+
+    def _incident(self) -> str:
+        entries = self._summary.incident_investigation
+        if not entries:
+            return "          <li>No incident investigation yet.</li>"
         return "\n".join(f"          <li>{escape(entry)}</li>" for entry in entries)
 
     def _actions(self) -> str:

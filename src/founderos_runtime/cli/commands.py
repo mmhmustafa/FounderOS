@@ -35,6 +35,12 @@ from founderos_atlas.history import (
     HistoryRepository,
     generate_timeline,
 )
+from founderos_atlas.incidents import (
+    IncidentArtifacts,
+    IncidentInvestigator,
+    render_incident_report_json,
+    render_incident_report_markdown,
+)
 from founderos_atlas.demo import run_atlas_discovery_demo
 from founderos_atlas.discovery import AtlasDiscoveryError, DiscoveryResult, MultiHopConfig
 from founderos_atlas.journeys import MorningBriefJourney, MorningBriefJourneyResult
@@ -61,6 +67,7 @@ from .render import (
     render_atlas_dashboard,
     render_atlas_discover,
     render_atlas_history,
+    render_atlas_investigate,
     render_atlas_timeline,
     render_atlas_discovery,
     render_atlas_topology,
@@ -336,6 +343,56 @@ def _read_config_file(path: str | Path) -> str:
         raise CliError(f"Could not read configuration file {resolved}: {error}") from error
 
 
+def atlas_investigate_command(
+    *,
+    input_reader: PromptReader | None = None,
+    clock: Clock | None = None,
+    snapshot_path: str | Path = "topology_snapshot.json",
+    change_report_json: str | Path = "change_report.json",
+    config_change_report: str | Path = "config_change_report.json",
+    brief_path: str | Path = "morning_brief.md",
+    configs_dir: str | Path = "configs",
+    history_root: str | Path = Path(".atlas") / "history",
+    json_output: str | Path = "incident_report.json",
+    markdown_output: str | Path = "incident_report.md",
+) -> tuple[int, str]:
+    read_input = input_reader or input
+    read_clock = clock or (lambda: datetime.now(timezone.utc))
+    try:
+        title = read_input("Incident title: ").strip()
+        description = read_input("Incident description: ").strip()
+    except (EOFError, KeyboardInterrupt) as error:
+        raise CliError("Investigation was cancelled") from error
+    if not title:
+        raise CliError("An incident title is required")
+    try:
+        artifacts = IncidentArtifacts.load(
+            snapshot_path=snapshot_path,
+            change_report_json=change_report_json,
+            config_change_report=config_change_report,
+            brief_path=brief_path,
+            configs_dir=configs_dir,
+            history_root=history_root,
+        )
+        report = IncidentInvestigator().investigate(
+            title,
+            description,
+            artifacts,
+            generated_at=read_clock().isoformat(timespec="seconds"),
+        )
+        json_destination = Path(json_output).resolve()
+        json_destination.write_text(render_incident_report_json(report), encoding="utf-8")
+        markdown_destination = Path(markdown_output).resolve()
+        markdown_destination.write_text(
+            render_incident_report_markdown(report), encoding="utf-8"
+        )
+    except (OSError, TypeError, ValueError) as error:
+        raise CliError(f"Atlas incident investigation failed: {error}") from error
+    return 0, render_atlas_investigate(
+        report, str(json_destination), str(markdown_destination)
+    )
+
+
 def atlas_history_command(
     *, history_root: str | Path = Path(".atlas") / "history"
 ) -> tuple[int, str]:
@@ -457,6 +514,8 @@ def atlas_dashboard_command(
     timeline_path: str | Path = "timeline.md",
     config_change_report: str | Path = "config_change_report.json",
     config_change_report_md: str | Path = "config_change_report.md",
+    incident_report: str | Path = "incident_report.json",
+    incident_report_md: str | Path = "incident_report.md",
     browser_opener: BrowserOpener | None = None,
 ) -> tuple[int, str]:
     try:
@@ -472,6 +531,8 @@ def atlas_dashboard_command(
             timeline_path=timeline_path,
             config_change_report=config_change_report,
             config_change_report_md=config_change_report_md,
+            incident_report=incident_report,
+            incident_report_md=incident_report_md,
             link_base=destination.parent,
         )
         destination.write_text(DashboardRenderer(summary).render(), encoding="utf-8")
@@ -505,6 +566,8 @@ def _regenerate_dashboard(
             timeline_path=destination.parent / "timeline.md",
             config_change_report=destination.parent / "config_change_report.json",
             config_change_report_md=destination.parent / "config_change_report.md",
+            incident_report=destination.parent / "incident_report.json",
+            incident_report_md=destination.parent / "incident_report.md",
             link_base=destination.parent,
         )
         destination.write_text(DashboardRenderer(summary).render(), encoding="utf-8")

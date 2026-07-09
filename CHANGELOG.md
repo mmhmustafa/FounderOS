@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### EPIC-002 / PR-027 - Atlas Incident Investigation Journey Foundation
+
+- Added `founderos_atlas/incidents/`: a deterministic, evidence-based incident investigation over existing Atlas artifacts — not AI and not root-cause automation.
+- Affected devices are matched from the incident text by hostname, canonical-identity alias, and management IP; when nothing specific matches, the whole known network is treated as in scope with a recorded limitation.
+- Evidence assembly from the topology snapshot (device facts and logical links), the change report, the configuration change report, collected configurations, and history depth — every statement names its source artifact.
+- Honesty rules: missing `change_report.json` states exactly "Topology change evidence is not available."; missing `config_change_report.json` states "Configuration change evidence is not available."; facts are never invented, and limitations always record that no live device access occurred.
+- Investigation steps come from a fixed base sequence plus keyword tables (VLAN numbers, internet/gateway, slowness, lost/down/unreachable); recommendations derive from steps and detected changes, deduplicated deterministically.
+- Deterministic confidence: low without a snapshot; high when named devices matched and both change reports exist; medium otherwise. Incident IDs are content-addressed (`INC-…`).
+- Added `founderos atlas investigate` prompting for title and description, writing `incident_report.md` and `incident_report.json`, and printing the investigation summary.
+- Dashboard shows a Recent Incident Investigation card (title, generated time, confidence) plus an Open Incident Report quick action when a report exists.
+- Added 17 tests covering topology-only reports, config-report evidence, missing artifacts, hostname/alias/IP device detection, spec-example keyword steps, deterministic reports and IDs, fact non-invention, JSON and Markdown generation, no-AI source scan, no network access, the CLI flow, title validation, help listing, and dashboard integration.
+- Added no AI, live troubleshooting commands, packet capture, remediation, config push, ticketing integration, or database.
+
 ### EPIC-002 / PR-026 - Atlas Configuration Intelligence Foundation
 
 - Added `founderos_atlas/config_intelligence/`: classified, secret-masked comparison of two device configurations — section-aware diffing (top-level sections plus indented children; global one-liners are single-line sections), not a raw line diff.

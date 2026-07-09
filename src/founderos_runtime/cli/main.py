@@ -22,6 +22,7 @@ from .commands import (
     atlas_dashboard_command,
     atlas_discover_command,
     atlas_history_command,
+    atlas_investigate_command,
     atlas_timeline_command,
     atlas_discovery_command,
     atlas_morning_brief_command,
@@ -65,6 +66,8 @@ def main(
     atlas_clock=None,
     atlas_config_diff_json_output: str | Path = "config_change_report.json",
     atlas_config_diff_markdown_output: str | Path = "config_change_report.md",
+    atlas_incident_json_output: str | Path = "incident_report.json",
+    atlas_incident_markdown_output: str | Path = "incident_report.md",
 ) -> int:
     arguments = list(sys.argv[1:] if argv is None else argv)
     if not arguments:
@@ -146,6 +149,23 @@ def main(
         except CliError as error:
             print(render_error(str(error)), file=sys.stderr)
             return 1
+    elif arguments == ["atlas", "investigate"]:
+        try:
+            code, output = atlas_investigate_command(
+                input_reader=atlas_input_reader,
+                clock=atlas_clock,
+                snapshot_path=atlas_snapshot_output,
+                change_report_json=atlas_compare_json_output,
+                config_change_report=atlas_config_diff_json_output,
+                brief_path=atlas_morning_brief_output,
+                configs_dir=atlas_config_output_dir,
+                history_root=atlas_history_root,
+                json_output=atlas_incident_json_output,
+                markdown_output=atlas_incident_markdown_output,
+            )
+        except CliError as error:
+            print(render_error(str(error)), file=sys.stderr)
+            return 1
     elif arguments == ["atlas", "history"]:
         try:
             code, output = atlas_history_command(history_root=atlas_history_root)
@@ -175,6 +195,8 @@ def main(
                 timeline_path=atlas_timeline_output,
                 config_change_report=atlas_config_diff_json_output,
                 config_change_report_md=atlas_config_diff_markdown_output,
+                incident_report=atlas_incident_json_output,
+                incident_report_md=atlas_incident_markdown_output,
                 browser_opener=atlas_browser_opener,
             )
         except CliError as error:

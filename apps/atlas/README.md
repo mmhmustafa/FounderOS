@@ -258,6 +258,29 @@ containing `password`, `secret`, `key`, `community`, `token`, or
 shows a Configuration Changes card when a report exists. See
 `src/founderos_atlas/config_intelligence/README.md`.
 
+## Incident Investigation
+
+Structure an incident investigation from evidence Atlas already holds —
+deterministic, honest, and never inventive:
+
+```powershell
+founderos atlas investigate
+Incident title: VLAN 10 outage
+Incident description: VLAN 10 cannot access internet via R1
+```
+
+Devices named in the description (hostnames, identity aliases, or
+management IPs) are matched against the current topology; topology links,
+change-report entries, and configuration-change entries touching those
+devices become sourced evidence; keyword-driven investigation steps (VLAN,
+gateway, slowness, connectivity) become recommendations. Missing artifacts
+are stated exactly ("Topology change evidence is not available." /
+"Configuration change evidence is not available.") and confidence is
+scored deterministically (low / medium / high). Writes
+`incident_report.md` and `incident_report.json`; the dashboard shows a
+Recent Incident Investigation card with a link. See
+`src/founderos_atlas/incidents/README.md`.
+
 ## Next Step
 
 Extract a reusable deterministic Topology Change Set contract for richer operational journeys before considering persistence or live transport.

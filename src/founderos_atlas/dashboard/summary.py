@@ -48,6 +48,7 @@ class DashboardSummary:
     recent_activity: tuple[str, ...]
     recent_discoveries: tuple[str, ...]
     configuration_changes: tuple[str, ...]
+    incident_investigation: tuple[str, ...]
     actions: tuple[DashboardAction, ...]
 
 
@@ -63,6 +64,8 @@ def build_dashboard_summary(
     timeline_path: str | Path = "timeline.md",
     config_change_report: str | Path = "config_change_report.json",
     config_change_report_md: str | Path = "config_change_report.md",
+    incident_report: str | Path = "incident_report.json",
+    incident_report_md: str | Path = "incident_report.md",
     link_base: str | Path = ".",
 ) -> DashboardSummary:
     snapshot = _load_json(snapshot_path)
@@ -104,6 +107,7 @@ def build_dashboard_summary(
         )
 
     configuration_changes = _configuration_changes(_load_json(config_change_report))
+    incident_investigation = _incident_investigation(_load_json(incident_report))
 
     status, status_detail = _network_status(
         snapshot, change_count, severity_counts, snapshot_warnings, failed_hosts
@@ -128,6 +132,7 @@ def build_dashboard_summary(
         DashboardAction("Open History", _href(Path(history_root), base, directory=True)),
         DashboardAction("Open Timeline", _href(Path(timeline_path), base)),
         DashboardAction("Open Config Changes", _href(Path(config_change_report_md), base)),
+        DashboardAction("Open Incident Report", _href(Path(incident_report_md), base)),
     )
     return DashboardSummary(
         last_discovery=last_discovery,
@@ -142,6 +147,7 @@ def build_dashboard_summary(
         recent_activity=recent_activity,
         recent_discoveries=recent_discoveries,
         configuration_changes=configuration_changes,
+        incident_investigation=incident_investigation,
         actions=actions,
     )
 
@@ -246,6 +252,16 @@ def _configuration_changes(report: dict[str, Any] | None) -> tuple[str, ...]:
         f"High severity: {counts.get('high', 0)}",
         f"Medium severity: {counts.get('medium', 0)}",
         f"Low severity: {counts.get('low', 0)}",
+    )
+
+
+def _incident_investigation(report: dict[str, Any] | None) -> tuple[str, ...]:
+    if report is None:
+        return ()
+    return (
+        f"Title: {report.get('title', 'unknown')}",
+        f"Generated: {_format_timestamp(str(report.get('generated_at', 'unrecorded')))}",
+        f"Confidence: {str(report.get('confidence', 'unknown')).title()}",
     )
 
 

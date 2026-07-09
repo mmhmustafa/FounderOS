@@ -30,6 +30,8 @@ deliverables/*
 /config_change_report.json
 /config_change_report.md
 /dashboard.html
+/incident_report.json
+/incident_report.md
 /timeline.md
 
 # Atlas discovery history (local network memory; contains configs)

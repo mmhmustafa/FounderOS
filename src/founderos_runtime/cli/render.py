@@ -12,6 +12,7 @@ from founderos_atlas.config_intelligence import SEVERITY_ORDER as CONFIG_SEVERIT
 from founderos_atlas.dashboard import DashboardSummary
 from founderos_atlas.discovery import DiscoveryResult, MultiHopDiscoveryReport
 from founderos_atlas.history import HistoryIndex
+from founderos_atlas.incidents import IncidentReport
 from founderos_atlas.journeys import MorningBriefJourneyResult
 from founderos_atlas.topology import TopologyGraph, TopologySnapshot
 from founderos_runtime.journey import JourneyResult
@@ -39,6 +40,7 @@ def render_help() -> str:
             "  founderos atlas timeline",
             "  founderos atlas config-diff <previous> <current>",
             "  founderos atlas config-diff --latest <hostname>",
+            "  founderos atlas investigate",
             "  founderos help",
             "",
             "Commands:",
@@ -54,6 +56,7 @@ def render_help() -> str:
             "  atlas history   List every preserved discovery.",
             "  atlas timeline  Generate the network timeline (timeline.md).",
             "  atlas config-diff  Compare two device configurations into a classified report.",
+            "  atlas investigate  Structure an incident investigation from Atlas evidence.",
             "  help            Show this help.",
         )
     )
@@ -266,6 +269,44 @@ def render_atlas_config_diff(
             f"Report saved: {markdown_path}",
             "",
             "Configuration comparison completed successfully.",
+            "=" * 48,
+        )
+    )
+
+
+def render_atlas_investigate(
+    report: IncidentReport, json_path: str, markdown_path: str
+) -> str:
+    def block(values: tuple[str, ...], empty: str) -> tuple[str, ...]:
+        return tuple(f"- {value}" for value in values) if values else (f"- {empty}",)
+
+    return "\n".join(
+        (
+            "=" * 48,
+            "Atlas Incident Investigation",
+            "=" * 48,
+            "",
+            f"Incident: {report.title}",
+            f"Incident ID: {report.incident_id}",
+            "",
+            "Relevant Devices:",
+            *block(report.affected_devices, "No devices matched the incident description."),
+            "",
+            "Evidence:",
+            *block(tuple(item.statement for item in report.evidence), "No evidence available."),
+            "",
+            "Recommended Next Steps:",
+            *(
+                f"{index}. {step}"
+                for index, step in enumerate(report.investigation_steps, start=1)
+            ),
+            "",
+            f"Confidence: {report.confidence.title()}",
+            "",
+            f"Incident report saved: {json_path}",
+            f"Incident report saved: {markdown_path}",
+            "",
+            "Investigation completed.",
             "=" * 48,
         )
     )

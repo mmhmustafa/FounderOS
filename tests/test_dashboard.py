@@ -62,6 +62,8 @@ def summary_kwargs(workdir: Path) -> dict:
         "timeline_path": workdir / "timeline.md",
         "config_change_report": workdir / "config_change_report.json",
         "config_change_report_md": workdir / "config_change_report.md",
+        "incident_report": workdir / "incident_report.json",
+        "incident_report_md": workdir / "incident_report.md",
         "link_base": workdir,
     }
 
@@ -228,6 +230,8 @@ class DashboardCliTests(unittest.TestCase):
                 atlas_timeline_output=workdir / "timeline.md",
                 atlas_config_diff_json_output=workdir / "config_change_report.json",
                 atlas_config_diff_markdown_output=workdir / "config_change_report.md",
+                atlas_incident_json_output=workdir / "incident_report.json",
+                atlas_incident_markdown_output=workdir / "incident_report.md",
                 atlas_browser_opener=opened.append,
             )
         return code, stdout.getvalue(), stderr.getvalue(), opened
