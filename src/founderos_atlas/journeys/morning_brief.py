@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 import json
 from pathlib import Path
@@ -41,6 +42,7 @@ class MorningBriefJourney:
         previous_snapshot: TopologySnapshot | None = None,
         *,
         generated_at: str | None = None,
+        run_context: Mapping[str, Any] | None = None,
     ) -> MorningBriefJourneyResult:
         if not isinstance(current_snapshot, TopologySnapshot):
             raise TypeError("current_snapshot must be a TopologySnapshot")
@@ -58,6 +60,7 @@ class MorningBriefJourney:
                 current_snapshot,
                 previous_snapshot,
                 generated_at=generated_at,
+                run_context=run_context,
             )
             return {"morning_brief": brief.to_dict()}
 
@@ -94,6 +97,7 @@ def build_morning_brief(
     previous: TopologySnapshot | None = None,
     *,
     generated_at: str | None = None,
+    run_context: Mapping[str, Any] | None = None,
 ) -> MorningBrief:
     current_devices = _devices_by_hostname(current)
     previous_devices = _devices_by_hostname(previous) if previous is not None else {}
@@ -167,6 +171,7 @@ def build_morning_brief(
                 if change_report is not None
                 else {}
             ),
+            **({"run": dict(run_context)} if run_context else {}),
         },
     )
 

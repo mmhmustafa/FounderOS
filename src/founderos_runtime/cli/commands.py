@@ -45,6 +45,12 @@ from founderos_atlas.demo import run_atlas_discovery_demo
 from founderos_atlas.discovery import AtlasDiscoveryError, DiscoveryResult, MultiHopConfig
 from founderos_atlas.journeys import MorningBriefJourney, MorningBriefJourneyResult
 from founderos_atlas.live import run_multihop_discovery
+from founderos_atlas.pipeline import (
+    aggregate_config_reports,
+    load_previous_baseline,
+    run_configuration_intelligence,
+    run_topology_intelligence,
+)
 from founderos_atlas.topology import TopologyGraph, TopologySnapshot, TopologySnapshotExporter
 from founderos_atlas.transport import (
     AtlasTransportError,
@@ -172,12 +178,24 @@ def atlas_discover_command(
     config_output_dir: str | Path = "configs",
     dashboard_output: str | Path = "dashboard.html",
     history_root: str | Path = Path(".atlas") / "history",
+    change_report_json_output: str | Path = "change_report.json",
+    change_report_markdown_output: str | Path = "change_report.md",
+    config_change_json_output: str | Path = "config_change_report.json",
+    config_change_markdown_output: str | Path = "config_change_report.md",
     clock: Clock | None = None,
     browser_opener: BrowserOpener | None = None,
+    progress: Callable[[str], None] | None = None,
 ) -> tuple[int, str]:
+    """The unified Atlas pipeline: one command, the complete workflow."""
+
     read_input = input_reader or input
     read_password = password_reader or getpass.getpass
     read_clock = clock or (lambda: datetime.now(timezone.utc))
+    emit = progress if progress is not None else (lambda line: print(line, flush=True))
+
+    def step(number: int, label: str, status: str = "ok") -> None:
+        emit(f"[{number}/9] {label} ... {status}")
+
     try:
         host = read_input("Management IP: ").strip()
         username = read_input("Username: ").strip()
@@ -189,6 +207,8 @@ def atlas_discover_command(
     max_depth = _read_limit(read_input, "Max depth [1]: ", 1)
     max_devices = _read_limit(read_input, "Max devices [10]: ", 10)
     started_at = read_clock()
+    emit("")
+    emit("Atlas Discovery Pipeline")
     try:
         config = MultiHopConfig(max_depth=max_depth, max_devices=max_devices)
         credentials = DeviceCredentials(host=host, username=username, password=password)
@@ -200,25 +220,17 @@ def atlas_discover_command(
         report, graph, snapshot = run_multihop_discovery(
             host_transport, credentials.host, config=config
         )
-        html = TopologyRenderer(snapshot).render()
-        topology_destination = Path(topology_output).resolve()
-        topology_destination.write_text(html, encoding="utf-8")
-        snapshot_destination = Path(snapshot_output).resolve()
-        snapshot_destination.write_text(
-            TopologySnapshotExporter(snapshot).to_json() + "\n", encoding="utf-8"
-        )
-        run_brief = journey_runner or MorningBriefJourney().run
-        brief = run_brief(snapshot, None)
-        if not isinstance(brief, MorningBriefJourneyResult):
-            raise TypeError("Atlas Morning Brief returned an invalid result")
-        brief_destination = Path(brief_output).resolve()
-        brief_destination.write_text(brief.markdown, encoding="utf-8")
-        opener = browser_opener or webbrowser.open
-        opener(topology_destination.as_uri())
     except AtlasTransportError as error:
         raise CliError(str(error)) from error
     except (AtlasDiscoveryError, OSError, RuntimeError, TypeError, ValueError) as error:
         raise CliError(f"Atlas live discovery failed: {error}") from error
+    step(1, "Connecting to seed device")
+    step(
+        2,
+        "Discovering topology",
+        f"ok ({len(report.connected)} device(s), {len(report.failed)} failed)",
+    )
+
     config_collections = _collect_configurations_if_requested(
         read_input,
         build_transport,
@@ -226,7 +238,69 @@ def atlas_discover_command(
         report,
         config_output_dir,
     )
+    if config_collections is None:
+        step(3, "Collecting configurations", "skipped (not requested)")
+    else:
+        step(3, "Collecting configurations", f"ok ({len(config_collections)} device(s))")
     completed_at = read_clock()
+
+    baseline = load_previous_baseline(history_root)
+    if baseline.available:
+        step(4, "Loading previous baseline", f"ok ({baseline.record.record_id})")
+    else:
+        step(4, "Loading previous baseline", "skipped (first discovery)")
+
+    topology_report = run_topology_intelligence(baseline, snapshot)
+    if topology_report is None:
+        step(5, "Comparing topology", "skipped (no baseline)")
+    else:
+        step(5, "Comparing topology", f"ok ({topology_report.change_count} change(s))")
+
+    collected_dirs = {
+        hostname: detail
+        for hostname, status, detail in (config_collections or ())
+        if status != "failed"
+    }
+    config_reports = run_configuration_intelligence(
+        history_root, baseline, collected_dirs
+    )
+    if not collected_dirs or baseline.record is None:
+        step(6, "Comparing configurations", "skipped (no baseline configurations)")
+    else:
+        step(
+            6,
+            "Comparing configurations",
+            f"ok ({sum(r.change_count for r in config_reports)} change(s) "
+            f"across {len(config_reports)} device(s))",
+        )
+
+    try:
+        pipeline_lines, destinations, brief = _build_reports(
+            snapshot,
+            baseline,
+            topology_report,
+            config_reports,
+            collected_dirs,
+            journey_runner,
+            report,
+            graph,
+            config_collections,
+            started_at,
+            completed_at,
+            topology_output,
+            snapshot_output,
+            brief_output,
+            change_report_json_output,
+            change_report_markdown_output,
+            config_change_json_output,
+            config_change_markdown_output,
+        )
+        opener = browser_opener or webbrowser.open
+        opener(destinations["topology"].as_uri())
+    except (AtlasDiscoveryError, OSError, RuntimeError, TypeError, ValueError) as error:
+        raise CliError(f"Atlas live discovery failed: {error}") from error
+    step(7, "Building reports")
+
     history_line, record_id = _save_history(
         history_root,
         started_at,
@@ -236,15 +310,15 @@ def atlas_discover_command(
         snapshot,
         brief,
         config_collections,
-        topology_destination,
-        snapshot_destination,
-        brief_destination,
+        destinations,
     )
+    step(8, "Archiving discovery", "ok" if record_id is not None else "failed")
+
     dashboard_line = _regenerate_dashboard(
         dashboard_output,
-        topology_destination,
-        snapshot_destination,
-        brief_destination,
+        destinations["topology"],
+        destinations["snapshot"],
+        destinations["brief"],
         config_output_dir,
         history_root,
     )
@@ -252,18 +326,149 @@ def atlas_discover_command(
         HistoryRepository(history_root).attach_artifact(
             record_id, Path(dashboard_output).resolve()
         )
+    step(9, "Updating dashboard")
+    emit("")
+    emit("Discovery Complete")
+    emit("")
+
     return 0, render_atlas_discover(
         report,
         graph,
         snapshot,
         brief,
-        str(topology_destination),
-        str(snapshot_destination),
-        str(brief_destination),
+        str(destinations["topology"]),
+        str(destinations["snapshot"]),
+        str(destinations["brief"]),
         config_collections=config_collections,
         dashboard_line=dashboard_line,
         history_line=history_line,
+        pipeline_lines=tuple(pipeline_lines),
     )
+
+
+def _build_reports(
+    snapshot,
+    baseline,
+    topology_report,
+    config_reports,
+    collected_dirs,
+    journey_runner,
+    report,
+    graph,
+    config_collections,
+    started_at,
+    completed_at,
+    topology_output,
+    snapshot_output,
+    brief_output,
+    change_report_json_output,
+    change_report_markdown_output,
+    config_change_json_output,
+    config_change_markdown_output,
+):
+    """Write every artifact of the run; returns summary lines and paths."""
+
+    pipeline_lines: list[str] = []
+    destinations: dict[str, Path] = {}
+
+    if baseline.record is not None:
+        pipeline_lines.append(f"Baseline: {baseline.record.record_id}")
+    else:
+        pipeline_lines.append("Baseline: none (first discovery)")
+    pipeline_lines.extend(baseline.issues)
+
+    if topology_report is not None:
+        json_destination = Path(change_report_json_output).resolve()
+        json_destination.write_text(
+            render_change_report_json(topology_report), encoding="utf-8"
+        )
+        markdown_destination = Path(change_report_markdown_output).resolve()
+        markdown_destination.write_text(
+            render_change_report_markdown(topology_report), encoding="utf-8"
+        )
+        destinations["change_report.json"] = json_destination
+        destinations["change_report.md"] = markdown_destination
+        pipeline_lines.append(
+            f"Topology changes: {topology_report.change_count} "
+            f"(saved: {json_destination})"
+        )
+    else:
+        pipeline_lines.append("Topology changes: no baseline to compare against")
+
+    config_change_lines: dict[str, str] = {}
+    if config_reports:
+        aggregate, markdown = aggregate_config_reports(config_reports)
+        json_destination = Path(config_change_json_output).resolve()
+        json_destination.write_text(
+            json.dumps(aggregate, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        markdown_destination = Path(config_change_markdown_output).resolve()
+        markdown_destination.write_text(markdown, encoding="utf-8")
+        destinations["config_change_report.json"] = json_destination
+        destinations["config_change_report.md"] = markdown_destination
+        pipeline_lines.append(
+            f"Configuration changes: {aggregate['change_count']} across "
+            f"{aggregate['devices_changed']} device(s) (saved: {json_destination})"
+        )
+        config_change_lines = {
+            item.hostname: f"{item.change_count} change(s)"
+            for item in config_reports
+        }
+    elif collected_dirs:
+        pipeline_lines.append(
+            "Configuration changes: no baseline configurations to compare against"
+        )
+
+    viewer_context = {
+        "last_discovered": completed_at.isoformat(timespec="seconds"),
+        "configured_hostnames": tuple(sorted(collected_dirs, key=str.casefold)),
+        "config_changes": config_change_lines,
+    }
+    html = TopologyRenderer(
+        snapshot, change_report=topology_report, viewer_context=viewer_context
+    ).render()
+    topology_destination = Path(topology_output).resolve()
+    topology_destination.write_text(html, encoding="utf-8")
+    destinations["topology"] = topology_destination
+    destinations["atlas_topology.html"] = topology_destination
+
+    snapshot_destination = Path(snapshot_output).resolve()
+    snapshot_destination.write_text(
+        TopologySnapshotExporter(snapshot).to_json() + "\n", encoding="utf-8"
+    )
+    destinations["snapshot"] = snapshot_destination
+    destinations["topology_snapshot.json"] = snapshot_destination
+
+    run_context = {
+        "devices": graph.summary()["device_count"],
+        "relationships": _logical_relationships(graph),
+        "configurations_collected": len(collected_dirs),
+        "topology_changes": (
+            topology_report.change_count if topology_report is not None else None
+        ),
+        "configuration_changes": sum(r.change_count for r in config_reports),
+        "failures": len(report.failed),
+        "started_at": started_at.isoformat(timespec="seconds"),
+        "completed_at": completed_at.isoformat(timespec="seconds"),
+        "duration_seconds": round(
+            max(0.0, (completed_at - started_at).total_seconds()), 1
+        ),
+    }
+    if journey_runner is not None:
+        brief = journey_runner(snapshot, baseline.snapshot)
+    else:
+        brief = MorningBriefJourney().run(
+            snapshot, baseline.snapshot, run_context=run_context
+        )
+    if not isinstance(brief, MorningBriefJourneyResult):
+        raise TypeError("Atlas Morning Brief returned an invalid result")
+    brief_destination = Path(brief_output).resolve()
+    brief_destination.write_text(brief.markdown, encoding="utf-8")
+    destinations["brief"] = brief_destination
+    destinations["morning_brief.md"] = brief_destination
+
+    return pipeline_lines, destinations, brief
 
 
 def atlas_config_diff_command(
@@ -425,12 +630,26 @@ def _save_history(
     snapshot,
     brief,
     config_collections: tuple[tuple[str, str, str], ...] | None,
-    topology_destination: Path,
-    snapshot_destination: Path,
-    brief_destination: Path,
+    destinations: dict[str, Path],
 ) -> tuple[str, str | None]:
     """Best-effort preservation; never fails a successful discovery."""
 
+    archive_names = (
+        "topology_snapshot.json",
+        "morning_brief.md",
+        "atlas_topology.html",
+        "change_report.json",
+        "change_report.md",
+        "config_change_report.json",
+        "config_change_report.md",
+    )
+    artifacts = {
+        name: destinations[name] for name in archive_names if name in destinations
+    }
+    # An incident report generated earlier in the day is evidence worth keeping.
+    incident_report = destinations["snapshot"].parent / "incident_report.json"
+    if incident_report.is_file():
+        artifacts["incident_report.json"] = incident_report
     try:
         configuration_status, configured_count, config_directories = (
             _configuration_history(config_collections)
@@ -448,12 +667,9 @@ def _save_history(
             quality_score=brief.evaluation.score,
             network_status=brief.brief.overall_status,
             snapshot_id=snapshot.snapshot_id,
-            artifacts={
-                "topology_snapshot.json": snapshot_destination,
-                "morning_brief.md": brief_destination,
-                "atlas_topology.html": topology_destination,
-            },
+            artifacts=artifacts,
             config_directories=config_directories,
+            metadata={"atlas_version": VERSION_TEXT},
         )
     except (OSError, TypeError, ValueError) as error:
         return f"History save failed: {error}", None

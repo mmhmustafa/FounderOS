@@ -115,6 +115,10 @@ def main(
                 config_output_dir=atlas_config_output_dir,
                 dashboard_output=atlas_dashboard_output,
                 history_root=atlas_history_root,
+                change_report_json_output=atlas_compare_json_output,
+                change_report_markdown_output=atlas_compare_markdown_output,
+                config_change_json_output=atlas_config_diff_json_output,
+                config_change_markdown_output=atlas_config_diff_markdown_output,
                 clock=atlas_clock,
                 browser_opener=atlas_browser_opener,
             )

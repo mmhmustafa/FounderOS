@@ -82,17 +82,24 @@ founderos atlas discover
 The command prompts for the seed management IP, username, password (hidden,
 never stored or logged), and optional traversal limits — max depth (default
 1) and max devices (default 10; press Enter to accept defaults) — then runs
-the full product pipeline:
+the complete unified pipeline with step-by-step progress ([1/9]…[9/9]):
 
 ```
-SSH collection (show version / show ip interface brief / show cdp neighbors detail)
-→ DiscoveryEngine (existing parsers, unchanged)
-→ CDP neighbor traversal (breadth-first, same credentials, up to the limits)
-→ TopologyGraph reconciliation
-→ TopologySnapshot
-→ Interactive HTML topology (opened in the default browser)
-→ Morning Brief Journey
+Discovery (SSH collection → parsers → multi-hop traversal → reconciliation)
+→ Configuration collection (prompted once)
+→ Load previous baseline from .atlas/history (automatic)
+→ Topology comparison → change_report.json / change_report.md
+→ Configuration comparison → config_change_report.json / config_change_report.md
+→ Topology viewer (change-highlighted, enriched node details) + snapshot
+→ Morning Brief (baselined, with Today's Summary and run timing)
+→ Archive everything into history
+→ Dashboard refresh
 ```
+
+No manual `compare`, `config-diff`, `dashboard`, or `history` invocation is
+needed after discovery — those commands remain available for on-demand use.
+Change reports are only written when a baseline exists; Atlas never invents
+a comparison.
 
 Multi-hop discovery is deliberately controlled: each host is contacted at
 most once, devices reachable via multiple addresses are deduplicated by

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from .discovery import DiscoveryEngine, DiscoveryResult
 from .discovery.adapter import DiscoveryAdapter
 from .discovery.adapters import CiscoIOSAdapter
@@ -72,6 +74,18 @@ def run_multihop_discovery(
     )
     resolution = IdentityResolver().resolve(report.results)
     canonical_results = resolution.canonicalize(report.results)
+    # Record how many hops from the seed each device was found at, so the
+    # viewer can show discovery depth per node.
+    canonical_results = tuple(
+        replace(
+            result,
+            device=replace(
+                result.device,
+                metadata={**dict(result.device.metadata), "discovery_depth": visit.depth},
+            ),
+        )
+        for visit, result in zip(report.connected, canonical_results)
+    )
     graph = TopologyReconciler().reconcile(canonical_results)
     failed_hosts = tuple(sorted(visit.host for visit in report.failed))
     snapshot = TopologySnapshot.from_graph(

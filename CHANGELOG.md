@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### EPIC-002 / PR-028 - Unified Discovery Pipeline (Alpha Polish)
+
+- `founderos atlas discover` now executes the complete Atlas workflow automatically with step-by-step progress ([1/9]…[9/9]): discovery → configuration collection → previous-baseline loading from history → topology comparison → configuration comparison → report building → archiving → dashboard refresh. No manual compare/config-diff/dashboard/history invocation is required.
+- Added `founderos_atlas/pipeline.py`: baseline loading (integrity-checked snapshot reconstruction via new `TopologySnapshot.from_dict`), automatic topology change intelligence, automatic per-device configuration intelligence against the baseline record's configs, and aggregated multi-device configuration reports (devices changed, merged severity counts).
+- Change detection now flags interface status transitions (up → down / administratively down) as medium-severity changes with a "verify the shutdown was planned" recommendation.
+- Morning Brief is manager-friendly: a Today's Summary section (devices, relationships, configurations collected, topology/configuration change counts, failures) and real Started/Completed/Duration generation timing, with the previous snapshot as an automatic baseline.
+- Topology viewer node details now show neighbors, discovery depth, last discovered, configuration collected, and last configuration change, alongside the existing identity and platform facts; the viewer is change-highlighted automatically when a baseline exists.
+- Every history record now archives change_report.json/md, config_change_report.json/md, and incident_report.json (when present) alongside the snapshot, viewer, brief, dashboard, and configurations; discovery metadata records the Atlas version.
+- Steps 8 and 9 run archive-then-dashboard (labels reflect actual order) so the refreshed dashboard always lists the run just archived.
+- Added 11 integration tests covering first discovery, automatic baselining, automatic configuration and topology change detection, interface shutdown flagging, discovery failure resilience, partial configuration collection, complete history artifact sets, dashboard freshness, the manager-friendly brief, and enriched viewer details.
+- No AI in this PR.
+
 ### EPIC-002 / PR-027 - Atlas Incident Investigation Journey Foundation
 
 - Added `founderos_atlas/incidents/`: a deterministic, evidence-based incident investigation over existing Atlas artifacts — not AI and not root-cause automation.

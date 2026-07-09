@@ -107,6 +107,28 @@ class TopologySnapshot:
         return f"atlas-topology:{digest}"
 
     @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> "TopologySnapshot":
+        """Reconstruct a snapshot previously serialized with ``to_dict``.
+
+        The content address is re-validated on construction, so a tampered or
+        corrupted snapshot file is rejected rather than silently trusted.
+        """
+
+        if not isinstance(value, Mapping):
+            raise TypeError("snapshot value must be a mapping")
+        try:
+            return cls(
+                snapshot_id=value["snapshot_id"],
+                created_at=value["created_at"],
+                devices=tuple(value["devices"]),
+                edges=tuple(value["edges"]),
+                warnings=tuple(value["warnings"]),
+                metadata=value["metadata"],
+            )
+        except KeyError as error:
+            raise ValueError(f"snapshot value is missing field {error}") from error
+
+    @classmethod
     def from_graph(
         cls,
         graph: TopologyGraph,

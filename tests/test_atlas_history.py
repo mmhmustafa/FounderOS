@@ -293,6 +293,10 @@ class DiscoverHistoryIntegrationTests(unittest.TestCase):
                 atlas_config_output_dir=workdir / "configs",
                 atlas_dashboard_output=workdir / "dashboard.html",
                 atlas_history_root=workdir / ".atlas" / "history",
+                atlas_compare_json_output=workdir / "change_report.json",
+                atlas_compare_markdown_output=workdir / "change_report.md",
+                atlas_config_diff_json_output=workdir / "config_change_report.json",
+                atlas_config_diff_markdown_output=workdir / "config_change_report.md",
                 atlas_clock=lambda: next(ticks),
                 atlas_browser_opener=lambda uri: None,
             )

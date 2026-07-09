@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from contextlib import redirect_stderr, redirect_stdout
+from datetime import datetime, timezone
 from io import StringIO
 import json
 from pathlib import Path
@@ -97,6 +98,11 @@ class AtlasDiscoverCliTests(unittest.TestCase):
                     atlas_morning_brief_output=brief_path,
                     atlas_dashboard_output=Path(workdir) / "dashboard.html",
                     atlas_history_root=Path(workdir) / ".atlas" / "history",
+                    atlas_compare_json_output=Path(workdir) / "change_report.json",
+                    atlas_compare_markdown_output=Path(workdir) / "change_report.md",
+                    atlas_config_diff_json_output=Path(workdir) / "config_change_report.json",
+                    atlas_config_diff_markdown_output=Path(workdir) / "config_change_report.md",
+                    atlas_clock=lambda: datetime(2026, 7, 9, 23, 41, 18, tzinfo=timezone.utc),
                     atlas_browser_opener=opened.append,
                 )
             artifacts = {
@@ -182,7 +188,9 @@ class AtlasDiscoverCliTests(unittest.TestCase):
 
         code, output, error, _, opened, artifacts = self.invoke(transport_factory=factory)
         self.assertEqual(1, code)
-        self.assertEqual("", output)
+        # The pipeline header may print before the connection attempt, but no
+        # pipeline step may claim success.
+        self.assertNotIn("[1/9]", output)
         self.assertEqual(f"Error: {message}\n", error)
         self.assertNotIn(PASSWORD, error)
         self.assertEqual([], opened)

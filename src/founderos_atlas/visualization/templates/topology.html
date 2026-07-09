@@ -79,7 +79,12 @@
       <div class="field"><strong>Vendor</strong>${escapeHtml(data.vendor)}</div>
       <div class="field"><strong>Platform</strong>${escapeHtml(data.platform)}</div>
       <div class="field"><strong>Operating system</strong>${escapeHtml(data.os)}</div>
-      <div class="field"><strong>Interfaces</strong>${escapeHtml(data.interfaces)}</div>`;
+      <div class="field"><strong>Interfaces</strong>${escapeHtml(data.interfaces)}</div>
+      <div class="field"><strong>Neighbors</strong>${escapeHtml(data.neighbors ?? 0)}</div>
+      <div class="field"><strong>Discovery depth</strong>${escapeHtml(data.discovery_depth ?? 'unknown')}</div>
+      <div class="field"><strong>Last discovered</strong>${escapeHtml(data.last_discovered ?? 'unrecorded')}</div>
+      <div class="field"><strong>Configuration collected</strong>${escapeHtml(data.config_collected ?? 'No')}</div>
+      <div class="field"><strong>Last configuration change</strong>${escapeHtml(data.last_config_change ?? 'None recorded')}</div>`;
 
     cy.on('tap', 'node', event => { details.innerHTML = nodeDetails(event.target.data()); });
     cy.on('mouseover', 'node', event => {

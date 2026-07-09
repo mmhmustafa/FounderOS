@@ -146,6 +146,7 @@ def render_atlas_discover(
     config_collections: tuple[tuple[str, str, str], ...] | None = None,
     dashboard_line: str | None = None,
     history_line: str | None = None,
+    pipeline_lines: tuple[str, ...] = (),
 ) -> str:
     seed = report.results[0]
     device = seed.device
@@ -195,6 +196,7 @@ def render_atlas_discover(
             "",
             *config_lines,
             "",
+            *(("Change Intelligence", *pipeline_lines, "") if pipeline_lines else ()),
             "Topology",
             f"Devices: {summary['device_count']}",
             f"Edges: {summary['edge_count']}",

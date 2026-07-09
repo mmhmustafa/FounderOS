@@ -27,11 +27,15 @@ class TopologyRenderer:
         self,
         snapshot: TopologySnapshot,
         change_report: Any | None = None,
+        viewer_context: Mapping[str, Any] | None = None,
     ) -> None:
         if not isinstance(snapshot, TopologySnapshot):
             raise TypeError("snapshot must be a TopologySnapshot")
+        if viewer_context is not None and not isinstance(viewer_context, Mapping):
+            raise TypeError("viewer_context must be a mapping or None")
         self._snapshot = snapshot
         self._change = _change_highlights(change_report)
+        self._context = dict(viewer_context or {})
 
     def elements(self) -> dict[str, list[dict[str, Any]]]:
         """Return deterministic Cytoscape nodes and edges without rendering HTML.
@@ -47,10 +51,21 @@ class TopologyRenderer:
             hostname_to_id[str(device["hostname"]).casefold()] = device_id
             for alias in _device_aliases(device):
                 hostname_to_id.setdefault(alias.casefold(), device_id)
+        neighbor_counts = self._neighbor_counts()
+        configured = {
+            str(name).casefold() for name in self._context.get("configured_hostnames") or ()
+        }
+        config_changes = {
+            str(name).casefold(): str(value)
+            for name, value in (self._context.get("config_changes") or {}).items()
+        }
+        last_discovered = str(self._context.get("last_discovered") or "unrecorded")
         nodes: dict[str, dict[str, Any]] = {}
         for device in self._snapshot.devices:
             device_id = str(device["device_id"])
             vendor = str(device["vendor"])
+            hostname_key = str(device["hostname"]).casefold()
+            depth = (device.get("metadata") or {}).get("discovery_depth")
             node_data = {
                 "id": device_id,
                 "label": str(device["hostname"]),
@@ -61,6 +76,11 @@ class TopologyRenderer:
                 "platform": str(device["platform"]),
                 "os": f"{device['os_name']} {device['os_version']}",
                 "interfaces": len(device["interfaces"]),
+                "neighbors": neighbor_counts.get(hostname_key, 0),
+                "discovery_depth": "unknown" if depth is None else str(depth),
+                "last_discovered": last_discovered,
+                "config_collected": "Yes" if hostname_key in configured else "No",
+                "last_config_change": config_changes.get(hostname_key, "None recorded"),
                 "kind": "discovered",
                 "color": _vendor_color(vendor),
             }
@@ -148,6 +168,23 @@ class TopologyRenderer:
             "nodes": [nodes[key] for key in sorted(nodes)],
             "edges": sorted(edges, key=lambda item: item["data"]["id"]),
         }
+
+    def _neighbor_counts(self) -> dict[str, int]:
+        """Logical (undirected) neighbor count per discovered hostname."""
+
+        hostname_by_id = {
+            str(device["device_id"]): str(device["hostname"])
+            for device in self._snapshot.devices
+        }
+        neighbors: dict[str, set[str]] = {}
+        for edge in self._snapshot.edges:
+            local = hostname_by_id.get(
+                str(edge["local_device_id"]), str(edge["local_device_id"])
+            )
+            remote = str(edge["remote_hostname"])
+            neighbors.setdefault(local.casefold(), set()).add(remote.casefold())
+            neighbors.setdefault(remote.casefold(), set()).add(local.casefold())
+        return {hostname: len(peers) for hostname, peers in neighbors.items()}
 
     def _change_status(self, hostname: str) -> str:
         assert self._change is not None

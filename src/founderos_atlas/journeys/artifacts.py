@@ -116,6 +116,39 @@ class MorningBrief:
             "\n".join(f"- {value}" for value in self.recommendations)
             if self.recommendations else "- No immediate action required."
         )
+        today_lines: tuple[str, ...] = ()
+        run = self.metadata.get("run")
+        if isinstance(run, Mapping):
+            bullets = [
+                f"- {run.get('devices', self.device_count)} device(s) discovered",
+                f"- {run.get('relationships', self.edge_count)} relationship(s) verified",
+            ]
+            configured = run.get("configurations_collected")
+            if configured:
+                bullets.append(f"- Configuration collected from {configured} device(s)")
+            config_changes = run.get("configuration_changes")
+            if config_changes:
+                bullets.append(f"- {config_changes} configuration change(s) detected")
+            topology_changes = run.get("topology_changes")
+            if topology_changes is not None:
+                bullets.append(
+                    f"- {topology_changes} topology change(s) detected"
+                    if topology_changes
+                    else "- No topology changes detected"
+                )
+            failures = run.get("failures")
+            if failures:
+                bullets.append(f"- Discovery failed for {failures} host(s)")
+            today_lines = ("## Today's Summary", "", *bullets, "")
+        generation_lines: tuple[str, ...]
+        if isinstance(run, Mapping) and run.get("started_at"):
+            generation_lines = (
+                f"Started: {run.get('started_at')}",
+                f"Completed: {run.get('completed_at', 'unrecorded')}",
+                f"Duration: {run.get('duration_seconds', 0)} seconds",
+            )
+        else:
+            generation_lines = (f"Generated at: {self.generated_at}",)
         change_lines: tuple[str, ...] = ()
         change_report = self.metadata.get("change_report")
         if isinstance(change_report, Mapping):
@@ -148,6 +181,7 @@ class MorningBrief:
                 "",
                 self.summary,
                 "",
+                *today_lines,
                 "## Topology",
                 "",
                 f"- Devices: {self.device_count}",
@@ -186,7 +220,7 @@ class MorningBrief:
                 "",
                 "## Generation",
                 "",
-                f"Generated at: {self.generated_at}",
+                *generation_lines,
                 "",
             )
         )
