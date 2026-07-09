@@ -24,10 +24,11 @@ def render_state_report_markdown(report: StateChangeReport) -> str:
         "",
         f"- Previous: `{report.previous_ref}`",
         f"- Current: `{report.current_ref}`",
-        f"- Devices changed: {len(report.devices_changed)}",
-        f"- Operational changes: {report.change_count}",
-        f"- Interfaces down: {report.interfaces_down}",
-        f"- Status: {report.status}",
+        f"- Current health: {report.current_health}",
+        f"- Active issues: {report.active_issue_count}",
+        f"- Recoveries: {len(report.recoveries)}",
+        f"- Interfaces currently down: {report.interfaces_down}",
+        f"- Historical events: {report.change_count}",
         "",
         "## Severity Summary",
         "",
@@ -35,13 +36,23 @@ def render_state_report_markdown(report: StateChangeReport) -> str:
         "|---|---|",
     ]
     lines.extend(f"| {severity.title()} | {counts[severity]} |" for severity in SEVERITY_ORDER)
-    lines.extend(("", "## Changes", ""))
+
+    lines.extend(("", "## Active Issues", ""))
+    if not report.active_issues:
+        lines.append("No active operational issues — the current state is healthy.")
+    for change in report.active_issues:
+        lines.append(
+            f"- [{change.severity.upper()}] {change.hostname} {change.interface}: "
+            f"{change.description} — {change.recommendation}"
+        )
+
+    lines.extend(("", "## Events (history)", ""))
     if not report.changes:
         lines.append("No operational changes detected between the two snapshots.")
     for change in report.changes:
         lines.extend(
             (
-                f"### [{change.severity.upper()}] {change.hostname} {change.interface}",
+                f"### [{change.event.upper()}] {change.hostname} {change.interface}",
                 "",
                 f"- {change.description}",
             )

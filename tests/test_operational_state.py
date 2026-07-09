@@ -206,21 +206,26 @@ class StateReportRenderingTests(unittest.TestCase):
         data = json.loads(render_state_report_json(self.build_report()))
         self.assertEqual(2, data["change_count"])
         self.assertEqual(1, data["interfaces_down"])
-        self.assertEqual("Attention Required", data["status"])
+        self.assertEqual(1, data["active_issue_count"])  # SW1 down; IP change is informational
+        self.assertEqual(0, data["recovery_count"])
+        self.assertEqual("Critical", data["current_health"])  # a hard down is high severity
+        self.assertEqual("Critical", data["status"])
         self.assertEqual(["R1", "SW1"], data["devices_changed"])
         for change in data["changes"]:
-            for field in ("hostname", "interface", "field", "severity", "description", "recommendation"):
+            for field in ("hostname", "interface", "field", "severity", "event", "description", "recommendation"):
                 self.assertIn(field, change)
 
     def test_markdown_generation_matches_spec_shape(self) -> None:
         markdown = render_state_report_markdown(self.build_report())
         self.assertIn("# Atlas Operational Change Report", markdown)
-        self.assertIn("Devices changed: 2", markdown)
-        self.assertIn("Interfaces down: 1", markdown)
-        self.assertIn("## Severity Summary", markdown)
-        self.assertIn("[HIGH] SW1 Gi0/1", markdown)
+        self.assertIn("Current health: Critical", markdown)
+        self.assertIn("Active issues: 1", markdown)
+        self.assertIn("Interfaces currently down: 1", markdown)
+        self.assertIn("## Active Issues", markdown)
+        self.assertIn("## Events (history)", markdown)
+        self.assertIn("[FAILURE] SW1 Gi0/1", markdown)
         self.assertIn("status: up → down", markdown)
-        self.assertIn("[MEDIUM] R1 Gi0/2", markdown)
+        self.assertIn("[INFORMATIONAL] R1 Gi0/2", markdown)
 
 
 class StateDiffCliTests(unittest.TestCase):
@@ -254,13 +259,14 @@ class StateDiffCliTests(unittest.TestCase):
             )
             self.assertEqual(0, code, error)
             self.assertIn("Atlas Operational Change Report", output)
-            self.assertIn("Interfaces down: 1", output)
-            self.assertIn("Network status: Attention Required", output)
-            self.assertIn("[high] SW1 Gi0/1", output)
+            self.assertIn("Interfaces currently down: 1", output)
+            self.assertIn("Current health: Critical", output)
+            self.assertIn("[failure] SW1 Gi0/1", output)
             report = json.loads(
                 (workdir / "state_change_report.json").read_text(encoding="utf-8")
             )
             self.assertEqual(1, report["interfaces_down"])
+            self.assertEqual("Critical", report["current_health"])
             self.assertIn(
                 "# Atlas Operational Change Report",
                 (workdir / "state_change_report.md").read_text(encoding="utf-8"),

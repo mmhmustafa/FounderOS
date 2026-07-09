@@ -55,6 +55,31 @@ previous baseline exists — no manual command is required.
   Summary and an Operational Changes section, distinct from topology and
   configuration changes.
 
+## Current health vs. historical events
+
+Each change carries an **event type** that separates *what happened* from
+*whether it is still a problem*:
+
+| Event | Meaning | Active issue? |
+| --- | --- | --- |
+| `failure` | Interface/protocol went down | Yes |
+| `degradation` | Admin shutdown, or interface removed | Yes |
+| `recovery` | Interface/protocol came back up | No |
+| `informational` | New interface, IP address change | No |
+
+`StateChangeReport` exposes three distinct views:
+
+- **Historical events** — every change (`changes`), preserved for the timeline.
+- **Active issues** — `active_issues`: only failures and degradations that
+  represent a currently unresolved condition.
+- **Current health** — `current_health`: `Healthy` when there are no active
+  issues, else `Attention Required` (or `Critical` if an active issue is
+  high-severity).
+
+This is why a recovered interface no longer keeps Atlas in Warning: the
+recovery is kept in history, but current health is driven by active issues
+only. Health is never determined merely by the count of past changes.
+
 ## Design notes
 
 Operational state is deliberately owned here, not by the topology change

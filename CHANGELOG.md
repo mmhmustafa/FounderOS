@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### EPIC-002 / PR-030.1 - Atlas Alpha Stabilization
+
+- Packaging: the `credentials` extra (keyring) is correctly declared in `pyproject.toml`; the earlier "does not provide the extra 'credentials'" warning was stale editable-install metadata (egg-info at version 0.1.0). Documented `pip install -e ".[credentials]"` and added a test asserting the extra requires keyring with no plaintext dependency.
+- Operational health now separates current health, historical events, and active unresolved issues. `StateChange` carries an event type (failure / degradation / recovery / informational); `StateChangeReport` exposes `active_issues`, `recoveries`, `active_issue_count`, and `current_health`. Current health is derived from unresolved issues only — a recovered interface (down → up) is preserved in history but returns health to Healthy and no longer leaves Atlas permanently in Warning/Attention Required. The dashboard, Morning Brief, and CLI report current health and active issues instead of raw change counts.
+- Configuration intelligence now filters dynamic Cisco IOS/IOS-XE metadata (`Current configuration : <n> bytes`, `! Last configuration change at <timestamp>`, and similar) before semantic comparison, so changing byte counts and save timestamps no longer masquerade as configuration changes. The filter is per-vendor and extensible; real `shutdown` / `no shutdown` changes are still detected as the single meaningful change.
+- Added 14 regression tests (credentials extra declaration; failure changes health, recovery restores Healthy, recovery preserved in history, historical-only changes do not cause Attention Required; byte-count and timestamp metadata ignored while shutdown/no-shutdown still detected). Updated existing operational/pipeline assertions to the new health-vs-history semantics. Full suite passes.
+
 ### EPIC-002 / PR-030 - Atlas Workspace & Saved Discovery Profiles
 
 - Added `founderos_atlas/workspace/`: a persistent workspace and saved discovery profile system — the reusable backend foundation for the Atlas GUI (PR-031).

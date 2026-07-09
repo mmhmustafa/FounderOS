@@ -24,6 +24,27 @@ SECTION_ADDED = "added"
 SECTION_REMOVED = "removed"
 SECTION_MODIFIED = "modified"
 
+# Dynamic, non-semantic metadata that a device emits fresh on every capture.
+# Filtering these before comparison stops byte counts and save timestamps
+# from masquerading as configuration changes. The list is per-vendor and
+# extensible; Cisco IOS/IOS-XE patterns are provided here.
+CISCO_DYNAMIC_METADATA_PATTERNS: tuple[str, ...] = (
+    r"^\s*Current configuration\s*:\s*\d+\s+bytes\s*$",
+    r"^\s*!\s*Last configuration change at .*$",
+    r"^\s*!\s*NVRAM config last updated at .*$",
+    r"^\s*!\s*Time:\s.*$",
+    r"^\s*Building configuration\.\.\.\s*$",
+)
+_DYNAMIC_METADATA_RE = tuple(
+    re.compile(pattern, re.IGNORECASE) for pattern in CISCO_DYNAMIC_METADATA_PATTERNS
+)
+
+
+def is_dynamic_metadata(line: str) -> bool:
+    """Whether a line is device-generated metadata, not real configuration."""
+
+    return any(pattern.match(line) for pattern in _DYNAMIC_METADATA_RE)
+
 
 @dataclass(frozen=True)
 class SectionDiff:
@@ -59,6 +80,10 @@ def parse_sections(text: str) -> dict[str, tuple[str, ...]]:
         line = raw.rstrip()
         if not line.strip() or line.strip() == "!":
             current = None
+            continue
+        if is_dynamic_metadata(line):
+            # Device-generated noise (byte count, last-change timestamp): drop
+            # it so it never registers as a configuration change.
             continue
         if line.startswith((" ", "\t")):
             if current is not None:

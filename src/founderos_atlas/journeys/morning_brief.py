@@ -142,15 +142,19 @@ def build_morning_brief(
             item for item in change_report.recommendations if item not in recommendations
         )
         state_report = OperationalStateDetector().compare(previous, current)
+        # Only unresolved (active) issues drive recommendations and status; a
+        # recovery is reported as history but must not keep status in Warning.
         recommendations = recommendations + tuple(
             change.recommendation
-            for change in state_report.changes
+            for change in state_report.active_issues
             if change.recommendation not in recommendations
         )
-    operational_changes = state_report.change_count if state_report is not None else 0
+    operational_active = (
+        state_report.active_issue_count if state_report is not None else 0
+    )
     status = (
         "Attention Required"
-        if removed_devices or changed_devices or warnings or operational_changes
+        if removed_devices or changed_devices or warnings or operational_active
         else "Healthy"
     )
     baseline = "No comparison baseline was supplied." if previous is None else (

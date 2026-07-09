@@ -22,6 +22,10 @@ from .models import (
     CHANGE_ADDED,
     CHANGE_MODIFIED,
     CHANGE_REMOVED,
+    EVENT_DEGRADATION,
+    EVENT_FAILURE,
+    EVENT_INFORMATIONAL,
+    EVENT_RECOVERY,
     FIELD_INTERFACE,
     FIELD_IP,
     FIELD_PROTOCOL,
@@ -100,6 +104,7 @@ def _device_interface_changes(
                     interface=display,
                     field=FIELD_INTERFACE,
                     severity="low",
+                    event=EVENT_INFORMATIONAL,
                     change_type=CHANGE_ADDED,
                     description=f"{hostname} interface {display} was newly detected",
                     recommendation=_NEW_INTERFACE_RECOMMENDATION,
@@ -114,6 +119,7 @@ def _device_interface_changes(
                     interface=display,
                     field=FIELD_INTERFACE,
                     severity="medium",
+                    event=EVENT_DEGRADATION,
                     change_type=CHANGE_REMOVED,
                     description=f"{hostname} interface {display} is no longer present",
                     recommendation=_REMOVED_INTERFACE_RECOMMENDATION,
@@ -153,6 +159,7 @@ def _interface_field_changes(
                 interface=name,
                 field=FIELD_IP,
                 severity="medium",
+                event=EVENT_INFORMATIONAL,
                 change_type=CHANGE_MODIFIED,
                 description=(
                     f"{hostname} interface {name} IP address changed from "
@@ -171,23 +178,24 @@ def _status_change(
 ) -> StateChange:
     label = "status" if field == FIELD_STATUS else "line protocol"
     if new == "down":
-        severity = "high"
+        severity, event = "high", EVENT_FAILURE
         recommendation = (
             _STATUS_DOWN_RECOMMENDATION
             if field == FIELD_STATUS
             else _PROTOCOL_DOWN_RECOMMENDATION
         )
     elif new == "administratively_down":
-        severity = "medium"
+        severity, event = "medium", EVENT_DEGRADATION
         recommendation = _ADMIN_DOWN_RECOMMENDATION
     else:
-        severity = "low"
+        severity, event = "low", EVENT_RECOVERY
         recommendation = _RECOVERED_RECOMMENDATION
     return StateChange(
         hostname=hostname,
         interface=name,
         field=field,
         severity=severity,
+        event=event,
         change_type=CHANGE_MODIFIED,
         description=(
             f"{hostname} interface {name} {label} changed from "

@@ -314,6 +314,13 @@ founderos atlas profile delete "Hyderabad Lab"
 founderos atlas discover --profile "Hyderabad Lab"
 ```
 
+Install the credential extra from the repository checkout in editable mode
+so the metadata resolves correctly:
+
+```powershell
+pip install -e ".[credentials]"
+```
+
 Profiles are stored under `~/.atlas/workspace/profiles.json` (override with
 `ATLAS_HOME`). The password is **never** written there — only a credential
 reference is saved; the secret lives in your OS keyring. Passwords are never

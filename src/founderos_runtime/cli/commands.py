@@ -292,8 +292,9 @@ def atlas_discover_command(
         step(
             5,
             "Comparing topology & state",
-            f"ok ({topology_report.change_count} topology, "
-            f"{state_report.change_count} operational change(s))",
+            f"ok ({topology_report.change_count} topology change(s), "
+            f"{state_report.active_issue_count} active / "
+            f"{state_report.change_count} operational event(s))",
         )
 
     collected_dirs = {
@@ -441,9 +442,10 @@ def _build_reports(
         destinations["state_change_report.json"] = json_destination
         destinations["state_change_report.md"] = markdown_destination
         pipeline_lines.append(
-            f"Operational changes: {state_report.change_count} "
-            f"({state_report.interfaces_down} interface(s) down) "
-            f"(saved: {json_destination})"
+            f"Operational: current health {state_report.current_health}, "
+            f"{state_report.active_issue_count} active issue(s), "
+            f"{len(state_report.recoveries)} recovery(ies), "
+            f"{state_report.change_count} event(s) (saved: {json_destination})"
         )
 
     if topology_report is not None:
@@ -519,6 +521,12 @@ def _build_reports(
         "configuration_changes": sum(r.change_count for r in config_reports),
         "operational_changes": (
             state_report.change_count if state_report is not None else None
+        ),
+        "operational_active": (
+            state_report.active_issue_count if state_report is not None else None
+        ),
+        "operational_recoveries": (
+            len(state_report.recoveries) if state_report is not None else 0
         ),
         "interfaces_down": (
             state_report.interfaces_down if state_report is not None else 0

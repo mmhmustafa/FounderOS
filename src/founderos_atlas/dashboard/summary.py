@@ -170,17 +170,25 @@ def _network_status(
 ) -> tuple[str, str]:
     if snapshot is None:
         return STATUS_UNKNOWN, "No discovery has run yet. Run: founderos atlas discover"
-    operational_counts = (operational or {}).get("severity_counts") or {}
-    interfaces_down = int((operational or {}).get("interfaces_down") or 0)
-    high = int(severity_counts.get("high") or 0) + int(operational_counts.get("high") or 0)
-    if high:
-        return STATUS_CRITICAL, f"{high} high-severity change(s) require attention."
+    operational = operational or {}
+    # Current health reflects unresolved (active) issues only — a recovery
+    # event is history, not a reason to stay in Warning.
+    op_active = int(operational.get("active_issue_count") or 0)
+    op_health = str(operational.get("current_health") or "Healthy")
+    interfaces_down = int(operational.get("interfaces_down") or 0)
+    topology_high = int(severity_counts.get("high") or 0)
+    if topology_high or op_health == STATUS_CRITICAL:
+        reasons = []
+        if topology_high:
+            reasons.append(f"{topology_high} high-severity topology change(s)")
+        if op_health == STATUS_CRITICAL:
+            reasons.append(f"{interfaces_down} interface(s) down")
+        return STATUS_CRITICAL, "; ".join(reasons) + " require attention."
     concerns: list[str] = []
     if change_count:
         concerns.append(f"{change_count} topology change(s) detected")
-    operational_count = int((operational or {}).get("change_count") or 0)
-    if operational_count:
-        detail = f"{operational_count} operational change(s)"
+    if op_active:
+        detail = f"{op_active} active operational issue(s)"
         if interfaces_down:
             detail += f" ({interfaces_down} interface(s) down)"
         concerns.append(detail)
@@ -190,7 +198,7 @@ def _network_status(
         concerns.append(f"{snapshot_warnings} reconciliation warning(s)")
     if concerns:
         return STATUS_WARNING, "; ".join(concerns) + "."
-    return STATUS_HEALTHY, "No warnings or changes detected."
+    return STATUS_HEALTHY, "No warnings or active issues detected."
 
 
 def _discovery_success(device_count: int | None, failed_hosts: tuple[str, ...]) -> str:
@@ -275,14 +283,13 @@ def _configuration_changes(report: dict[str, Any] | None) -> tuple[str, ...]:
 def _operational_changes(report: dict[str, Any] | None) -> tuple[str, ...]:
     if report is None:
         return ()
-    counts = report.get("severity_counts") or {}
-    status = str(report.get("status") or "Healthy")
+    health = str(report.get("current_health") or report.get("status") or "Healthy")
     return (
-        f"Status: {status}",
-        f"Devices changed: {len(report.get('devices_changed') or ())}",
-        f"Interfaces down: {report.get('interfaces_down', 0)}",
-        f"High: {counts.get('high', 0)} | Medium: {counts.get('medium', 0)} "
-        f"| Low: {counts.get('low', 0)}",
+        f"Current health: {health}",
+        f"Active issues: {report.get('active_issue_count', 0)}",
+        f"Interfaces currently down: {report.get('interfaces_down', 0)}",
+        f"Recoveries: {report.get('recovery_count', 0)}",
+        f"Historical events: {report.get('change_count', 0)}",
     )
 
 

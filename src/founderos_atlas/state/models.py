@@ -17,10 +17,21 @@ CHANGE_MODIFIED = "modified"
 CHANGE_ADDED = "added"
 CHANGE_REMOVED = "removed"
 
+# Event semantics separate *what happened* from *whether it is a current
+# problem*. Only failures and degradations are unresolved (active) issues; a
+# recovery is a historical event that must not keep the network in Warning.
+EVENT_FAILURE = "failure"
+EVENT_DEGRADATION = "degradation"
+EVENT_RECOVERY = "recovery"
+EVENT_INFORMATIONAL = "informational"
+EVENT_TYPES = (EVENT_FAILURE, EVENT_DEGRADATION, EVENT_RECOVERY, EVENT_INFORMATIONAL)
+
+_ACTIVE_EVENTS = frozenset({EVENT_FAILURE, EVENT_DEGRADATION})
+
 
 @dataclass(frozen=True)
 class StateChange:
-    """One operational change on one interface between two discoveries."""
+    """One operational event on one interface between two discoveries."""
 
     hostname: str
     interface: str
@@ -29,6 +40,7 @@ class StateChange:
     change_type: str
     description: str
     recommendation: str
+    event: str = EVENT_INFORMATIONAL
     previous_value: str | None = None
     current_value: str | None = None
 
@@ -40,6 +52,18 @@ class StateChange:
                 raise ValueError(f"{name} must be a non-empty string")
         if self.severity not in SEVERITY_ORDER:
             raise ValueError(f"severity must be one of {SEVERITY_ORDER}")
+        if self.event not in EVENT_TYPES:
+            raise ValueError(f"event must be one of {EVENT_TYPES}")
+
+    @property
+    def is_active_issue(self) -> bool:
+        """Whether this event represents a currently unresolved problem."""
+
+        return self.event in _ACTIVE_EVENTS
+
+    @property
+    def is_recovery(self) -> bool:
+        return self.event == EVENT_RECOVERY
 
     @property
     def is_interface_down(self) -> bool:
@@ -55,6 +79,7 @@ class StateChange:
             "interface": self.interface,
             "field": self.field,
             "severity": self.severity,
+            "event": self.event,
             "change_type": self.change_type,
             "description": self.description,
             "recommendation": self.recommendation,
@@ -118,8 +143,37 @@ class StateChangeReport:
         )
 
     @property
+    def active_issues(self) -> tuple[StateChange, ...]:
+        """Unresolved problems (failures/degradations) — never recoveries."""
+
+        return tuple(change for change in self.changes if change.is_active_issue)
+
+    @property
+    def recoveries(self) -> tuple[StateChange, ...]:
+        return tuple(change for change in self.changes if change.is_recovery)
+
+    @property
+    def active_issue_count(self) -> int:
+        return len(self.active_issues)
+
+    @property
+    def current_health(self) -> str:
+        """Health of the current state — driven by unresolved issues only.
+
+        A report that contains only recovery or informational events (the
+        network came back up) is Healthy, even though history is non-empty.
+        """
+
+        if not self.active_issues:
+            return "Healthy"
+        if any(change.severity == "high" for change in self.active_issues):
+            return "Critical"
+        return "Attention Required"
+
+    @property
     def status(self) -> str:
-        return "Attention Required" if self.changes else "Healthy"
+        # Backward-compatible alias: current health, not "any change happened".
+        return self.current_health
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -129,6 +183,9 @@ class StateChangeReport:
             "severity_counts": self.severity_counts,
             "devices_changed": list(self.devices_changed),
             "interfaces_down": self.interfaces_down,
+            "active_issue_count": self.active_issue_count,
+            "recovery_count": len(self.recoveries),
+            "current_health": self.current_health,
             "status": self.status,
             "changes": [change.to_dict() for change in self.changes],
         }

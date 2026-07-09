@@ -123,7 +123,8 @@ class UnifiedPipelineTests(unittest.TestCase):
             self.assertEqual(0, code, error)
             self.assertIn("[4/9] Loading previous baseline ... ok (2026-07-09_08-15-00)", output)
             self.assertIn(
-                "[5/9] Comparing topology & state ... ok (0 topology, 0 operational change(s))",
+                "[5/9] Comparing topology & state ... ok (0 topology change(s), "
+                "0 active / 0 operational event(s))",
                 output,
             )
             self.assertIn(
@@ -228,13 +229,18 @@ class UnifiedPipelineTests(unittest.TestCase):
                 and change["interface"] == "GigabitEthernet0/1"
             }
             self.assertEqual("medium", by_field["status"]["severity"])
+            self.assertEqual("degradation", by_field["status"]["event"])
             self.assertEqual("administratively_down", by_field["status"]["current_value"])
             self.assertEqual("high", by_field["protocol"]["severity"])
+            self.assertEqual("failure", by_field["protocol"]["event"])
             self.assertEqual("down", by_field["protocol"]["current_value"])
+            # The shutdown is an active issue (not a recovery) -> health is not Healthy.
+            self.assertGreaterEqual(report["active_issue_count"], 1)
+            self.assertEqual(0, report["recovery_count"])
             self.assertIn("[5/9] Comparing topology & state ... ok", output)
             brief = (workdir / "morning_brief.md").read_text(encoding="utf-8")
-            self.assertIn("## Operational Changes", brief)
-            self.assertIn("Interfaces down: 1", brief)
+            self.assertIn("## Operational State", brief)
+            self.assertIn("Interfaces currently down: 1", brief)
             self.assertIn("Attention Required", brief)
 
     def test_discovery_failure_does_not_break_the_pipeline(self) -> None:

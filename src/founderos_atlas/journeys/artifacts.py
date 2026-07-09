@@ -128,10 +128,13 @@ class MorningBrief:
                 bullets.append(f"- Configuration collected from {configured} device(s)")
             interfaces_down = run.get("interfaces_down")
             if interfaces_down:
-                bullets.append(f"- {interfaces_down} interface(s) down")
-            operational_changes = run.get("operational_changes")
-            if operational_changes:
-                bullets.append(f"- {operational_changes} operational change(s) detected")
+                bullets.append(f"- {interfaces_down} interface(s) currently down")
+            active_issues = run.get("operational_active")
+            if active_issues:
+                bullets.append(f"- {active_issues} active operational issue(s)")
+            recoveries = run.get("operational_recoveries")
+            if recoveries:
+                bullets.append(f"- {recoveries} interface(s) recovered")
             config_changes = run.get("configuration_changes")
             if config_changes:
                 bullets.append(f"- {config_changes} configuration change(s) detected")
@@ -180,22 +183,34 @@ class MorningBrief:
         operational_lines: tuple[str, ...] = ()
         operational_report = self.metadata.get("operational_report")
         if isinstance(operational_report, Mapping):
-            op_counts = operational_report.get("severity_counts") or {}
             entries = tuple(operational_report.get("changes") or ())
-            detail_lines = tuple(
+            active = tuple(
+                entry for entry in entries if entry.get("event") in ("failure", "degradation")
+            )
+            active_lines = tuple(
                 f"- [{str(entry.get('severity', '')).upper()}] {entry.get('description')} "
                 f"— {entry.get('recommendation')}"
+                for entry in active
+            ) or ("- No active operational issues — the current state is healthy.",)
+            event_lines = tuple(
+                f"- [{str(entry.get('event', '')).upper()}] {entry.get('description')}"
                 for entry in entries
             ) or ("- No operational changes detected.",)
             operational_lines = (
-                "## Operational Changes",
+                "## Operational State",
                 "",
-                f"- Operational changes detected: {operational_report.get('change_count', 0)}",
-                f"- Interfaces down: {operational_report.get('interfaces_down', 0)}",
-                f"- High: {op_counts.get('high', 0)} | Medium: {op_counts.get('medium', 0)} "
-                f"| Low: {op_counts.get('low', 0)}",
+                f"- Current health: {operational_report.get('current_health', 'Healthy')}",
+                f"- Active issues: {operational_report.get('active_issue_count', 0)}",
+                f"- Interfaces currently down: {operational_report.get('interfaces_down', 0)}",
+                f"- Recoveries: {operational_report.get('recovery_count', 0)}",
                 "",
-                *detail_lines,
+                "### Active Issues",
+                "",
+                *active_lines,
+                "",
+                "### Events (history)",
+                "",
+                *event_lines,
                 "",
             )
         return "\n".join(

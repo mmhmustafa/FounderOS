@@ -385,9 +385,12 @@ def render_atlas_profile_list(profiles: tuple[DiscoveryProfile, ...]) -> str:
 def render_atlas_state_diff(
     report: StateChangeReport, json_path: str, markdown_path: str
 ) -> str:
-    counts = report.severity_counts
-    change_lines = [
+    active_lines = [
         f"[{change.severity}] {change.hostname} {change.interface}: {change.description}"
+        for change in report.active_issues
+    ] or ["No active operational issues — current state is healthy."]
+    event_lines = [
+        f"[{change.event}] {change.hostname} {change.interface}: {change.description}"
         for change in report.changes
     ] or ["No operational changes detected."]
     return "\n".join(
@@ -399,16 +402,17 @@ def render_atlas_state_diff(
             f"Previous: {report.previous_ref}",
             f"Current: {report.current_ref}",
             "",
-            f"Devices changed: {len(report.devices_changed)}",
-            f"Operational changes: {report.change_count}",
-            f"Interfaces down: {report.interfaces_down}",
-            " | ".join(
-                f"{severity.title()}: {counts[severity]}"
-                for severity in STATE_SEVERITY_ORDER
-            ),
-            f"Network status: {report.status}",
+            f"Current health: {report.current_health}",
+            f"Active issues: {report.active_issue_count}",
+            f"Interfaces currently down: {report.interfaces_down}",
+            f"Recoveries: {len(report.recoveries)}",
+            f"Historical events: {report.change_count}",
             "",
-            *change_lines,
+            "Active issues:",
+            *active_lines,
+            "",
+            "Events (history):",
+            *event_lines,
             "",
             f"Report saved: {json_path}",
             f"Report saved: {markdown_path}",
