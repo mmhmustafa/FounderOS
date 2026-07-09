@@ -15,6 +15,7 @@ from founderos_atlas.history import HistoryIndex
 from founderos_atlas.incidents import IncidentReport
 from founderos_atlas.state import SEVERITY_ORDER as STATE_SEVERITY_ORDER
 from founderos_atlas.state import StateChangeReport
+from founderos_atlas.workspace import DiscoveryProfile
 from founderos_atlas.journeys import MorningBriefJourneyResult
 from founderos_atlas.topology import TopologyGraph, TopologySnapshot
 from founderos_runtime.journey import JourneyResult
@@ -36,6 +37,8 @@ def render_help() -> str:
             "  founderos atlas demo topology",
             "  founderos atlas morning-brief",
             "  founderos atlas discover",
+            "  founderos atlas discover --profile <name>",
+            "  founderos atlas profile add | list | show | update | delete",
             "  founderos atlas compare <previous.json> <current.json>",
             "  founderos atlas dashboard",
             "  founderos atlas history",
@@ -55,6 +58,7 @@ def render_help() -> str:
             "  atlas demo topology  Generate and open the Atlas topology viewer.",
             "  atlas morning-brief  Generate an evaluated Atlas operational brief.",
             "  atlas discover  Discover a live Cisco IOS/IOS-XE device over read-only SSH.",
+            "  atlas profile   Manage saved discovery profiles (add/list/show/update/delete).",
             "  atlas compare   Compare two topology snapshots into a change report.",
             "  atlas dashboard  Generate the Atlas executive dashboard.",
             "  atlas history   List every preserved discovery.",
@@ -317,6 +321,65 @@ def render_atlas_investigate(
             "=" * 48,
         )
     )
+
+
+def _profile_timestamp(value: str | None) -> str:
+    if not value:
+        return "never"
+    try:
+        return datetime.fromisoformat(value).strftime("%d-%b-%Y %H:%M")
+    except ValueError:
+        return value
+
+
+def render_atlas_profile_saved(profile: DiscoveryProfile, *, action: str) -> str:
+    return "\n".join(
+        (
+            f"Profile {action} successfully.",
+            "",
+            f"Name: {profile.name}",
+            f"Site: {profile.site or '-'}",
+            f"Management IP: {profile.management_ip}",
+            f"Username: {profile.username}",
+            f"Max depth: {profile.max_depth}",
+            f"Max devices: {profile.max_devices}",
+            f"Collect configurations: {'yes' if profile.collect_configuration else 'no'}",
+            "Password: stored securely",
+        )
+    )
+
+
+def render_atlas_profile_detail(profile: DiscoveryProfile) -> str:
+    return "\n".join(
+        (
+            "Atlas Discovery Profile",
+            "",
+            f"Name: {profile.name}",
+            f"Site: {profile.site or '-'}",
+            f"Management IP: {profile.management_ip}",
+            f"Username: {profile.username}",
+            f"Max depth: {profile.max_depth}",
+            f"Max devices: {profile.max_devices}",
+            f"Collect configurations: {'yes' if profile.collect_configuration else 'no'}",
+            f"Created: {_profile_timestamp(profile.created_at)}",
+            f"Updated: {_profile_timestamp(profile.updated_at)}",
+            f"Last discovery: {_profile_timestamp(profile.last_discovery)}",
+            "Password: stored securely (never displayed)",
+        )
+    )
+
+
+def render_atlas_profile_list(profiles: tuple[DiscoveryProfile, ...]) -> str:
+    if not profiles:
+        return "No discovery profiles saved yet. Add one with: founderos atlas profile add"
+    header = f"{'NAME':<18}{'SITE':<14}{'MANAGEMENT IP':<17}{'USERNAME':<12}LAST DISCOVERY"
+    rows = [
+        f"{profile.name:<18}{(profile.site or '-'):<14}"
+        f"{profile.management_ip:<17}{profile.username:<12}"
+        f"{_profile_timestamp(profile.last_discovery)}"
+        for profile in profiles
+    ]
+    return "\n".join((header, *rows))
 
 
 def render_atlas_state_diff(

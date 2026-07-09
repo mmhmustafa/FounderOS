@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### EPIC-002 / PR-030 - Atlas Workspace & Saved Discovery Profiles
+
+- Added `founderos_atlas/workspace/`: a persistent workspace and saved discovery profile system — the reusable backend foundation for the Atlas GUI (PR-031).
+- `DiscoveryProfile` model stores name, site, management IP, username, credential reference, max depth, max devices, collect-configuration setting, and created/updated/last-discovery timestamps — and has **no password field** by design, so a profile can never serialize a secret.
+- `CredentialProvider` abstraction with `KeyringCredentialProvider` (OS-native storage via the optional `keyring` extra) and `InMemoryCredentialProvider` (tests/sessions); there is deliberately no plaintext fallback, and the abstraction is extensible for future enterprise backends (Vault, AWS Secrets Manager, Azure Key Vault).
+- `ProfileRepository` persists profiles as JSON under `~/.atlas/workspace/` (override with `ATLAS_HOME`), keyed by case-insensitive name, corruption-tolerant.
+- `ProfileService` holds all profile/credential business logic (add/list/get/update/delete, resolve discovery inputs, record last-discovery) — the CLI is a thin adapter and PR-031's GUI will call the same service directly.
+- Added `founderos atlas profile add | list | show | update | delete` with masked password input; passwords are never displayed.
+- Added `founderos atlas discover --profile <name>`: loads the saved profile, resolves the secure credential, runs the existing unified pipeline unchanged (topology snapshot, viewer, dashboard, morning brief, history, topology/config/operational change reports), and updates the profile's last-discovery timestamp. The interactive `founderos atlas discover` is unchanged and fully backward compatible.
+- Security: a known test password is verified absent from profile storage, console output, generated HTML, Markdown reports, JSON snapshots, and history; graceful, password-free errors for duplicate name, invalid IP, missing profile, missing credential, corrupted workspace, and unavailable credential store.
+- Added 27 tests (model, service CRUD, duplicate/invalid/missing rejection, credential security regression, keyring-unavailable behavior, the profile CLI, and end-to-end discovery via a saved profile with a no-prompt assertion). All existing tests continue to pass; the unified discovery pipeline is unchanged.
+- Did not build the GUI in this PR.
+
 ### EPIC-002 / PR-029 - Operational State Intelligence
 
 - Added `founderos_atlas/state/`: deterministic operational state detection between two topology snapshots — the third change dimension alongside topology and configuration intelligence, detecting changes in the live network even when the saved configuration is identical.

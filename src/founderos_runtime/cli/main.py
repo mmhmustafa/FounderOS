@@ -24,6 +24,11 @@ from .commands import (
     atlas_discover_command,
     atlas_history_command,
     atlas_investigate_command,
+    atlas_profile_add_command,
+    atlas_profile_delete_command,
+    atlas_profile_list_command,
+    atlas_profile_show_command,
+    atlas_profile_update_command,
     atlas_timeline_command,
     atlas_discovery_command,
     atlas_morning_brief_command,
@@ -71,6 +76,7 @@ def main(
     atlas_incident_markdown_output: str | Path = "incident_report.md",
     atlas_state_diff_json_output: str | Path = "state_change_report.json",
     atlas_state_diff_markdown_output: str | Path = "state_change_report.md",
+    atlas_profile_service=None,
 ) -> int:
     arguments = list(sys.argv[1:] if argv is None else argv)
     if not arguments:
@@ -105,7 +111,16 @@ def main(
         except CliError as error:
             print(render_error(str(error)), file=sys.stderr)
             return 1
-    elif arguments == ["atlas", "discover"]:
+    elif arguments[:2] == ["atlas", "discover"]:
+        profile_name, remaining = _parse_profile_flag(arguments[2:])
+        if remaining:
+            print(
+                render_error(
+                    "Usage: founderos atlas discover [--profile <name>]"
+                ),
+                file=sys.stderr,
+            )
+            return 2
         try:
             code, output = atlas_discover_command(
                 transport_factory=atlas_transport_factory,
@@ -126,7 +141,23 @@ def main(
                 state_change_markdown_output=atlas_state_diff_markdown_output,
                 clock=atlas_clock,
                 browser_opener=atlas_browser_opener,
+                profile=profile_name,
+                profile_service=atlas_profile_service,
             )
+        except CliError as error:
+            print(render_error(str(error)), file=sys.stderr)
+            return 1
+    elif arguments[:2] == ["atlas", "profile"]:
+        result = _run_profile_command(
+            arguments[2:],
+            service=atlas_profile_service,
+            input_reader=atlas_input_reader,
+            password_reader=atlas_password_reader,
+        )
+        if result is None:
+            return 2
+        try:
+            code, output = result()
         except CliError as error:
             print(render_error(str(error)), file=sys.stderr)
             return 1
@@ -273,6 +304,69 @@ def main(
         return 2
     print(output)
     return code
+
+
+def _parse_profile_flag(tokens: list[str]) -> tuple[str | None, list[str]]:
+    """Extract --profile <name> / --profile=<name>; return (name, leftover)."""
+
+    remaining: list[str] = []
+    profile: str | None = None
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        if token == "--profile" and index + 1 < len(tokens):
+            profile = tokens[index + 1]
+            index += 2
+            continue
+        if token.startswith("--profile="):
+            profile = token.split("=", 1)[1]
+            index += 1
+            continue
+        remaining.append(token)
+        index += 1
+    return profile, remaining
+
+
+def _run_profile_command(tokens, *, service, input_reader, password_reader):
+    """Return a zero-arg callable producing (code, output), or None on misuse."""
+
+    if not tokens:
+        print(
+            render_error(
+                "Usage: founderos atlas profile add | list | show <name> | "
+                "update <name> | delete <name>"
+            ),
+            file=sys.stderr,
+        )
+        return None
+    action, rest = tokens[0], tokens[1:]
+    if action == "add" and not rest:
+        return lambda: atlas_profile_add_command(
+            input_reader=input_reader,
+            password_reader=password_reader,
+            service=service,
+        )
+    if action == "list" and not rest:
+        return lambda: atlas_profile_list_command(service=service)
+    if action == "show" and len(rest) == 1:
+        return lambda: atlas_profile_show_command(rest[0], service=service)
+    if action == "update" and len(rest) == 1:
+        return lambda: atlas_profile_update_command(
+            rest[0],
+            input_reader=input_reader,
+            password_reader=password_reader,
+            service=service,
+        )
+    if action == "delete" and len(rest) == 1:
+        return lambda: atlas_profile_delete_command(rest[0], service=service)
+    print(
+        render_error(
+            "Usage: founderos atlas profile add | list | show <name> | "
+            "update <name> | delete <name>"
+        ),
+        file=sys.stderr,
+    )
+    return None
 
 
 if __name__ == "__main__":

@@ -20,6 +20,9 @@ dev = [
 ssh = [
   "netmiko>=4.3,<5",
 ]
+credentials = [
+  "keyring>=24,<26",
+]
 
 [project.scripts]
 founderos = "founderos_runtime.cli:main"

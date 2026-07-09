@@ -1,0 +1,204 @@
+"""Profile service: the reusable backend for both the CLI and the future GUI.
+
+All profile and credential business logic lives here. The CLI is a thin
+adapter over these methods; PR-031's local web GUI will call the same
+methods directly, with no CLI invocation and no duplicated logic.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from dataclasses import dataclass, replace
+from datetime import datetime, timezone
+
+from .credentials import CredentialProvider, resolve_credential_provider
+from .exceptions import (
+    CredentialStoreUnavailableError,
+    DuplicateProfileError,
+    InvalidProfileError,
+)
+from .models import (
+    DiscoveryProfile,
+    credential_ref_for,
+    profile_id_for,
+)
+from .repository import ProfileRepository
+
+
+Clock = Callable[[], datetime]
+
+
+@dataclass(frozen=True)
+class ResolvedDiscoveryInputs:
+    """Everything the discovery pipeline needs, resolved from a profile."""
+
+    profile_name: str
+    management_ip: str
+    username: str
+    password: str
+    max_depth: int
+    max_devices: int
+    collect_configuration: bool
+
+
+class ProfileService:
+    """Create, read, update, delete profiles and resolve their credentials."""
+
+    def __init__(
+        self,
+        repository: ProfileRepository | None = None,
+        credential_provider: CredentialProvider | None = None,
+        *,
+        clock: Clock | None = None,
+    ) -> None:
+        self._repository = repository if repository is not None else ProfileRepository()
+        self._credentials = (
+            credential_provider
+            if credential_provider is not None
+            else resolve_credential_provider()
+        )
+        self._clock = clock or (lambda: datetime.now(timezone.utc))
+
+    @property
+    def repository(self) -> ProfileRepository:
+        return self._repository
+
+    # -- read ---------------------------------------------------------------
+
+    def list_profiles(self) -> tuple[DiscoveryProfile, ...]:
+        return self._repository.list()
+
+    def get_profile(self, name: str) -> DiscoveryProfile:
+        return self._repository.get(name)
+
+    # -- create -------------------------------------------------------------
+
+    def add_profile(
+        self,
+        *,
+        name: str,
+        management_ip: str,
+        username: str,
+        password: str,
+        site: str | None = None,
+        max_depth: int = 1,
+        max_devices: int = 10,
+        collect_configuration: bool = False,
+    ) -> DiscoveryProfile:
+        if not isinstance(name, str) or not name.strip():
+            raise InvalidProfileError("A profile name is required.")
+        if self._repository.exists(name):
+            raise DuplicateProfileError(f"A profile named {name.strip()!r} already exists.")
+        if not password:
+            raise InvalidProfileError("A password is required to save a profile.")
+        self._ensure_credential_store()
+        profile_id = profile_id_for(name)
+        credential_ref = credential_ref_for(profile_id)
+        now = self._now()
+        profile = DiscoveryProfile(
+            profile_id=profile_id,
+            name=name,
+            management_ip=management_ip,
+            username=username,
+            credential_ref=credential_ref,
+            site=site,
+            max_depth=max_depth,
+            max_devices=max_devices,
+            collect_configuration=collect_configuration,
+            created_at=now,
+            updated_at=now,
+            last_discovery=None,
+        )
+        # Store the secret first; if it fails, no dangling metadata is left.
+        self._credentials.save(credential_ref, password)
+        try:
+            self._repository.add(profile)
+        except Exception:
+            self._credentials.delete(credential_ref)
+            raise
+        return profile
+
+    # -- update -------------------------------------------------------------
+
+    def update_profile(
+        self,
+        name: str,
+        *,
+        management_ip: str | None = None,
+        username: str | None = None,
+        password: str | None = None,
+        site: str | None = None,
+        clear_site: bool = False,
+        max_depth: int | None = None,
+        max_devices: int | None = None,
+        collect_configuration: bool | None = None,
+    ) -> DiscoveryProfile:
+        existing = self._repository.get(name)
+        updated = DiscoveryProfile(
+            profile_id=existing.profile_id,
+            name=existing.name,
+            management_ip=management_ip if management_ip is not None else existing.management_ip,
+            username=username if username is not None else existing.username,
+            credential_ref=existing.credential_ref,
+            site=None if clear_site else (site if site is not None else existing.site),
+            max_depth=max_depth if max_depth is not None else existing.max_depth,
+            max_devices=max_devices if max_devices is not None else existing.max_devices,
+            collect_configuration=(
+                collect_configuration
+                if collect_configuration is not None
+                else existing.collect_configuration
+            ),
+            created_at=existing.created_at,
+            updated_at=self._now(),
+            last_discovery=existing.last_discovery,
+        )
+        if password:
+            self._ensure_credential_store()
+            self._credentials.save(existing.credential_ref, password)
+        self._repository.save(updated)
+        return updated
+
+    # -- delete -------------------------------------------------------------
+
+    def delete_profile(self, name: str) -> DiscoveryProfile:
+        removed = self._repository.delete(name)
+        self._credentials.delete(removed.credential_ref)
+        return removed
+
+    # -- discovery integration ---------------------------------------------
+
+    def resolve_discovery_inputs(self, name: str) -> ResolvedDiscoveryInputs:
+        profile = self._repository.get(name)
+        password = self._credentials.get(profile.credential_ref)
+        return ResolvedDiscoveryInputs(
+            profile_name=profile.name,
+            management_ip=profile.management_ip,
+            username=profile.username,
+            password=password,
+            max_depth=profile.max_depth,
+            max_devices=profile.max_devices,
+            collect_configuration=profile.collect_configuration,
+        )
+
+    def record_discovery(self, name: str, when: datetime | str | None = None) -> DiscoveryProfile:
+        profile = self._repository.get(name)
+        timestamp = (
+            when.isoformat(timespec="seconds")
+            if isinstance(when, datetime)
+            else (when or self._now())
+        )
+        updated = replace(profile, last_discovery=timestamp, updated_at=self._now())
+        self._repository.save(updated)
+        return updated
+
+    # -- internals ----------------------------------------------------------
+
+    def _ensure_credential_store(self) -> None:
+        if not self._credentials.available():
+            raise CredentialStoreUnavailableError(
+                "No secure credential store is available. Install one with: "
+                "pip install founderos-runtime[credentials]"
+            )
+
+    def _now(self) -> str:
+        return self._clock().isoformat(timespec="seconds")

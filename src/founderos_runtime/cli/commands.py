@@ -57,6 +57,10 @@ from founderos_atlas.state import (
     render_state_report_json,
     render_state_report_markdown,
 )
+from founderos_atlas.workspace import (
+    AtlasWorkspaceError,
+    ProfileService,
+)
 from founderos_atlas.topology import TopologyGraph, TopologySnapshot, TopologySnapshotExporter
 from founderos_atlas.transport import (
     AtlasTransportError,
@@ -80,6 +84,9 @@ from .render import (
     render_atlas_discover,
     render_atlas_history,
     render_atlas_investigate,
+    render_atlas_profile_detail,
+    render_atlas_profile_list,
+    render_atlas_profile_saved,
     render_atlas_state_diff,
     render_atlas_timeline,
     render_atlas_discovery,
@@ -194,6 +201,8 @@ def atlas_discover_command(
     clock: Clock | None = None,
     browser_opener: BrowserOpener | None = None,
     progress: Callable[[str], None] | None = None,
+    profile: str | None = None,
+    profile_service: ProfileService | None = None,
 ) -> tuple[int, str]:
     """The unified Atlas pipeline: one command, the complete workflow."""
 
@@ -205,16 +214,31 @@ def atlas_discover_command(
     def step(number: int, label: str, status: str = "ok") -> None:
         emit(f"[{number}/9] {label} ... {status}")
 
-    try:
-        host = read_input("Management IP: ").strip()
-        username = read_input("Username: ").strip()
-        password = read_password("Password: ")
-    except (EOFError, KeyboardInterrupt) as error:
-        raise CliError("Discovery was cancelled before connecting to a device") from error
-    if not host or not username or not password:
-        raise CliError("Management IP, username, and password are all required")
-    max_depth = _read_limit(read_input, "Max depth [1]: ", 1)
-    max_devices = _read_limit(read_input, "Max devices [10]: ", 10)
+    active_profile: str | None = None
+    active_service: ProfileService | None = None
+    collect_override: bool | None = None
+    if profile is not None:
+        active_service = _profile_service(profile_service)
+        try:
+            inputs = active_service.resolve_discovery_inputs(profile)
+        except AtlasWorkspaceError as error:
+            raise CliError(str(error)) from error
+        active_profile = inputs.profile_name
+        host, username, password = inputs.management_ip, inputs.username, inputs.password
+        max_depth, max_devices = inputs.max_depth, inputs.max_devices
+        collect_override = inputs.collect_configuration
+        emit(f"Using profile: {active_profile}")
+    else:
+        try:
+            host = read_input("Management IP: ").strip()
+            username = read_input("Username: ").strip()
+            password = read_password("Password: ")
+        except (EOFError, KeyboardInterrupt) as error:
+            raise CliError("Discovery was cancelled before connecting to a device") from error
+        if not host or not username or not password:
+            raise CliError("Management IP, username, and password are all required")
+        max_depth = _read_limit(read_input, "Max depth [1]: ", 1)
+        max_devices = _read_limit(read_input, "Max devices [10]: ", 10)
     started_at = read_clock()
     emit("")
     emit("Atlas Discovery Pipeline")
@@ -246,6 +270,7 @@ def atlas_discover_command(
         credentials,
         report,
         config_output_dir,
+        collect_override=collect_override,
     )
     if config_collections is None:
         step(3, "Collecting configurations", "skipped (not requested)")
@@ -345,6 +370,12 @@ def atlas_discover_command(
             record_id, Path(dashboard_output).resolve()
         )
     step(9, "Updating dashboard")
+    if active_service is not None and active_profile is not None:
+        try:
+            active_service.record_discovery(active_profile, completed_at)
+        except AtlasWorkspaceError:
+            # Recording the timestamp is best-effort; never fail a good run.
+            pass
     emit("")
     emit("Discovery Complete")
     emit("")
@@ -659,6 +690,148 @@ def _load_snapshot_json(path: str | Path) -> dict:
     return data
 
 
+ProfileServiceFactory = Callable[[], ProfileService]
+
+
+def _profile_service(service: ProfileService | None) -> ProfileService:
+    if service is not None:
+        return service
+    try:
+        return ProfileService()
+    except AtlasWorkspaceError as error:
+        raise CliError(str(error)) from error
+
+
+def atlas_profile_add_command(
+    *,
+    input_reader: PromptReader | None = None,
+    password_reader: PromptReader | None = None,
+    service: ProfileService | None = None,
+) -> tuple[int, str]:
+    read_input = input_reader or input
+    read_password = password_reader or getpass.getpass
+    service = _profile_service(service)
+    try:
+        name = read_input("Profile name: ").strip()
+        site = read_input("Site name [optional]: ").strip() or None
+        management_ip = read_input("Management IP: ").strip()
+        username = read_input("Username: ").strip()
+        password = read_password("Password: ")
+        max_depth = _read_limit(read_input, "Max depth [1]: ", 1)
+        max_devices = _read_limit(read_input, "Max devices [10]: ", 10)
+        collect = _read_yes_no(read_input, "Collect running configuration? [y/N] ")
+    except (EOFError, KeyboardInterrupt) as error:
+        raise CliError("Profile creation was cancelled") from error
+    try:
+        profile = service.add_profile(
+            name=name,
+            site=site,
+            management_ip=management_ip,
+            username=username,
+            password=password,
+            max_depth=max_depth,
+            max_devices=max_devices,
+            collect_configuration=collect,
+        )
+    except AtlasWorkspaceError as error:
+        raise CliError(str(error)) from error
+    return 0, render_atlas_profile_saved(profile, action="saved")
+
+
+def atlas_profile_list_command(
+    *, service: ProfileService | None = None
+) -> tuple[int, str]:
+    service = _profile_service(service)
+    try:
+        profiles = service.list_profiles()
+    except AtlasWorkspaceError as error:
+        raise CliError(str(error)) from error
+    return 0, render_atlas_profile_list(profiles)
+
+
+def atlas_profile_show_command(
+    name: str, *, service: ProfileService | None = None
+) -> tuple[int, str]:
+    service = _profile_service(service)
+    try:
+        profile = service.get_profile(name)
+    except AtlasWorkspaceError as error:
+        raise CliError(str(error)) from error
+    return 0, render_atlas_profile_detail(profile)
+
+
+def atlas_profile_update_command(
+    name: str,
+    *,
+    input_reader: PromptReader | None = None,
+    password_reader: PromptReader | None = None,
+    service: ProfileService | None = None,
+) -> tuple[int, str]:
+    read_input = input_reader or input
+    read_password = password_reader or getpass.getpass
+    service = _profile_service(service)
+    try:
+        existing = service.get_profile(name)
+    except AtlasWorkspaceError as error:
+        raise CliError(str(error)) from error
+    try:
+        site = read_input(f"Site name [{existing.site or 'none'}]: ").strip()
+        management_ip = read_input(f"Management IP [{existing.management_ip}]: ").strip()
+        username = read_input(f"Username [{existing.username}]: ").strip()
+        password = read_password("Password [keep current]: ")
+        depth_text = read_input(f"Max depth [{existing.max_depth}]: ").strip()
+        devices_text = read_input(f"Max devices [{existing.max_devices}]: ").strip()
+        collect_text = read_input(
+            f"Collect running configuration? [{_yes_no(existing.collect_configuration)}] "
+        ).strip()
+    except (EOFError, KeyboardInterrupt) as error:
+        raise CliError("Profile update was cancelled") from error
+    try:
+        profile = service.update_profile(
+            name,
+            management_ip=management_ip or None,
+            username=username or None,
+            password=password or None,
+            site=site or None,
+            max_depth=int(depth_text) if depth_text else None,
+            max_devices=int(devices_text) if devices_text else None,
+            collect_configuration=(
+                _parse_yes_no(collect_text) if collect_text else None
+            ),
+        )
+    except ValueError as error:
+        raise CliError(f"Invalid numeric input: {error}") from error
+    except AtlasWorkspaceError as error:
+        raise CliError(str(error)) from error
+    return 0, render_atlas_profile_saved(profile, action="updated")
+
+
+def atlas_profile_delete_command(
+    name: str, *, service: ProfileService | None = None
+) -> tuple[int, str]:
+    service = _profile_service(service)
+    try:
+        removed = service.delete_profile(name)
+    except AtlasWorkspaceError as error:
+        raise CliError(str(error)) from error
+    return 0, f"Profile {removed.name!r} deleted."
+
+
+def _read_yes_no(read_input: PromptReader, prompt: str) -> bool:
+    try:
+        return _parse_yes_no(read_input(prompt).strip())
+    except (EOFError, KeyboardInterrupt):
+        return False
+
+
+def _parse_yes_no(text: str) -> bool:
+    return text.strip().casefold() in ("y", "yes")
+
+
+def _yes_no(value: bool) -> str:
+    return "yes" if value else "no"
+
+
 def atlas_investigate_command(
     *,
     input_reader: PromptReader | None = None,
@@ -917,18 +1090,25 @@ def _collect_configurations_if_requested(
     credentials: DeviceCredentials,
     report,
     config_output_dir: str | Path,
+    *,
+    collect_override: bool | None = None,
 ) -> tuple[tuple[str, str, str], ...] | None:
-    """Ask once, then collect read-only configuration per discovered device.
+    """Collect read-only configuration per discovered device.
 
+    ``collect_override`` (from a saved profile) skips the interactive prompt.
     Returns None when declined, else (hostname, status, detail) entries where
     detail is the artifact directory or a clean failure message.
     """
 
-    try:
-        answer = read_input("Collect running configuration? [y/N] ").strip().casefold()
-    except (EOFError, KeyboardInterrupt):
-        answer = ""
-    if answer not in ("y", "yes"):
+    if collect_override is not None:
+        collect = collect_override
+    else:
+        try:
+            answer = read_input("Collect running configuration? [y/N] ").strip().casefold()
+        except (EOFError, KeyboardInterrupt):
+            answer = ""
+        collect = answer in ("y", "yes")
+    if not collect:
         return None
     collections: list[tuple[str, str, str]] = []
     for visit, result in zip(report.connected, report.results):

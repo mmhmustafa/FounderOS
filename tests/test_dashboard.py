@@ -62,6 +62,8 @@ def summary_kwargs(workdir: Path) -> dict:
         "timeline_path": workdir / "timeline.md",
         "config_change_report": workdir / "config_change_report.json",
         "config_change_report_md": workdir / "config_change_report.md",
+        "state_change_report": workdir / "state_change_report.json",
+        "state_change_report_md": workdir / "state_change_report.md",
         "incident_report": workdir / "incident_report.json",
         "incident_report_md": workdir / "incident_report.md",
         "link_base": workdir,

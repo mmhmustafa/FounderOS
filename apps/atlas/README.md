@@ -288,6 +288,44 @@ scored deterministically (low / medium / high). Writes
 Recent Incident Investigation card with a link. See
 `src/founderos_atlas/incidents/README.md`.
 
+## Saved Discovery Profiles
+
+Save a discovery target and its settings once, then reuse them without
+re-entering the IP, username, or password:
+
+```powershell
+pip install founderos-runtime[credentials]   # OS-native secure credential storage
+
+founderos atlas profile add
+  Profile name: Hyderabad Lab
+  Site name [optional]: CML Lab
+  Management IP: 192.168.1.12
+  Username: atlas
+  Password: (hidden, stored securely)
+  Max depth [1]:
+  Max devices [10]:
+  Collect running configuration? [y/N]: y
+
+founderos atlas profile list
+founderos atlas profile show "Hyderabad Lab"
+founderos atlas profile update "Hyderabad Lab"
+founderos atlas profile delete "Hyderabad Lab"
+
+founderos atlas discover --profile "Hyderabad Lab"
+```
+
+Profiles are stored under `~/.atlas/workspace/profiles.json` (override with
+`ATLAS_HOME`). The password is **never** written there — only a credential
+reference is saved; the secret lives in your OS keyring. Passwords are never
+printed or included in any report, snapshot, dashboard, or history record.
+`founderos atlas discover --profile <name>` loads everything from the
+profile and runs the full unified pipeline unchanged. The interactive
+`founderos atlas discover` (no profile) continues to work exactly as before.
+
+This is the backend foundation for the Atlas GUI (PR-031): all logic lives
+in a reusable `ProfileService`, which the GUI will call directly. See
+`src/founderos_atlas/workspace/README.md`.
+
 ## Operational State Intelligence
 
 Atlas detects operational changes in the running network between
