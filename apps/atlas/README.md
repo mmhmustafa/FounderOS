@@ -288,6 +288,29 @@ scored deterministically (low / medium / high). Writes
 Recent Incident Investigation card with a link. See
 `src/founderos_atlas/incidents/README.md`.
 
+## Operational State Intelligence
+
+Atlas detects operational changes in the running network between
+discoveries — even when the saved configuration has not changed. This is
+the third change dimension, alongside topology and configuration
+intelligence: interface status up → down, line protocol up → down (reported
+separately from an administrative shutdown), IP address changes, and new or
+removed interfaces. Interface state already lives inside every topology
+snapshot (`show ip interface brief`), so no extra collection is required.
+
+```powershell
+founderos atlas state-diff previous_snapshot.json current_snapshot.json
+founderos atlas state-diff --latest
+```
+
+Both forms write `state_change_report.json` and `state_change_report.md`.
+Operational comparison also runs automatically inside `founderos atlas
+discover` when a baseline exists (pipeline step 5, "Comparing topology &
+state"). When operational changes exist, the Morning Brief network status
+becomes Attention Required and reports "N interface(s) down" — distinct
+from topology and configuration changes — and the dashboard shows an
+Operational Changes card. See `src/founderos_atlas/state/README.md`.
+
 ## Next Step
 
 Extract a reusable deterministic Topology Change Set contract for richer operational journeys before considering persistence or live transport.

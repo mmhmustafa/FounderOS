@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from contextlib import redirect_stderr, redirect_stdout
+from datetime import datetime, timezone
 from io import StringIO
 import json
 from pathlib import Path
@@ -312,6 +313,9 @@ class MultiHopCliTests(unittest.TestCase):
                     atlas_morning_brief_output=root / "morning_brief.md",
                     atlas_dashboard_output=root / "dashboard.html",
                     atlas_history_root=root / ".atlas" / "history",
+                    atlas_state_diff_json_output=root / "state_change_report.json",
+                    atlas_state_diff_markdown_output=root / "state_change_report.md",
+                    atlas_clock=lambda: datetime(2026, 7, 9, 8, 15, 0, tzinfo=timezone.utc),
                     atlas_browser_opener=opened.append,
                 )
             artifacts = {

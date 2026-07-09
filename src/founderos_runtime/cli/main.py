@@ -19,6 +19,7 @@ from .commands import (
     TransportFactory,
     atlas_compare_command,
     atlas_config_diff_command,
+    atlas_state_diff_command,
     atlas_dashboard_command,
     atlas_discover_command,
     atlas_history_command,
@@ -68,6 +69,8 @@ def main(
     atlas_config_diff_markdown_output: str | Path = "config_change_report.md",
     atlas_incident_json_output: str | Path = "incident_report.json",
     atlas_incident_markdown_output: str | Path = "incident_report.md",
+    atlas_state_diff_json_output: str | Path = "state_change_report.json",
+    atlas_state_diff_markdown_output: str | Path = "state_change_report.md",
 ) -> int:
     arguments = list(sys.argv[1:] if argv is None else argv)
     if not arguments:
@@ -119,6 +122,8 @@ def main(
                 change_report_markdown_output=atlas_compare_markdown_output,
                 config_change_json_output=atlas_config_diff_json_output,
                 config_change_markdown_output=atlas_config_diff_markdown_output,
+                state_change_json_output=atlas_state_diff_json_output,
+                state_change_markdown_output=atlas_state_diff_markdown_output,
                 clock=atlas_clock,
                 browser_opener=atlas_browser_opener,
             )
@@ -146,6 +151,34 @@ def main(
                     render_error(
                         "Usage: founderos atlas config-diff <previous> <current> "
                         "| founderos atlas config-diff --latest <hostname>"
+                    ),
+                    file=sys.stderr,
+                )
+                return 2
+        except CliError as error:
+            print(render_error(str(error)), file=sys.stderr)
+            return 1
+    elif arguments[:2] == ["atlas", "state-diff"]:
+        try:
+            if arguments[2:] == ["--latest"]:
+                code, output = atlas_state_diff_command(
+                    latest=True,
+                    history_root=atlas_history_root,
+                    json_output=atlas_state_diff_json_output,
+                    markdown_output=atlas_state_diff_markdown_output,
+                )
+            elif len(arguments) == 4:
+                code, output = atlas_state_diff_command(
+                    arguments[2],
+                    arguments[3],
+                    json_output=atlas_state_diff_json_output,
+                    markdown_output=atlas_state_diff_markdown_output,
+                )
+            else:
+                print(
+                    render_error(
+                        "Usage: founderos atlas state-diff <previous.json> <current.json> "
+                        "| founderos atlas state-diff --latest"
                     ),
                     file=sys.stderr,
                 )
@@ -199,6 +232,8 @@ def main(
                 timeline_path=atlas_timeline_output,
                 config_change_report=atlas_config_diff_json_output,
                 config_change_report_md=atlas_config_diff_markdown_output,
+                state_change_report=atlas_state_diff_json_output,
+                state_change_report_md=atlas_state_diff_markdown_output,
                 incident_report=atlas_incident_json_output,
                 incident_report_md=atlas_incident_markdown_output,
                 browser_opener=atlas_browser_opener,

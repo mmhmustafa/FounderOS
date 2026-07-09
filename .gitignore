@@ -29,6 +29,8 @@ deliverables/*
 /change_report.md
 /config_change_report.json
 /config_change_report.md
+/state_change_report.json
+/state_change_report.md
 /dashboard.html
 /incident_report.json
 /incident_report.md

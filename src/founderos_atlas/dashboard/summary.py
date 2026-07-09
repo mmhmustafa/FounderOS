@@ -48,6 +48,7 @@ class DashboardSummary:
     recent_activity: tuple[str, ...]
     recent_discoveries: tuple[str, ...]
     configuration_changes: tuple[str, ...]
+    operational_changes: tuple[str, ...]
     incident_investigation: tuple[str, ...]
     actions: tuple[DashboardAction, ...]
 
@@ -64,6 +65,8 @@ def build_dashboard_summary(
     timeline_path: str | Path = "timeline.md",
     config_change_report: str | Path = "config_change_report.json",
     config_change_report_md: str | Path = "config_change_report.md",
+    state_change_report: str | Path = "state_change_report.json",
+    state_change_report_md: str | Path = "state_change_report.md",
     incident_report: str | Path = "incident_report.json",
     incident_report_md: str | Path = "incident_report.md",
     link_base: str | Path = ".",
@@ -107,10 +110,13 @@ def build_dashboard_summary(
         )
 
     configuration_changes = _configuration_changes(_load_json(config_change_report))
+    operational = _load_json(state_change_report)
+    operational_changes = _operational_changes(operational)
     incident_investigation = _incident_investigation(_load_json(incident_report))
 
     status, status_detail = _network_status(
-        snapshot, change_count, severity_counts, snapshot_warnings, failed_hosts
+        snapshot, change_count, severity_counts, snapshot_warnings, failed_hosts,
+        operational,
     )
     discovery_success = _discovery_success(device_count, failed_hosts)
     recent_activity = _recent_activity(
@@ -132,6 +138,7 @@ def build_dashboard_summary(
         DashboardAction("Open History", _href(Path(history_root), base, directory=True)),
         DashboardAction("Open Timeline", _href(Path(timeline_path), base)),
         DashboardAction("Open Config Changes", _href(Path(config_change_report_md), base)),
+        DashboardAction("Open Operational Changes", _href(Path(state_change_report_md), base)),
         DashboardAction("Open Incident Report", _href(Path(incident_report_md), base)),
     )
     return DashboardSummary(
@@ -147,6 +154,7 @@ def build_dashboard_summary(
         recent_activity=recent_activity,
         recent_discoveries=recent_discoveries,
         configuration_changes=configuration_changes,
+        operational_changes=operational_changes,
         incident_investigation=incident_investigation,
         actions=actions,
     )
@@ -158,15 +166,24 @@ def _network_status(
     severity_counts: dict[str, int],
     snapshot_warnings: int,
     failed_hosts: tuple[str, ...],
+    operational: dict[str, Any] | None = None,
 ) -> tuple[str, str]:
     if snapshot is None:
         return STATUS_UNKNOWN, "No discovery has run yet. Run: founderos atlas discover"
-    high = int(severity_counts.get("high") or 0)
+    operational_counts = (operational or {}).get("severity_counts") or {}
+    interfaces_down = int((operational or {}).get("interfaces_down") or 0)
+    high = int(severity_counts.get("high") or 0) + int(operational_counts.get("high") or 0)
     if high:
         return STATUS_CRITICAL, f"{high} high-severity change(s) require attention."
     concerns: list[str] = []
     if change_count:
-        concerns.append(f"{change_count} change(s) detected")
+        concerns.append(f"{change_count} topology change(s) detected")
+    operational_count = int((operational or {}).get("change_count") or 0)
+    if operational_count:
+        detail = f"{operational_count} operational change(s)"
+        if interfaces_down:
+            detail += f" ({interfaces_down} interface(s) down)"
+        concerns.append(detail)
     if failed_hosts:
         concerns.append(f"{len(failed_hosts)} host(s) failed discovery")
     if snapshot_warnings:
@@ -252,6 +269,20 @@ def _configuration_changes(report: dict[str, Any] | None) -> tuple[str, ...]:
         f"High severity: {counts.get('high', 0)}",
         f"Medium severity: {counts.get('medium', 0)}",
         f"Low severity: {counts.get('low', 0)}",
+    )
+
+
+def _operational_changes(report: dict[str, Any] | None) -> tuple[str, ...]:
+    if report is None:
+        return ()
+    counts = report.get("severity_counts") or {}
+    status = str(report.get("status") or "Healthy")
+    return (
+        f"Status: {status}",
+        f"Devices changed: {len(report.get('devices_changed') or ())}",
+        f"Interfaces down: {report.get('interfaces_down', 0)}",
+        f"High: {counts.get('high', 0)} | Medium: {counts.get('medium', 0)} "
+        f"| Low: {counts.get('low', 0)}",
     )
 
 

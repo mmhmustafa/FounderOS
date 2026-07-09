@@ -297,6 +297,8 @@ class DiscoverHistoryIntegrationTests(unittest.TestCase):
                 atlas_compare_markdown_output=workdir / "change_report.md",
                 atlas_config_diff_json_output=workdir / "config_change_report.json",
                 atlas_config_diff_markdown_output=workdir / "config_change_report.md",
+                atlas_state_diff_json_output=workdir / "state_change_report.json",
+                atlas_state_diff_markdown_output=workdir / "state_change_report.md",
                 atlas_clock=lambda: next(ticks),
                 atlas_browser_opener=lambda uri: None,
             )

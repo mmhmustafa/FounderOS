@@ -49,7 +49,13 @@ from founderos_atlas.pipeline import (
     aggregate_config_reports,
     load_previous_baseline,
     run_configuration_intelligence,
+    run_operational_intelligence,
     run_topology_intelligence,
+)
+from founderos_atlas.state import (
+    OperationalStateDetector,
+    render_state_report_json,
+    render_state_report_markdown,
 )
 from founderos_atlas.topology import TopologyGraph, TopologySnapshot, TopologySnapshotExporter
 from founderos_atlas.transport import (
@@ -74,6 +80,7 @@ from .render import (
     render_atlas_discover,
     render_atlas_history,
     render_atlas_investigate,
+    render_atlas_state_diff,
     render_atlas_timeline,
     render_atlas_discovery,
     render_atlas_topology,
@@ -182,6 +189,8 @@ def atlas_discover_command(
     change_report_markdown_output: str | Path = "change_report.md",
     config_change_json_output: str | Path = "config_change_report.json",
     config_change_markdown_output: str | Path = "config_change_report.md",
+    state_change_json_output: str | Path = "state_change_report.json",
+    state_change_markdown_output: str | Path = "state_change_report.md",
     clock: Clock | None = None,
     browser_opener: BrowserOpener | None = None,
     progress: Callable[[str], None] | None = None,
@@ -251,10 +260,16 @@ def atlas_discover_command(
         step(4, "Loading previous baseline", "skipped (first discovery)")
 
     topology_report = run_topology_intelligence(baseline, snapshot)
+    state_report = run_operational_intelligence(baseline, snapshot)
     if topology_report is None:
-        step(5, "Comparing topology", "skipped (no baseline)")
+        step(5, "Comparing topology & state", "skipped (no baseline)")
     else:
-        step(5, "Comparing topology", f"ok ({topology_report.change_count} change(s))")
+        step(
+            5,
+            "Comparing topology & state",
+            f"ok ({topology_report.change_count} topology, "
+            f"{state_report.change_count} operational change(s))",
+        )
 
     collected_dirs = {
         hostname: detail
@@ -279,6 +294,7 @@ def atlas_discover_command(
             snapshot,
             baseline,
             topology_report,
+            state_report,
             config_reports,
             collected_dirs,
             journey_runner,
@@ -294,6 +310,8 @@ def atlas_discover_command(
             change_report_markdown_output,
             config_change_json_output,
             config_change_markdown_output,
+            state_change_json_output,
+            state_change_markdown_output,
         )
         opener = browser_opener or webbrowser.open
         opener(destinations["topology"].as_uri())
@@ -350,6 +368,7 @@ def _build_reports(
     snapshot,
     baseline,
     topology_report,
+    state_report,
     config_reports,
     collected_dirs,
     journey_runner,
@@ -365,6 +384,8 @@ def _build_reports(
     change_report_markdown_output,
     config_change_json_output,
     config_change_markdown_output,
+    state_change_json_output,
+    state_change_markdown_output,
 ):
     """Write every artifact of the run; returns summary lines and paths."""
 
@@ -376,6 +397,23 @@ def _build_reports(
     else:
         pipeline_lines.append("Baseline: none (first discovery)")
     pipeline_lines.extend(baseline.issues)
+
+    if state_report is not None:
+        json_destination = Path(state_change_json_output).resolve()
+        json_destination.write_text(
+            render_state_report_json(state_report), encoding="utf-8"
+        )
+        markdown_destination = Path(state_change_markdown_output).resolve()
+        markdown_destination.write_text(
+            render_state_report_markdown(state_report), encoding="utf-8"
+        )
+        destinations["state_change_report.json"] = json_destination
+        destinations["state_change_report.md"] = markdown_destination
+        pipeline_lines.append(
+            f"Operational changes: {state_report.change_count} "
+            f"({state_report.interfaces_down} interface(s) down) "
+            f"(saved: {json_destination})"
+        )
 
     if topology_report is not None:
         json_destination = Path(change_report_json_output).resolve()
@@ -448,6 +486,12 @@ def _build_reports(
             topology_report.change_count if topology_report is not None else None
         ),
         "configuration_changes": sum(r.change_count for r in config_reports),
+        "operational_changes": (
+            state_report.change_count if state_report is not None else None
+        ),
+        "interfaces_down": (
+            state_report.interfaces_down if state_report is not None else 0
+        ),
         "failures": len(report.failed),
         "started_at": started_at.isoformat(timespec="seconds"),
         "completed_at": completed_at.isoformat(timespec="seconds"),
@@ -548,6 +592,73 @@ def _read_config_file(path: str | Path) -> str:
         raise CliError(f"Could not read configuration file {resolved}: {error}") from error
 
 
+def atlas_state_diff_command(
+    previous_path: str | Path | None = None,
+    current_path: str | Path | None = None,
+    *,
+    latest: bool = False,
+    history_root: str | Path = Path(".atlas") / "history",
+    json_output: str | Path = "state_change_report.json",
+    markdown_output: str | Path = "state_change_report.md",
+) -> tuple[int, str]:
+    if latest:
+        previous_path, current_path, previous_ref, current_ref = _latest_snapshot_pair(
+            history_root
+        )
+    else:
+        if previous_path is None or current_path is None:
+            raise CliError("Both a previous and a current snapshot path are required")
+        previous_ref, current_ref = str(previous_path), str(current_path)
+    previous = _load_snapshot_json(previous_path)
+    current = _load_snapshot_json(current_path)
+    try:
+        report = OperationalStateDetector().compare(
+            previous, current, previous_ref=previous_ref, current_ref=current_ref
+        )
+        json_destination = Path(json_output).resolve()
+        json_destination.write_text(render_state_report_json(report), encoding="utf-8")
+        markdown_destination = Path(markdown_output).resolve()
+        markdown_destination.write_text(
+            render_state_report_markdown(report), encoding="utf-8"
+        )
+    except (OSError, TypeError, ValueError) as error:
+        raise CliError(f"Atlas operational state comparison failed: {error}") from error
+    return 0, render_atlas_state_diff(
+        report, str(json_destination), str(markdown_destination)
+    )
+
+
+def _latest_snapshot_pair(history_root: str | Path) -> tuple[Path, Path, str, str]:
+    repository = HistoryRepository(history_root)
+    matches: list[tuple[str, Path]] = []
+    for record in repository.load().records:  # newest first
+        candidate = repository.snapshot_path(record.record_id)
+        if candidate.is_file():
+            matches.append((record.record_id, candidate))
+        if len(matches) == 2:
+            break
+    if len(matches) < 2:
+        raise CliError(
+            f"History holds {len(matches)} snapshot(s); two are required for a "
+            "state comparison. Run discovery to build history."
+        )
+    (current_id, current_file), (previous_id, previous_file) = matches
+    return previous_file, current_file, previous_id, current_id
+
+
+def _load_snapshot_json(path: str | Path) -> dict:
+    resolved = Path(path)
+    try:
+        data = json.loads(resolved.read_text(encoding="utf-8"))
+    except OSError as error:
+        raise CliError(f"Could not read snapshot file {resolved}: {error}") from error
+    except json.JSONDecodeError as error:
+        raise CliError(f"{resolved} is not valid JSON: {error}") from error
+    if not isinstance(data, dict):
+        raise CliError(f"{resolved} does not contain a topology snapshot object")
+    return data
+
+
 def atlas_investigate_command(
     *,
     input_reader: PromptReader | None = None,
@@ -642,6 +753,8 @@ def _save_history(
         "change_report.md",
         "config_change_report.json",
         "config_change_report.md",
+        "state_change_report.json",
+        "state_change_report.md",
     )
     artifacts = {
         name: destinations[name] for name in archive_names if name in destinations
@@ -730,6 +843,8 @@ def atlas_dashboard_command(
     timeline_path: str | Path = "timeline.md",
     config_change_report: str | Path = "config_change_report.json",
     config_change_report_md: str | Path = "config_change_report.md",
+    state_change_report: str | Path = "state_change_report.json",
+    state_change_report_md: str | Path = "state_change_report.md",
     incident_report: str | Path = "incident_report.json",
     incident_report_md: str | Path = "incident_report.md",
     browser_opener: BrowserOpener | None = None,
@@ -747,6 +862,8 @@ def atlas_dashboard_command(
             timeline_path=timeline_path,
             config_change_report=config_change_report,
             config_change_report_md=config_change_report_md,
+            state_change_report=state_change_report,
+            state_change_report_md=state_change_report_md,
             incident_report=incident_report,
             incident_report_md=incident_report_md,
             link_base=destination.parent,
@@ -782,6 +899,8 @@ def _regenerate_dashboard(
             timeline_path=destination.parent / "timeline.md",
             config_change_report=destination.parent / "config_change_report.json",
             config_change_report_md=destination.parent / "config_change_report.md",
+            state_change_report=destination.parent / "state_change_report.json",
+            state_change_report_md=destination.parent / "state_change_report.md",
             incident_report=destination.parent / "incident_report.json",
             incident_report_md=destination.parent / "incident_report.md",
             link_base=destination.parent,

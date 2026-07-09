@@ -34,6 +34,7 @@ class DashboardRenderer:
             .replace("__ACTIVITY__", self._activity())
             .replace("__DISCOVERIES__", self._discoveries())
             .replace("__CONFIG_CHANGES__", self._configuration_changes())
+            .replace("__OPERATIONAL__", self._operational_changes())
             .replace("__INCIDENT__", self._incident())
             .replace("__ACTIONS__", self._actions())
         )
@@ -88,6 +89,15 @@ class DashboardRenderer:
             return (
                 "          <li>No configuration change report yet. "
                 "Run: founderos atlas config-diff</li>"
+            )
+        return "\n".join(f"          <li>{escape(entry)}</li>" for entry in entries)
+
+    def _operational_changes(self) -> str:
+        entries = self._summary.operational_changes
+        if not entries:
+            return (
+                "          <li>No operational change report yet. "
+                "Run: founderos atlas state-diff</li>"
             )
         return "\n".join(f"          <li>{escape(entry)}</li>" for entry in entries)
 

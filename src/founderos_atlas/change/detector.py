@@ -17,7 +17,6 @@ from .models import (
     CATEGORY_DEVICE,
     CATEGORY_DISCOVERY,
     CATEGORY_HOSTNAME,
-    CATEGORY_INTERFACE,
     CATEGORY_MANAGEMENT_IP,
     CATEGORY_NEIGHBOR,
     CATEGORY_OS_VERSION,
@@ -199,67 +198,8 @@ def _device_attribute_changes(
                     current_value=str(after[field_name]),
                 )
             )
-    changes.extend(_interface_status_changes(hostname, before, after))
-    before_interfaces = len(before.get("interfaces") or ())
-    after_interfaces = len(after.get("interfaces") or ())
-    if before_interfaces != after_interfaces:
-        changes.append(
-            Change(
-                category=CATEGORY_INTERFACE,
-                severity="low",
-                description=(
-                    f"{hostname} interface count changed from "
-                    f"{before_interfaces} to {after_interfaces}"
-                ),
-                recommendation=(
-                    f"Review interface inventory on {hostname} for added or "
-                    "removed modules."
-                ),
-                subject=hostname,
-                field="interface_count",
-                previous_value=str(before_interfaces),
-                current_value=str(after_interfaces),
-            )
-        )
-    return changes
-
-
-def _interface_status_changes(
-    hostname: str, before: Mapping[str, Any], after: Mapping[str, Any]
-) -> list[Change]:
-    """An interface going from up to down is an operational change worth a flag."""
-
-    before_by_name = {
-        str(item.get("name", "")).casefold(): item
-        for item in before.get("interfaces") or ()
-    }
-    changes: list[Change] = []
-    for item in after.get("interfaces") or ():
-        name = str(item.get("name", ""))
-        previous = before_by_name.get(name.casefold())
-        if previous is None:
-            continue
-        old_status = str(previous.get("status") or "").casefold()
-        new_status = str(item.get("status") or "").casefold()
-        if old_status == "up" and new_status in ("down", "administratively_down"):
-            readable = new_status.replace("_", " ")
-            changes.append(
-                Change(
-                    category=CATEGORY_INTERFACE,
-                    severity="medium",
-                    description=(
-                        f"{hostname} interface {name} changed from up to {readable}"
-                    ),
-                    recommendation=(
-                        f"Verify whether the interface shutdown on {hostname} "
-                        "was planned."
-                    ),
-                    subject=hostname,
-                    field=f"interface.{name}.status",
-                    previous_value="up",
-                    current_value=new_status,
-                )
-            )
+    # Interface-level state (status, protocol, IP, add/remove) is operational
+    # intelligence, not topology change — see founderos_atlas.state.
     return changes
 
 

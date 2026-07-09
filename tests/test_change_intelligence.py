@@ -144,7 +144,9 @@ class ChangeDetectorTests(unittest.TestCase):
         self.assertEqual((), report.removed_devices)
         self.assertEqual(("CORE1",), report.changed_devices)
 
-    def test_management_ip_platform_os_and_interface_changes(self) -> None:
+    def test_management_ip_platform_and_os_changes(self) -> None:
+        # Interface-level change is operational intelligence, not topology —
+        # the topology detector reports device attributes only.
         previous = snapshot_dict([device_entry("R1", "10.0.0.1")])
         current = snapshot_dict(
             [
@@ -160,16 +162,12 @@ class ChangeDetectorTests(unittest.TestCase):
         report = self.detector.compare(previous, current)
         by_category = {change.category: change for change in report.changes}
         self.assertEqual(
-            {"management-ip", "platform", "os-version", "interface"}, set(by_category)
+            {"management-ip", "platform", "os-version"}, set(by_category)
         )
         self.assertEqual("medium", by_category["management-ip"].severity)
         self.assertEqual("high", by_category["platform"].severity)
         self.assertEqual("medium", by_category["os-version"].severity)
-        self.assertEqual("low", by_category["interface"].severity)
-        self.assertEqual(("2", "4"), (
-            by_category["interface"].previous_value,
-            by_category["interface"].current_value,
-        ))
+        self.assertNotIn("interface", by_category)
         self.assertEqual(("R1",), report.changed_devices)
 
     def test_lost_neighbor_matches_spec_example(self) -> None:

@@ -126,9 +126,17 @@ class MorningBrief:
             configured = run.get("configurations_collected")
             if configured:
                 bullets.append(f"- Configuration collected from {configured} device(s)")
+            interfaces_down = run.get("interfaces_down")
+            if interfaces_down:
+                bullets.append(f"- {interfaces_down} interface(s) down")
+            operational_changes = run.get("operational_changes")
+            if operational_changes:
+                bullets.append(f"- {operational_changes} operational change(s) detected")
             config_changes = run.get("configuration_changes")
             if config_changes:
                 bullets.append(f"- {config_changes} configuration change(s) detected")
+            elif config_changes == 0 and run.get("configurations_collected"):
+                bullets.append("- No configuration changes detected")
             topology_changes = run.get("topology_changes")
             if topology_changes is not None:
                 bullets.append(
@@ -165,6 +173,27 @@ class MorningBrief:
                 f"- Changes detected: {change_report.get('change_count', 0)}",
                 f"- High: {counts.get('high', 0)} | Medium: {counts.get('medium', 0)} "
                 f"| Low: {counts.get('low', 0)} | Info: {counts.get('info', 0)}",
+                "",
+                *detail_lines,
+                "",
+            )
+        operational_lines: tuple[str, ...] = ()
+        operational_report = self.metadata.get("operational_report")
+        if isinstance(operational_report, Mapping):
+            op_counts = operational_report.get("severity_counts") or {}
+            entries = tuple(operational_report.get("changes") or ())
+            detail_lines = tuple(
+                f"- [{str(entry.get('severity', '')).upper()}] {entry.get('description')} "
+                f"— {entry.get('recommendation')}"
+                for entry in entries
+            ) or ("- No operational changes detected.",)
+            operational_lines = (
+                "## Operational Changes",
+                "",
+                f"- Operational changes detected: {operational_report.get('change_count', 0)}",
+                f"- Interfaces down: {operational_report.get('interfaces_down', 0)}",
+                f"- High: {op_counts.get('high', 0)} | Medium: {op_counts.get('medium', 0)} "
+                f"| Low: {op_counts.get('low', 0)}",
                 "",
                 *detail_lines,
                 "",
@@ -206,6 +235,7 @@ class MorningBrief:
                 names(self.changed_devices),
                 "",
                 *change_lines,
+                *operational_lines,
                 "## Warnings",
                 "",
                 str(len(self.warnings)),

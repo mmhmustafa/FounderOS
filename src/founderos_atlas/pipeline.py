@@ -23,6 +23,7 @@ from .config_intelligence import (
     render_config_report_markdown,
 )
 from .history import DiscoveryRecord, HistoryRepository
+from .state import OperationalStateDetector, StateChangeReport
 from .topology import TopologySnapshot
 
 
@@ -75,6 +76,21 @@ def run_topology_intelligence(
     if not baseline.available:
         return None
     return ChangeDetector().compare(baseline.snapshot, current)
+
+
+def run_operational_intelligence(
+    baseline: Baseline, current: TopologySnapshot
+) -> StateChangeReport | None:
+    """Automatic operational state intelligence when a previous topology exists."""
+
+    if not baseline.available:
+        return None
+    return OperationalStateDetector().compare(
+        baseline.snapshot,
+        current,
+        previous_ref=baseline.record.record_id if baseline.record else "previous",
+        current_ref="current-discovery",
+    )
 
 
 def run_configuration_intelligence(

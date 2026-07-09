@@ -80,7 +80,7 @@ class DashboardSummaryTests(unittest.TestCase):
         self.assertEqual(2, summary.configurations_collected)
         self.assertEqual(1, summary.change_count)
         self.assertEqual("Warning", summary.status)
-        self.assertIn("1 change(s) detected", summary.status_detail)
+        self.assertIn("1 topology change(s) detected", summary.status_detail)
         self.assertIn("[low] SW1 was discovered for the first time", summary.recent_changes)
         availability = {action.label: action.available for action in summary.actions}
         for label in (
@@ -285,6 +285,8 @@ class DashboardCliTests(unittest.TestCase):
                     atlas_config_output_dir=workdir / "configs",
                     atlas_dashboard_output=workdir / "dashboard.html",
                     atlas_history_root=workdir / ".atlas" / "history",
+                    atlas_state_diff_json_output=workdir / "state_change_report.json",
+                    atlas_state_diff_markdown_output=workdir / "state_change_report.md",
                     atlas_browser_opener=opened.append,
                 )
             self.assertEqual(0, code, stderr.getvalue())

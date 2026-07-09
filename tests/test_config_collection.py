@@ -246,6 +246,8 @@ class DiscoverCliConfigCollectionTests(unittest.TestCase):
                 atlas_config_output_dir=workdir / "configs",
                 atlas_dashboard_output=workdir / "dashboard.html",
                 atlas_history_root=workdir / ".atlas" / "history",
+                atlas_state_diff_json_output=workdir / "state_change_report.json",
+                atlas_state_diff_markdown_output=workdir / "state_change_report.md",
                 atlas_browser_opener=lambda uri: None,
             )
         return code, stdout.getvalue(), stderr.getvalue()

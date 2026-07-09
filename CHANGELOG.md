@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### EPIC-002 / PR-029 - Operational State Intelligence
+
+- Added `founderos_atlas/state/`: deterministic operational state detection between two topology snapshots — the third change dimension alongside topology and configuration intelligence, detecting changes in the live network even when the saved configuration is identical.
+- Detects interface status up → down (high; check cable, remote device, errors, spanning-tree), line protocol up → down (high; reported separately from admin shutdown), status up → administratively down (medium), IP address change (medium), interface removed (medium), new interface (low), and interface recovery (low). Interface state is read from the topology snapshot (`show ip interface brief`); no extra collection required.
+- `interfaces_down` counts distinct down interfaces (an admin-shut interface whose status and protocol both drop counts once).
+- Added `founderos atlas state-diff <previous.json> <current.json>` and `--latest` (compares the two most recent history snapshots), writing `state_change_report.json` and `state_change_report.md`.
+- Moved interface-level change detection out of the topology change detector: an interface going down is neither a topology change (devices/relationships unchanged) nor a configuration change — this is what lets the Morning Brief honestly say "1 interface down · no topology changes · no configuration changes".
+- Unified pipeline step 5 now compares topology and operational state together; operational comparison runs automatically on every discovery with a baseline, and the state reports are archived in history.
+- Morning Brief: operational changes drive Attention Required status, an Operational Changes section, and a "N interface(s) down" bullet in Today's Summary.
+- Dashboard: added an Operational Changes card (status, devices changed, interfaces down, severity counts) plus an Open Operational Changes action; high-severity operational changes count toward the Critical status.
+- Added 24 tests: status/protocol/IP/new/removed interface detection, admin-shutdown separation, recovery, determinism, JSON/Markdown generation, the state-diff CLI, and end-to-end pipeline auto-detection; all existing tests continue to pass.
+
 ### EPIC-002 / PR-028 - Unified Discovery Pipeline (Alpha Polish)
 
 - `founderos atlas discover` now executes the complete Atlas workflow automatically with step-by-step progress ([1/9]…[9/9]): discovery → configuration collection → previous-baseline loading from history → topology comparison → configuration comparison → report building → archiving → dashboard refresh. No manual compare/config-diff/dashboard/history invocation is required.

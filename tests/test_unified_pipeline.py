@@ -80,6 +80,8 @@ class UnifiedPipelineTests(unittest.TestCase):
                 atlas_compare_markdown_output=workdir / "change_report.md",
                 atlas_config_diff_json_output=workdir / "config_change_report.json",
                 atlas_config_diff_markdown_output=workdir / "config_change_report.md",
+                atlas_state_diff_json_output=workdir / "state_change_report.json",
+                atlas_state_diff_markdown_output=workdir / "state_change_report.md",
                 atlas_clock=lambda: next(ticks),
                 atlas_browser_opener=opened.append,
             )
@@ -96,7 +98,7 @@ class UnifiedPipelineTests(unittest.TestCase):
                 "[2/9] Discovering topology ... ok (2 device(s), 0 failed)",
                 "[3/9] Collecting configurations ... ok (2 device(s))",
                 "[4/9] Loading previous baseline ... skipped (first discovery)",
-                "[5/9] Comparing topology ... skipped (no baseline)",
+                "[5/9] Comparing topology & state ... skipped (no baseline)",
                 "[6/9] Comparing configurations ... skipped (no baseline configurations)",
                 "[7/9] Building reports ... ok",
                 "[8/9] Archiving discovery ... ok",
@@ -107,6 +109,7 @@ class UnifiedPipelineTests(unittest.TestCase):
             self.assertIn("Baseline: none (first discovery)", output)
             self.assertFalse((workdir / "change_report.json").exists())
             self.assertFalse((workdir / "config_change_report.json").exists())
+            self.assertFalse((workdir / "state_change_report.json").exists())
             self.assertEqual(1, len(opened))
 
     def test_second_discovery_uses_baseline_automatically(self) -> None:
@@ -119,7 +122,10 @@ class UnifiedPipelineTests(unittest.TestCase):
             )
             self.assertEqual(0, code, error)
             self.assertIn("[4/9] Loading previous baseline ... ok (2026-07-09_08-15-00)", output)
-            self.assertIn("[5/9] Comparing topology ... ok (0 change(s))", output)
+            self.assertIn(
+                "[5/9] Comparing topology & state ... ok (0 topology, 0 operational change(s))",
+                output,
+            )
             self.assertIn(
                 "[6/9] Comparing configurations ... ok (0 change(s) across 2 device(s))",
                 output,
@@ -206,23 +212,30 @@ class UnifiedPipelineTests(unittest.TestCase):
             later = datetime(2026, 7, 9, 23, 41, 18, tzinfo=timezone.utc)
             code, output, error, _ = self.run_discover(workdir, network, start=later)
             self.assertEqual(0, code, error)
-            report = json.loads(
+            # Interface state is operational intelligence, not topology change.
+            topology = json.loads(
                 (workdir / "change_report.json").read_text(encoding="utf-8")
             )
-            shutdowns = [
-                change
-                for change in report["changes"]
-                if change["category"] == "interface"
-                and "changed from up to administratively down" in change["description"]
-            ]
-            self.assertEqual(1, len(shutdowns))
-            self.assertEqual("medium", shutdowns[0]["severity"])
-            self.assertIn(
-                "Verify whether the interface shutdown on SW1 was planned.",
-                shutdowns[0]["recommendation"],
+            self.assertEqual(0, topology["change_count"])
+            report = json.loads(
+                (workdir / "state_change_report.json").read_text(encoding="utf-8")
             )
+            self.assertEqual(1, report["interfaces_down"])
+            by_field = {
+                change["field"]: change
+                for change in report["changes"]
+                if change["hostname"] == "SW1"
+                and change["interface"] == "GigabitEthernet0/1"
+            }
+            self.assertEqual("medium", by_field["status"]["severity"])
+            self.assertEqual("administratively_down", by_field["status"]["current_value"])
+            self.assertEqual("high", by_field["protocol"]["severity"])
+            self.assertEqual("down", by_field["protocol"]["current_value"])
+            self.assertIn("[5/9] Comparing topology & state ... ok", output)
             brief = (workdir / "morning_brief.md").read_text(encoding="utf-8")
-            self.assertIn("Verify whether the interface shutdown on SW1 was planned.", brief)
+            self.assertIn("## Operational Changes", brief)
+            self.assertIn("Interfaces down: 1", brief)
+            self.assertIn("Attention Required", brief)
 
     def test_discovery_failure_does_not_break_the_pipeline(self) -> None:
         network = ScriptedNetwork(

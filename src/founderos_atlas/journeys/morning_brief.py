@@ -14,6 +14,7 @@ from founderos_runtime.workspace import Workspace
 
 from founderos_atlas.change import ChangeDetector
 from founderos_atlas.demo import atlas_app_root
+from founderos_atlas.state import OperationalStateDetector
 from founderos_atlas.topology import TopologySnapshot
 
 from .artifacts import MorningBrief
@@ -134,12 +135,24 @@ def build_morning_brief(
         removed_devices, changed_devices, warnings, conflicts
     )
     change_report = None
+    state_report = None
     if previous is not None:
         change_report = ChangeDetector().compare(previous, current)
         recommendations = recommendations + tuple(
             item for item in change_report.recommendations if item not in recommendations
         )
-    status = "Attention Required" if removed_devices or changed_devices or warnings else "Healthy"
+        state_report = OperationalStateDetector().compare(previous, current)
+        recommendations = recommendations + tuple(
+            change.recommendation
+            for change in state_report.changes
+            if change.recommendation not in recommendations
+        )
+    operational_changes = state_report.change_count if state_report is not None else 0
+    status = (
+        "Attention Required"
+        if removed_devices or changed_devices or warnings or operational_changes
+        else "Healthy"
+    )
     baseline = "No comparison baseline was supplied." if previous is None else (
         f"Detected {len(new_devices)} new, {len(removed_devices)} removed, and "
         f"{len(changed_devices)} changed devices."
@@ -169,6 +182,11 @@ def build_morning_brief(
             **(
                 {"change_report": change_report.to_dict()}
                 if change_report is not None
+                else {}
+            ),
+            **(
+                {"operational_report": state_report.to_dict()}
+                if state_report is not None
                 else {}
             ),
             **({"run": dict(run_context)} if run_context else {}),

@@ -13,6 +13,8 @@ from founderos_atlas.dashboard import DashboardSummary
 from founderos_atlas.discovery import DiscoveryResult, MultiHopDiscoveryReport
 from founderos_atlas.history import HistoryIndex
 from founderos_atlas.incidents import IncidentReport
+from founderos_atlas.state import SEVERITY_ORDER as STATE_SEVERITY_ORDER
+from founderos_atlas.state import StateChangeReport
 from founderos_atlas.journeys import MorningBriefJourneyResult
 from founderos_atlas.topology import TopologyGraph, TopologySnapshot
 from founderos_runtime.journey import JourneyResult
@@ -40,6 +42,8 @@ def render_help() -> str:
             "  founderos atlas timeline",
             "  founderos atlas config-diff <previous> <current>",
             "  founderos atlas config-diff --latest <hostname>",
+            "  founderos atlas state-diff <previous.json> <current.json>",
+            "  founderos atlas state-diff --latest",
             "  founderos atlas investigate",
             "  founderos help",
             "",
@@ -56,6 +60,7 @@ def render_help() -> str:
             "  atlas history   List every preserved discovery.",
             "  atlas timeline  Generate the network timeline (timeline.md).",
             "  atlas config-diff  Compare two device configurations into a classified report.",
+            "  atlas state-diff  Compare interface state between two snapshots.",
             "  atlas investigate  Structure an incident investigation from Atlas evidence.",
             "  help            Show this help.",
         )
@@ -309,6 +314,43 @@ def render_atlas_investigate(
             f"Incident report saved: {markdown_path}",
             "",
             "Investigation completed.",
+            "=" * 48,
+        )
+    )
+
+
+def render_atlas_state_diff(
+    report: StateChangeReport, json_path: str, markdown_path: str
+) -> str:
+    counts = report.severity_counts
+    change_lines = [
+        f"[{change.severity}] {change.hostname} {change.interface}: {change.description}"
+        for change in report.changes
+    ] or ["No operational changes detected."]
+    return "\n".join(
+        (
+            "=" * 48,
+            "Atlas Operational Change Report",
+            "=" * 48,
+            "",
+            f"Previous: {report.previous_ref}",
+            f"Current: {report.current_ref}",
+            "",
+            f"Devices changed: {len(report.devices_changed)}",
+            f"Operational changes: {report.change_count}",
+            f"Interfaces down: {report.interfaces_down}",
+            " | ".join(
+                f"{severity.title()}: {counts[severity]}"
+                for severity in STATE_SEVERITY_ORDER
+            ),
+            f"Network status: {report.status}",
+            "",
+            *change_lines,
+            "",
+            f"Report saved: {json_path}",
+            f"Report saved: {markdown_path}",
+            "",
+            "Operational comparison completed successfully.",
             "=" * 48,
         )
     )

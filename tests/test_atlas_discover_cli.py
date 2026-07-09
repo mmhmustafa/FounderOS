@@ -102,6 +102,8 @@ class AtlasDiscoverCliTests(unittest.TestCase):
                     atlas_compare_markdown_output=Path(workdir) / "change_report.md",
                     atlas_config_diff_json_output=Path(workdir) / "config_change_report.json",
                     atlas_config_diff_markdown_output=Path(workdir) / "config_change_report.md",
+                    atlas_state_diff_json_output=Path(workdir) / "state_change_report.json",
+                    atlas_state_diff_markdown_output=Path(workdir) / "state_change_report.md",
                     atlas_clock=lambda: datetime(2026, 7, 9, 23, 41, 18, tzinfo=timezone.utc),
                     atlas_browser_opener=opened.append,
                 )
