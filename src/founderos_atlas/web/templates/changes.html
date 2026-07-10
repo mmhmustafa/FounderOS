@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Changes{% endblock %}
+{% block content %}
+<h1>Change Intelligence — {{ active_scope_label }}</h1>
+
+{% if global_view %}
+{% if networks %}
+{% for network in networks %}
+<section class="card">
+  <h2>{{ network.label }}</h2>
+  <div class="columns">
+    <div>
+      <h3>Topology</h3>
+      {% if network.summaries.topology %}
+      <p>{{ network.summaries.topology.change_count }} change(s) detected.</p>
+      <a class="btn btn-sm" href="/artifacts/{{ network.artifact_prefix }}change_report.md">Open report</a>
+      {% else %}<p class="muted">No topology change report yet.</p>{% endif %}
+    </div>
+    <div>
+      <h3>Configuration</h3>
+      {% if network.summaries.configuration %}
+      <p>{{ network.summaries.configuration.change_count }} change(s) across
+         {{ network.summaries.configuration.devices_changed }} device(s).</p>
+      <a class="btn btn-sm" href="/artifacts/{{ network.artifact_prefix }}config_change_report.md">Open report</a>
+      {% else %}<p class="muted">No configuration change report yet.</p>{% endif %}
+    </div>
+    <div>
+      <h3>Operational</h3>
+      {% if network.summaries.operational %}
+      <p>Current health: {{ network.summaries.operational.current_health }} —
+         {{ network.summaries.operational.active_issue_count }} active issue(s).</p>
+      <a class="btn btn-sm" href="/artifacts/{{ network.artifact_prefix }}state_change_report.md">Open report</a>
+      {% else %}<p class="muted">No operational state report yet.</p>{% endif %}
+    </div>
+  </div>
+  <p class="muted">Changes are detected within {{ network.label }} only — never across networks.</p>
+</section>
+{% endfor %}
+{% else %}
+<p class="muted">No change intelligence yet. <a href="/discovery">Run a discovery</a> at least twice for a network to compare.</p>
+{% endif %}
+
+{% else %}
+<div class="columns">
+  <section class="card">
+    <h2>Topology Changes</h2>
+    {% if summaries.topology %}
+    <p>{{ summaries.topology.change_count }} change(s) detected.</p>
+    <a class="btn btn-sm" href="/artifacts/{{ artifact_prefix or '' }}change_report.md">Open report</a>
+    {% else %}<p class="muted">No topology change report yet.</p>{% endif %}
+  </section>
+  <section class="card">
+    <h2>Configuration Changes</h2>
+    {% if summaries.configuration %}
+    <p>{{ summaries.configuration.change_count }} change(s) across
+       {{ summaries.configuration.devices_changed }} device(s).</p>
+    <a class="btn btn-sm" href="/artifacts/{{ artifact_prefix or '' }}config_change_report.md">Open report</a>
+    {% else %}<p class="muted">No configuration change report yet.</p>{% endif %}
+  </section>
+</div>
+
+<section class="card">
+  <h2>Operational State</h2>
+  {% if summaries.operational %}
+  <p><strong>Current health:</strong> {{ summaries.operational.current_health }}</p>
+  <ul>
+    <li>Active issues: {{ summaries.operational.active_issue_count }}</li>
+    <li>Interfaces currently down: {{ summaries.operational.interfaces_down }}</li>
+    <li>Recoveries: {{ summaries.operational.recovery_count }}</li>
+    <li>Historical events: {{ summaries.operational.change_count }}</li>
+  </ul>
+  <a class="btn btn-sm" href="/artifacts/{{ artifact_prefix or '' }}state_change_report.md">Open report</a>
+  {% else %}<p class="muted">No operational state report yet.</p>{% endif %}
+</section>
+{% endif %}
+{% endblock %}

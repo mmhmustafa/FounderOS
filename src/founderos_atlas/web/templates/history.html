@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}History{% endblock %}
+{% block content %}
+<h1>Discovery History — {{ active_scope_label }}</h1>
+
+{% if records %}
+<table class="grid">
+  <thead>
+    <tr>
+      {% if show_profile %}<th>Network</th>{% endif %}
+      <th>Started</th><th>Devices</th><th>Relationships</th><th>Status</th><th>Duration</th><th>Config</th><th>Record</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in records %}
+    <tr>
+      {% if show_profile %}<td>{{ r.profile }}</td>{% endif %}
+      <td>{{ r.started_at }}</td>
+      <td>{{ r.device_count }}</td>
+      <td>{{ r.relationship_count }}</td>
+      <td>{{ r.network_status }}</td>
+      <td>{{ r.duration_seconds }}s</td>
+      <td>{{ r.configuration_status }}</td>
+      <td><code>{{ r.record_id }}</code></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="muted">No discovery history yet. <a href="/discovery">Run a discovery</a> to start building network memory.</p>
+{% endif %}
+
+{% if issues %}
+<section class="card">
+  <h2>Issues</h2>
+  <ul>{% for issue in issues %}<li>{{ issue }}</li>{% endfor %}</ul>
+</section>
+{% endif %}
+{% endblock %}

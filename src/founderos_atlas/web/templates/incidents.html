@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Incidents{% endblock %}
+{% block content %}
+<h1>Incident Investigation — {{ active_scope_label }}</h1>
+
+{% if global_view %}
+<section class="card">
+  <h2>New investigation</h2>
+  <p class="muted">Select a specific network in the Network selector above to run an investigation — incidents are scoped to one network.</p>
+</section>
+
+{% if reports %}
+{% for entry in reports %}
+{% if entry.report %}
+<section class="card">
+  <h2>{{ entry.label }}</h2>
+  <ul>
+    <li><strong>Title:</strong> {{ entry.report.title }}</li>
+    <li><strong>Confidence:</strong> {{ entry.report.confidence | title }}</li>
+    <li><strong>Affected devices:</strong> {{ entry.report.affected_devices | join(', ') or 'none matched' }}</li>
+    <li><strong>Generated:</strong> {{ entry.report.generated_at }}</li>
+  </ul>
+  <a class="btn btn-sm" href="{{ entry.href }}">Open full report</a>
+</section>
+{% endif %}
+{% endfor %}
+{% else %}
+<p class="muted">No incident report generated yet in any network.</p>
+{% endif %}
+
+{% else %}
+<section class="card">
+  <h2>New investigation</h2>
+  <form class="form" method="post" action="/incidents/run">
+    <label>Incident title
+      <input name="title" required placeholder="VLAN 10 cannot reach internet">
+    </label>
+    <label>Description
+      <textarea name="description" rows="3" placeholder="Users report no internet on VLAN 10"></textarea>
+    </label>
+    <div class="form-actions">
+      <button class="btn btn-primary" type="submit">Investigate</button>
+    </div>
+    <p class="muted">Uses the latest discovery artifacts of {{ active_scope_label }}. Deterministic — no AI.</p>
+  </form>
+</section>
+
+{% if report %}
+<section class="card">
+  <h2>Latest incident report</h2>
+  <ul>
+    <li><strong>Title:</strong> {{ report.title }}</li>
+    <li><strong>Confidence:</strong> {{ report.confidence | title }}</li>
+    <li><strong>Affected devices:</strong> {{ report.affected_devices | join(', ') or 'none matched' }}</li>
+    <li><strong>Generated:</strong> {{ report.generated_at }}</li>
+  </ul>
+  <a class="btn btn-sm" href="/artifacts/{{ artifact_prefix or '' }}incident_report.md">Open full report</a>
+</section>
+{% else %}
+<p class="muted">No incident report generated yet for this network.</p>
+{% endif %}
+{% endif %}
+{% endblock %}

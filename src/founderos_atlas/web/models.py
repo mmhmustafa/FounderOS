@@ -1,0 +1,127 @@
+"""View-model helpers that shape backend service data for templates.
+
+Keeps routes thin and ensures no secret ever reaches a template: profiles
+carry only a credential reference, never a password.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from dataclasses import dataclass
+from datetime import datetime
+import json
+from pathlib import Path
+from typing import Any
+
+
+NAV_ITEMS = (
+    ("dashboard", "Dashboard", "/"),
+    ("discovery", "Discover", "/discovery"),
+    ("profiles", "Profiles", "/profiles"),
+    ("topology", "Topology", "/topology"),
+    ("history", "History", "/history"),
+    ("changes", "Changes", "/changes"),
+    ("incidents", "Incidents", "/incidents"),
+    ("settings", "Settings", "/settings"),
+)
+
+
+def format_timestamp(value: str | None) -> str:
+    if not value:
+        return "never"
+    try:
+        return datetime.fromisoformat(value).strftime("%d-%b-%Y %H:%M")
+    except (ValueError, TypeError):
+        return str(value)
+
+
+def profile_row(profile) -> dict[str, Any]:
+    """A profile as a template-safe dict — never includes a password."""
+
+    return {
+        "profile_id": profile.profile_id,
+        "name": profile.name,
+        "site": profile.site or "-",
+        "management_ip": profile.management_ip,
+        "username": profile.username,
+        "max_depth": profile.max_depth,
+        "max_devices": profile.max_devices,
+        "collect_configuration": profile.collect_configuration,
+        "last_discovery": format_timestamp(profile.last_discovery),
+        "created_at": format_timestamp(profile.created_at),
+        "updated_at": format_timestamp(profile.updated_at),
+    }
+
+
+def load_json(path: str | Path) -> dict[str, Any] | None:
+    resolved = Path(path)
+    if not resolved.is_file():
+        return None
+    try:
+        data = json.loads(resolved.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return data if isinstance(data, Mapping) else None
+
+
+@dataclass(frozen=True)
+class ChangeSummaries:
+    topology: dict[str, Any] | None
+    configuration: dict[str, Any] | None
+    operational: dict[str, Any] | None
+    incident: dict[str, Any] | None
+
+
+def change_summaries(output_dir: Path) -> ChangeSummaries:
+    return ChangeSummaries(
+        topology=load_json(output_dir / "change_report.json"),
+        configuration=load_json(output_dir / "config_change_report.json"),
+        operational=load_json(output_dir / "state_change_report.json"),
+        incident=load_json(output_dir / "incident_report.json"),
+    )
+
+
+def history_rows(history_index, *, scope_label: str | None = None) -> list[dict[str, Any]]:
+    rows = []
+    for record in history_index.records:
+        rows.append(
+            {
+                "record_id": record.record_id,
+                "started_at": format_timestamp(record.started_at),
+                "started_at_iso": record.started_at,
+                "device_count": record.device_count,
+                "relationship_count": record.relationship_count,
+                "network_status": record.network_status,
+                "duration_seconds": round(record.duration_seconds, 1),
+                "configuration_status": record.configuration_status,
+                "profile": record.profile_name or scope_label or "—",
+            }
+        )
+    return rows
+
+
+def device_inventory(scoped_snapshots) -> list[dict[str, Any]]:
+    """All Networks device inventory: the latest devices of every scope.
+
+    ``scoped_snapshots`` is an iterable of ``(label, snapshot_dict)`` pairs.
+    Pure aggregation — devices from different networks are listed side by
+    side and never compared, so absence from one network can never be shown
+    as removal from another.
+    """
+
+    devices: list[dict[str, Any]] = []
+    for label, snapshot in scoped_snapshots:
+        if not isinstance(snapshot, Mapping):
+            continue
+        for device in snapshot.get("devices") or ():
+            devices.append(
+                {
+                    "network": label,
+                    "hostname": str(device.get("hostname") or "unknown"),
+                    "management_ip": str(device.get("management_ip") or "—"),
+                    "platform": str(device.get("platform") or "—"),
+                    "os_version": str(device.get("os_version") or "—"),
+                }
+            )
+    devices.sort(key=lambda row: (row["network"].casefold(), row["hostname"].casefold()))
+    return devices

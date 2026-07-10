@@ -42,6 +42,10 @@ class DiscoveryRecord:
     snapshot_id: str
     discovery_version: str = DISCOVERY_VERSION
     metadata: Mapping[str, Any] = field(default_factory=dict)
+    # Discovery scope (PR-031A). None on records preserved before profile
+    # scoping existed — those belong to the default (unscoped) scope.
+    profile_id: str | None = None
+    profile_name: str | None = None
 
     def __post_init__(self) -> None:
         for name in (
@@ -70,6 +74,10 @@ class DiscoveryRecord:
         if not isinstance(self.metadata, Mapping):
             raise ValueError("metadata must be a mapping")
         object.__setattr__(self, "metadata", MappingProxyType(dict(self.metadata)))
+        for name in ("profile_id", "profile_name"):
+            value = getattr(self, name)
+            if value is not None and (not isinstance(value, str) or not value.strip()):
+                raise ValueError(f"{name} must be null or a non-empty string")
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -88,6 +96,8 @@ class DiscoveryRecord:
             "snapshot_id": self.snapshot_id,
             "discovery_version": self.discovery_version,
             "metadata": dict(self.metadata),
+            "profile_id": self.profile_id,
+            "profile_name": self.profile_name,
         }
 
     @classmethod
@@ -111,6 +121,8 @@ class DiscoveryRecord:
                 snapshot_id=value["snapshot_id"],
                 discovery_version=value.get("discovery_version", DISCOVERY_VERSION),
                 metadata=value.get("metadata", {}),
+                profile_id=value.get("profile_id"),
+                profile_name=value.get("profile_name"),
             )
         except KeyError as error:
             raise ValueError(f"discovery record is missing field {error}") from error

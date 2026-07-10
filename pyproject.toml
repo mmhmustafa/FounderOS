@@ -23,6 +23,9 @@ ssh = [
 credentials = [
   "keyring>=24,<26",
 ]
+web = [
+  "flask>=3,<4",
+]
 
 [project.scripts]
 founderos = "founderos_runtime.cli:main"
@@ -34,7 +37,12 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [tool.setuptools.package-data]
-founderos_atlas = ["visualization/templates/*.html", "dashboard/templates/*.html"]
+founderos_atlas = [
+  "visualization/templates/*.html",
+  "dashboard/templates/*.html",
+  "web/templates/*.html",
+  "web/static/*",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

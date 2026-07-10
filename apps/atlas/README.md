@@ -288,6 +288,62 @@ scored deterministically (low / medium / high). Writes
 Recent Incident Investigation card with a link. See
 `src/founderos_atlas/incidents/README.md`.
 
+## Web GUI (local alpha)
+
+Normal users can drive Atlas from a browser instead of the CLI:
+
+```powershell
+pip install -e ".[web,credentials]"
+founderos atlas web
+```
+
+```
+Atlas web UI running at:
+http://127.0.0.1:8765
+```
+
+The browser opens automatically to a professional shell — a left sidebar
+(Dashboard, Discover, Profiles, Topology, History, Changes, Incidents,
+Settings) and an "Atlas · Enterprise Network Intelligence" header. Create or
+select a saved profile, click **Run Discovery**, and view the topology,
+dashboard, history, and change reports. The GUI calls the same in-process
+backend services as the CLI (never a subprocess) and stores no passwords in
+HTML, responses, or logs.
+
+**Multiple networks.** A Network selector in the header switches the
+Dashboard, Topology, History, Changes, and Incidents pages between:
+
+- one saved profile (that network's own data only),
+- **All Networks** — the latest successful state of every active network
+  combined (total counts, per-network status cards, merged device inventory
+  and history), and
+- **Local workspace** — data produced by profile-less CLI discovery in the
+  current directory, shown only when such data exists.
+
+**Legacy-data policy.** Once at least one profile has completed a scoped
+discovery, the Local workspace is treated as a legacy archive: it drops out
+of All Networks aggregation (no duplicate devices, inflated counts, or
+stale health), the selector labels it "Local workspace (legacy)", and its
+data remains fully intact and viewable by selecting it directly. While no
+profile has discovered yet, the Local workspace continues to power All
+Networks exactly as before, so pre-profile installations lose nothing.
+
+The All Networks topology page is deliberately a **combined device
+inventory plus per-network interactive viewers** — networks keep separate
+graphs because hostnames may repeat across sites; a single federated
+cross-network graph is future work. Devices are never deduplicated by
+hostname or IP across profiles: two sites may legitimately reuse RFC1918
+addresses and hostnames.
+
+The selection persists while you browse and is always visible in the page
+title. Running a discovery automatically focuses the GUI on that profile's
+network.
+
+This is a **local, single-user alpha GUI**: it binds to `127.0.0.1` only,
+has no authentication, and is not a production or multi-user web deployment.
+The interactive CLI continues to work unchanged. See
+`src/founderos_atlas/web/README.md`.
+
 ## Saved Discovery Profiles
 
 Save a discovery target and its settings once, then reuse them without
@@ -332,6 +388,42 @@ profile and runs the full unified pipeline unchanged. The interactive
 This is the backend foundation for the Atlas GUI (PR-031): all logic lives
 in a reusable `ProfileService`, which the GUI will call directly. See
 `src/founderos_atlas/workspace/README.md`.
+
+### Profile-scoped discovery isolation (PR-031A)
+
+Each profile is an **independent discovery scope**. A discovery run for a
+profile writes everything — the current topology snapshot, viewer, morning
+brief, dashboard, change/config/state reports, collected configurations,
+and the discovery history — into that profile's own workspace at
+`<workdir>/.atlas/profiles/<profile_id>/`. Comparison baselines come only
+from the same profile's previous run, so discovering one lab never marks
+another lab's devices as removed, missing, or changed. Genuine changes
+within one profile are still detected exactly as before.
+
+The scope key is the profile's stable internal `profile_id`, not its
+display name: renaming a profile (GUI edit form, or
+`ProfileService.update_profile(new_name=...)`) keeps all of its history,
+baselines, credentials, and reports.
+
+Read-side CLI commands accept `--profile <name>` to address a profile's
+scope:
+
+```powershell
+founderos atlas history   --profile "Hyderabad Lab"
+founderos atlas timeline  --profile "Hyderabad Lab"
+founderos atlas dashboard --profile "Hyderabad Lab"
+founderos atlas investigate --profile "Hyderabad Lab"
+founderos atlas config-diff --latest R1 --profile "Hyderabad Lab"
+founderos atlas state-diff  --latest --profile "Hyderabad Lab"
+```
+
+**Backward compatibility.** Profile-less interactive discovery keeps the
+classic layout (artifacts in the working directory, history in
+`.atlas/history`) — this is the *default scope*, shown as "Local workspace"
+in the GUI. History recorded before PR-031A stays there and is deliberately
+never reassigned to a profile: Atlas cannot know which network produced it,
+so guessing would corrupt history. Each profile's scope starts empty and
+builds its own baseline from its first scoped discovery.
 
 ## Operational State Intelligence
 

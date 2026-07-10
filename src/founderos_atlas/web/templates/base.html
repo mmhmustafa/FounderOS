@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Atlas — {% block title %}Enterprise Network Intelligence{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='atlas.css') }}">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-name">Atlas</span>
+      <span class="brand-tag">Enterprise Network Intelligence</span>
+    </div>
+    {% if scope_selector %}
+    <form class="scope-form" method="get" action="">
+      <label class="scope-label">Network
+        <select name="scope" onchange="this.form.submit()" aria-label="Active network scope">
+          {% for option in scope_selector %}
+          <option value="{{ option.id }}" {{ 'selected' if option.id == active_scope_id else '' }}>{{ option.label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <noscript><button class="btn btn-sm" type="submit">Apply</button></noscript>
+    </form>
+    {% endif %}
+    <form class="run-form" method="get" action="/discovery">
+      <button class="btn btn-primary" type="submit">Run Discovery</button>
+    </form>
+  </header>
+  <div class="layout">
+    <nav class="sidebar">
+      <ul>
+        {% for key, label, href in nav_items %}
+        <li><a class="{{ 'active' if active == key else '' }}" href="{{ href }}">{{ label }}</a></li>
+        {% endfor %}
+      </ul>
+      <div class="sidebar-note">Local alpha GUI · 127.0.0.1</div>
+    </nav>
+    <main class="content">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          <div class="flashes">
+            {% for category, message in messages %}
+              <div class="flash flash-{{ category }}">{{ message }}</div>
+            {% endfor %}
+          </div>
+        {% endif %}
+      {% endwith %}
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+  <script src="{{ url_for('static', filename='atlas.js') }}"></script>
+</body>
+</html>

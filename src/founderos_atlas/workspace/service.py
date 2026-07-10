@@ -39,6 +39,7 @@ class ResolvedDiscoveryInputs:
     max_depth: int
     max_devices: int
     collect_configuration: bool
+    profile_id: str = ""
 
 
 class ProfileService:
@@ -92,7 +93,7 @@ class ProfileService:
         if not password:
             raise InvalidProfileError("A password is required to save a profile.")
         self._ensure_credential_store()
-        profile_id = profile_id_for(name)
+        profile_id = self._unique_profile_id(name)
         credential_ref = credential_ref_for(profile_id)
         now = self._now()
         profile = DiscoveryProfile(
@@ -124,6 +125,7 @@ class ProfileService:
         self,
         name: str,
         *,
+        new_name: str | None = None,
         management_ip: str | None = None,
         username: str | None = None,
         password: str | None = None,
@@ -133,10 +135,16 @@ class ProfileService:
         max_devices: int | None = None,
         collect_configuration: bool | None = None,
     ) -> DiscoveryProfile:
+        """Update a profile in place; ``new_name`` renames it.
+
+        A rename keeps the stable ``profile_id`` (and therefore the stored
+        credential and every piece of scoped discovery history).
+        """
+
         existing = self._repository.get(name)
         updated = DiscoveryProfile(
             profile_id=existing.profile_id,
-            name=existing.name,
+            name=new_name if new_name and new_name.strip() else existing.name,
             management_ip=management_ip if management_ip is not None else existing.management_ip,
             username=username if username is not None else existing.username,
             credential_ref=existing.credential_ref,
@@ -155,7 +163,7 @@ class ProfileService:
         if password:
             self._ensure_credential_store()
             self._credentials.save(existing.credential_ref, password)
-        self._repository.save(updated)
+        self._repository.replace(existing.name, updated)
         return updated
 
     # -- delete -------------------------------------------------------------
@@ -178,6 +186,7 @@ class ProfileService:
             max_depth=profile.max_depth,
             max_devices=profile.max_devices,
             collect_configuration=profile.collect_configuration,
+            profile_id=profile.profile_id,
         )
 
     def record_discovery(self, name: str, when: datetime | str | None = None) -> DiscoveryProfile:
@@ -192,6 +201,22 @@ class ProfileService:
         return updated
 
     # -- internals ----------------------------------------------------------
+
+    def _unique_profile_id(self, name: str) -> str:
+        """A stable, filesystem-safe id no existing profile already uses.
+
+        Distinct names can slug to the same value ("Lab A" / "Lab-A"), and a
+        renamed profile keeps its original id — so uniqueness must be checked
+        against ids, not names. Deterministic: first free ``slug``/``slug-N``.
+        """
+
+        taken = {profile.profile_id for profile in self._repository.list()}
+        base = profile_id_for(name)
+        candidate, suffix = base, 2
+        while candidate in taken:
+            candidate = f"{base}-{suffix}"
+            suffix += 1
+        return candidate
 
     def _ensure_credential_store(self) -> None:
         if not self._credentials.available():

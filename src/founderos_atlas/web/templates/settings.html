@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block content %}
+<h1>Settings</h1>
+
+<section class="card">
+  <h2>Workspace</h2>
+  <ul class="kv">
+    <li><span>Atlas version</span><span>{{ atlas_version }}</span></li>
+    <li><span>Workspace root</span><span><code>{{ workspace_root }}</code></span></li>
+    <li><span>Output directory</span><span><code>{{ output_dir }}</code></span></li>
+    <li><span>History root</span><span><code>{{ history_root }}</code></span></li>
+  </ul>
+</section>
+
+<section class="card">
+  <h2>Credential provider</h2>
+  <ul class="kv">
+    <li><span>Provider</span><span>{{ credential_provider }}</span></li>
+    <li><span>Secure store available</span>
+      <span class="{{ 'ok' if credential_available else 'warn' }}">
+        {{ 'yes' if credential_available else 'no — install founderos-runtime[credentials]' }}
+      </span></li>
+  </ul>
+  <p class="muted">Passwords are stored in the OS keyring, never in workspace files.</p>
+</section>
+
+<section class="card">
+  <h2>Server</h2>
+  <ul class="kv">
+    <li><span>Bind host</span><span>{{ bind_host }} (local only)</span></li>
+  </ul>
+  <p class="muted">This is a local single-user alpha GUI. It binds to 127.0.0.1 and has
+    no authentication — it is not a production or multi-user web deployment.</p>
+</section>
+{% endblock %}

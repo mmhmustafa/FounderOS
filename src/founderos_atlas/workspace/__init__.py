@@ -17,6 +17,17 @@ from .exceptions import (
 )
 from .models import DiscoveryProfile, credential_ref_for, profile_id_for
 from .repository import ProfileRepository, atlas_home, default_workspace_root
+from .scopes import (
+    DEFAULT_SCOPE_ID,
+    DEFAULT_SCOPE_LABEL,
+    GLOBAL_SCOPE_ID,
+    GLOBAL_SCOPE_LABEL,
+    DiscoveryScope,
+    active_scopes,
+    default_scope,
+    profile_scope,
+    profile_scopes,
+)
 from .service import ProfileService, ResolvedDiscoveryInputs
 
 __all__ = [
@@ -24,8 +35,13 @@ __all__ = [
     "CredentialNotFoundError",
     "CredentialProvider",
     "CredentialStoreUnavailableError",
+    "DEFAULT_SCOPE_ID",
+    "DEFAULT_SCOPE_LABEL",
     "DiscoveryProfile",
+    "DiscoveryScope",
     "DuplicateProfileError",
+    "GLOBAL_SCOPE_ID",
+    "GLOBAL_SCOPE_LABEL",
     "InMemoryCredentialProvider",
     "InvalidProfileError",
     "KeyringCredentialProvider",
@@ -34,9 +50,13 @@ __all__ = [
     "ProfileService",
     "ResolvedDiscoveryInputs",
     "WorkspaceCorruptedError",
+    "active_scopes",
     "atlas_home",
     "credential_ref_for",
+    "default_scope",
     "default_workspace_root",
     "profile_id_for",
+    "profile_scope",
+    "profile_scopes",
     "resolve_credential_provider",
 ]

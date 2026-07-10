@@ -74,3 +74,12 @@ storage redesign:
 New artifact types are added by writing more files into the record
 directory and listing them in the record's `metadata.artifacts` — no schema
 migration, no database.
+
+## Profile scoping (PR-031A)
+
+Records carry optional `profile_id` / `profile_name` fields naming the
+discovery scope that produced them. Records written before PR-031A have
+neither field and load unchanged — they belong to the default (unscoped)
+scope. Each profile's history lives in its own repository root
+(`.atlas/profiles/<profile_id>/history`), so baseline lookups can never
+cross profiles.

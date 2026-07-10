@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — All Networks{% endblock %}
+{% block content %}
+<h1>Dashboard — All Networks</h1>
+
+<div class="status-banner status-{{ summary.status | lower }}">
+  <span class="badge">{{ summary.status }}</span>
+  <span>{{ summary.status_detail }}</span>
+</div>
+
+<div class="tiles">
+  <div class="tile"><strong>Networks</strong><span>{{ summary.network_count }}</span></div>
+  <div class="tile"><strong>Devices</strong><span>{{ summary.device_count }}</span></div>
+  <div class="tile"><strong>Relationships</strong><span>{{ summary.relationship_count }}</span></div>
+  <div class="tile"><strong>Configurations</strong><span>{{ summary.configurations_collected }}</span></div>
+</div>
+
+{% if summary.networks %}
+<section class="card">
+  <h2>Networks</h2>
+  <table class="grid">
+    <thead>
+      <tr><th>Network</th><th>Status</th><th>Devices</th><th>Last Discovery</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for network in summary.networks %}
+      <tr>
+        <td>{{ network.label }}</td>
+        <td>{{ network.summary.status }}</td>
+        <td>{{ network.summary.device_count if network.summary.device_count is not none else '—' }}</td>
+        <td>{{ network.summary.last_discovery }}</td>
+        <td class="row-actions">
+          <a class="btn btn-sm" href="/?scope={{ network.scope_id | urlencode }}">Open</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="muted">Each network's state comes from its own latest discovery. Networks are never compared against each other.</p>
+</section>
+{% else %}
+<p class="muted">No discovery has run yet in any network. <a href="/discovery">Run a discovery</a> to get started.</p>
+{% endif %}
+
+<section class="card">
+  <h2>Recent Discoveries (all networks)</h2>
+  {% if recent %}
+  <ul>
+    {% for r in recent %}
+    <li>{{ r.started_at }} — {{ r.profile }} — {{ r.device_count }} device(s) — {{ r.network_status }}</li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="muted">No discovery history yet.</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Quick Actions</h2>
+  <div class="actions">
+    <a class="btn" href="/discovery">Run Discovery</a>
+    <a class="btn" href="/topology">Open Topology</a>
+    <a class="btn" href="/history">History</a>
+    <a class="btn" href="/changes">Changes</a>
+  </div>
+</section>
+{% endblock %}

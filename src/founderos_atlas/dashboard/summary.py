@@ -160,6 +160,77 @@ def build_dashboard_summary(
     )
 
 
+@dataclass(frozen=True)
+class NetworkSummary:
+    """One network's (discovery scope's) latest state in the global view."""
+
+    scope_id: str
+    label: str
+    summary: DashboardSummary
+
+
+@dataclass(frozen=True)
+class GlobalDashboardSummary:
+    """All networks combined: the latest successful state of every scope.
+
+    This is pure aggregation — each network's numbers come from its own
+    latest artifacts. Networks are never compared against each other, so a
+    device absent from one network can never look "removed" from another.
+    """
+
+    network_count: int
+    device_count: int
+    relationship_count: int
+    configurations_collected: int
+    status: str
+    status_detail: str
+    networks: tuple[NetworkSummary, ...]
+
+
+_STATUS_SEVERITY = {
+    STATUS_CRITICAL: 3,
+    STATUS_WARNING: 2,
+    STATUS_HEALTHY: 1,
+    STATUS_UNKNOWN: 0,
+}
+
+
+def aggregate_dashboard_summaries(
+    networks: tuple[NetworkSummary, ...] | list[NetworkSummary],
+) -> GlobalDashboardSummary:
+    """Combine per-network summaries into one All Networks view."""
+
+    resolved = tuple(networks)
+    device_count = sum(net.summary.device_count or 0 for net in resolved)
+    relationship_count = sum(net.summary.relationship_count or 0 for net in resolved)
+    configurations = sum(net.summary.configurations_collected for net in resolved)
+    status = STATUS_UNKNOWN
+    for net in resolved:
+        if _STATUS_SEVERITY.get(net.summary.status, 0) > _STATUS_SEVERITY.get(status, 0):
+            status = net.summary.status
+    if not resolved:
+        detail = "No discovery has run yet in any network."
+    elif status == STATUS_UNKNOWN:
+        detail = "No network has discovery data yet."
+    else:
+        attention = tuple(
+            net.label for net in resolved if net.summary.status == status
+        )
+        if status == STATUS_HEALTHY:
+            detail = f"All {len(resolved)} network(s) healthy."
+        else:
+            detail = f"{status}: {', '.join(attention)}."
+    return GlobalDashboardSummary(
+        network_count=len(resolved),
+        device_count=device_count,
+        relationship_count=relationship_count,
+        configurations_collected=configurations,
+        status=status,
+        status_detail=detail,
+        networks=resolved,
+    )
+
+
 def _network_status(
     snapshot: dict[str, Any] | None,
     change_count: int | None,

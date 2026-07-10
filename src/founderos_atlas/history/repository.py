@@ -59,6 +59,8 @@ class HistoryRepository:
         artifacts: Mapping[str, str | Path] | None = None,
         config_directories: Mapping[str, str | Path] | None = None,
         metadata: Mapping[str, Any] | None = None,
+        profile_id: str | None = None,
+        profile_name: str | None = None,
     ) -> DiscoveryRecord:
         """Preserve one discovery: allocate, copy artifacts, write metadata."""
 
@@ -85,6 +87,8 @@ class HistoryRepository:
             network_status=network_status,
             snapshot_id=snapshot_id,
             metadata={**dict(metadata or {}), "artifacts": sorted(copied)},
+            profile_id=profile_id,
+            profile_name=profile_name,
         )
         self._storage.write_metadata(record_dir, record.to_dict())
         return record

@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<h1>Dashboard{% if active_scope_label %} — {{ active_scope_label }}{% endif %}</h1>
+
+<div class="status-banner status-{{ summary.status | lower }}">
+  <span class="badge">{{ summary.status }}</span>
+  <span>{{ summary.status_detail }}</span>
+</div>
+
+<div class="tiles">
+  <div class="tile"><strong>Devices</strong><span>{{ summary.device_count if summary.device_count is not none else '—' }}</span></div>
+  <div class="tile"><strong>Relationships</strong><span>{{ summary.relationship_count if summary.relationship_count is not none else '—' }}</span></div>
+  <div class="tile"><strong>Discovery Success</strong><span>{{ summary.discovery_success }}</span></div>
+  <div class="tile"><strong>Configurations</strong><span>{{ summary.configurations_collected }}</span></div>
+  <div class="tile"><strong>Last Discovery</strong><span>{{ summary.last_discovery }}</span></div>
+</div>
+
+<div class="columns">
+  <section class="card">
+    <h2>Operational Changes</h2>
+    <ul>
+      {% for line in summary.operational_changes %}<li>{{ line }}</li>{% else %}<li>No operational change report yet.</li>{% endfor %}
+    </ul>
+  </section>
+  <section class="card">
+    <h2>Configuration Changes</h2>
+    <ul>
+      {% for line in summary.configuration_changes %}<li>{{ line }}</li>{% else %}<li>No configuration change report yet.</li>{% endfor %}
+    </ul>
+  </section>
+</div>
+
+<div class="columns">
+  <section class="card">
+    <h2>Recent Changes</h2>
+    <ul>
+      {% for line in summary.recent_changes %}<li>{{ line }}</li>{% else %}<li>No recent changes.</li>{% endfor %}
+    </ul>
+  </section>
+  <section class="card">
+    <h2>Recent Discoveries</h2>
+    <ul>
+      {% for line in summary.recent_discoveries %}<li>{{ line }}</li>{% else %}<li>No discovery history yet.</li>{% endfor %}
+    </ul>
+  </section>
+</div>
+
+<section class="card">
+  <h2>Quick Actions</h2>
+  <div class="actions">
+    <a class="btn" href="/discovery">Run Discovery</a>
+    <a class="btn" href="/topology">Open Topology</a>
+    <a class="btn" href="/history">History</a>
+    <a class="btn" href="/changes">Changes</a>
+    <a class="btn" href="/artifacts/{{ artifact_prefix or '' }}morning_brief.md">Morning Brief</a>
+  </div>
+</section>
+{% endblock %}

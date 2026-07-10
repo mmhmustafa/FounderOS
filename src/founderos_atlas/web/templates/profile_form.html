@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit' if mode == 'edit' else 'Add' }} Profile{% endblock %}
+{% block content %}
+<h1>{{ 'Edit' if mode == 'edit' else 'Add' }} Discovery Profile</h1>
+
+<form class="form" method="post"
+      action="{% if mode == 'edit' %}/profiles/{{ profile.name | urlencode }}{% else %}/profiles{% endif %}">
+  {% if mode != 'edit' %}
+  <label>Profile name
+    <input name="name" required placeholder="Hyderabad Lab">
+  </label>
+  {% else %}
+  <label>Profile name
+    <input name="name" value="{{ profile.name }}" placeholder="Hyderabad Lab">
+  </label>
+  <p class="muted">Renaming keeps all discovery history — the profile's internal identity never changes.</p>
+  {% endif %}
+  <label>Site name (optional)
+    <input name="site" value="{{ profile.site if profile and profile.site != '-' else '' }}" placeholder="CML Lab">
+  </label>
+  <label>Management IP
+    <input name="management_ip" value="{{ profile.management_ip if profile else '' }}"
+           placeholder="192.168.1.12" {{ 'required' if mode != 'edit' else '' }}>
+  </label>
+  <label>Username
+    <input name="username" value="{{ profile.username if profile else '' }}"
+           placeholder="atlas" {{ 'required' if mode != 'edit' else '' }}>
+  </label>
+  <label>Password
+    <input type="password" name="password" autocomplete="new-password"
+           placeholder="{{ 'leave blank to keep current' if mode == 'edit' else '' }}"
+           {{ 'required' if mode != 'edit' else '' }}>
+  </label>
+  <div class="form-row">
+    <label>Max depth
+      <input type="number" name="max_depth" min="0" value="{{ profile.max_depth if profile else 1 }}">
+    </label>
+    <label>Max devices
+      <input type="number" name="max_devices" min="1" value="{{ profile.max_devices if profile else 10 }}">
+    </label>
+  </div>
+  <label class="checkbox">
+    <input type="checkbox" name="collect_configuration" {{ 'checked' if profile and profile.collect_configuration else '' }}>
+    Collect running configuration
+  </label>
+  <div class="form-actions">
+    <button class="btn btn-primary" type="submit">Save Profile</button>
+    <a class="btn" href="/profiles">Cancel</a>
+  </div>
+  <p class="muted">The password is stored securely in your OS keyring, never in profile files.</p>
+</form>
+{% endblock %}

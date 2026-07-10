@@ -36,18 +36,19 @@ def render_help() -> str:
             "  founderos atlas demo discovery",
             "  founderos atlas demo topology",
             "  founderos atlas morning-brief",
+            "  founderos atlas web",
             "  founderos atlas discover",
             "  founderos atlas discover --profile <name>",
             "  founderos atlas profile add | list | show | update | delete",
             "  founderos atlas compare <previous.json> <current.json>",
-            "  founderos atlas dashboard",
-            "  founderos atlas history",
-            "  founderos atlas timeline",
+            "  founderos atlas dashboard [--profile <name>]",
+            "  founderos atlas history [--profile <name>]",
+            "  founderos atlas timeline [--profile <name>]",
             "  founderos atlas config-diff <previous> <current>",
-            "  founderos atlas config-diff --latest <hostname>",
+            "  founderos atlas config-diff --latest <hostname> [--profile <name>]",
             "  founderos atlas state-diff <previous.json> <current.json>",
-            "  founderos atlas state-diff --latest",
-            "  founderos atlas investigate",
+            "  founderos atlas state-diff --latest [--profile <name>]",
+            "  founderos atlas investigate [--profile <name>]",
             "  founderos help",
             "",
             "Commands:",
@@ -57,6 +58,7 @@ def render_help() -> str:
             "  atlas demo discovery  Run fixture-only Atlas network discovery.",
             "  atlas demo topology  Generate and open the Atlas topology viewer.",
             "  atlas morning-brief  Generate an evaluated Atlas operational brief.",
+            "  atlas web       Start the local Atlas web GUI (127.0.0.1).",
             "  atlas discover  Discover a live Cisco IOS/IOS-XE device over read-only SSH.",
             "  atlas profile   Manage saved discovery profiles (add/list/show/update/delete).",
             "  atlas compare   Compare two topology snapshots into a change report.",
@@ -423,18 +425,27 @@ def render_atlas_state_diff(
     )
 
 
-def render_atlas_history(index: HistoryIndex) -> str:
+def render_atlas_history(
+    index: HistoryIndex,
+    *,
+    profile_label: str | None = None,
+    history_display: str | None = None,
+) -> str:
     lines = ["Atlas Discovery History", ""]
+    if profile_label:
+        lines[0] = f"Atlas Discovery History — {profile_label}"
     if not index.records:
         lines.append("No discovery history yet. Run: founderos atlas discover")
+    folder_base = history_display or ".atlas/history"
     for record in index.records:
         device_word = "Device" if record.device_count == 1 else "Devices"
+        profile_part = f" | Profile: {record.profile_name}" if record.profile_name else ""
         lines.extend(
             (
                 _history_timestamp(record.started_at),
                 f"{record.device_count} {device_word} | {record.network_status} "
-                f"| Duration: {record.duration_seconds:.1f} sec",
-                f"Folder: .atlas/history/{record.record_id}",
+                f"| Duration: {record.duration_seconds:.1f} sec" + profile_part,
+                f"Folder: {folder_base}/{record.record_id}",
                 "-" * 40,
             )
         )

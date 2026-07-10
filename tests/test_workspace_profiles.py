@@ -392,8 +392,12 @@ class DiscoverWithProfileTests(unittest.TestCase):
             self.assertEqual(0, code, err)
             self.assertIn("Using profile: Hyderabad Lab", out)
             self.assertIn("Discovery Complete", out)
-            self.assertTrue((workdir / "topology_snapshot.json").exists())
-            self.assertTrue((workdir / "dashboard.html").exists())
+            # Profile discoveries write into the profile's isolated scope
+            # (PR-031A) — never the shared unscoped workspace.
+            scope = workdir / ".atlas" / "profiles" / "hyderabad-lab"
+            self.assertTrue((scope / "topology_snapshot.json").exists())
+            self.assertTrue((scope / "dashboard.html").exists())
+            self.assertFalse((workdir / "topology_snapshot.json").exists())
             # last discovery recorded on the profile
             self.assertEqual(
                 "2026-07-09T23:41:54+00:00",

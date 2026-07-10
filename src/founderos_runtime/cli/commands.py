@@ -59,7 +59,10 @@ from founderos_atlas.state import (
 )
 from founderos_atlas.workspace import (
     AtlasWorkspaceError,
+    DiscoveryScope,
     ProfileService,
+    profile_id_for,
+    profile_scope,
 )
 from founderos_atlas.topology import TopologyGraph, TopologySnapshot, TopologySnapshotExporter
 from founderos_atlas.transport import (
@@ -215,6 +218,7 @@ def atlas_discover_command(
         emit(f"[{number}/9] {label} ... {status}")
 
     active_profile: str | None = None
+    active_profile_id: str | None = None
     active_service: ProfileService | None = None
     collect_override: bool | None = None
     if profile is not None:
@@ -224,9 +228,35 @@ def atlas_discover_command(
         except AtlasWorkspaceError as error:
             raise CliError(str(error)) from error
         active_profile = inputs.profile_name
+        active_profile_id = inputs.profile_id or profile_id_for(inputs.profile_name)
         host, username, password = inputs.management_ip, inputs.username, inputs.password
         max_depth, max_devices = inputs.max_depth, inputs.max_devices
         collect_override = inputs.collect_configuration
+        # Every profile discovers into its own isolated scope: its own
+        # current artifacts, configs, and history. Comparison baselines can
+        # therefore only ever come from the same profile's previous run.
+        scope = profile_scope(
+            Path(snapshot_output).parent, active_profile_id, active_profile
+        )
+        scope.output_dir.mkdir(parents=True, exist_ok=True)
+        topology_output = scope.output_dir / Path(topology_output).name
+        snapshot_output = scope.output_dir / Path(snapshot_output).name
+        brief_output = scope.output_dir / Path(brief_output).name
+        config_output_dir = scope.output_dir / Path(config_output_dir).name
+        dashboard_output = scope.output_dir / Path(dashboard_output).name
+        change_report_json_output = scope.output_dir / Path(change_report_json_output).name
+        change_report_markdown_output = (
+            scope.output_dir / Path(change_report_markdown_output).name
+        )
+        config_change_json_output = scope.output_dir / Path(config_change_json_output).name
+        config_change_markdown_output = (
+            scope.output_dir / Path(config_change_markdown_output).name
+        )
+        state_change_json_output = scope.output_dir / Path(state_change_json_output).name
+        state_change_markdown_output = (
+            scope.output_dir / Path(state_change_markdown_output).name
+        )
+        history_root = scope.history_root
         emit(f"Using profile: {active_profile}")
     else:
         try:
@@ -355,6 +385,8 @@ def atlas_discover_command(
         brief,
         config_collections,
         destinations,
+        profile_id=active_profile_id,
+        profile_name=active_profile,
     )
     step(8, "Archiving discovery", "ok" if record_id is not None else "failed")
 
@@ -562,7 +594,17 @@ def atlas_config_diff_command(
     history_root: str | Path = Path(".atlas") / "history",
     json_output: str | Path = "config_change_report.json",
     markdown_output: str | Path = "config_change_report.md",
+    profile: str | None = None,
+    profile_service: ProfileService | None = None,
 ) -> tuple[int, str]:
+    if profile is not None:
+        scope = _resolve_profile_scope(
+            profile, profile_service, Path(json_output).parent
+        )
+        history_root = scope.history_root
+        json_output = _scoped_path(json_output, scope)
+        markdown_output = _scoped_path(markdown_output, scope)
+        scope.output_dir.mkdir(parents=True, exist_ok=True)
     if latest_hostname is not None:
         previous_path, current_path, previous_ref, current_ref, hostname = (
             _latest_config_pair(history_root, latest_hostname)
@@ -639,7 +681,17 @@ def atlas_state_diff_command(
     history_root: str | Path = Path(".atlas") / "history",
     json_output: str | Path = "state_change_report.json",
     markdown_output: str | Path = "state_change_report.md",
+    profile: str | None = None,
+    profile_service: ProfileService | None = None,
 ) -> tuple[int, str]:
+    if profile is not None:
+        scope = _resolve_profile_scope(
+            profile, profile_service, Path(json_output).parent
+        )
+        history_root = scope.history_root
+        json_output = _scoped_path(json_output, scope)
+        markdown_output = _scoped_path(markdown_output, scope)
+        scope.output_dir.mkdir(parents=True, exist_ok=True)
     if latest:
         previous_path, current_path, previous_ref, current_ref = _latest_snapshot_pair(
             history_root
@@ -708,6 +760,23 @@ def _profile_service(service: ProfileService | None) -> ProfileService:
         return ProfileService()
     except AtlasWorkspaceError as error:
         raise CliError(str(error)) from error
+
+
+def _resolve_profile_scope(
+    profile: str, service: ProfileService | None, base_dir: str | Path
+) -> DiscoveryScope:
+    """The isolated workspace of a saved profile, addressed by name."""
+
+    resolved = _profile_service(service)
+    try:
+        found = resolved.get_profile(profile)
+    except AtlasWorkspaceError as error:
+        raise CliError(str(error)) from error
+    return profile_scope(base_dir, found.profile_id, found.name)
+
+
+def _scoped_path(path: str | Path, scope: DiscoveryScope) -> Path:
+    return scope.output_dir / Path(path).name
 
 
 def atlas_profile_add_command(
@@ -852,7 +921,22 @@ def atlas_investigate_command(
     history_root: str | Path = Path(".atlas") / "history",
     json_output: str | Path = "incident_report.json",
     markdown_output: str | Path = "incident_report.md",
+    profile: str | None = None,
+    profile_service: ProfileService | None = None,
 ) -> tuple[int, str]:
+    if profile is not None:
+        scope = _resolve_profile_scope(
+            profile, profile_service, Path(snapshot_path).parent
+        )
+        snapshot_path = _scoped_path(snapshot_path, scope)
+        change_report_json = _scoped_path(change_report_json, scope)
+        config_change_report = _scoped_path(config_change_report, scope)
+        brief_path = _scoped_path(brief_path, scope)
+        configs_dir = scope.output_dir / Path(configs_dir).name
+        history_root = scope.history_root
+        json_output = _scoped_path(json_output, scope)
+        markdown_output = _scoped_path(markdown_output, scope)
+        scope.output_dir.mkdir(parents=True, exist_ok=True)
     read_input = input_reader or input
     read_clock = clock or (lambda: datetime.now(timezone.utc))
     try:
@@ -890,18 +974,72 @@ def atlas_investigate_command(
     )
 
 
-def atlas_history_command(
-    *, history_root: str | Path = Path(".atlas") / "history"
+def atlas_web_command(
+    *,
+    host: str = "127.0.0.1",
+    port: int = 8765,
+    output_dir: str | Path | None = None,
+    history_root: str | Path | None = None,
+    browser_opener: BrowserOpener | None = None,
+    server_runner: Callable[..., None] | None = None,
 ) -> tuple[int, str]:
+    """Start the local Atlas web GUI (binds to 127.0.0.1 only)."""
+
+    try:
+        from founderos_atlas.web import create_app
+    except RuntimeError as error:
+        raise CliError(str(error)) from error
+    try:
+        app = create_app(output_dir=output_dir, history_root=history_root)
+    except (RuntimeError, OSError) as error:
+        raise CliError(f"Could not start the Atlas web GUI: {error}") from error
+
+    url = f"http://{host}:{port}"
+    print("Atlas web UI running at:")
+    print(url)
+    (browser_opener or webbrowser.open)(url)
+    run = server_runner or app.run
+    # host is fixed to loopback; never bind to 0.0.0.0.
+    run(host=host, port=port)
+    return 0, ""
+
+
+def atlas_history_command(
+    *,
+    history_root: str | Path = Path(".atlas") / "history",
+    profile: str | None = None,
+    profile_service: ProfileService | None = None,
+) -> tuple[int, str]:
+    profile_label: str | None = None
+    if profile is not None:
+        # The default history root is <base>/.atlas/history; the profile's
+        # scoped history lives under the same base directory.
+        scope = _resolve_profile_scope(
+            profile, profile_service, Path(history_root).parent.parent
+        )
+        history_root = scope.history_root
+        profile_label = scope.label
     index = HistoryRepository(history_root).load()
-    return 0, render_atlas_history(index)
+    return 0, render_atlas_history(
+        index,
+        profile_label=profile_label,
+        history_display=Path(history_root).as_posix() if profile_label else None,
+    )
 
 
 def atlas_timeline_command(
     *,
     history_root: str | Path = Path(".atlas") / "history",
     output_path: str | Path = "timeline.md",
+    profile: str | None = None,
+    profile_service: ProfileService | None = None,
 ) -> tuple[int, str]:
+    if profile is not None:
+        scope = _resolve_profile_scope(
+            profile, profile_service, Path(output_path).parent
+        )
+        history_root = scope.history_root
+        output_path = _scoped_path(output_path, scope)
     repository = HistoryRepository(history_root)
     index = repository.load()
     try:
@@ -923,6 +1061,9 @@ def _save_history(
     brief,
     config_collections: tuple[tuple[str, str, str], ...] | None,
     destinations: dict[str, Path],
+    *,
+    profile_id: str | None = None,
+    profile_name: str | None = None,
 ) -> tuple[str, str | None]:
     """Best-effort preservation; never fails a successful discovery."""
 
@@ -964,6 +1105,8 @@ def _save_history(
             artifacts=artifacts,
             config_directories=config_directories,
             metadata={"atlas_version": VERSION_TEXT},
+            profile_id=profile_id,
+            profile_name=profile_name,
         )
     except (OSError, TypeError, ValueError) as error:
         return f"History save failed: {error}", None
@@ -1029,7 +1172,29 @@ def atlas_dashboard_command(
     incident_report: str | Path = "incident_report.json",
     incident_report_md: str | Path = "incident_report.md",
     browser_opener: BrowserOpener | None = None,
+    profile: str | None = None,
+    profile_service: ProfileService | None = None,
 ) -> tuple[int, str]:
+    if profile is not None:
+        scope = _resolve_profile_scope(
+            profile, profile_service, Path(output_path).parent
+        )
+        output_path = _scoped_path(output_path, scope)
+        snapshot_path = _scoped_path(snapshot_path, scope)
+        topology_path = _scoped_path(topology_path, scope)
+        brief_path = _scoped_path(brief_path, scope)
+        change_report_json = _scoped_path(change_report_json, scope)
+        change_report_md = _scoped_path(change_report_md, scope)
+        configs_dir = scope.output_dir / Path(configs_dir).name
+        history_root = scope.history_root
+        timeline_path = _scoped_path(timeline_path, scope)
+        config_change_report = _scoped_path(config_change_report, scope)
+        config_change_report_md = _scoped_path(config_change_report_md, scope)
+        state_change_report = _scoped_path(state_change_report, scope)
+        state_change_report_md = _scoped_path(state_change_report_md, scope)
+        incident_report = _scoped_path(incident_report, scope)
+        incident_report_md = _scoped_path(incident_report_md, scope)
+        scope.output_dir.mkdir(parents=True, exist_ok=True)
     try:
         destination = Path(output_path).resolve()
         summary = build_dashboard_summary(

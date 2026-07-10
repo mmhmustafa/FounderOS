@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Profiles{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Discovery Profiles</h1>
+  <a class="btn btn-primary" href="/profiles/new">Add Profile</a>
+</div>
+
+{% if profiles %}
+<table class="grid">
+  <thead>
+    <tr><th>Name</th><th>Site</th><th>Management IP</th><th>Username</th><th>Collect Config</th><th>Last Discovery</th><th></th></tr>
+  </thead>
+  <tbody>
+    {% for p in profiles %}
+    <tr>
+      <td>{{ p.name }}</td>
+      <td>{{ p.site }}</td>
+      <td>{{ p.management_ip }}</td>
+      <td>{{ p.username }}</td>
+      <td>{{ 'yes' if p.collect_configuration else 'no' }}</td>
+      <td>{{ p.last_discovery }}</td>
+      <td class="row-actions">
+        <a class="btn btn-sm" href="/profiles/{{ p.name | urlencode }}/edit">Edit</a>
+        <form method="post" action="/profiles/{{ p.name | urlencode }}/delete" onsubmit="return confirm('Delete profile {{ p.name }}?');">
+          <button class="btn btn-sm btn-danger" type="submit">Delete</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="muted">No profiles saved yet. Passwords are stored securely in your OS keyring — never here.</p>
+{% endif %}
+<p class="muted">Passwords are never displayed and are never stored in profile metadata.</p>
+{% endblock %}

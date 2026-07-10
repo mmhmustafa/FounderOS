@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Topology{% endblock %}
+{% block content %}
+{% if global_view %}
+<h1>Topology — All Networks</h1>
+
+{% if inventory %}
+<section class="card">
+  <h2>Device Inventory</h2>
+  <table class="grid">
+    <thead>
+      <tr><th>Network</th><th>Device</th><th>Management IP</th><th>Platform</th><th>OS Version</th></tr>
+    </thead>
+    <tbody>
+      {% for device in inventory %}
+      <tr>
+        <td>{{ device.network }}</td>
+        <td>{{ device.hostname }}</td>
+        <td>{{ device.management_ip }}</td>
+        <td>{{ device.platform }}</td>
+        <td>{{ device.os_version }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="muted">Combined inventory: the latest successful state of every active network. Networks are never compared against each other.</p>
+</section>
+{% else %}
+<p class="muted">No topology has been generated yet in any network. <a href="/discovery">Run a discovery</a> to build the interactive topology viewer.</p>
+{% endif %}
+
+{% if viewers %}
+<section class="card">
+  <h2>Interactive Viewers</h2>
+  <div class="actions">
+    {% for viewer in viewers %}
+    <a class="btn" href="{{ viewer.href }}" target="_blank">{{ viewer.label }}</a>
+    {% endfor %}
+  </div>
+  <p class="muted">Each active network keeps its own interactive topology viewer — by design; a single federated cross-network graph is future work.</p>
+</section>
+{% endif %}
+
+{% else %}
+<div class="page-head">
+  <h1>Topology — {{ active_scope_label }}</h1>
+  {% if has_topology %}<a class="btn" href="{{ topology_src }}" target="_blank">Open in new tab</a>{% endif %}
+</div>
+
+{% if has_topology %}
+<iframe class="topology-frame" src="{{ topology_src }}" title="Atlas topology viewer"></iframe>
+{% else %}
+<p class="muted">No topology has been generated yet for this network. <a href="/discovery">Run a discovery</a> to build the interactive topology viewer.</p>
+{% endif %}
+{% endif %}
+{% endblock %}

@@ -30,6 +30,7 @@ from .commands import (
     atlas_profile_show_command,
     atlas_profile_update_command,
     atlas_timeline_command,
+    atlas_web_command,
     atlas_discovery_command,
     atlas_morning_brief_command,
     atlas_topology_command,
@@ -77,6 +78,7 @@ def main(
     atlas_state_diff_json_output: str | Path = "state_change_report.json",
     atlas_state_diff_markdown_output: str | Path = "state_change_report.md",
     atlas_profile_service=None,
+    atlas_web_server_runner=None,
 ) -> int:
     arguments = list(sys.argv[1:] if argv is None else argv)
     if not arguments:
@@ -162,20 +164,25 @@ def main(
             print(render_error(str(error)), file=sys.stderr)
             return 1
     elif arguments[:2] == ["atlas", "config-diff"]:
+        profile_name, remaining = _parse_profile_flag(arguments[2:])
         try:
-            if len(arguments) == 4 and arguments[2] == "--latest":
+            if len(remaining) == 2 and remaining[0] == "--latest":
                 code, output = atlas_config_diff_command(
-                    latest_hostname=arguments[3],
+                    latest_hostname=remaining[1],
                     history_root=atlas_history_root,
                     json_output=atlas_config_diff_json_output,
                     markdown_output=atlas_config_diff_markdown_output,
+                    profile=profile_name,
+                    profile_service=atlas_profile_service,
                 )
-            elif len(arguments) == 4:
+            elif len(remaining) == 2:
                 code, output = atlas_config_diff_command(
-                    arguments[2],
-                    arguments[3],
+                    remaining[0],
+                    remaining[1],
                     json_output=atlas_config_diff_json_output,
                     markdown_output=atlas_config_diff_markdown_output,
+                    profile=profile_name,
+                    profile_service=atlas_profile_service,
                 )
             else:
                 print(
@@ -190,20 +197,25 @@ def main(
             print(render_error(str(error)), file=sys.stderr)
             return 1
     elif arguments[:2] == ["atlas", "state-diff"]:
+        profile_name, remaining = _parse_profile_flag(arguments[2:])
         try:
-            if arguments[2:] == ["--latest"]:
+            if remaining == ["--latest"]:
                 code, output = atlas_state_diff_command(
                     latest=True,
                     history_root=atlas_history_root,
                     json_output=atlas_state_diff_json_output,
                     markdown_output=atlas_state_diff_markdown_output,
+                    profile=profile_name,
+                    profile_service=atlas_profile_service,
                 )
-            elif len(arguments) == 4:
+            elif len(remaining) == 2:
                 code, output = atlas_state_diff_command(
-                    arguments[2],
-                    arguments[3],
+                    remaining[0],
+                    remaining[1],
                     json_output=atlas_state_diff_json_output,
                     markdown_output=atlas_state_diff_markdown_output,
+                    profile=profile_name,
+                    profile_service=atlas_profile_service,
                 )
             else:
                 print(
@@ -217,7 +229,14 @@ def main(
         except CliError as error:
             print(render_error(str(error)), file=sys.stderr)
             return 1
-    elif arguments == ["atlas", "investigate"]:
+    elif arguments[:2] == ["atlas", "investigate"]:
+        profile_name, remaining = _parse_profile_flag(arguments[2:])
+        if remaining:
+            print(
+                render_error("Usage: founderos atlas investigate [--profile <name>]"),
+                file=sys.stderr,
+            )
+            return 2
         try:
             code, output = atlas_investigate_command(
                 input_reader=atlas_input_reader,
@@ -230,26 +249,65 @@ def main(
                 history_root=atlas_history_root,
                 json_output=atlas_incident_json_output,
                 markdown_output=atlas_incident_markdown_output,
+                profile=profile_name,
+                profile_service=atlas_profile_service,
             )
         except CliError as error:
             print(render_error(str(error)), file=sys.stderr)
             return 1
-    elif arguments == ["atlas", "history"]:
+    elif arguments == ["atlas", "web"]:
         try:
-            code, output = atlas_history_command(history_root=atlas_history_root)
+            code, output = atlas_web_command(
+                history_root=atlas_history_root,
+                browser_opener=atlas_browser_opener,
+                server_runner=atlas_web_server_runner,
+            )
         except CliError as error:
             print(render_error(str(error)), file=sys.stderr)
             return 1
-    elif arguments == ["atlas", "timeline"]:
+    elif arguments[:2] == ["atlas", "history"]:
+        profile_name, remaining = _parse_profile_flag(arguments[2:])
+        if remaining:
+            print(
+                render_error("Usage: founderos atlas history [--profile <name>]"),
+                file=sys.stderr,
+            )
+            return 2
+        try:
+            code, output = atlas_history_command(
+                history_root=atlas_history_root,
+                profile=profile_name,
+                profile_service=atlas_profile_service,
+            )
+        except CliError as error:
+            print(render_error(str(error)), file=sys.stderr)
+            return 1
+    elif arguments[:2] == ["atlas", "timeline"]:
+        profile_name, remaining = _parse_profile_flag(arguments[2:])
+        if remaining:
+            print(
+                render_error("Usage: founderos atlas timeline [--profile <name>]"),
+                file=sys.stderr,
+            )
+            return 2
         try:
             code, output = atlas_timeline_command(
                 history_root=atlas_history_root,
                 output_path=atlas_timeline_output,
+                profile=profile_name,
+                profile_service=atlas_profile_service,
             )
         except CliError as error:
             print(render_error(str(error)), file=sys.stderr)
             return 1
-    elif arguments == ["atlas", "dashboard"]:
+    elif arguments[:2] == ["atlas", "dashboard"]:
+        profile_name, remaining = _parse_profile_flag(arguments[2:])
+        if remaining:
+            print(
+                render_error("Usage: founderos atlas dashboard [--profile <name>]"),
+                file=sys.stderr,
+            )
+            return 2
         try:
             code, output = atlas_dashboard_command(
                 output_path=atlas_dashboard_output,
@@ -268,6 +326,8 @@ def main(
                 incident_report=atlas_incident_json_output,
                 incident_report_md=atlas_incident_markdown_output,
                 browser_opener=atlas_browser_opener,
+                profile=profile_name,
+                profile_service=atlas_profile_service,
             )
         except CliError as error:
             print(render_error(str(error)), file=sys.stderr)

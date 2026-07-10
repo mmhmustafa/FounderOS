@@ -96,6 +96,26 @@ class ProfileRepository:
         profiles[profile.normalized_name] = profile
         self._write(profiles)
 
+    def replace(self, old_name: str, profile: DiscoveryProfile) -> None:
+        """Replace the profile stored under ``old_name`` — supports renames.
+
+        The profile keeps its stable ``profile_id`` across a rename, so all
+        scoped discovery data and the stored credential stay associated.
+        """
+
+        profiles = self.load()
+        old_key = normalize_name(old_name)
+        if old_key not in profiles:
+            raise ProfileNotFoundError(f"No saved profile named {old_name!r}.")
+        new_key = profile.normalized_name
+        if new_key != old_key and new_key in profiles:
+            raise DuplicateProfileError(
+                f"A profile named {profile.name!r} already exists."
+            )
+        del profiles[old_key]
+        profiles[new_key] = profile
+        self._write(profiles)
+
     def delete(self, name: str) -> DiscoveryProfile:
         profiles = self.load()
         key = normalize_name(name)

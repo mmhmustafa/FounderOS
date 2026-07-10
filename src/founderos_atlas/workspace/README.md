@@ -82,3 +82,23 @@ founderos atlas discover --profile "Hyderabad Lab"
 
 Password input is masked; passwords are never displayed. The interactive
 `founderos atlas discover` (no profile) continues to work unchanged.
+
+## Discovery scopes (PR-031A)
+
+`scopes.py` defines the isolation boundary that fixes multi-profile
+discovery: a `DiscoveryScope` names one isolated workspace — output
+directory plus history root. Each profile's scope lives at
+`<base>/.atlas/profiles/<profile_id>/` (history in `history/` inside it);
+the *default scope* is the classic unscoped layout used by profile-less
+discovery. The scope key is the stable `profile_id`, never the display
+name, so renaming a profile (`ProfileService.update_profile(new_name=...)`)
+keeps its history, credential, and baselines. New profile ids are unique
+even when different names slug to the same value ("Lab A" / "Lab-A").
+
+Legacy data recorded before scoping stays in the default scope and is never
+reassigned to a profile: Atlas cannot know which network produced it.
+
+`active_scopes()` implements the legacy-data policy for aggregated (All
+Networks) views: profile scopes with discovery data are authoritative; the
+default scope participates only while no profile scope holds data. Legacy
+data is never deleted and stays selectable directly.
