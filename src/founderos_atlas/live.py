@@ -59,11 +59,15 @@ def run_multihop_discovery(
     *,
     adapter: DiscoveryAdapter | None = None,
     config: MultiHopConfig | None = None,
+    policy=None,
+    extra_seeds: tuple[str, ...] = (),
+    on_neighbor=None,
 ) -> tuple[MultiHopDiscoveryReport, TopologyGraph, TopologySnapshot]:
-    """Discover the seed and reachable CDP neighbors, then reconcile.
+    """Discover the seed(s) and reachable neighbors, then reconcile.
 
     Traversal lives in ``discovery.multihop``; this composition only wires it
-    to the existing reconciliation and snapshot pipeline.
+    to the existing reconciliation and snapshot pipeline. ``policy``,
+    ``extra_seeds``, and ``on_neighbor`` pass through to the traversal.
     """
 
     report = discover_multihop(
@@ -71,6 +75,9 @@ def run_multihop_discovery(
         transport_factory,
         adapter=adapter,
         config=config,
+        policy=policy,
+        extra_seeds=extra_seeds,
+        on_neighbor=on_neighbor,
     )
     resolution = IdentityResolver().resolve(report.results)
     canonical_results = resolution.canonicalize(report.results)

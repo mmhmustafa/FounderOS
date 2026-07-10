@@ -876,15 +876,21 @@ class LegacyScopePolicyTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             workdir = Path(tmp)
             service = make_service(workdir)
-            # Two legitimate sites reusing the same RFC1918 IP and hostname.
+            # Two legitimate sites reusing the same RFC1918 IP and hostname
+            # for two physically distinct devices (distinct serial numbers).
             add_profile(service, "Site One", "10.0.0.1")
             add_profile(service, "Site Two", "10.0.0.1")
-            same_device = lambda: ScriptedNetwork(
-                {"10.0.0.1": full_outputs("R1", "10.0.0.1")}
-            )
-            run_discover(workdir, service, same_device(), "Site One", FIXED)
+
+            def site_device(serial_suffix: str) -> ScriptedNetwork:
+                outputs = dict(full_outputs("R1", "10.0.0.1"))
+                outputs["show version"] = outputs["show version"].replace(
+                    "SERIAL-R1", f"SERIAL-R1-{serial_suffix}"
+                )
+                return ScriptedNetwork({"10.0.0.1": outputs})
+
+            run_discover(workdir, service, site_device("ONE"), "Site One", FIXED)
             run_discover(
-                workdir, service, same_device(), "Site Two",
+                workdir, service, site_device("TWO"), "Site Two",
                 FIXED + timedelta(hours=1),
             )
             client = self.build_client(workdir, service)

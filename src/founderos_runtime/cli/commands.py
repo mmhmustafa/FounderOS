@@ -57,6 +57,13 @@ from founderos_atlas.state import (
     render_state_report_json,
     render_state_report_markdown,
 )
+from founderos_atlas.credentials import (
+    CredentialCandidate,
+    CredentialResolver,
+    CredentialSetRepository,
+    CredentialSuccessMemory,
+    MultiCredentialTransportFactory,
+)
 from founderos_atlas.workspace import (
     AtlasWorkspaceError,
     DiscoveryScope,
@@ -280,8 +287,46 @@ def atlas_discover_command(
         def host_transport(next_host: str) -> DeviceTransport:
             return build_transport(replace(credentials, host=next_host))
 
+        # Profile runs resolve credentials per device: the profile's own
+        # credential is the implicit first candidate, followed by any
+        # scope-matching entries from the profile's credential sets —
+        # bounded, deterministic, lockout-protected (PR-033).
+        credential_factory: MultiCredentialTransportFactory | None = None
+        on_neighbor = None
+        active_boundary = active_seeds = None
+        if profile is not None:
+            active_boundary = inputs.boundary
+            active_seeds = inputs.seeds
+            workspace_root = active_service.repository.root
+            credential_factory = MultiCredentialTransportFactory(
+                base_factory=build_transport,
+                resolver=CredentialResolver(
+                    CredentialSetRepository(workspace_root),
+                    CredentialSuccessMemory(workspace_root),
+                ),
+                credential_provider=active_service.credential_provider,
+                set_ids=inputs.credential_sets,
+                profile_id=active_profile_id,
+                site_hint=inputs.site_hint,
+                profile_default=CredentialCandidate(
+                    credential_ref=inputs.credential_ref,
+                    username=username,
+                    label="profile credential",
+                    priority=0,
+                    source="profile-default",
+                ),
+                seed_hosts=(host, *(inputs.seeds or ())),
+            )
+            on_neighbor = credential_factory.prime_neighbor
+
+        traversal_factory = credential_factory or host_transport
         report, graph, snapshot = run_multihop_discovery(
-            host_transport, credentials.host, config=config
+            traversal_factory,
+            credentials.host,
+            config=config,
+            policy=active_boundary,
+            extra_seeds=active_seeds or (),
+            on_neighbor=on_neighbor,
         )
     except AtlasTransportError as error:
         raise CliError(str(error)) from error
@@ -301,6 +346,7 @@ def atlas_discover_command(
         report,
         config_output_dir,
         collect_override=collect_override,
+        host_factory=credential_factory,
     )
     if config_collections is None:
         step(3, "Collecting configurations", "skipped (not requested)")
@@ -387,6 +433,11 @@ def atlas_discover_command(
         destinations,
         profile_id=active_profile_id,
         profile_name=active_profile,
+        credential_use=(
+            dict(credential_factory.used_refs)
+            if credential_factory is not None
+            else None
+        ),
     )
     step(8, "Archiving discovery", "ok" if record_id is not None else "failed")
 
@@ -1064,6 +1115,7 @@ def _save_history(
     *,
     profile_id: str | None = None,
     profile_name: str | None = None,
+    credential_use: dict[str, str] | None = None,
 ) -> tuple[str, str | None]:
     """Best-effort preservation; never fails a successful discovery."""
 
@@ -1104,7 +1156,16 @@ def _save_history(
             snapshot_id=snapshot.snapshot_id,
             artifacts=artifacts,
             config_directories=config_directories,
-            metadata={"atlas_version": VERSION_TEXT},
+            metadata={
+                "atlas_version": VERSION_TEXT,
+                # Provenance: which credential reference authenticated each
+                # device this run. References only — never secrets.
+                **(
+                    {"credential_use": dict(credential_use)}
+                    if credential_use
+                    else {}
+                ),
+            },
             profile_id=profile_id,
             profile_name=profile_name,
         )
@@ -1265,12 +1326,15 @@ def _collect_configurations_if_requested(
     config_output_dir: str | Path,
     *,
     collect_override: bool | None = None,
+    host_factory=None,
 ) -> tuple[tuple[str, str, str], ...] | None:
     """Collect read-only configuration per discovered device.
 
     ``collect_override`` (from a saved profile) skips the interactive prompt.
-    Returns None when declined, else (hostname, status, detail) entries where
-    detail is the artifact directory or a clean failure message.
+    ``host_factory`` (multi-credential runs) builds the per-host transport
+    with the same safe credential resolution discovery used. Returns None
+    when declined, else (hostname, status, detail) entries where detail is
+    the artifact directory or a clean failure message.
     """
 
     if collect_override is not None:
@@ -1287,7 +1351,10 @@ def _collect_configurations_if_requested(
     for visit, result in zip(report.connected, report.results):
         hostname = result.device.hostname
         try:
-            transport = build_transport(replace(credentials, host=visit.host))
+            if host_factory is not None:
+                transport = host_factory(visit.host)
+            else:
+                transport = build_transport(replace(credentials, host=visit.host))
             artifact = collect_configuration(transport, result)
             paths = write_configuration_artifacts(
                 artifact,

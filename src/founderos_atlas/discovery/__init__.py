@@ -21,9 +21,23 @@ from .multihop import (
     MultiHopDiscoveryReport,
     discover_multihop,
 )
+from .policy import (
+    BOUNDARY_ALLOWED,
+    BOUNDARY_DENIED,
+    BOUNDARY_OBSERVE_ONLY,
+    BOUNDARY_UNKNOWN,
+    BoundaryDecision,
+    BoundaryPolicy,
+)
 
 __all__ = [
     "AtlasDiscoveryError",
+    "BOUNDARY_ALLOWED",
+    "BOUNDARY_DENIED",
+    "BOUNDARY_OBSERVE_ONLY",
+    "BOUNDARY_UNKNOWN",
+    "BoundaryDecision",
+    "BoundaryPolicy",
     "DeviceVisit",
     "DiscoveryAdapter",
     "DiscoveryEngine",

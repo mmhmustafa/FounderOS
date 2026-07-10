@@ -16,12 +16,21 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from founderos_atlas.credentials import (
+    CredentialScope,
+    CredentialSetRepository,
+    CredentialSetService,
+    CredentialSuccessMemory,
+)
 from founderos_atlas.dashboard import (
     NetworkSummary,
     aggregate_dashboard_summaries,
     build_dashboard_summary,
 )
+from founderos_atlas.discovery import BoundaryPolicy
+from founderos_atlas.enterprise import build_enterprise_view
 from founderos_atlas.history import HistoryRepository, generate_timeline
+from founderos_atlas.sites import SiteCatalogRepository
 from founderos_atlas.incidents import (
     IncidentArtifacts,
     IncidentInvestigator,
@@ -45,7 +54,9 @@ from founderos_atlas.workspace import (
 from .models import (
     NAV_ITEMS,
     change_summaries,
+    credential_set_rows,
     device_inventory,
+    enterprise_device_rows,
     history_rows,
     load_json,
     profile_row,
@@ -243,6 +254,12 @@ def register_routes(app) -> None:
                 max_depth=_int(form.get("max_depth"), 1),
                 max_devices=_int(form.get("max_devices"), 10),
                 collect_configuration=form.get("collect_configuration") == "on",
+                description=(form.get("description", "").strip() or None),
+                seeds=_csv(form.get("seeds")),
+                boundary=_boundary_from_form(form),
+                credential_sets=_csv(form.get("credential_sets")),
+                site_hint=(form.get("site_hint", "").strip() or None),
+                domain_hint=(form.get("domain_hint", "").strip() or None),
             )
         except (AtlasWorkspaceError, ValueError) as error:
             flash(str(error), "error")
@@ -269,6 +286,7 @@ def register_routes(app) -> None:
     def profile_update(name: str):
         form = request.form
         try:
+            boundary = _boundary_from_form(form)
             profile_service().update_profile(
                 name,
                 new_name=(form.get("name", "").strip() or None),
@@ -279,6 +297,13 @@ def register_routes(app) -> None:
                 max_depth=_int(form.get("max_depth"), None),
                 max_devices=_int(form.get("max_devices"), None),
                 collect_configuration=form.get("collect_configuration") == "on",
+                description=(form.get("description", "").strip() or None),
+                seeds=_csv(form.get("seeds")),
+                boundary=boundary,
+                clear_boundary=boundary is None,
+                credential_sets=_csv(form.get("credential_sets")),
+                site_hint=(form.get("site_hint", "").strip() or None),
+                domain_hint=(form.get("domain_hint", "").strip() or None),
             )
         except (AtlasWorkspaceError, ValueError) as error:
             flash(str(error), "error")
@@ -294,6 +319,51 @@ def register_routes(app) -> None:
         except AtlasWorkspaceError as error:
             flash(str(error), "error")
         return redirect(url_for("profiles"))
+
+    # -- Credential sets ------------------------------------------------------
+
+    def credential_service() -> CredentialSetService:
+        return CredentialSetService(
+            CredentialSetRepository(cfg("ATLAS_WORKSPACE_ROOT")),
+            profile_service().credential_provider,
+        )
+
+    @app.route("/credentials")
+    def credentials():
+        rows = credential_set_rows(credential_service().list_sets())
+        return render_template(
+            "credentials.html", credential_sets=rows, **base_context("credentials")
+        )
+
+    @app.route("/credentials", methods=["POST"])
+    def credentials_add():
+        form = request.form
+        try:
+            scope = CredentialScope(
+                vendors=_csv(form.get("vendors")),
+                platforms=_csv(form.get("platforms")),
+                hostname_patterns=_csv(form.get("hostname_patterns")),
+                cidrs=_csv(form.get("cidrs")),
+                sites=_csv(form.get("sites")),
+            )
+            credential_service().add_entry(
+                set_name=form.get("set_name", "").strip(),
+                label=form.get("label", "").strip(),
+                username=form.get("username", "").strip(),
+                password=form.get("password", ""),
+                priority=_int(form.get("priority"), 100),
+                scope=scope,
+            )
+            flash("Credential saved securely.", "success")
+        except (AtlasWorkspaceError, ValueError) as error:
+            flash(str(error), "error")
+        return redirect(url_for("credentials"))
+
+    @app.route("/credentials/<set_id>/<entry_id>/delete", methods=["POST"])
+    def credentials_delete(set_id: str, entry_id: str):
+        credential_service().delete_entry(set_id, entry_id)
+        flash("Credential deleted.", "success")
+        return redirect(url_for("credentials"))
 
     # -- Discovery ----------------------------------------------------------
 
@@ -412,9 +482,6 @@ def register_routes(app) -> None:
                 for scope in aggregation_scopes(scopes)
                 if scope.snapshot_path.is_file()
             ]
-            inventory = device_inventory(
-                (scope.label, load_json(scope.snapshot_path)) for scope in with_data
-            )
             viewers = [
                 {
                     "label": scope.label,
@@ -424,9 +491,39 @@ def register_routes(app) -> None:
                 for scope in with_data
                 if (scope.output_dir / "atlas_topology.html").is_file()
             ]
+            if any(not scope.is_default for scope in with_data):
+                # Enterprise view: canonical devices with site + provenance.
+                topology_view = build_enterprise_view(
+                    output_dir(),
+                    profile_service().list_profiles(),
+                    catalog=SiteCatalogRepository(cfg("ATLAS_WORKSPACE_ROOT")).load(),
+                    credential_memory=CredentialSuccessMemory(
+                        cfg("ATLAS_WORKSPACE_ROOT")
+                    ),
+                )
+                rows = enterprise_device_rows(topology_view)
+                site_options = sorted({row["site"] for row in rows})
+                site_filter = request.args.get("site", "").strip()
+                if site_filter:
+                    rows = [row for row in rows if row["site"] == site_filter]
+                return render_template(
+                    "topology.html",
+                    global_view=True,
+                    enterprise=True,
+                    inventory=rows,
+                    site_options=site_options,
+                    site_filter=site_filter,
+                    viewers=viewers,
+                    has_topology=False,
+                    **context,
+                )
+            inventory = device_inventory(
+                (scope.label, load_json(scope.snapshot_path)) for scope in with_data
+            )
             return render_template(
                 "topology.html",
                 global_view=True,
+                enterprise=False,
                 inventory=inventory,
                 viewers=viewers,
                 has_topology=False,
@@ -595,6 +692,30 @@ def _int(value, default):
     if value is None or str(value).strip() == "":
         return default
     return int(value)
+
+
+def _csv(value) -> tuple[str, ...]:
+    """Comma/whitespace-separated form field -> tuple of clean tokens."""
+
+    if not value:
+        return ()
+    return tuple(
+        token.strip() for token in str(value).replace("\n", ",").split(",")
+        if token.strip()
+    )
+
+
+def _boundary_from_form(form) -> BoundaryPolicy | None:
+    include = _csv(form.get("include_cidrs"))
+    exclude = _csv(form.get("exclude_cidrs"))
+    deny = _csv(form.get("deny_hostnames"))
+    if not (include or exclude or deny):
+        return None
+    return BoundaryPolicy(
+        include_cidrs=include,
+        exclude_cidrs=exclude,
+        deny_hostnames=deny,
+    )
 
 
 def make_pipeline_runner(app):

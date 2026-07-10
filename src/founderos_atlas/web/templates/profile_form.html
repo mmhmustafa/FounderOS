@@ -43,6 +43,38 @@
     <input type="checkbox" name="collect_configuration" {{ 'checked' if profile and profile.collect_configuration else '' }}>
     Collect running configuration
   </label>
+  <details {{ 'open' if profile and (profile.seeds_text or profile.include_cidrs_text or profile.exclude_cidrs_text or profile.deny_hostnames_text or profile.credential_sets_text or profile.site_hint or profile.domain_hint) else '' }}>
+    <summary class="muted">Enterprise discovery options (seeds, boundaries, credentials, sites)</summary>
+    <label>Description (optional)
+      <input name="description" value="{{ profile.description if profile else '' }}" placeholder="Primary campus entry point">
+    </label>
+    <label>Additional seed devices (comma separated IPs, optional)
+      <input name="seeds" value="{{ profile.seeds_text if profile else '' }}" placeholder="192.168.1.20, 192.168.1.30">
+    </label>
+    <div class="form-row">
+      <label>Include ranges (CIDRs, optional)
+        <input name="include_cidrs" value="{{ profile.include_cidrs_text if profile else '' }}" placeholder="10.0.0.0/8">
+      </label>
+      <label>Exclude ranges (CIDRs, optional)
+        <input name="exclude_cidrs" value="{{ profile.exclude_cidrs_text if profile else '' }}" placeholder="10.99.0.0/16">
+      </label>
+    </div>
+    <label>Do not follow hostnames (globs, optional)
+      <input name="deny_hostnames" value="{{ profile.deny_hostnames_text if profile else '' }}" placeholder="isp-*, provider-*">
+    </label>
+    <label>Credential sets (comma separated set ids, optional)
+      <input name="credential_sets" value="{{ profile.credential_sets_text if profile else '' }}" placeholder="enterprise-network-access">
+    </label>
+    <div class="form-row">
+      <label>Site hint (optional)
+        <input name="site_hint" value="{{ profile.site_hint if profile else '' }}" placeholder="hyderabad">
+      </label>
+      <label>Administrative domain (optional)
+        <input name="domain_hint" value="{{ profile.domain_hint if profile else '' }}" placeholder="corp">
+      </label>
+    </div>
+    <p class="muted">The profile's own credential is always tried first; credential sets add scoped fallbacks. Out-of-boundary neighbors are recorded but never traversed.</p>
+  </details>
   <div class="form-actions">
     <button class="btn btn-primary" type="submit">Save Profile</button>
     <a class="btn" href="/profiles">Cancel</a>

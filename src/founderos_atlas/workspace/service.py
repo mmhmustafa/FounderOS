@@ -40,6 +40,12 @@ class ResolvedDiscoveryInputs:
     max_devices: int
     collect_configuration: bool
     profile_id: str = ""
+    # PR-033 entry-point semantics (defaults preserve legacy behavior).
+    seeds: tuple[str, ...] = ()
+    boundary: object | None = None  # BoundaryPolicy when configured
+    credential_sets: tuple[str, ...] = ()
+    site_hint: str | None = None
+    credential_ref: str = ""
 
 
 class ProfileService:
@@ -64,6 +70,12 @@ class ProfileService:
     def repository(self) -> ProfileRepository:
         return self._repository
 
+    @property
+    def credential_provider(self) -> CredentialProvider:
+        """The secure store; exposed for multi-credential resolution."""
+
+        return self._credentials
+
     # -- read ---------------------------------------------------------------
 
     def list_profiles(self) -> tuple[DiscoveryProfile, ...]:
@@ -85,6 +97,12 @@ class ProfileService:
         max_depth: int = 1,
         max_devices: int = 10,
         collect_configuration: bool = False,
+        description: str | None = None,
+        seeds: tuple[str, ...] = (),
+        boundary=None,
+        credential_sets: tuple[str, ...] = (),
+        site_hint: str | None = None,
+        domain_hint: str | None = None,
     ) -> DiscoveryProfile:
         if not isinstance(name, str) or not name.strip():
             raise InvalidProfileError("A profile name is required.")
@@ -109,6 +127,12 @@ class ProfileService:
             created_at=now,
             updated_at=now,
             last_discovery=None,
+            description=description,
+            seeds=tuple(seeds),
+            boundary=boundary,
+            credential_sets=tuple(credential_sets),
+            site_hint=site_hint,
+            domain_hint=domain_hint,
         )
         # Store the secret first; if it fails, no dangling metadata is left.
         self._credentials.save(credential_ref, password)
@@ -134,6 +158,13 @@ class ProfileService:
         max_depth: int | None = None,
         max_devices: int | None = None,
         collect_configuration: bool | None = None,
+        description: str | None = None,
+        seeds: tuple[str, ...] | None = None,
+        boundary=None,
+        clear_boundary: bool = False,
+        credential_sets: tuple[str, ...] | None = None,
+        site_hint: str | None = None,
+        domain_hint: str | None = None,
     ) -> DiscoveryProfile:
         """Update a profile in place; ``new_name`` renames it.
 
@@ -159,6 +190,19 @@ class ProfileService:
             created_at=existing.created_at,
             updated_at=self._now(),
             last_discovery=existing.last_discovery,
+            description=description if description is not None else existing.description,
+            seeds=tuple(seeds) if seeds is not None else existing.seeds,
+            boundary=(
+                None if clear_boundary
+                else (boundary if boundary is not None else existing.boundary)
+            ),
+            credential_sets=(
+                tuple(credential_sets)
+                if credential_sets is not None
+                else existing.credential_sets
+            ),
+            site_hint=site_hint if site_hint is not None else existing.site_hint,
+            domain_hint=domain_hint if domain_hint is not None else existing.domain_hint,
         )
         if password:
             self._ensure_credential_store()
@@ -187,6 +231,11 @@ class ProfileService:
             max_devices=profile.max_devices,
             collect_configuration=profile.collect_configuration,
             profile_id=profile.profile_id,
+            seeds=profile.seeds,
+            boundary=profile.boundary,
+            credential_sets=profile.credential_sets,
+            site_hint=profile.site_hint or profile.site,
+            credential_ref=profile.credential_ref,
         )
 
     def record_discovery(self, name: str, when: datetime | str | None = None) -> DiscoveryProfile:

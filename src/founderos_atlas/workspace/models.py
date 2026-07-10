@@ -4,6 +4,12 @@ A profile persists everything needed to re-run a discovery *except* the
 password, which lives only in a secure credential store and is referenced
 here by ``credential_ref``. No password field exists on this model by
 design, so a profile can never serialize a secret.
+
+Since PR-033 a profile is modeled as an **entry point and policy**, not a
+site or ownership boundary: it may carry multiple seed devices, a boundary
+policy, references to shared credential sets, and site/administrative-
+domain hints. Every new field is optional with a compatible default, so
+profiles saved by earlier versions load unchanged.
 """
 
 from __future__ import annotations
@@ -14,10 +20,12 @@ from ipaddress import ip_address
 import re
 from typing import Any
 
+from founderos_atlas.discovery.policy import BoundaryPolicy
+
 from .exceptions import InvalidProfileError
 
 
-PROFILE_SCHEMA_VERSION = "1.0.0"
+PROFILE_SCHEMA_VERSION = "1.1.0"
 CREDENTIAL_REF_PREFIX = "atlas-profile"
 
 _SLUG_PATTERN = re.compile(r"[^a-z0-9]+")
@@ -57,6 +65,13 @@ class DiscoveryProfile:
     created_at: str | None = None
     updated_at: str | None = None
     last_discovery: str | None = None
+    # PR-033 entry-point semantics; all optional and backward compatible.
+    description: str | None = None
+    seeds: tuple[str, ...] = ()  # additional seeds; management_ip is seed #1
+    boundary: BoundaryPolicy | None = None
+    credential_sets: tuple[str, ...] = ()
+    site_hint: str | None = None
+    domain_hint: str | None = None
 
     def __post_init__(self) -> None:
         for field_name in ("profile_id", "name", "username", "credential_ref"):
@@ -81,10 +96,39 @@ class DiscoveryProfile:
             raise InvalidProfileError("collect_configuration must be a boolean")
         object.__setattr__(self, "name", " ".join(self.name.strip().split()))
         object.__setattr__(self, "site", (self.site.strip() or None) if isinstance(self.site, str) else None)
+        normalized_seeds: list[str] = []
+        for seed in self.seeds:
+            try:
+                cleaned = str(ip_address(str(seed).strip()))
+            except ValueError as error:
+                raise InvalidProfileError(
+                    f"seed is not a valid address: {seed!r}"
+                ) from error
+            if cleaned != self.management_ip and cleaned not in normalized_seeds:
+                normalized_seeds.append(cleaned)
+        object.__setattr__(self, "seeds", tuple(normalized_seeds))
+        if self.boundary is not None and not isinstance(self.boundary, BoundaryPolicy):
+            raise InvalidProfileError("boundary must be a BoundaryPolicy or None")
+        if not isinstance(self.credential_sets, tuple) or not all(
+            isinstance(item, str) and item.strip() for item in self.credential_sets
+        ):
+            raise InvalidProfileError("credential_sets must be a tuple of set ids")
+        for field_name in ("description", "site_hint", "domain_hint"):
+            value = getattr(self, field_name)
+            if isinstance(value, str):
+                object.__setattr__(self, field_name, value.strip() or None)
+            elif value is not None:
+                raise InvalidProfileError(f"{field_name} must be a string or None")
 
     @property
     def normalized_name(self) -> str:
         return normalize_name(self.name)
+
+    @property
+    def all_seeds(self) -> tuple[str, ...]:
+        """Every seed entry point; the legacy management IP is always first."""
+
+        return (self.management_ip, *self.seeds)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -101,6 +145,12 @@ class DiscoveryProfile:
             "created_at": self.created_at,
             "updated_at": self.updated_at,
             "last_discovery": self.last_discovery,
+            "description": self.description,
+            "seeds": list(self.seeds),
+            "boundary": self.boundary.to_dict() if self.boundary is not None else None,
+            "credential_sets": list(self.credential_sets),
+            "site_hint": self.site_hint,
+            "domain_hint": self.domain_hint,
         }
 
     @classmethod
@@ -121,6 +171,18 @@ class DiscoveryProfile:
                 created_at=value.get("created_at"),
                 updated_at=value.get("updated_at"),
                 last_discovery=value.get("last_discovery"),
+                description=value.get("description"),
+                seeds=tuple(str(item) for item in (value.get("seeds") or ())),
+                boundary=(
+                    BoundaryPolicy.from_dict(value["boundary"])
+                    if value.get("boundary")
+                    else None
+                ),
+                credential_sets=tuple(
+                    str(item) for item in (value.get("credential_sets") or ())
+                ),
+                site_hint=value.get("site_hint"),
+                domain_hint=value.get("domain_hint"),
             )
         except KeyError as error:
             raise InvalidProfileError(f"profile is missing field {error}") from error

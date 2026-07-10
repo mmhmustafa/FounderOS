@@ -17,10 +17,12 @@ from .adapter import DiscoveryAdapter
 from .adapters import CiscoIOSAdapter
 from .engine import DiscoveryEngine
 from .exceptions import AtlasDiscoveryError
-from .models import DiscoveryResult
+from .models import DiscoveryResult, NetworkNeighbor
+from .policy import BoundaryPolicy
 
 
 HostTransportFactory = Callable[[str], DeviceTransport]
+NeighborObserver = Callable[[NetworkNeighbor], None]
 
 CONNECTED = "connected"
 SKIPPED = "skipped"
@@ -58,6 +60,7 @@ class MultiHopDiscoveryReport:
     config: MultiHopConfig
     results: tuple[DiscoveryResult, ...]
     visits: tuple[DeviceVisit, ...]
+    seed_hosts: tuple[str, ...] = ()
 
     @property
     def connected(self) -> tuple[DeviceVisit, ...]:
@@ -82,14 +85,25 @@ def discover_multihop(
     *,
     adapter: DiscoveryAdapter | None = None,
     config: MultiHopConfig | None = None,
+    policy: BoundaryPolicy | None = None,
+    extra_seeds: tuple[str, ...] = (),
+    on_neighbor: NeighborObserver | None = None,
 ) -> MultiHopDiscoveryReport:
-    """Discover the seed device, then reachable CDP neighbors breadth-first.
+    """Discover the seed device(s), then reachable neighbors breadth-first.
 
-    The seed must succeed; any failure past the seed is recorded and skipped
-    so one unreachable neighbor never aborts the whole discovery. Hosts are
-    visited at most once, devices reachable via several addresses are
-    deduplicated by device identity, and traversal stops at ``max_depth``
-    hops or ``max_devices`` discovered devices.
+    With one seed, its failure aborts the discovery (unchanged contract);
+    with multiple seeds, individual seed failures are recorded and discovery
+    continues as long as at least one seed succeeds. Hosts are visited at
+    most once, devices reachable via several addresses are deduplicated by
+    device identity, and traversal stops at ``max_depth`` hops or
+    ``max_devices`` discovered devices.
+
+    ``policy`` bounds traversal: every observed neighbor is classified
+    (allowed / denied / observe-only / unknown) and only ``allowed``
+    neighbors are followed — the rest are recorded as visits with the
+    boundary reason, never silently followed and never erased. Seeds are
+    explicit user entry points and are always attempted. ``on_neighbor``
+    receives every observed neighbor (e.g. to prime credential hints).
     """
 
     if not isinstance(seed_host, str) or not seed_host.strip():
@@ -101,12 +115,21 @@ def discover_multihop(
     engine = DiscoveryEngine(resolved_adapter)
 
     seed = seed_host.strip()
+    seeds: list[str] = [seed]
+    for candidate in extra_seeds:
+        cleaned = str(candidate).strip()
+        if cleaned and cleaned not in seeds:
+            seeds.append(cleaned)
     results: list[DiscoveryResult] = []
     visits: list[DeviceVisit] = []
     seen_device_ids: set[str] = set()
-    enqueued_hosts: set[str] = {seed}
+    enqueued_hosts: set[str] = set(seeds)
     recorded_missing_ip: set[str] = set()
-    queue: deque[tuple[str, int, str]] = deque([(seed, 0, "seed")])
+    recorded_boundary: set[str] = set()
+    first_seed_error: Exception | None = None
+    queue: deque[tuple[str, int, str]] = deque(
+        (host, 0, "seed") for host in seeds
+    )
 
     while queue:
         host, depth, origin = queue.popleft()
@@ -122,7 +145,12 @@ def discover_multihop(
             result = engine.discover(raw_outputs, management_ip_hint=host)
         except (AtlasTransportError, AtlasDiscoveryError) as error:
             if depth == 0:
-                raise
+                if len(seeds) == 1:
+                    raise
+                if first_seed_error is None:
+                    first_seed_error = error
+                visits.append(DeviceVisit(host, depth, FAILED, str(error)))
+                continue
             visits.append(DeviceVisit(host, depth, FAILED, str(error)))
             continue
         if result.device.device_id in seen_device_ids:
@@ -151,7 +179,31 @@ def discover_multihop(
             ),
         )
         for neighbor in ordered_neighbors:
+            if on_neighbor is not None:
+                on_neighbor(neighbor)
             next_host = neighbor.remote_management_ip
+            if policy is not None:
+                decision = policy.evaluate_neighbor(
+                    hostname=neighbor.remote_hostname,
+                    management_ip=next_host,
+                    protocol=neighbor.protocol,
+                )
+                if not decision.traversable:
+                    marker = (
+                        f"{neighbor.remote_hostname.casefold()}|{next_host or ''}"
+                    )
+                    if marker not in recorded_boundary:
+                        recorded_boundary.add(marker)
+                        visits.append(
+                            DeviceVisit(
+                                next_host or neighbor.remote_hostname,
+                                depth + 1,
+                                SKIPPED,
+                                f"boundary {decision.verdict}: {decision.reason}",
+                                hostname=neighbor.remote_hostname,
+                            )
+                        )
+                    continue
             if next_host is None:
                 if neighbor.remote_hostname.casefold() not in recorded_missing_ip:
                     recorded_missing_ip.add(neighbor.remote_hostname.casefold())
@@ -172,9 +224,15 @@ def discover_multihop(
                 (next_host, depth + 1, f"cdp neighbor of {result.device.hostname}")
             )
 
+    if not results and first_seed_error is not None:
+        # Every seed failed: surface the first (usually most relevant) error
+        # so the operator sees the same friendly message single-seed runs get.
+        raise first_seed_error
+
     return MultiHopDiscoveryReport(
         seed_host=seed,
         config=resolved_config,
         results=tuple(results),
         visits=tuple(visits),
+        seed_hosts=tuple(seeds),
     )

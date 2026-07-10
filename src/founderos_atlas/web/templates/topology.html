@@ -4,15 +4,40 @@
 {% if global_view %}
 <h1>Topology — All Networks</h1>
 
+{% if enterprise and site_options %}
+<div class="actions" style="margin-bottom: 14px;">
+  <a class="btn btn-sm {{ '' if site_filter else 'btn-primary' }}" href="/topology">All sites</a>
+  {% for option in site_options %}
+  <a class="btn btn-sm {{ 'btn-primary' if site_filter == option else '' }}"
+     href="/topology?site={{ option | urlencode }}">{{ option }}</a>
+  {% endfor %}
+</div>
+{% endif %}
+
 {% if inventory %}
 <section class="card">
-  <h2>Device Inventory</h2>
+  <h2>{{ 'Enterprise Device Inventory' if enterprise else 'Device Inventory' }}</h2>
   <table class="grid">
     <thead>
+      {% if enterprise %}
+      <tr><th>Device</th><th>Management IPs</th><th>Platform</th><th>Site</th><th>Confidence</th><th>Observed via</th><th>Credential</th></tr>
+      {% else %}
       <tr><th>Network</th><th>Device</th><th>Management IP</th><th>Platform</th><th>OS Version</th></tr>
+      {% endif %}
     </thead>
     <tbody>
       {% for device in inventory %}
+      {% if enterprise %}
+      <tr>
+        <td>{{ device.hostname }}</td>
+        <td>{{ device.management_ips }}</td>
+        <td>{{ device.platform }}</td>
+        <td>{{ device.site }}</td>
+        <td>{{ device.site_confidence }}</td>
+        <td>{{ device.networks }}</td>
+        <td><code>{{ device.credential_ref }}</code></td>
+      </tr>
+      {% else %}
       <tr>
         <td>{{ device.network }}</td>
         <td>{{ device.hostname }}</td>
@@ -20,11 +45,18 @@
         <td>{{ device.platform }}</td>
         <td>{{ device.os_version }}</td>
       </tr>
+      {% endif %}
       {% endfor %}
     </tbody>
   </table>
+  {% if enterprise %}
+  <p class="muted">Canonical enterprise devices: multiple networks may observe one device (strong-evidence identity merging), site assignment is evidence-based and may honestly be unknown, and networks are never compared against each other.</p>
+  {% else %}
   <p class="muted">Combined inventory: the latest successful state of every active network. Networks are never compared against each other.</p>
+  {% endif %}
 </section>
+{% elif site_filter %}
+<p class="muted">No devices in site {{ site_filter }}. <a href="/topology">Show all sites.</a></p>
 {% else %}
 <p class="muted">No topology has been generated yet in any network. <a href="/discovery">Run a discovery</a> to build the interactive topology viewer.</p>
 {% endif %}

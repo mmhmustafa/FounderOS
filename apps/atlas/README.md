@@ -445,6 +445,49 @@ never reassigned to a profile: Atlas cannot know which network produced it,
 so guessing would corrupt history. Each profile's scope starts empty and
 builds its own baseline from its first scoped discovery.
 
+## Enterprise Discovery (PR-033)
+
+A discovery profile is an **entry point and policy — not a site boundary**.
+One discovery may legitimately cross sites (campus → WAN → branch) when
+policy allows, while independent runs still never mark each other's devices
+removed.
+
+- **Seeds & boundaries.** A profile may carry additional seed devices plus a
+  boundary policy: include/exclude ranges, do-not-follow hostname globs,
+  followed protocols. Out-of-boundary neighbors are *recorded* with a
+  structured reason (denied / observe-only) but never traversed — and never
+  erased. Uncertainty never auto-traverses.
+- **Credential sets.** The Credentials page manages named sets whose entries
+  have a priority and a scope (vendor, platform, hostname patterns, IP
+  ranges, sites). During discovery Atlas resolves a bounded, deterministic
+  candidate list per device: a previously successful credential first; the
+  profile's own credential first **on its seed devices**; on every other
+  device the best-scoped matching entries (exact host > range/pattern >
+  vendor/platform > site) before the generic profile credential, with
+  unrestricted fallbacks last. Atlas stops at the first success, never
+  retries a failed credential on the same device, and remembers only the
+  *reference* that worked so the next run needs one attempt. Attempts are
+  bounded to protect accounts from lockout; secrets stay in the OS keyring,
+  never in files, provenance, or the GUI.
+- **Sites.** Site assignment is evidence-based: explicit assignments are
+  high-confidence; hostname conventions and profile hints assign with
+  low/medium confidence; network ranges only corroborate — a subnet alone
+  never forces a site, and Atlas honestly reports *unknown* or *ambiguous*.
+  Define sites in `<workspace>/sites.json` (hostname patterns, ranges,
+  explicit devices).
+- **Enterprise topology.** Topology → All Networks shows canonical
+  enterprise devices: multiple profiles observing the same physical device
+  (matching serial numbers) appear as one row with full provenance — which
+  networks observed it, which run, which credential reference worked — plus
+  site and confidence, filterable by site including "unknown". Hostname or
+  IP reuse across administrative domains is never falsely merged.
+- **Per-profile baselines are untouched**: change detection still compares
+  each profile only against its own previous run.
+
+Migration: existing profiles work unchanged — the saved seed is seed #1 and
+the saved credential is the first credential candidate. Nothing is
+rewritten or discarded.
+
 ## Operational State Intelligence
 
 Atlas detects operational changes in the running network between

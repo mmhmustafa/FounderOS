@@ -18,6 +18,7 @@ NAV_ITEMS = (
     ("dashboard", "Dashboard", "/"),
     ("discovery", "Discover", "/discovery"),
     ("profiles", "Profiles", "/profiles"),
+    ("credentials", "Credentials", "/credentials"),
     ("topology", "Topology", "/topology"),
     ("history", "History", "/history"),
     ("changes", "Changes", "/changes"),
@@ -38,6 +39,7 @@ def format_timestamp(value: str | None) -> str:
 def profile_row(profile) -> dict[str, Any]:
     """A profile as a template-safe dict — never includes a password."""
 
+    boundary = getattr(profile, "boundary", None)
     return {
         "profile_id": profile.profile_id,
         "name": profile.name,
@@ -50,6 +52,14 @@ def profile_row(profile) -> dict[str, Any]:
         "last_discovery": format_timestamp(profile.last_discovery),
         "created_at": format_timestamp(profile.created_at),
         "updated_at": format_timestamp(profile.updated_at),
+        "description": getattr(profile, "description", None) or "",
+        "seeds_text": ", ".join(getattr(profile, "seeds", ())),
+        "include_cidrs_text": ", ".join(boundary.include_cidrs) if boundary else "",
+        "exclude_cidrs_text": ", ".join(boundary.exclude_cidrs) if boundary else "",
+        "deny_hostnames_text": ", ".join(boundary.deny_hostnames) if boundary else "",
+        "credential_sets_text": ", ".join(getattr(profile, "credential_sets", ())),
+        "site_hint": getattr(profile, "site_hint", None) or "",
+        "domain_hint": getattr(profile, "domain_hint", None) or "",
     }
 
 
@@ -95,6 +105,55 @@ def history_rows(history_index, *, scope_label: str | None = None) -> list[dict[
                 "duration_seconds": round(record.duration_seconds, 1),
                 "configuration_status": record.configuration_status,
                 "profile": record.profile_name or scope_label or "—",
+            }
+        )
+    return rows
+
+
+def enterprise_device_rows(topology) -> list[dict[str, Any]]:
+    """Enterprise devices shaped for the topology table — never a secret."""
+
+    rows: list[dict[str, Any]] = []
+    for device in topology.devices:
+        rows.append(
+            {
+                "hostname": device.hostname,
+                "management_ips": ", ".join(device.management_ips) or "—",
+                "platform": device.platform or "—",
+                "site": device.site.label,
+                "site_confidence": (
+                    device.site.confidence
+                    if device.site.confidence is not None
+                    else "—"
+                ),
+                "networks": ", ".join(device.profile_names),
+                "credential_ref": device.credential_ref or "—",
+            }
+        )
+    return rows
+
+
+def credential_set_rows(sets) -> list[dict[str, Any]]:
+    """Credential sets shaped for templates — references only, no secrets."""
+
+    rows: list[dict[str, Any]] = []
+    for credential_set in sets:
+        rows.append(
+            {
+                "set_id": credential_set.set_id,
+                "name": credential_set.name,
+                "entries": [
+                    {
+                        "entry_id": entry.entry_id,
+                        "label": entry.label,
+                        "username": entry.username,
+                        "priority": entry.priority,
+                        "scope_summary": entry.scope.summary(),
+                        "last_success": format_timestamp(entry.last_success),
+                        "enabled": entry.enabled,
+                    }
+                    for entry in credential_set.entries
+                ],
             }
         )
     return rows
