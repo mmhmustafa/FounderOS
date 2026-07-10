@@ -511,6 +511,37 @@ becomes Attention Required and reports "N interface(s) down" — distinct
 from topology and configuration changes — and the dashboard shows an
 Operational Changes card. See `src/founderos_atlas/state/README.md`.
 
+## Enterprise Intelligence (PR-034)
+
+Every discovery now ends with Atlas reviewing the network the way a senior
+engineer would, and writing its conclusions to
+`intelligence_report.json`/`.md` (profile-scoped, archived in history):
+
+- **Enterprise Health 0–100, explained.** Not a traffic light: a calculated
+  score where every point is a named factor with evidence (interface
+  failures −8 each, authentication failures −8, unreachable devices −6,
+  topology/configuration changes, repeated instability, staleness; credits
+  for recoveries and stability — all capped and documented). Confidence
+  states how good the evidence is, and the trend compares against the
+  previous run's archived score.
+- **Top 5 priorities**, ranked by urgency, severity, risk, blast radius
+  (real topology degree), recurrence, and confidence — never an
+  undifferentiated event list.
+- **Recommendations with likely cause and next step** — cross-signal: an
+  interface failure on a device whose configuration also changed says
+  "compare the configuration diff before investigating hardware".
+- **Trends**: health trajectory, configuration churn, recurring
+  instability, topology stability across recent discoveries.
+- **Morning Brief v2** opens with Enterprise Health, Top Risks, Top
+  Recommendations, Changes Since Yesterday, Biggest Improvement/Regression,
+  and a Suggested Investigation. The dashboard and web GUI show the health
+  tile, trend, priorities, and recommendations; All Networks lists health
+  per network.
+
+Everything is deterministic and rule-based — no AI. The JSON report is the
+contract a future AI layer will consume (summary, evidence, risk,
+confidence, recommendations) without recomputing anything.
+
 ## Next Step
 
 Extract a reusable deterministic Topology Change Set contract for richer operational journeys before considering persistence or live transport.

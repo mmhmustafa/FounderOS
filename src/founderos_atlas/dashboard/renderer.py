@@ -30,6 +30,7 @@ class DashboardRenderer:
             .replace("__STATUS_TEXT__", escape(summary.status))
             .replace("__STATUS_DETAIL__", escape(summary.status_detail))
             .replace("__TILES__", self._tiles())
+            .replace("__INTELLIGENCE__", self._intelligence())
             .replace("__CHANGES__", self._changes())
             .replace("__ACTIVITY__", self._activity())
             .replace("__DISCOVERIES__", self._discoveries())
@@ -41,18 +42,48 @@ class DashboardRenderer:
 
     def _tiles(self) -> str:
         summary = self._summary
-        tiles = (
-            ("Devices", _value(summary.device_count)),
-            ("Relationships", _value(summary.relationship_count)),
-            ("Discovery Success", summary.discovery_success),
-            ("Configurations Collected", str(summary.configurations_collected)),
-            ("Recent Changes", _value(summary.change_count)),
+        tiles = []
+        if summary.health_score is not None:
+            tiles.append(
+                (
+                    "Enterprise Health",
+                    f"{summary.health_score}/100 ({summary.health_trend})",
+                )
+            )
+        tiles.extend(
+            (
+                ("Devices", _value(summary.device_count)),
+                ("Relationships", _value(summary.relationship_count)),
+                ("Discovery Success", summary.discovery_success),
+                ("Configurations Collected", str(summary.configurations_collected)),
+                ("Recent Changes", _value(summary.change_count)),
+            )
         )
         return "\n".join(
             f'      <div class="tile"><strong>{escape(label)}</strong>'
             f'<span class="value">{escape(value)}</span></div>'
             for label, value in tiles
         )
+
+    def _intelligence(self) -> str:
+        summary = self._summary
+        if summary.health_score is None:
+            return (
+                "          <li>No intelligence report yet. "
+                "Run: founderos atlas discover</li>"
+            )
+        entries = [
+            f"Enterprise Health: {summary.health_score}/100",
+            f"Trend: {summary.health_trend}",
+            f"Confidence: {summary.health_confidence}",
+        ]
+        entries.extend(f"Priority: {item}" for item in summary.priority_queue[:3])
+        entries.extend(
+            f"Recommendation: {item}" for item in summary.top_recommendations[:3]
+        )
+        entries.extend(f"Improvement: {item}" for item in summary.improvements)
+        entries.extend(f"Regression: {item}" for item in summary.regressions)
+        return "\n".join(f"          <li>{escape(entry)}</li>" for entry in entries)
 
     def _changes(self) -> str:
         summary = self._summary

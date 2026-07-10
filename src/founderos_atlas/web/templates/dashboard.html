@@ -9,12 +9,42 @@
 </div>
 
 <div class="tiles">
+  {% if summary.health_score is not none %}
+  <div class="tile"><strong>Enterprise Health</strong><span>{{ summary.health_score }}/100</span></div>
+  <div class="tile"><strong>Trend</strong><span class="tile-text">{{ summary.health_trend | title }}</span></div>
+  {% endif %}
   <div class="tile"><strong>Devices</strong><span>{{ summary.device_count if summary.device_count is not none else '—' }}</span></div>
   <div class="tile"><strong>Relationships</strong><span>{{ summary.relationship_count if summary.relationship_count is not none else '—' }}</span></div>
   <div class="tile"><strong>Discovery Success</strong><span>{{ summary.discovery_success }}</span></div>
   <div class="tile"><strong>Configurations</strong><span>{{ summary.configurations_collected }}</span></div>
   <div class="tile"><strong>Last Discovery</strong><span>{{ summary.last_discovery }}</span></div>
 </div>
+
+{% if summary.health_score is not none %}
+<div class="columns">
+  <section class="card">
+    <h2>Top Risks</h2>
+    <ul>
+      {% for line in summary.top_risks %}<li>{{ line }}</li>{% else %}<li>Nothing needs your attention right now.</li>{% endfor %}
+    </ul>
+  </section>
+  <section class="card">
+    <h2>Top Recommendations</h2>
+    <ul>
+      {% for line in summary.top_recommendations %}<li>{{ line }}</li>{% else %}<li>No recommendations — keep discovering regularly.</li>{% endfor %}
+    </ul>
+  </section>
+</div>
+{% if summary.improvements or summary.regressions %}
+<section class="card">
+  <h2>Since The Previous Discovery</h2>
+  <ul>
+    {% for line in summary.improvements %}<li class="ok">Improvement: {{ line }}</li>{% endfor %}
+    {% for line in summary.regressions %}<li class="warn">Regression: {{ line }}</li>{% endfor %}
+  </ul>
+</section>
+{% endif %}
+{% endif %}
 
 <div class="columns">
   <section class="card">

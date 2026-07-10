@@ -64,6 +64,13 @@ from founderos_atlas.credentials import (
     CredentialSuccessMemory,
     MultiCredentialTransportFactory,
 )
+from founderos_atlas.enterprise_intelligence import (
+    IntelligenceEvidence,
+    build_intelligence,
+    intelligence_brief_section,
+    render_intelligence_json,
+    render_intelligence_markdown,
+)
 from founderos_atlas.workspace import (
     AtlasWorkspaceError,
     DiscoveryScope,
@@ -208,6 +215,8 @@ def atlas_discover_command(
     config_change_markdown_output: str | Path = "config_change_report.md",
     state_change_json_output: str | Path = "state_change_report.json",
     state_change_markdown_output: str | Path = "state_change_report.md",
+    intelligence_json_output: str | Path | None = None,
+    intelligence_markdown_output: str | Path | None = None,
     clock: Clock | None = None,
     browser_opener: BrowserOpener | None = None,
     progress: Callable[[str], None] | None = None,
@@ -263,6 +272,14 @@ def atlas_discover_command(
         state_change_markdown_output = (
             scope.output_dir / Path(state_change_markdown_output).name
         )
+        if intelligence_json_output is not None:
+            intelligence_json_output = (
+                scope.output_dir / Path(intelligence_json_output).name
+            )
+        if intelligence_markdown_output is not None:
+            intelligence_markdown_output = (
+                scope.output_dir / Path(intelligence_markdown_output).name
+            )
         history_root = scope.history_root
         emit(f"Using profile: {active_profile}")
     else:
@@ -276,6 +293,17 @@ def atlas_discover_command(
             raise CliError("Management IP, username, and password are all required")
         max_depth = _read_limit(read_input, "Max depth [1]: ", 1)
         max_devices = _read_limit(read_input, "Max devices [10]: ", 10)
+    # Intelligence artifacts live beside the run's other artifacts (already
+    # profile-scoped above); a bare default would leak into the CWD when
+    # callers inject every other path.
+    if intelligence_json_output is None:
+        intelligence_json_output = (
+            Path(snapshot_output).parent / "intelligence_report.json"
+        )
+    if intelligence_markdown_output is None:
+        intelligence_markdown_output = (
+            Path(snapshot_output).parent / "intelligence_report.md"
+        )
     started_at = read_clock()
     emit("")
     emit("Atlas Discovery Pipeline")
@@ -414,6 +442,9 @@ def atlas_discover_command(
             config_change_markdown_output,
             state_change_json_output,
             state_change_markdown_output,
+            intelligence_json_output=intelligence_json_output,
+            intelligence_markdown_output=intelligence_markdown_output,
+            history_root=history_root,
         )
         opener = browser_opener or webbrowser.open
         opener(destinations["topology"].as_uri())
@@ -501,11 +532,16 @@ def _build_reports(
     config_change_markdown_output,
     state_change_json_output,
     state_change_markdown_output,
+    *,
+    intelligence_json_output: str | Path = "intelligence_report.json",
+    intelligence_markdown_output: str | Path = "intelligence_report.md",
+    history_root: str | Path = Path(".atlas") / "history",
 ):
     """Write every artifact of the run; returns summary lines and paths."""
 
     pipeline_lines: list[str] = []
     destinations: dict[str, Path] = {}
+    config_aggregate: dict | None = None
 
     if baseline.record is not None:
         pipeline_lines.append(f"Baseline: {baseline.record.record_id}")
@@ -552,6 +588,7 @@ def _build_reports(
     config_change_lines: dict[str, str] = {}
     if config_reports:
         aggregate, markdown = aggregate_config_reports(config_reports)
+        config_aggregate = aggregate
         json_destination = Path(config_change_json_output).resolve()
         json_destination.write_text(
             json.dumps(aggregate, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
@@ -621,6 +658,62 @@ def _build_reports(
             max(0.0, (completed_at - started_at).total_seconds()), 1
         ),
     }
+    # Enterprise intelligence: turn this run's facts into what matters.
+    # Deterministic and fully explained; archived with every other artifact
+    # so trends can compare runs.
+    repository = HistoryRepository(history_root)
+    recent_records = repository.load().records[:5]
+    previous_intelligence = None
+    if baseline.record is not None:
+        previous_path = (
+            repository.record_directory(baseline.record.record_id)
+            / "intelligence_report.json"
+        )
+        if previous_path.is_file():
+            try:
+                previous_intelligence = json.loads(
+                    previous_path.read_text(encoding="utf-8")
+                )
+            except (OSError, json.JSONDecodeError):
+                previous_intelligence = None
+    evidence = IntelligenceEvidence(
+        generated_at=completed_at.isoformat(timespec="seconds"),
+        snapshot=snapshot.to_dict(),
+        previous_snapshot=(
+            baseline.snapshot.to_dict() if baseline.snapshot is not None else None
+        ),
+        state_report=state_report.to_dict() if state_report is not None else None,
+        topology_report=(
+            topology_report.to_dict() if topology_report is not None else None
+        ),
+        config_report=config_aggregate,
+        incident_report=None,  # incidents weigh in on later (GUI) evaluations
+        failed_hosts=tuple(visit.host for visit in report.failed),
+        failed_details=tuple(
+            (visit.host, visit.detail) for visit in report.failed
+        ),
+        recent_records=recent_records,
+        previous_intelligence=previous_intelligence,
+        last_completed_at=completed_at.isoformat(timespec="seconds"),
+        baseline_available=baseline.available,
+    )
+    intelligence = build_intelligence(evidence)
+    intelligence_json_destination = Path(intelligence_json_output).resolve()
+    intelligence_json_destination.write_text(
+        render_intelligence_json(intelligence), encoding="utf-8"
+    )
+    intelligence_markdown_destination = Path(intelligence_markdown_output).resolve()
+    intelligence_markdown_destination.write_text(
+        render_intelligence_markdown(intelligence), encoding="utf-8"
+    )
+    destinations["intelligence_report.json"] = intelligence_json_destination
+    destinations["intelligence_report.md"] = intelligence_markdown_destination
+    pipeline_lines.append(
+        f"Intelligence: health {intelligence.health.score}/100 "
+        f"({intelligence.trend}), {len(intelligence.priorities)} priority "
+        f"finding(s) (saved: {intelligence_json_destination})"
+    )
+
     if journey_runner is not None:
         brief = journey_runner(snapshot, baseline.snapshot)
     else:
@@ -630,7 +723,11 @@ def _build_reports(
     if not isinstance(brief, MorningBriefJourneyResult):
         raise TypeError("Atlas Morning Brief returned an invalid result")
     brief_destination = Path(brief_output).resolve()
-    brief_destination.write_text(brief.markdown, encoding="utf-8")
+    # Morning Brief v2: the deterministic intelligence section rides along.
+    brief_destination.write_text(
+        brief.markdown + intelligence_brief_section(intelligence),
+        encoding="utf-8",
+    )
     destinations["brief"] = brief_destination
     destinations["morning_brief.md"] = brief_destination
 
@@ -1129,6 +1226,8 @@ def _save_history(
         "config_change_report.md",
         "state_change_report.json",
         "state_change_report.md",
+        "intelligence_report.json",
+        "intelligence_report.md",
     )
     artifacts = {
         name: destinations[name] for name in archive_names if name in destinations
@@ -1232,6 +1331,8 @@ def atlas_dashboard_command(
     state_change_report_md: str | Path = "state_change_report.md",
     incident_report: str | Path = "incident_report.json",
     incident_report_md: str | Path = "incident_report.md",
+    intelligence_report: str | Path = "intelligence_report.json",
+    intelligence_report_md: str | Path = "intelligence_report.md",
     browser_opener: BrowserOpener | None = None,
     profile: str | None = None,
     profile_service: ProfileService | None = None,
@@ -1255,6 +1356,8 @@ def atlas_dashboard_command(
         state_change_report_md = _scoped_path(state_change_report_md, scope)
         incident_report = _scoped_path(incident_report, scope)
         incident_report_md = _scoped_path(incident_report_md, scope)
+        intelligence_report = _scoped_path(intelligence_report, scope)
+        intelligence_report_md = _scoped_path(intelligence_report_md, scope)
         scope.output_dir.mkdir(parents=True, exist_ok=True)
     try:
         destination = Path(output_path).resolve()
@@ -1273,6 +1376,8 @@ def atlas_dashboard_command(
             state_change_report_md=state_change_report_md,
             incident_report=incident_report,
             incident_report_md=incident_report_md,
+            intelligence_report=intelligence_report,
+            intelligence_report_md=intelligence_report_md,
             link_base=destination.parent,
         )
         destination.write_text(DashboardRenderer(summary).render(), encoding="utf-8")
@@ -1310,6 +1415,8 @@ def _regenerate_dashboard(
             state_change_report_md=destination.parent / "state_change_report.md",
             incident_report=destination.parent / "incident_report.json",
             incident_report_md=destination.parent / "incident_report.md",
+            intelligence_report=destination.parent / "intelligence_report.json",
+            intelligence_report_md=destination.parent / "intelligence_report.md",
             link_base=destination.parent,
         )
         destination.write_text(DashboardRenderer(summary).render(), encoding="utf-8")

@@ -185,6 +185,8 @@ def register_routes(app) -> None:
             state_change_report_md=out / "state_change_report.md",
             incident_report=out / "incident_report.json",
             incident_report_md=out / "incident_report.md",
+            intelligence_report=out / "intelligence_report.json",
+            intelligence_report_md=out / "intelligence_report.md",
             link_base=out,
         )
 

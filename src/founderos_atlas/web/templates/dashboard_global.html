@@ -20,13 +20,14 @@
   <h2>Networks</h2>
   <table class="grid">
     <thead>
-      <tr><th>Network</th><th>Status</th><th>Devices</th><th>Last Discovery</th><th></th></tr>
+      <tr><th>Network</th><th>Status</th><th>Health</th><th>Devices</th><th>Last Discovery</th><th></th></tr>
     </thead>
     <tbody>
       {% for network in summary.networks %}
       <tr>
         <td>{{ network.label }}</td>
         <td>{{ network.summary.status }}</td>
+        <td>{% if network.summary.health_score is not none %}{{ network.summary.health_score }}/100{% else %}—{% endif %}</td>
         <td>{{ network.summary.device_count if network.summary.device_count is not none else '—' }}</td>
         <td>{{ network.summary.last_discovery }}</td>
         <td class="row-actions">

@@ -51,6 +51,15 @@ class DashboardSummary:
     operational_changes: tuple[str, ...]
     incident_investigation: tuple[str, ...]
     actions: tuple[DashboardAction, ...]
+    # Enterprise intelligence (PR-034); None/empty when no report exists.
+    health_score: int | None = None
+    health_trend: str | None = None
+    health_confidence: str | None = None
+    top_risks: tuple[str, ...] = ()
+    top_recommendations: tuple[str, ...] = ()
+    priority_queue: tuple[str, ...] = ()
+    improvements: tuple[str, ...] = ()
+    regressions: tuple[str, ...] = ()
 
 
 def build_dashboard_summary(
@@ -69,6 +78,8 @@ def build_dashboard_summary(
     state_change_report_md: str | Path = "state_change_report.md",
     incident_report: str | Path = "incident_report.json",
     incident_report_md: str | Path = "incident_report.md",
+    intelligence_report: str | Path = "intelligence_report.json",
+    intelligence_report_md: str | Path = "intelligence_report.md",
     link_base: str | Path = ".",
 ) -> DashboardSummary:
     snapshot = _load_json(snapshot_path)
@@ -113,6 +124,7 @@ def build_dashboard_summary(
     operational = _load_json(state_change_report)
     operational_changes = _operational_changes(operational)
     incident_investigation = _incident_investigation(_load_json(incident_report))
+    intelligence = _intelligence_summary(_load_json(intelligence_report))
 
     status, status_detail = _network_status(
         snapshot, change_count, severity_counts, snapshot_warnings, failed_hosts,
@@ -140,6 +152,7 @@ def build_dashboard_summary(
         DashboardAction("Open Config Changes", _href(Path(config_change_report_md), base)),
         DashboardAction("Open Operational Changes", _href(Path(state_change_report_md), base)),
         DashboardAction("Open Incident Report", _href(Path(incident_report_md), base)),
+        DashboardAction("Open Intelligence Report", _href(Path(intelligence_report_md), base)),
     )
     return DashboardSummary(
         last_discovery=last_discovery,
@@ -157,6 +170,7 @@ def build_dashboard_summary(
         operational_changes=operational_changes,
         incident_investigation=incident_investigation,
         actions=actions,
+        **intelligence,
     )
 
 
@@ -362,6 +376,42 @@ def _operational_changes(report: dict[str, Any] | None) -> tuple[str, ...]:
         f"Recoveries: {report.get('recovery_count', 0)}",
         f"Historical events: {report.get('change_count', 0)}",
     )
+
+
+def _intelligence_summary(report: dict[str, Any] | None) -> dict[str, Any]:
+    """DashboardSummary fields from an intelligence report, or empties."""
+
+    if report is None:
+        return {}
+    health = report.get("health") or {}
+    priorities = [p for p in report.get("priorities") or () if isinstance(p, dict)]
+    recommendations = [
+        r for r in report.get("recommendations") or () if isinstance(r, dict)
+    ]
+    improvements = []
+    regressions = []
+    if report.get("biggest_improvement"):
+        improvements.append(str(report["biggest_improvement"]))
+    if report.get("biggest_regression"):
+        regressions.append(str(report["biggest_regression"]))
+    return {
+        "health_score": (
+            int(health["score"]) if isinstance(health.get("score"), (int, float)) else None
+        ),
+        "health_trend": str(report.get("trend") or "baseline"),
+        "health_confidence": str(health.get("confidence") or "unknown"),
+        "top_risks": tuple(
+            f"{p.get('title')} — severity {p.get('severity')}, "
+            f"risk {p.get('risk')}, urgency {p.get('urgency')}"
+            for p in priorities[:5]
+        ),
+        "top_recommendations": tuple(
+            f"{r.get('title')}: {r.get('next_step')}" for r in recommendations[:5]
+        ),
+        "priority_queue": tuple(str(p.get("title")) for p in priorities[:5]),
+        "improvements": tuple(improvements),
+        "regressions": tuple(regressions),
+    }
 
 
 def _incident_investigation(report: dict[str, Any] | None) -> tuple[str, ...]:

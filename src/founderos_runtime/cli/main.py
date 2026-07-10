@@ -77,6 +77,8 @@ def main(
     atlas_incident_markdown_output: str | Path = "incident_report.md",
     atlas_state_diff_json_output: str | Path = "state_change_report.json",
     atlas_state_diff_markdown_output: str | Path = "state_change_report.md",
+    atlas_intelligence_json_output: str | Path | None = None,
+    atlas_intelligence_markdown_output: str | Path | None = None,
     atlas_profile_service=None,
     atlas_web_server_runner=None,
 ) -> int:
@@ -141,6 +143,8 @@ def main(
                 config_change_markdown_output=atlas_config_diff_markdown_output,
                 state_change_json_output=atlas_state_diff_json_output,
                 state_change_markdown_output=atlas_state_diff_markdown_output,
+                intelligence_json_output=atlas_intelligence_json_output,
+                intelligence_markdown_output=atlas_intelligence_markdown_output,
                 clock=atlas_clock,
                 browser_opener=atlas_browser_opener,
                 profile=profile_name,
