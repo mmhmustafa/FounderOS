@@ -339,6 +339,26 @@ The selection persists while you browse and is always visible in the page
 title. Running a discovery automatically focuses the GUI on that profile's
 network.
 
+**GUI-driven discovery (PR-032).** The Discover page runs real discoveries
+end to end: pick a network (with All Networks active you choose explicitly —
+Atlas never picks a profile for you), click **Run Discovery**, and the run
+executes in the background while you keep using the GUI. Progress is real:
+seven stages driven by actual pipeline activity, the device currently being
+contacted, and the number of devices discovered — percentages are
+stage-based and labelled as such, never simulated. On completion the page
+shows devices, relationships, configurations, and duration with one-click
+links to that network's Topology, Changes, and Dashboard, all freshly
+up to date without restarting the server. Failures appear as plain-language
+guidance (wrong credentials → which profile to fix; unreachable device →
+what to check); technical detail stays in the job log. A second click while
+a network is already discovering re-attaches to the running job instead of
+starting a duplicate; discovery execution is serialized in this local
+alpha. Refreshing or closing the browser never cancels a run; if the Atlas
+server itself restarts mid-run, the job is marked *interrupted* rather than
+left running forever. The GUI and CLI execute the same discovery pipeline —
+credentials are resolved server-side from the secure store and never reach
+the browser.
+
 This is a **local, single-user alpha GUI**: it binds to `127.0.0.1` only,
 has no authentication, and is not a production or multi-user web deployment.
 The interactive CLI continues to work unchanged. See

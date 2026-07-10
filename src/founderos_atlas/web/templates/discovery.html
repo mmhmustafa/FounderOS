@@ -4,24 +4,88 @@
 <h1>Run Discovery</h1>
 
 {% if profiles %}
-<form class="form" method="post" action="/discovery/run">
-  <label>Discovery profile
-    <select name="profile" required>
+<section class="card">
+  <h2>Networks</h2>
+  <table class="grid">
+    <thead>
+      <tr><th>Network</th><th>Site</th><th>Seed IP</th><th>Last Discovery</th><th>Status</th></tr>
+    </thead>
+    <tbody>
       {% for p in profiles %}
-      <option value="{{ p.name }}" {{ 'selected' if selected == p.name else '' }}>
-        {{ p.name }} — {{ p.management_ip }}{% if p.site != '-' %} ({{ p.site }}){% endif %}
-      </option>
+      <tr>
+        <td>{{ p.name }}</td>
+        <td>{{ p.site }}</td>
+        <td>{{ p.management_ip }}</td>
+        <td>{{ p.last_discovery }}</td>
+        <td>{{ p.job_status }}</td>
+      </tr>
       {% endfor %}
-    </select>
-  </label>
-  <div class="form-actions">
-    <button class="btn btn-primary" type="submit">Run Discovery</button>
-  </div>
-  <p class="muted">Discovery uses the saved profile — no IP, username, or password is entered here.</p>
-</form>
+    </tbody>
+  </table>
+</section>
+
+<section class="card">
+  <form id="discovery-form" class="form" method="post" action="/discovery/run">
+    <label>Discovery profile
+      <select name="profile" id="discovery-profile" required>
+        {% if not selected %}<option value="" selected disabled>— Select a network —</option>{% endif %}
+        {% for p in profiles %}
+        <option value="{{ p.name }}" data-profile-id="{{ p.profile_id }}" {{ 'selected' if selected == p.name else '' }}>
+          {{ p.name }} — {{ p.management_ip }}{% if p.site != '-' %} ({{ p.site }}){% endif %}
+        </option>
+        {% endfor %}
+      </select>
+    </label>
+    <div class="form-actions">
+      <button class="btn btn-primary" id="discovery-run" type="submit">Run Discovery</button>
+    </div>
+    <p class="muted">Discovery uses the saved profile — credentials are resolved securely on the server and are never sent to the browser. You can keep using Atlas while discovery runs.</p>
+    <div class="flash flash-error" id="job-error" hidden></div>
+  </form>
+</section>
+
 {% else %}
 <p class="muted">No profiles yet. <a href="/profiles/new">Add a profile</a> to run discovery.</p>
 {% endif %}
+
+<section class="card" id="job-panel"
+         {% if job %}data-job-id="{{ job.job_id }}" data-status="{{ job.status }}"{% else %}hidden{% endif %}>
+  <h2 id="job-title">{% if job %}Discovering {{ job.profile_name }}{% endif %}</h2>
+  <div class="job-head">
+    <span class="badge job-badge" id="job-badge">{{ job.status if job else '' }}</span>
+    <span id="job-stage">{% if job %}Stage {{ job.stage_number }} of {{ job.total_stages }} — {{ job.stage }}{% endif %}</span>
+  </div>
+  <p id="job-message">{{ job.message if job else '' }}</p>
+  <div class="progress" aria-hidden="true"><div class="progress-fill" id="job-bar"
+       style="width: {{ job.percent if job else 0 }}%"></div></div>
+  <p class="muted" id="job-progress-note">Stage-based progress — device totals are unknown during recursive discovery, so Atlas reports real stages, devices contacted, and the current device instead of fake percentages.</p>
+  <ul class="kv" id="job-facts">
+    <li><span>Devices discovered</span><span id="job-devices">{{ job.devices_discovered if job else 0 }}</span></li>
+    <li><span>Current device</span><span id="job-device">{{ (job.current_device or '—') if job else '—' }}</span></li>
+    <li><span>Elapsed</span><span id="job-elapsed">{% if job and job.elapsed_seconds is not none %}{{ job.elapsed_seconds }}s{% else %}—{% endif %}</span></li>
+  </ul>
+  <div class="flash flash-error" id="job-failure" {% if not (job and job.error) %}hidden{% endif %}>{{ job.error if job else '' }}</div>
+  <div id="job-summary" {% if not (job and job.summary) %}hidden{% endif %}>
+    <h2 id="job-summary-title">{{ job.message if job else 'Discovery result' }}</h2>
+    <ul class="kv">
+      <li><span>Network</span><span id="summary-network">{{ job.profile_name if job else '' }}</span></li>
+      <li><span>Devices discovered</span><span id="summary-devices">{{ job.summary.devices if job and job.summary else '' }}</span></li>
+      <li><span>Relationships</span><span id="summary-relationships">{{ job.summary.relationships if job and job.summary else '' }}</span></li>
+      <li><span>Configurations collected</span><span id="summary-configs">{{ job.summary.configurations_collected if job and job.summary else '' }}</span></li>
+      <li><span>Duration</span><span id="summary-duration">{% if job and job.summary %}{{ job.summary.duration_seconds }} seconds{% endif %}</span></li>
+    </ul>
+    <div class="flash flash-error" id="job-warning" {% if not (job and job.warning) %}hidden{% endif %}>{{ job.warning if job else '' }}</div>
+    <div class="actions" id="job-actions">
+      <a class="btn" id="action-topology" href="/topology{% if job %}?scope={{ job.profile_id | urlencode }}{% endif %}">View Topology</a>
+      <a class="btn" id="action-changes" href="/changes{% if job %}?scope={{ job.profile_id | urlencode }}{% endif %}">View Changes</a>
+      <a class="btn" id="action-dashboard" href="/{% if job %}?scope={{ job.profile_id | urlencode }}{% endif %}">View Dashboard</a>
+    </div>
+  </div>
+  <details class="log"><summary>Recent events</summary>
+    <pre id="job-events">{% if job %}{% for line in job.events %}{{ line }}
+{% endfor %}{% endif %}</pre>
+  </details>
+</section>
 
 {% if result %}
 <section class="card">

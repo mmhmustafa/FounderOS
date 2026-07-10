@@ -99,3 +99,40 @@ The selection is passed as `?scope=<id>`, stored in the Flask session, and
 shown in every page title. Running a discovery switches the session scope to
 that profile. Incident investigations require a specific network scope and
 read/write only that scope's artifacts.
+
+## Discovery jobs (PR-032)
+
+The Discover page runs the real pipeline asynchronously through an
+in-process job manager (`jobs.py`):
+
+- `POST /api/discovery/jobs` (`profile=<name>`) → `202` with the job, or
+  `409` with the already-running job for that profile, or `400` when no
+  profile is named (All Networks is a view — discovery targets one profile).
+- `GET /api/discovery/jobs/<job_id>` → current status; the page polls every
+  1.5 s. `GET /api/discovery/jobs` lists recent jobs.
+
+**Shared service.** The manager's runner executes `atlas_discover_command`
+— the exact function the CLI uses — in-process, wired to the app's injected
+profile service, transport factory, and scoped output paths. Credentials
+are resolved server-side; job payloads carry only profile identity and safe
+metadata (a test asserts no password or credential reference ever appears
+in an API response or the persisted job file).
+
+**Progress semantics.** Seven user-facing stages mapped from real activity:
+transport connections (current device, devices contacted) and the
+pipeline's own `[N/9]` lines. Percentage is stage-based and labelled
+`progress_basis: "stages"`; per-device totals are unknown during recursive
+discovery, so Atlas never invents them. `current_depth` is null until the
+engine reports it.
+
+**Concurrency.** One discovery executes at a time (global run lock);
+duplicate same-profile requests return the existing job. Different profiles
+queue. Local-alpha limitation, chosen for correctness.
+
+**Restart behavior.** Job history persists to `<output>/.atlas/jobs.json`.
+Browser refresh/navigation never affects a run (the page re-attaches).
+In-process jobs do not survive a server restart: on startup, persisted
+queued/running jobs are marked `interrupted` with an honest message.
+
+**Fallback.** Without JavaScript the form posts to `/discovery/run`, which
+runs synchronously through the same job manager — one execution path.

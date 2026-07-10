@@ -81,6 +81,14 @@ h3 { margin: 0 0 8px; font-size: 14px; }
 .kv li span:first-child { color: var(--muted); }
 .ok { color: var(--green); } .warn { color: var(--amber); }
 
+.job-head { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.job-badge { font-weight: 700; padding: 4px 12px; border-radius: 999px; color: #fff; background: var(--slate); text-transform: capitalize; }
+.job-badge-running, .job-badge-queued { background: var(--accent); }
+.job-badge-completed { background: var(--green); }
+.job-badge-failed, .job-badge-interrupted { background: var(--red); }
+.progress { height: 12px; border-radius: 999px; background: #e2e8f0; overflow: hidden; margin: 10px 0 4px; }
+.progress-fill { height: 100%; border-radius: 999px; background: var(--accent); transition: width .4s ease; min-width: 2px; }
+
 .flashes { margin-bottom: 16px; }
 .flash { padding: 10px 14px; border-radius: 8px; margin-bottom: 8px; }
 .flash-success { background: #dcfce7; color: #166534; }

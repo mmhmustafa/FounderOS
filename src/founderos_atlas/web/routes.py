@@ -35,6 +35,7 @@ from founderos_atlas.workspace import (
     DiscoveryScope,
     GLOBAL_SCOPE_ID,
     GLOBAL_SCOPE_LABEL,
+    ProfileNotFoundError,
     active_scopes,
     default_scope,
     profile_scope,
@@ -55,6 +56,7 @@ def register_routes(app) -> None:
     from flask import (
         abort,
         flash,
+        jsonify,
         redirect,
         render_template,
         request,
@@ -295,36 +297,109 @@ def register_routes(app) -> None:
 
     # -- Discovery ----------------------------------------------------------
 
-    @app.route("/discovery")
-    def discovery():
-        rows = [profile_row(p) for p in profile_service().list_profiles()]
-        return render_template(
-            "discovery.html", profiles=rows, result=None, **base_context("discovery")
-        )
+    def job_manager():
+        return cfg("ATLAS_JOB_MANAGER")
 
-    @app.route("/discovery/run", methods=["POST"])
-    def discovery_run():
-        name = request.form.get("profile", "").strip()
+    def discovery_rows() -> list[dict]:
+        """Profiles enriched with each one's latest discovery-job status."""
+
         rows = [profile_row(p) for p in profile_service().list_profiles()]
-        if not name:
-            flash("Select a saved profile to run discovery.", "error")
-            return render_template(
-                "discovery.html", profiles=rows, result=None, **base_context("discovery")
-            )
-        result = _run_discovery(app, name)
-        if result["ok"]:
-            # Focus the GUI on the network that was just discovered.
-            try:
-                session["scope"] = profile_service().get_profile(name).profile_id
-            except AtlasWorkspaceError:
-                pass
+        manager = job_manager()
+        for row in rows:
+            latest = manager.latest_for_profile(row["profile_id"])
+            row["job_status"] = latest.status if latest is not None else "—"
+        return rows
+
+    def discovery_page(rows, *, result=None, selected: str | None = None):
+        """The Discover page. When All Networks is active there is no
+        implicit choice: the user explicitly selects the profile to run."""
+
+        scopes = known_scopes()
+        scope_id = active_scope_id(scopes)
+        if selected is None and scope_id not in (GLOBAL_SCOPE_ID, DEFAULT_SCOPE_ID):
+            selected = scopes[scope_id].label  # scope label == profile name
+        job = None
+        if selected:
+            for row in rows:
+                if row["name"] == selected:
+                    latest = job_manager().latest_for_profile(row["profile_id"])
+                    if latest is not None:
+                        job = job_manager().snapshot(latest)
+                    break
         return render_template(
             "discovery.html",
             profiles=rows,
             result=result,
-            selected=name,
+            selected=selected,
+            job=job,
             **base_context("discovery"),
         )
+
+    @app.route("/discovery")
+    def discovery():
+        return discovery_page(discovery_rows())
+
+    @app.route("/discovery/run", methods=["POST"])
+    def discovery_run():
+        """No-JS fallback: run through the same job manager, synchronously."""
+
+        name = request.form.get("profile", "").strip()
+        rows = discovery_rows()
+        if not name:
+            flash("Select a saved profile to run discovery.", "error")
+            return discovery_page(rows)
+        try:
+            job, _ = job_manager().start(name)
+        except AtlasWorkspaceError as error:
+            flash(str(error), "error")
+            return discovery_page(rows)
+        session["scope"] = job.profile_id
+        finished = job_manager().wait(job.job_id)
+        result = {
+            "ok": finished.status == "completed",
+            "profile": name,
+            "error": finished.error,
+            "log": list(finished.log),
+        }
+        return discovery_page(discovery_rows(), result=result, selected=name)
+
+    # -- Discovery job API (polled by the Discover page) ---------------------
+
+    @app.route("/api/discovery/jobs", methods=["POST"])
+    def api_discovery_job_create():
+        payload = request.get_json(silent=True) or request.form
+        name = str(payload.get("profile") or "").strip()
+        if not name:
+            return (
+                jsonify(
+                    error=(
+                        "Select a network profile to discover. All Networks "
+                        "is a view — discovery always targets one profile."
+                    )
+                ),
+                400,
+            )
+        try:
+            job, created = job_manager().start(name)
+        except ProfileNotFoundError as error:
+            return jsonify(error=str(error)), 404
+        except AtlasWorkspaceError as error:
+            return jsonify(error=str(error)), 400
+        # Focus the GUI on the network being discovered.
+        session["scope"] = job.profile_id
+        status = 202 if created else 409
+        return jsonify(job=job_manager().snapshot(job), created=created), status
+
+    @app.route("/api/discovery/jobs/<job_id>")
+    def api_discovery_job_get(job_id: str):
+        job = job_manager().get(job_id)
+        if job is None:
+            return jsonify(error="Unknown discovery job."), 404
+        return jsonify(job=job_manager().snapshot(job))
+
+    @app.route("/api/discovery/jobs")
+    def api_discovery_job_list():
+        return jsonify(jobs=job_manager().list_recent())
 
     # -- Topology / History / Changes --------------------------------------
 
@@ -522,24 +597,37 @@ def _int(value, default):
     return int(value)
 
 
-def _run_discovery(app, profile_name: str) -> dict:
-    """Run the existing unified discovery pipeline in-process for a profile.
+def make_pipeline_runner(app):
+    """The shared discovery service adapter for GUI jobs.
 
-    The pipeline itself scopes every artifact and the history baseline into
-    the profile's isolated workspace, so this run can never overwrite or be
-    compared against another profile's network.
+    Both the CLI and the GUI execute ``atlas_discover_command`` — one
+    pipeline, one behavior. This factory only wires the app's injected
+    dependencies into it: the profile service resolves credentials
+    server-side, the transport factory is wrapped so the job layer sees
+    every real device connection, and every artifact path stays under the
+    app's output directory (the pipeline re-roots them into the profile's
+    isolated scope). Everything runs in-process; no child process is ever
+    spawned.
     """
 
-    from founderos_runtime.cli.commands import atlas_discover_command
-    from founderos_runtime.cli.exceptions import CliError
+    def run(profile_name: str, on_line, on_connect) -> dict:
+        from founderos_runtime.cli.commands import atlas_discover_command
 
-    out = app.config["ATLAS_OUTPUT_DIR"]
-    lines: list[str] = []
-    try:
-        code, _ = atlas_discover_command(
+        from founderos_atlas.history import HistoryRepository
+        from founderos_atlas.transport import SSHDeviceTransport
+        from founderos_atlas.workspace import profile_scope
+
+        base_factory = app.config["ATLAS_TRANSPORT_FACTORY"] or SSHDeviceTransport
+
+        def tracking_factory(credentials):
+            on_connect(credentials.host)
+            return base_factory(credentials)
+
+        out = app.config["ATLAS_OUTPUT_DIR"]
+        atlas_discover_command(
             profile=profile_name,
             profile_service=app.config["ATLAS_PROFILE_SERVICE"],
-            transport_factory=app.config["ATLAS_TRANSPORT_FACTORY"],
+            transport_factory=tracking_factory,
             clock=app.config["ATLAS_CLOCK"],
             topology_output=out / "atlas_topology.html",
             snapshot_output=out / "topology_snapshot.json",
@@ -554,8 +642,22 @@ def _run_discovery(app, profile_name: str) -> dict:
             state_change_json_output=out / "state_change_report.json",
             state_change_markdown_output=out / "state_change_report.md",
             browser_opener=lambda uri: None,
-            progress=lines.append,
+            progress=on_line,
         )
-    except CliError as error:
-        return {"ok": False, "profile": profile_name, "error": str(error), "log": lines}
-    return {"ok": code == 0, "profile": profile_name, "error": None, "log": lines}
+        # Summarize from the profile's own scope: the authoritative record
+        # of what this run produced.
+        profile = app.config["ATLAS_PROFILE_SERVICE"].get_profile(profile_name)
+        scope = profile_scope(out, profile.profile_id, profile.name)
+        record = HistoryRepository(scope.history_root).latest()
+        if record is None:
+            return {}
+        return {
+            "devices": record.device_count,
+            "relationships": record.relationship_count,
+            "configurations_collected": record.configured_device_count,
+            "duration_seconds": record.duration_seconds,
+            "network_status": record.network_status,
+            "failed_devices": len(record.failures),
+        }
+
+    return run

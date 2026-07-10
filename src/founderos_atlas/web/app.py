@@ -19,7 +19,8 @@ from founderos_atlas.workspace import (
     resolve_credential_provider,
 )
 
-from .routes import register_routes
+from .jobs import DiscoveryJobManager
+from .routes import make_pipeline_runner, register_routes
 
 
 DEFAULT_HOST = "127.0.0.1"
@@ -37,6 +38,7 @@ def create_app(
     transport_factory: TransportFactory | None = None,
     clock: Clock | None = None,
     workspace_root: str | Path | None = None,
+    job_manager: DiscoveryJobManager | None = None,
 ):
     """Build the Atlas Flask app with injectable backend services.
 
@@ -87,6 +89,18 @@ def create_app(
         ATLAS_HOST=DEFAULT_HOST,
     )
     app.secret_key = "atlas-local-alpha"  # only used for flash messages, local-only
+
+    if job_manager is None:
+        # In-process background executor for GUI discoveries. Job history
+        # persists under the output dir so interrupted runs are marked
+        # honestly after a restart; the interface allows a production job
+        # backend to replace it later.
+        job_manager = DiscoveryJobManager(
+            runner=make_pipeline_runner(app),
+            profile_service=profile_service,
+            persist_path=resolved_output / ".atlas" / "jobs.json",
+        )
+    app.config["ATLAS_JOB_MANAGER"] = job_manager
 
     register_routes(app)
     return app
