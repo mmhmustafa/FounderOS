@@ -269,6 +269,10 @@ def entries_from_workspace(
         )
     )
 
+    # Compass maintenance plans (PR-039): searchable by title, CAB
+    # reference, engineer, and every device inside the plan.
+    entries.extend(_plan_entries(base_output_dir))
+
     for credential_set in credential_sets:
         # Names only — never usernames, never secrets.
         keys = [SearchKey("credential set", credential_set.name)]
@@ -395,6 +399,44 @@ def _scope_report_entries(
                     "completed_at": record.completed_at,
                 },
                 historical=True,
+            )
+        )
+    return entries
+
+
+def _plan_entries(base_output_dir: str | Path) -> list[SearchEntry]:
+    from founderos_atlas.compass import PlanRepository
+
+    entries: list[SearchEntry] = []
+    for plan in PlanRepository(base_output_dir).list_plans():
+        keys = [
+            SearchKey("plan title", plan.title),
+            SearchKey("plan id", plan.plan_id, canonical=True),
+            SearchKey("keyword", "plan"),
+            SearchKey("keyword", "maintenance"),
+        ]
+        if plan.cab_reference:
+            keys.append(SearchKey("cab reference", plan.cab_reference, canonical=True))
+        if plan.engineer:
+            keys.append(SearchKey("engineer", plan.engineer))
+        for change in plan.changes:
+            keys.append(SearchKey("device", change.device))
+        entries.append(
+            SearchEntry(
+                group="plans",
+                title=plan.title,
+                subtitle=(
+                    f"{plan.status} · {len(plan.changes)} change(s)"
+                    + (f" · {plan.maintenance_window}" if plan.maintenance_window else "")
+                ),
+                href=f"/compass/{plan.plan_id}",
+                keys=tuple(keys),
+                detail={
+                    "status": plan.status,
+                    "engineer": plan.engineer,
+                    "cab_reference": plan.cab_reference,
+                    "change_count": len(plan.changes),
+                },
             )
         )
     return entries

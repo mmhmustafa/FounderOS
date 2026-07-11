@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+{% block title %}Compass Plan{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>{{ plan.title }}</h1>
+  <span class="badge hop-badge hop-badge-{{ 'pass' if plan.status == 'analysed' else 'unknown' }}">{{ plan.status }}</span>
+</div>
+<p class="muted">
+  Window: {{ plan.maintenance_window or '—' }} ·
+  Engineer: {{ plan.engineer or '—' }} ·
+  CAB: {{ plan.cab_reference or '—' }} ·
+  Scope: enterprise ({{ enterprise_device_count }} canonical device(s) from {{ enterprise_contributions | length }} profile(s)) ·
+  Updated: {{ plan.updated_at }}
+</p>
+
+<section class="card">
+  <h2>Planned Changes ({{ plan.changes | length }})</h2>
+  {% if plan.changes %}
+  <table class="grid">
+    <thead><tr><th>#</th><th>Change</th><th>Reason</th><th>Duration</th><th>Rollback</th><th>Notes</th><th></th></tr></thead>
+    <tbody>
+      {% for change in plan.changes %}
+      <tr>
+        <td>{{ change.change_id }}</td>
+        <td>{{ change.title }}</td>
+        <td>{{ change.reason or '—' }}</td>
+        <td>{{ change.estimated_duration_minutes ~ ' min' if change.estimated_duration_minutes is not none else '—' }}</td>
+        <td>{% if change.rollback_available is sameas true %}<span class="ok">yes</span>{% elif change.rollback_available is sameas false %}<span class="warn">no</span>{% else %}unknown{% endif %}</td>
+        <td>{{ change.notes or '—' }}</td>
+        <td>
+          <form method="post" action="/compass/{{ plan.plan_id }}/changes/{{ change.change_id }}/remove">
+            <button class="btn btn-sm" type="submit">Remove</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <form method="post" action="/compass/{{ plan.plan_id }}/analyse" class="form-actions" style="margin-top: 12px;">
+    <button class="btn btn-primary" type="submit">Analyse Plan</button>
+  </form>
+  {% else %}
+  <p class="muted">No changes yet — add the first one below.</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Add a Change</h2>
+  <form class="form" method="post" action="/compass/{{ plan.plan_id }}/changes">
+    <div class="form-row">
+      <label>Device
+        <select name="device" required>
+          <option value="" selected disabled>— Select a device —</option>
+          {% for d in devices %}<option value="{{ d.hostname }}">{{ d.hostname }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>Interface (optional)
+        <select name="interface">
+          <option value="">— none / device-level —</option>
+          {% for d in devices %}{% for i in d.interfaces %}
+          <option value="{{ i.name }}">{{ d.hostname }} — {{ i.name }}</option>
+          {% endfor %}{% endfor %}
+        </select>
+      </label>
+      <label>Change type
+        <select name="change_type" required>
+          {% for key, spec in change_types.items() %}
+          <option value="{{ key }}">{{ spec.label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+    <label>Reason
+      <input name="reason" placeholder="Decommission access switch uplink">
+    </label>
+    <div class="form-row">
+      <label>Estimated duration (minutes)
+        <input name="estimated_duration_minutes" inputmode="numeric" placeholder="15">
+      </label>
+      <label>Rollback available
+        <select name="rollback_available">
+          <option value="">unknown</option>
+          <option value="yes">yes</option>
+          <option value="no">no</option>
+        </select>
+      </label>
+    </div>
+    <label>Notes
+      <input name="notes" placeholder="Coordinate with facilities">
+    </label>
+    <div class="form-actions">
+      <button class="btn btn-primary" type="submit">Add Change</button>
+    </div>
+    <p class="muted">Devices and interfaces come from the enterprise's latest discovery evidence and are re-validated server-side.</p>
+  </form>
+</section>
+
+{% if assessment %}
+<section class="card root-cause">
+  <h2>Risk Summary</h2>
+  <div class="tiles">
+    <div class="tile"><strong>Overall plan risk</strong><span class="tile-text">{{ assessment.risk.overall_risk | title }}</span></div>
+    <div class="tile"><strong>Devices impacted</strong><span>{{ assessment.risk.total_devices_impacted }}</span></div>
+    <div class="tile"><strong>Largest blast radius</strong><span>{{ assessment.risk.largest_blast_device_count }}</span></div>
+    <div class="tile"><strong>Rollback covered</strong><span class="tile-text">{{ assessment.risk.rollback_covered }} / {{ plan.changes | length }}</span></div>
+    <div class="tile"><strong>Est. duration</strong><span class="tile-text">{{ assessment.risk.estimated_total_minutes ~ ' min' if assessment.risk.estimated_total_minutes is not none else 'unknown' }}</span></div>
+  </div>
+  <ul>
+    {% if assessment.risk.highest_risk_title %}<li>Highest-risk step: <strong>{{ assessment.risk.highest_risk_title }}</strong></li>{% endif %}
+    {% if assessment.risk.largest_blast_title %}<li>Largest blast radius: <strong>{{ assessment.risk.largest_blast_title }}</strong> ({{ assessment.risk.largest_blast_device_count }} device(s))</li>{% endif %}
+    <li>Rollback: {{ assessment.risk.rollback_covered }} covered · {{ assessment.risk.rollback_missing }} unavailable · {{ assessment.risk.rollback_unknown }} unknown</li>
+  </ul>
+  <p class="muted">Analysed {{ assessment.generated_at }} against {{ assessment.evidence_refs | join('; ') if assessment.evidence_refs else 'the available evidence' }}.</p>
+</section>
+
+<section class="card">
+  <h2>Recommended Execution Order</h2>
+  <ol class="path-timeline">
+    {% for step in assessment.steps %}
+    <li class="hop hop-{{ 'failed' if step.risk_level in ('high', 'critical') else ('warning' if step.risk_level == 'medium' else 'pass') }}">
+      <details {% if step.separate_window or step.risk_level in ('high', 'critical') %}open{% endif %}>
+        <summary><span class="hop-dot"></span><strong>{{ step.order }}. {{ step.title }}</strong>
+          <span class="badge hop-badge hop-badge-{{ 'failed' if step.risk_level in ('high', 'critical') else ('warning' if step.risk_level == 'medium' else 'pass') }}">{{ step.risk_level | title }}</span>
+          <span class="muted">{{ step.confidence_band | title }} ({{ step.confidence_percent }}%)</span>
+          {% if step.separate_window %}<span class="badge hop-badge hop-badge-warning">separate window</span>{% endif %}
+        </summary>
+        <p>{{ step.reason }}</p>
+        {% if step.evidence %}
+        <ul>{% for item in step.evidence %}<li class="muted">Evidence: {{ item }}</li>{% endfor %}</ul>
+        {% endif %}
+      </details>
+    </li>
+    {% endfor %}
+  </ol>
+  <p class="muted">Deterministic order: evidence-based dependencies first, then lowest predicted risk; the largest blast radius is scheduled last. Compass advises — it never approves or blocks.</p>
+</section>
+
+{% if assessment.conflicts %}
+<section class="card">
+  <h2>Conflicts (warnings — never blocking)</h2>
+  <ul>
+    {% for conflict in assessment.conflicts %}
+    <li><span class="badge hop-badge hop-badge-warning">{{ conflict.kind }}</span> {{ conflict.detail }}</li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+<section class="card">
+  <h2>Dependencies</h2>
+  {% if assessment.dependencies %}
+  <ul>
+    {% for dep in assessment.dependencies %}
+    <li>{{ dep.reason }}
+      <ul>{% for item in dep.evidence %}<li class="muted">Evidence: {{ item }}</li>{% endfor %}</ul>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="muted">No evidence links any of these changes to each other. Compass never invents dependencies — absence of evidence is stated, not assumed safe.</p>
+  {% endif %}
+</section>
+
+{% if assessment.unknowns %}
+<section class="card">
+  <h2>What Atlas Cannot See</h2>
+  <ul>
+    {% for item in assessment.unknowns %}<li>{{ item }}</li>{% endfor %}
+  </ul>
+</section>
+{% endif %}
+{% endif %}
+{% endblock %}

@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Compass{% endblock %}
+{% block content %}
+<h1>Compass — Maintenance Plans</h1>
+<p class="muted">Plan many changes for one maintenance window. Compass analyses every change with the prediction engine, derives dependencies from evidence only, and recommends a safer execution order — an advisor, never an approval gate. The engineer remains in control.</p>
+
+<section class="card">
+  <h2>New Plan</h2>
+  <form class="form" method="post" action="/compass/new">
+    <label>Title
+      <input name="title" required placeholder="July core maintenance">
+    </label>
+    <div class="form-row">
+      <label>Maintenance window
+        <input name="maintenance_window" placeholder="Sat 02:00–06:00">
+      </label>
+      <label>Engineer
+        <input name="engineer" placeholder="netops">
+      </label>
+      <label>CAB reference (optional)
+        <input name="cab_reference" placeholder="CAB-1042">
+      </label>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-primary" type="submit">Create Plan</button>
+    </div>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Plans</h2>
+  {% if plans %}
+  <table class="grid">
+    <thead><tr><th>Title</th><th>Window</th><th>Engineer</th><th>CAB</th><th>Changes</th><th>Status</th><th>Plan risk</th><th>Updated</th><th></th></tr></thead>
+    <tbody>
+      {% for row in plans %}
+      <tr>
+        <td>{{ row.plan.title }}</td>
+        <td>{{ row.plan.maintenance_window or '—' }}</td>
+        <td>{{ row.plan.engineer or '—' }}</td>
+        <td>{{ row.plan.cab_reference or '—' }}</td>
+        <td>{{ row.plan.changes | length }}</td>
+        <td><span class="badge hop-badge hop-badge-{{ 'pass' if row.plan.status == 'analysed' else 'unknown' }}">{{ row.plan.status }}</span></td>
+        <td>{% if row.risk %}<span class="badge hop-badge hop-badge-{{ 'failed' if row.risk.overall_risk in ('high', 'critical') else ('warning' if row.risk.overall_risk == 'medium' else 'pass') }}">{{ row.risk.overall_risk }}</span>{% else %}—{% endif %}</td>
+        <td>{{ row.plan.updated_at }}</td>
+        <td><a class="btn btn-sm" href="/compass/{{ row.plan.plan_id }}">Open</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No maintenance plans yet — create one above.</p>
+  {% endif %}
+</section>
+{% endblock %}

@@ -25,6 +25,7 @@ recommendations).
 | **Reason** | **Path intelligence** | `path_intelligence/` | deterministic answers to *why can't A reach B* |
 | **Federate** | **Enterprise federation** | `federation/` | one canonical enterprise graph from many observation points |
 | **Find** | **Universal search** | `search/` | deterministic grouped search over everything Atlas knows |
+| **Advise** | **Compass change planning** | `compass/` | evidence-ordered execution plans for many changes |
 
 Shared invariants: per-profile scope isolation (PR-031A), explainable
 scores (every point is a named factor), banded confidence capped below
@@ -258,6 +259,62 @@ of truth.
 `search_enterprise()` · `merge_observations()` ·
 `build_enterprise_snapshot()` · `write_enterprise_artifacts()` — shared
 by GUI, CLI, future REST APIs, and the assistant.
+
+## Compass Change Planning (PR-039)
+
+Prediction answers *what happens if I make ONE change*; Compass plans
+MANY. It is a deterministic change-planning ADVISOR — never an approval
+workflow; the engineer remains in control.
+
+### Pipeline
+
+```
+ChangePlan (title, window, engineer, CAB ref, planned changes)
+  → per-change analysis through the EXISTING prediction engine
+    (risk, blast radius, confidence, unknowns — unmodeled change types
+    predict honestly with low confidence; an IOS upgrade is predicted
+    through the modeled reload semantics)
+  → dependency detection from CITED EVIDENCE ONLY:
+      * change B's device inside change A's predicted blast radius
+        ⇒ B before A (you cannot configure a device you just cut off)
+      * work on device D before D's IOS upgrade/reload
+      nothing else is inferred — unknown remains unknown and is listed
+  → conflict detection (duplicate change, mutually exclusive
+    shutdown+enable, two changes on one interface, double upgrade)
+    — WARN, never block
+  → recommended order: deterministic topological sort; among runnable
+    steps lowest predicted risk first; blast radii spanning ≥ half the
+    enterprise are scheduled last and flagged "separate window";
+    dependency cycles are reported honestly and broken deterministically
+  → risk summary: overall risk, highest-risk step, largest blast
+    radius, total devices impacted, rollback coverage
+    (covered / unavailable / honestly unknown), total duration
+    (unknown when any change omits an estimate)
+```
+
+Every step carries its WHY (independent / runs-after with the
+dependency reasons / scheduled-early because later steps depend on it /
+separate-window) and cites its evidence.
+
+### Change vocabulary
+
+shutdown-interface · enable-interface · configuration-change ·
+ios-upgrade · acl-change · vlan-change · static-route-change — each
+maps onto the prediction engine's open registry (Compass registers the
+prediction-side types it introduces); future change types plug in with
+one `CHANGE_TYPES` entry.
+
+### Persistence, scope, and integration
+
+Plans live in `.atlas/compass/plans.json` (enterprise scope, gitignored)
+with each plan's latest assessment. Analysis evidence is the UNITY
+enterprise snapshot — freshness from every contributing profile, seeds
+feeding the management-plane evaluation; Compass never builds its own
+topology. Search indexes plans (title, CAB reference, engineer, every
+device inside) and rebuilds automatically when plans change. Services:
+`create_plan` · `add_change` / `remove_change` · `analyse_plan` ·
+`recommend_order` · `detect_dependencies` · `detect_conflicts` ·
+`estimate_plan_risk` · `analyse_plan_for_workspace` · `PlanRepository`.
 
 ## Universal Search (PR-038, codename SEARCH)
 

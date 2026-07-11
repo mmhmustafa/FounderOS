@@ -39,6 +39,7 @@ GROUPS = (
     ("predictions", "Predictions"),
     ("investigations", "Investigations"),
     ("changes", "Changes"),
+    ("plans", "Plans"),
     ("profiles", "Profiles"),
     ("credentials", "Credentials"),
     ("history", "History"),

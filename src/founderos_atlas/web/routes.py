@@ -922,6 +922,188 @@ def register_routes(app) -> None:
         flash("Path investigation complete.", "success")
         return redirect(url_for("paths_page"))
 
+    # -- Compass (PR-039: deterministic change planning) -----------------------
+
+    def compass_repository():
+        from founderos_atlas.compass import PlanRepository
+
+        return PlanRepository(output_dir())
+
+    @app.route("/compass")
+    def compass_page():
+        from founderos_atlas.compass import CHANGE_TYPES
+
+        context, _scopes, _scope_id = scoped_context("compass")
+        repository = compass_repository()
+        plans = []
+        for plan in repository.list_plans():
+            _, assessment = repository.get(plan.plan_id)
+            plans.append(
+                {
+                    "plan": plan,
+                    "risk": (assessment or {}).get("risk") if assessment else None,
+                }
+            )
+        return render_template(
+            "compass.html",
+            plans=plans,
+            change_types=CHANGE_TYPES,
+            **context,
+        )
+
+    @app.route("/compass/new", methods=["POST"])
+    def compass_new():
+        from founderos_atlas.compass import create_plan
+
+        title = request.form.get("title", "").strip()
+        if not title:
+            flash("A plan title is required.", "error")
+            return redirect(url_for("compass_page"))
+        plan = create_plan(
+            compass_repository(),
+            title=title,
+            maintenance_window=request.form.get("maintenance_window", ""),
+            engineer=request.form.get("engineer", ""),
+            cab_reference=request.form.get("cab_reference", "") or None,
+            created_at=now_iso(),
+        )
+        flash(f"Plan '{plan.title}' created.", "success")
+        return redirect(url_for("compass_plan_page", plan_id=plan.plan_id))
+
+    @app.route("/compass/<plan_id>")
+    def compass_plan_page(plan_id: str):
+        from founderos_atlas.compass import CHANGE_TYPES
+
+        context, _scopes, _scope_id = scoped_context("compass")
+        plan, assessment = compass_repository().get(plan_id)
+        if plan is None:
+            flash("That maintenance plan no longer exists.", "error")
+            return redirect(url_for("compass_page"))
+        graph, snapshot = enterprise_world()
+        return render_template(
+            "compass_plan.html",
+            plan=plan,
+            assessment=assessment,
+            devices=prediction_targets(snapshot),
+            change_types=CHANGE_TYPES,
+            **enterprise_context(graph),
+            **context,
+        )
+
+    @app.route("/compass/<plan_id>/changes", methods=["POST"])
+    def compass_add_change(plan_id: str):
+        from founderos_atlas.compass import (
+            CHANGE_TYPES,
+            PlannedChange,
+            add_change,
+        )
+        from founderos_atlas.prediction import resolve_interface
+
+        repository = compass_repository()
+        plan, _ = repository.get(plan_id)
+        if plan is None:
+            flash("That maintenance plan no longer exists.", "error")
+            return redirect(url_for("compass_page"))
+        device = request.form.get("device", "").strip()
+        change_type = request.form.get("change_type", "").strip()
+        interface = request.form.get("interface", "").strip() or None
+        if not device or change_type not in CHANGE_TYPES:
+            flash("A device and a valid change type are required.", "error")
+            return redirect(url_for("compass_plan_page", plan_id=plan_id))
+        # Validate against the enterprise snapshot — Compass plans across
+        # the whole enterprise; client-side selection is never trusted.
+        _graph, snapshot = enterprise_world()
+        entry = next(
+            (
+                item
+                for item in (snapshot or {}).get("devices") or ()
+                if isinstance(item, dict)
+                and str(item.get("hostname") or "").casefold() == device.casefold()
+            ),
+            None,
+        )
+        if entry is None:
+            flash(
+                f"{device} is not in the enterprise's latest discovery "
+                "evidence. Run discovery first.",
+                "error",
+            )
+            return redirect(url_for("compass_plan_page", plan_id=plan_id))
+        device = str(entry.get("hostname"))
+        if interface:
+            inventory = tuple(
+                str(item.get("name"))
+                for item in entry.get("interfaces") or ()
+                if isinstance(item, dict) and item.get("name")
+            )
+            canonical, problem = resolve_interface(interface, inventory)
+            if canonical is None:
+                flash(
+                    f"Interface not accepted for {device}: {problem}.", "error"
+                )
+                return redirect(url_for("compass_plan_page", plan_id=plan_id))
+            interface = canonical
+        duration = request.form.get("estimated_duration_minutes", "").strip()
+        rollback = request.form.get("rollback_available", "").strip()
+        taken = {change.change_id for change in plan.changes}
+        number = 1
+        while f"c{number}" in taken:
+            number += 1
+        change = PlannedChange(
+            change_id=f"c{number}",
+            device=device,
+            interface=interface,
+            change_type=change_type,
+            reason=request.form.get("reason", "").strip(),
+            estimated_duration_minutes=int(duration) if duration.isdigit() else None,
+            rollback_available=(
+                True if rollback == "yes" else False if rollback == "no" else None
+            ),
+            notes=request.form.get("notes", "").strip(),
+        )
+        add_change(repository, plan, change, updated_at=now_iso())
+        flash(f"Added: {change.title}.", "success")
+        return redirect(url_for("compass_plan_page", plan_id=plan_id))
+
+    @app.route(
+        "/compass/<plan_id>/changes/<change_id>/remove", methods=["POST"]
+    )
+    def compass_remove_change(plan_id: str, change_id: str):
+        from founderos_atlas.compass import remove_change
+
+        repository = compass_repository()
+        plan, _ = repository.get(plan_id)
+        if plan is None:
+            flash("That maintenance plan no longer exists.", "error")
+            return redirect(url_for("compass_page"))
+        remove_change(repository, plan, change_id, updated_at=now_iso())
+        flash("Change removed; re-analyse the plan.", "success")
+        return redirect(url_for("compass_plan_page", plan_id=plan_id))
+
+    @app.route("/compass/<plan_id>/analyse", methods=["POST"])
+    def compass_analyse(plan_id: str):
+        from founderos_atlas.compass import analyse_plan_for_workspace
+
+        repository = compass_repository()
+        plan, _ = repository.get(plan_id)
+        if plan is None:
+            flash("That maintenance plan no longer exists.", "error")
+            return redirect(url_for("compass_page"))
+        if not plan.changes:
+            flash("Add at least one planned change first.", "error")
+            return redirect(url_for("compass_plan_page", plan_id=plan_id))
+        analyse_plan_for_workspace(
+            repository,
+            plan,
+            base_output_dir=output_dir(),
+            profiles=profile_service().list_profiles(),
+            generated_at=now_iso(),
+            catalog=SiteCatalogRepository(cfg("ATLAS_WORKSPACE_ROOT")).load(),
+            credential_memory=CredentialSuccessMemory(cfg("ATLAS_WORKSPACE_ROOT")),
+        )
+        flash("Plan analysed.", "success")
+        return redirect(url_for("compass_plan_page", plan_id=plan_id))
+
     # -- Universal search (PR-038: the front door to Atlas) -------------------
 
     search_service = SearchService()

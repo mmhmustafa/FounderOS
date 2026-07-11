@@ -696,6 +696,39 @@ the entire enterprise while you type:
   — no search engine to install, and the empty state is honest: Atlas
   never invents results.
 
+## Compass — Change Planning (PR-039)
+
+Prediction answers "what happens if I make ONE change" — **Compass plans
+the whole maintenance window**. Create a plan (title, window, engineer,
+optional CAB reference), add planned changes (device, optional
+interface, change type, reason, duration, rollback availability), and
+press **Analyse Plan**:
+
+- every change is analysed through the prediction engine (risk, blast
+  radius, confidence, unknowns) — nothing re-derived;
+- **dependencies come from evidence only**: work on a device that a
+  later shutdown would cut off is ordered first (the prediction's blast
+  radius is the citation), and same-device work precedes that device's
+  IOS upgrade because the upgrade reloads it. Compass never invents a
+  dependency — unknown stays unknown and is listed;
+- the **recommended execution order** explains every position: order,
+  WHY, risk, confidence, evidence; the safest runnable step goes first
+  and the largest blast radius goes last with a **"separate window"**
+  flag;
+- **conflicts warn, never block**: duplicate changes, shutdown+bring-up
+  on one interface, double upgrades;
+- the **risk summary** shows overall plan risk, the highest-risk step,
+  the largest blast radius, total devices impacted, rollback coverage
+  (including honest unknowns), and total duration;
+- circular dependencies are reported honestly — Atlas says it cannot
+  determine a provably safe order rather than guessing;
+- plans are searchable (Ctrl+K: title, CAB id, engineer, any device in
+  the plan) and analysed against the federated enterprise, so
+  cross-lab dependencies appear naturally.
+
+Compass is an advisor, not an approval gate. The engineer remains in
+control.
+
 ## Next Step
 
 Extract a reusable deterministic Topology Change Set contract for richer operational journeys before considering persistence or live transport.

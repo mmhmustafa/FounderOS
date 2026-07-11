@@ -113,6 +113,9 @@ def workspace_fingerprint(
     enterprise = base / ".atlas" / "enterprise"
     for name in _SCOPE_ARTIFACTS + ("enterprise_graph.json",):
         parts.append(_file_stamp(enterprise / name))
+    # Compass plans (PR-039): creating, editing, or analysing a plan
+    # must surface in search immediately.
+    parts.append(_file_stamp(base / ".atlas" / "compass" / "plans.json"))
     if workspace_root is not None:
         workspace = Path(workspace_root)
         if workspace.is_dir():
