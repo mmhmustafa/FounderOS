@@ -30,6 +30,20 @@
 </section>
 {% endif %}
 
+{% if summary.prediction_change %}
+<section class="card">
+  <h2>Latest Prediction</h2>
+  <ul>
+    <li><strong>Proposed change:</strong> {{ summary.prediction_change }}</li>
+    <li><strong>Predicted risk:</strong> {{ summary.prediction_risk | title }}</li>
+    <li><strong>Confidence:</strong> {{ summary.prediction_confidence }}</li>
+    <li><strong>Blast radius:</strong> {{ summary.prediction_blast }}</li>
+    <li><strong>Recommendation:</strong> {{ summary.prediction_action }}</li>
+  </ul>
+  <a class="btn btn-sm" href="/predict">Open Predict</a>
+</section>
+{% endif %}
+
 {% if summary.health_score is not none %}
 <div class="columns">
   <section class="card">

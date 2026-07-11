@@ -16,8 +16,8 @@ snapshot, history records, configuration presence); nothing is duplicated.
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from dataclasses import dataclass
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, replace as dataclass_replace
 
 from .change_requests import change_type
 from .confidence import assess_confidence
@@ -42,8 +42,9 @@ from .models import (
     SEVERITY_HIGH,
     SEVERITY_LOW,
 )
-from .recommendations import recommend
+from .recommendations import advise
 from .redundancy import RedundancyAssessment
+from .risk import estimate_risk
 from .rollback import estimate_rollback
 
 
@@ -81,11 +82,17 @@ def predict(
     history_available: bool = False,
     configuration_captured: bool = False,
     fresh: bool = True,
+    health_score: int | None = None,
+    historically_unstable: bool = False,
+    device_sites: Mapping[str, str] | None = None,
 ) -> Prediction:
     """Run the deterministic prediction pipeline for one change request.
 
     ``graph`` may be injected pre-enriched (service/application nodes from
     future builders); by default it is built from the topology snapshot.
+    ``health_score`` (current enterprise intelligence), ``historically_
+    unstable`` (target instability from history), and ``device_sites``
+    (hostname -> site label) enrich risk and blast radius when available.
     """
 
     resolved_boundary = boundary or Boundary()
@@ -138,12 +145,14 @@ def predict(
             f"{request.subject} was not found in the discovered topology"
         )
     if critical_paths:
+        # No alternate is KNOWN — and absence cannot be verified from
+        # discovery alone, so redundancy is unknown, never assumed.
         redundancy = RedundancyAssessment(
-            redundant=False,
+            redundant=None,
             alternate_path_exists=False,
             detail=(
-                f"{len(critical_paths)} forwarding path(s) have no alternate "
-                "route without the changed element"
+                f"{len(critical_paths)} forwarding path(s) have no known "
+                "alternate route; redundancy is unknown, not assumed"
             ),
         )
     elif evaluation.target_node_id is not None and _carries_links(
@@ -187,12 +196,64 @@ def predict(
     rollback = estimate_rollback(
         request, configuration_captured=configuration_captured
     )
-    recommendations = recommend(
+
+    # Enrich blast radius: affected sites and the projected health impact
+    # (the intelligence-engine weights applied to the predicted state).
+    touches_links = evaluation.target_node_id is not None and _carries_links(
+        dependency_graph, evaluation.target_node_id, request.target_device
+    )
+    sites = ()
+    if device_sites:
+        sites = tuple(
+            sorted(
+                {
+                    str(device_sites[name])
+                    for name in blast_radius.affected_devices
+                    if name in device_sites
+                }
+            )
+        )
+    health_impact = -(8 if touches_links else 0) - 6 * len(
+        blast_radius.affected_devices
+    )
+    blast_radius = dataclass_replace(
+        blast_radius,
+        affected_sites=sites,
+        attributes={
+            **dict(blast_radius.attributes),
+            "estimated_health_impact": health_impact,
+        },
+    )
+
+    risk = estimate_risk(
+        critical_path_count=len(critical_paths),
+        affected_device_count=len(blast_radius.affected_devices),
+        carries_links=touches_links,
+        redundancy_verified=redundancy.redundant,
+        health_score=health_score,
+        historically_unstable=historically_unstable,
+        confidence_band=confidence.band,
+    )
+    advice = advise(
+        risk=risk,
         blast_radius=blast_radius,
         critical_paths=critical_paths,
         redundancy=redundancy,
         rollback=rollback,
         subject=request.subject,
+        target_known=evaluation.target_node_id is not None,
+        touches_links=touches_links,
+    )
+    explanation = _explain(
+        request=request,
+        outcomes=evaluation.outcomes,
+        blast_radius=blast_radius,
+        critical_paths=critical_paths,
+        redundancy=redundancy,
+        risk=risk,
+        confidence=confidence,
+        snapshot=snapshot,
+        history_available=history_available,
     )
     spec = change_type(request.change_type)
     return Prediction(
@@ -207,9 +268,9 @@ def predict(
         rollback=rollback,
         severity=severity if evaluation.target_node_id is not None else SEVERITY_LOW,
         confidence=confidence,
-        recommendations=recommendations,
+        recommendations=advice.lines(),
         unknowns=tuple(dict.fromkeys(unknowns)),  # deterministic de-dupe
-        evidence_refs=("topology_snapshot.json",) if snapshot is not None else (),
+        evidence_refs=_evidence_refs(snapshot, history_available, health_score),
         basis={
             "change_category": spec.category if spec else "unregistered",
             "snapshot_id": (
@@ -218,7 +279,80 @@ def predict(
             "graph_nodes": len(dependency_graph.nodes()),
             "graph_edges": len(dependency_graph.edges()),
         },
+        risk=risk,
+        advice=advice,
+        explanation=explanation,
     )
+
+
+def _evidence_refs(
+    snapshot: dict | None, history_available: bool, health_score: int | None
+) -> tuple[str, ...]:
+    refs: list[str] = []
+    if snapshot is not None:
+        refs.append("topology_snapshot.json")
+        refs.append("state_change_report.json")
+    if history_available:
+        refs.append("discovery history")
+    if health_score is not None:
+        refs.append("intelligence_report.json")
+    return tuple(refs)
+
+
+def _explain(
+    *,
+    request: ChangeRequest,
+    outcomes,
+    blast_radius,
+    critical_paths,
+    redundancy,
+    risk,
+    confidence,
+    snapshot,
+    history_available: bool,
+) -> tuple[str, ...]:
+    """Human-readable reasoning; every line traceable to the evidence."""
+
+    lines: list[str] = []
+    for outcome in outcomes:
+        lines.append(f"{outcome.description} ({outcome.likelihood})")
+    if blast_radius.affected_devices:
+        lines.append(
+            f"{', '.join(blast_radius.affected_devices)} would lose "
+            "connectivity [topology snapshot]."
+        )
+    if blast_radius.affected_sites:
+        lines.append(
+            "Affected site(s): " + ", ".join(blast_radius.affected_sites) + "."
+        )
+    if critical_paths:
+        lines.append(
+            f"{len(critical_paths)} known forwarding path(s) have no "
+            "alternate route without this element [topology snapshot]."
+        )
+    lines.append(f"Redundancy: {redundancy.detail}.")
+    impact = blast_radius.attributes.get("estimated_health_impact")
+    if isinstance(impact, int) and impact < 0:
+        lines.append(
+            f"Projected enterprise health impact: {impact} point(s) "
+            "[intelligence weights]."
+        )
+    lines.append(
+        f"Risk {risk.level} (score {risk.score}) from "
+        f"{len(risk.factors)} documented factor(s)."
+    )
+    evidence_bits = []
+    if snapshot is not None:
+        evidence_bits.append("topology")
+    evidence_bits.append("operational state")
+    if history_available:
+        evidence_bits.append("discovery history")
+    lines.append(
+        f"Confidence {confidence.band} ({confidence.percent}%) based on "
+        + ", ".join(evidence_bits)
+        + "."
+    )
+    return tuple(lines)
 
 
 def _carries_links(

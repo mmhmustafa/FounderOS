@@ -20,6 +20,7 @@ NAV_ITEMS = (
     ("profiles", "Profiles", "/profiles"),
     ("credentials", "Credentials", "/credentials"),
     ("topology", "Topology", "/topology"),
+    ("predict", "Predict", "/predict"),
     ("history", "History", "/history"),
     ("changes", "Changes", "/changes"),
     ("incidents", "Incidents", "/incidents"),
@@ -157,6 +158,66 @@ def credential_set_rows(sets) -> list[dict[str, Any]]:
             }
         )
     return rows
+
+
+def prediction_targets(snapshot: dict | None) -> list[dict[str, Any]]:
+    """Devices with their discovered interfaces as labeled dropdown options.
+
+    Option values are always the canonical Atlas interface name; labels add
+    admin/protocol status, IP address, description, and the connected
+    neighbor when the snapshot knows them.
+    """
+
+    if not isinstance(snapshot, dict):
+        return []
+    neighbor_by_port: dict[tuple[str, str], str] = {}
+    hostname_by_id = {
+        str(device.get("device_id")): str(device.get("hostname"))
+        for device in snapshot.get("devices") or ()
+        if isinstance(device, dict)
+    }
+    for edge in snapshot.get("edges") or ():
+        if not isinstance(edge, dict):
+            continue
+        local = hostname_by_id.get(
+            str(edge.get("local_device_id")), str(edge.get("local_device_id"))
+        )
+        key = (local.casefold(), str(edge.get("local_interface") or "").casefold())
+        neighbor_by_port.setdefault(key, str(edge.get("remote_hostname")))
+    targets: list[dict[str, Any]] = []
+    for device in snapshot.get("devices") or ():
+        if not isinstance(device, dict):
+            continue
+        hostname = str(device.get("hostname") or "")
+        options: list[dict[str, str]] = []
+        for interface in device.get("interfaces") or ():
+            if not isinstance(interface, dict):
+                continue
+            name = str(interface.get("name") or "")
+            if not name:
+                continue
+            status = str(interface.get("status") or "?")
+            protocol = str(interface.get("protocol_status") or "?")
+            parts = [name, f"{status}/{protocol}"]
+            ip = interface.get("ip_address")
+            if ip and str(ip).casefold() not in ("unassigned", "none"):
+                parts.append(str(ip))
+            description = interface.get("description")
+            if description:
+                parts.append(str(description))
+            neighbor = neighbor_by_port.get((hostname.casefold(), name.casefold()))
+            if neighbor:
+                parts.append(f"connected to {neighbor}")
+            options.append({"name": name, "label": " — ".join(parts)})
+        targets.append(
+            {
+                "hostname": hostname,
+                "interfaces": options,
+                "interface_names": ", ".join(option["name"] for option in options),
+            }
+        )
+    targets.sort(key=lambda item: item["hostname"].casefold())
+    return targets
 
 
 def device_inventory(scoped_snapshots) -> list[dict[str, Any]]:

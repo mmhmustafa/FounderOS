@@ -21,5 +21,17 @@ for the full design.
   first evaluators (shutdown-interface, reboot-device). Unmodeled change
   types predict with explicit unknowns and low confidence — never guesses.
 
-No GUI in this PR (deliberate: no placeholder cruft); the prediction API
-is service-level and fully tested. No AI, no LLM, no randomness.
+PR-036B implemented the first vertical slice on this architecture:
+- `risk.py` — Low/Medium/High/Critical from documented, auditable factors
+  (unknown redundancy is a risk; verified redundancy reduces it).
+- `recommendations.py` — a structured `Advice` ladder: CAB approval /
+  investigate redundancy / maintenance window / fresh discovery / proceed,
+  always with reasons.
+- `service.py` — `predict_change()` over a scope's real artifacts
+  (snapshot, history freshness, target instability, captured config,
+  intelligence health, site catalog) + CAB-ready JSON/markdown reports.
+- GUI: the Predict page and the Latest Prediction dashboard panel.
+
+Only interface shutdown (and reboot at architecture level) is modeled;
+redundancy is topology-layer (unknowns stated, never assumed). No AI, no
+LLM, no randomness.

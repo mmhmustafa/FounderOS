@@ -49,6 +49,10 @@ class ChangeRequest:
     requested_at: str | None = None
     profile_id: str | None = None
     parameters: dict[str, Any] = field(default_factory=dict)
+    # Change-management context (PR-036B) — optional, never required.
+    reason: str | None = None
+    maintenance_window: str | None = None
+    requester: str | None = None
 
     def __post_init__(self) -> None:
         for name in ("request_id", "change_type", "target_device"):
@@ -72,6 +76,9 @@ class ChangeRequest:
             "requested_at": self.requested_at,
             "profile_id": self.profile_id,
             "parameters": dict(self.parameters),
+            "reason": self.reason,
+            "maintenance_window": self.maintenance_window,
+            "requester": self.requester,
         }
 
     @classmethod
@@ -85,6 +92,9 @@ class ChangeRequest:
             requested_at=value.get("requested_at"),
             profile_id=value.get("profile_id"),
             parameters=dict(value.get("parameters") or {}),
+            reason=value.get("reason"),
+            maintenance_window=value.get("maintenance_window"),
+            requester=value.get("requester"),
         )
 
 
@@ -181,6 +191,11 @@ class Prediction:
     unknowns: tuple[str, ...] = ()        # what Atlas cannot see (stated!)
     evidence_refs: tuple[str, ...] = ()   # artifacts this rests on
     basis: dict[str, Any] = field(default_factory=dict)
+    # PR-036B vertical slice: documented risk, structured advice, and a
+    # human-readable explanation that cites its evidence.
+    risk: Any = None                      # risk.RiskAssessment
+    advice: Any = None                    # recommendations.Advice
+    explanation: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -201,4 +216,7 @@ class Prediction:
             "unknowns": list(self.unknowns),
             "evidence_refs": list(self.evidence_refs),
             "basis": dict(self.basis),
+            "risk": self.risk.to_dict() if self.risk is not None else None,
+            "advice": self.advice.to_dict() if self.advice is not None else None,
+            "explanation": list(self.explanation),
         }

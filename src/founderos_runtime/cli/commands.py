@@ -1501,6 +1501,7 @@ def _regenerate_dashboard(
             intelligence_report_md=destination.parent / "intelligence_report.md",
             root_cause_report=destination.parent / "root_cause_report.json",
             root_cause_report_md=destination.parent / "root_cause_report.md",
+            prediction_report=destination.parent / "prediction_report.json",
             link_base=destination.parent,
         )
         destination.write_text(DashboardRenderer(summary).render(), encoding="utf-8")

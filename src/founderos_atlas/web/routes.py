@@ -14,6 +14,7 @@ comparing one network against another.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 
 from founderos_atlas.credentials import (
@@ -59,6 +60,7 @@ from .models import (
     enterprise_device_rows,
     history_rows,
     load_json,
+    prediction_targets,
     profile_row,
 )
 
@@ -189,6 +191,7 @@ def register_routes(app) -> None:
             intelligence_report_md=out / "intelligence_report.md",
             root_cause_report=out / "root_cause_report.json",
             root_cause_report_md=out / "root_cause_report.md",
+            prediction_report=out / "prediction_report.json",
             link_base=out,
         )
 
@@ -593,6 +596,128 @@ def register_routes(app) -> None:
             artifact_prefix=artifact_prefix(scope),
             **context,
         )
+
+    # -- Prediction (PR-036B: what happens if I make this change?) -----------
+
+    @app.route("/predict")
+    def predict_page():
+        context, scopes, scope_id = scoped_context("predict")
+        if scope_id == GLOBAL_SCOPE_ID:
+            return render_template(
+                "predict.html",
+                needs_scope=True,
+                devices=[],
+                prediction=None,
+                **context,
+            )
+        scope = scopes[scope_id]
+        # Always the LATEST successful snapshot of the selected scope.
+        snapshot = load_json(scope.snapshot_path)
+        devices = prediction_targets(snapshot)
+        prediction = load_json(scope.output_dir / "prediction_report.json")
+        return render_template(
+            "predict.html",
+            needs_scope=False,
+            devices=devices,
+            prediction=prediction,
+            artifact_prefix=artifact_prefix(scope),
+            **context,
+        )
+
+    @app.route("/predict/run", methods=["POST"])
+    def predict_run():
+        from founderos_atlas.prediction import (
+            ChangeRequest,
+            predict_change,
+            render_prediction_json,
+            render_prediction_markdown,
+        )
+        from founderos_atlas.sites import SiteCatalogRepository
+
+        scopes = known_scopes()
+        scope_id = active_scope_id(scopes)
+        if scope_id == GLOBAL_SCOPE_ID:
+            flash("Select a specific network scope to run a prediction.", "error")
+            return redirect(url_for("predict_page"))
+        scope = scopes[scope_id]
+        device = request.form.get("device", "").strip()
+        interface = request.form.get("interface", "").strip()
+        if not device or not interface:
+            flash("A device and an interface are required.", "error")
+            return redirect(url_for("predict_page"))
+        # Server-side validation against the scope's LATEST snapshot —
+        # client-side selection is a convenience, never the authority.
+        from founderos_atlas.prediction import resolve_interface
+
+        snapshot = load_json(scope.snapshot_path) or {}
+        device_entry = next(
+            (
+                entry
+                for entry in snapshot.get("devices") or ()
+                if isinstance(entry, dict)
+                and str(entry.get("hostname") or "").casefold() == device.casefold()
+            ),
+            None,
+        )
+        if device_entry is None:
+            flash(
+                f"{device} is not in {scope.label}'s latest discovery. "
+                "Run discovery first.",
+                "error",
+            )
+            return redirect(url_for("predict_page"))
+        device = str(device_entry.get("hostname"))  # canonical casing
+        inventory = tuple(
+            str(item.get("name"))
+            for item in device_entry.get("interfaces") or ()
+            if isinstance(item, dict) and item.get("name")
+        )
+        if not inventory:
+            flash(
+                "No discovered interfaces are available. Run discovery first.",
+                "error",
+            )
+            return redirect(url_for("predict_page"))
+        canonical, problem = resolve_interface(interface, inventory)
+        if canonical is None:
+            flash(
+                f"Interface not accepted for {device}: {problem}.", "error"
+            )
+            return redirect(url_for("predict_page"))
+        interface = canonical
+        clock = cfg("ATLAS_CLOCK")
+        generated_at = (
+            clock() if clock else datetime.now(timezone.utc)
+        ).isoformat(timespec="seconds")
+        change = ChangeRequest(
+            request_id=f"gui-{device}-{interface}".replace(" ", "-"),
+            change_type="shutdown-interface",
+            target_device=device,
+            target_object=interface,
+            requested_at=generated_at,
+            profile_id=scope.scope_id,
+            reason=(request.form.get("reason", "").strip() or None),
+            maintenance_window=(
+                request.form.get("maintenance_window", "").strip() or None
+            ),
+            requester=(request.form.get("requester", "").strip() or None),
+        )
+        prediction = predict_change(
+            change,
+            output_dir=scope.output_dir,
+            history_root=scope.history_root,
+            generated_at=generated_at,
+            site_catalog=SiteCatalogRepository(cfg("ATLAS_WORKSPACE_ROOT")).load(),
+        )
+        scope.output_dir.mkdir(parents=True, exist_ok=True)
+        (scope.output_dir / "prediction_report.json").write_text(
+            render_prediction_json(prediction), encoding="utf-8"
+        )
+        (scope.output_dir / "prediction_report.md").write_text(
+            render_prediction_markdown(prediction), encoding="utf-8"
+        )
+        flash("Prediction generated.", "success")
+        return redirect(url_for("predict_page"))
 
     # -- Incidents ----------------------------------------------------------
 

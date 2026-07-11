@@ -568,6 +568,30 @@ history):
   discovery's stored evidence and reproduces the stored explanation byte
   for byte — "what happened yesterday" is a query, not a memory.
 
+## Predictive Change Intelligence (PR-036B)
+
+Ask Atlas **"what happens if I make this change?"** before touching the
+network. The **Predict** page takes a proposed interface shutdown (device,
+interface, optional reason / maintenance window / requester) and answers
+deterministically from the network's own evidence:
+
+- predicted outcomes with likelihoods (expected / probable / possible);
+- **blast radius** — devices, interfaces, sites that lose connectivity,
+  plus the projected enterprise-health impact;
+- **operational risk** (Low/Medium/High/Critical) from documented factors
+  a CAB reviewer can add up — broken forwarding paths, unknown redundancy
+  (**never assumed**), current enterprise health, historical instability;
+- a **recommendation with the WHY**: CAB approval / investigate redundancy
+  first / maintenance window / fresh discovery / proceed;
+- **rollback**: complexity, prerequisites, honest irreversibility;
+- **confidence** that grows with evidence and never reaches 100%, and an
+  explicit list of what Atlas cannot see.
+
+The dashboard shows the latest prediction; the CAB-ready report lives in
+`prediction_report.md` per network. Only interface shutdown is modeled in
+this slice — other change types are registered architecture for future
+PRs (see `ARCHITECTURE.md`).
+
 ## Next Step
 
 Extract a reusable deterministic Topology Change Set contract for richer operational journeys before considering persistence or live transport.

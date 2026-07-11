@@ -114,6 +114,40 @@ history records, configuration presence, enterprise intelligence — as
 inputs; it re-implements none of it. Predictions serialize to plain JSON
 like every other Atlas artifact.
 
+### Implemented vertical slice (PR-036B)
+
+Interface-shutdown prediction is fully implemented end to end:
+
+- `ChangeRequest` carries change-management context (reason, maintenance
+  window, requester);
+- **risk engine** (`prediction/risk.py`): Low/Medium/High/Critical from
+  documented, auditable factors — broken forwarding paths (+25), devices
+  losing connectivity (+5 each, cap +15), production links (+5), unknown
+  redundancy (+10 — never assumed), verified redundancy (−10), degraded
+  enterprise health (+5/+10), historical target instability (+10), low
+  prediction confidence (+5); levels at 15/30/50;
+- **advice ladder** (`prediction/recommendations.py`): critical or broken
+  paths → *High Risk — CAB approval recommended*; high with unknown
+  redundancy → *Investigate redundancy first*; medium or touching
+  production links → *Proceed during a maintenance window*; missing target
+  → *Run a fresh discovery first*; else *Proceed* — always with reasons;
+- **explanation**: every prediction narrates its reasoning, cites the
+  evidence artifacts, projects the enterprise-health impact using the
+  intelligence weights, and states what Atlas cannot see;
+- **service API** (`prediction/service.py`): `predict_change()` gathers a
+  scope's real evidence (snapshot, history freshness, target instability,
+  captured configuration, intelligence health, site catalog) and renders
+  CAB-ready JSON/markdown reports;
+- **GUI**: the Predict page (device picker from the scope's topology,
+  optional reason/window/requester) and a Latest Prediction dashboard
+  panel; reports stored per scope (`prediction_report.json`/`.md`).
+
+Current limitations (honest by design): only `shutdown-interface` (and
+`reboot-device` at architecture level) is modeled; redundancy is
+topology-layer only (routing/HSRP/LACP unknown → stated as unknown);
+services/applications/users appear in blast radii only when future
+builders add them; predictions are on-demand and not archived in history.
+
 ### Future roadmap (later PRs; no redesign required)
 
 1. Configuration-aware evaluators (VLAN/route/ACL simulation from parsed

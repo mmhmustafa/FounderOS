@@ -65,6 +65,12 @@ class DashboardSummary:
     root_cause_band: str | None = None
     root_cause_percent: int | None = None
     root_cause_next_step: str | None = None
+    # Latest change prediction (PR-036B), when one has been run.
+    prediction_change: str | None = None
+    prediction_risk: str | None = None
+    prediction_confidence: str | None = None
+    prediction_action: str | None = None
+    prediction_blast: str | None = None
 
     @property
     def has_confident_root_cause(self) -> bool:
@@ -91,6 +97,7 @@ def build_dashboard_summary(
     intelligence_report_md: str | Path = "intelligence_report.md",
     root_cause_report: str | Path = "root_cause_report.json",
     root_cause_report_md: str | Path = "root_cause_report.md",
+    prediction_report: str | Path = "prediction_report.json",
     link_base: str | Path = ".",
 ) -> DashboardSummary:
     snapshot = _load_json(snapshot_path)
@@ -137,6 +144,7 @@ def build_dashboard_summary(
     incident_investigation = _incident_investigation(_load_json(incident_report))
     intelligence = _intelligence_summary(_load_json(intelligence_report))
     root_cause = _root_cause_summary(_load_json(root_cause_report))
+    prediction = _prediction_summary(_load_json(prediction_report))
 
     status, status_detail = _network_status(
         snapshot, change_count, severity_counts, snapshot_warnings, failed_hosts,
@@ -185,6 +193,7 @@ def build_dashboard_summary(
         actions=actions,
         **intelligence,
         **root_cause,
+        **prediction,
     )
 
 
@@ -448,6 +457,37 @@ def _root_cause_summary(report: dict[str, Any] | None) -> dict[str, Any]:
             else None
         ),
         "root_cause_next_step": str(primary.get("next_step") or ""),
+    }
+
+
+def _prediction_summary(report: dict[str, Any] | None) -> dict[str, Any]:
+    """The latest change prediction for the dashboard panel, or empties."""
+
+    if report is None:
+        return {}
+    change = report.get("change_request") or {}
+    risk = report.get("risk") or {}
+    confidence = report.get("confidence") or {}
+    advice = report.get("advice") or {}
+    blast = report.get("blast_radius") or {}
+    if not change.get("change_type"):
+        return {}
+    subject = " ".join(
+        part
+        for part in (
+            str(change.get("target_device") or ""),
+            str(change.get("target_object") or ""),
+        )
+        if part
+    )
+    return {
+        "prediction_change": f"{change['change_type']}: {subject}",
+        "prediction_risk": str(risk.get("level") or "unknown"),
+        "prediction_confidence": (
+            f"{confidence.get('band', 'unknown')} ({confidence.get('percent', '?')}%)"
+        ),
+        "prediction_action": str(advice.get("action") or ""),
+        "prediction_blast": str(blast.get("summary") or ""),
     }
 
 

@@ -136,4 +136,41 @@
     var status = panel.dataset.status;
     if (status === "queued" || status === "running") poll(panel.dataset.jobId);
   }
+
+  // Predict page: the interface dropdown only offers the selected device's
+  // discovered interfaces (labels keep the device prefix hidden once
+  // filtered). The server re-validates the pairing regardless.
+  var predictDevice = byId("predict-device");
+  var predictInterface = byId("predict-interface");
+  if (predictDevice && predictInterface) {
+    var filterInterfaces = function () {
+      var device = predictDevice.value;
+      var visible = 0;
+      Array.prototype.forEach.call(predictInterface.options, function (option) {
+        if (!option.dataset.device) {
+          option.hidden = true;  // the "select a device first" placeholder
+          return;
+        }
+        var matches = option.dataset.device === device;
+        option.hidden = !matches;
+        option.disabled = !matches;
+        if (matches) {
+          visible += 1;
+          // Drop the device prefix once the device is chosen.
+          if (!option.dataset.shortLabel) {
+            option.dataset.shortLabel = option.textContent.replace(
+              option.dataset.device + " — ", ""
+            );
+          }
+          option.textContent = option.dataset.shortLabel;
+        }
+      });
+      predictInterface.value = "";
+      var note = byId("predict-no-interfaces");
+      if (note) note.hidden = visible > 0;
+      predictInterface.disabled = visible === 0;
+    };
+    predictDevice.addEventListener("change", filterInterfaces);
+    if (predictDevice.value) filterInterfaces();
+  }
 })();

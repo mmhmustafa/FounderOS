@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block title %}Predict{% endblock %}
+{% block content %}
+<h1>Predict a Change — {{ active_scope_label }}</h1>
+
+{% if needs_scope %}
+<p class="muted">Select a specific network in the Network selector above — predictions run against one network's evidence.</p>
+{% else %}
+
+<section class="card">
+  <h2>Proposed change: shutdown interface</h2>
+  <form class="form" method="post" action="/predict/run">
+    <div class="form-row">
+      <label>Device
+        <select name="device" id="predict-device" required>
+          <option value="" selected disabled>— Select a device —</option>
+          {% for d in devices %}
+          <option value="{{ d.hostname }}">{{ d.hostname }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Interface
+        <select name="interface" id="predict-interface" required>
+          <option value="" selected disabled>— Select a device first —</option>
+          {% for d in devices %}{% for i in d.interfaces %}
+          <option value="{{ i.name }}" data-device="{{ d.hostname }}">{{ d.hostname }} — {{ i.label }}</option>
+          {% endfor %}{% endfor %}
+        </select>
+      </label>
+    </div>
+    <p class="muted" id="predict-no-interfaces" hidden>No discovered interfaces are available. Run discovery first.</p>
+    <label>Reason (optional)
+      <input name="reason" placeholder="Port migration to new access switch">
+    </label>
+    <div class="form-row">
+      <label>Maintenance window (optional)
+        <input name="maintenance_window" placeholder="Sat 02:00-04:00">
+      </label>
+      <label>Requester (optional)
+        <input name="requester" placeholder="netops">
+      </label>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-primary" type="submit">Predict Impact</button>
+    </div>
+    <p class="muted">Deterministic and evidence-based: Atlas predicts from this network's discovered topology, history, and intelligence — and says Unknown when evidence is missing. Other change types are future work.</p>
+  </form>
+  {% if devices %}
+  <details><summary class="muted">Known devices and interfaces</summary>
+    <table class="grid">
+      <thead><tr><th>Device</th><th>Interfaces</th></tr></thead>
+      <tbody>
+        {% for d in devices %}<tr><td>{{ d.hostname }}</td><td>{{ d.interface_names or '—' }}</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </details>
+  {% else %}
+  <p class="muted">No topology yet — <a href="/discovery">run a discovery</a> first.</p>
+  {% endif %}
+</section>
+
+{% if prediction %}
+<section class="card root-cause">
+  <h2>Prediction — {{ prediction.change_request.change_type }} {{ prediction.change_request.target_device }} {{ prediction.change_request.target_object }}</h2>
+  <div class="job-head">
+    <span class="badge job-badge job-badge-{{ 'failed' if prediction.risk.level in ('high', 'critical') else 'completed' }}">Risk: {{ prediction.risk.level | title }}</span>
+    <span>Confidence: {{ prediction.confidence.band | title }} ({{ prediction.confidence.percent }}%)</span>
+  </div>
+  <p><strong>{{ prediction.advice.action }}</strong></p>
+  <h2>Blast Radius</h2>
+  <ul>
+    <li>{{ prediction.blast_radius.summary }}</li>
+    {% if prediction.blast_radius.affected_devices %}
+    <li>Devices: {{ prediction.blast_radius.affected_devices | join(', ') }}</li>
+    {% endif %}
+    {% if prediction.blast_radius.affected_sites %}
+    <li>Sites: {{ prediction.blast_radius.affected_sites | join(', ') }}</li>
+    {% endif %}
+    {% if prediction.blast_radius.attributes.estimated_health_impact is defined and prediction.blast_radius.attributes.estimated_health_impact < 0 %}
+    <li>Projected enterprise health impact: {{ prediction.blast_radius.attributes.estimated_health_impact }} point(s)</li>
+    {% endif %}
+  </ul>
+  <h2>Why</h2>
+  <ol>
+    {% for line in prediction.explanation %}<li>{{ line }}</li>{% endfor %}
+  </ol>
+  <h2>Recommendation</h2>
+  <ul>
+    {% for reason in prediction.advice.reasons %}<li>{{ reason }}</li>{% endfor %}
+  </ul>
+  {% if prediction.unknowns %}
+  <h2>What Atlas Cannot See</h2>
+  <ul>
+    {% for item in prediction.unknowns %}<li>{{ item }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+  <a class="btn btn-sm" href="/artifacts/{{ artifact_prefix or '' }}prediction_report.md">Open full prediction</a>
+</section>
+{% endif %}
+{% endif %}
+{% endblock %}

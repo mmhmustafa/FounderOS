@@ -33,6 +33,7 @@ from .dependency import (
     interface_node_id,
 )
 from .impact import BlastRadius, estimate_blast_radius
+from .interfaces import resolve_interface
 from .models import (
     Boundary,
     ChangeRequest,
@@ -41,8 +42,15 @@ from .models import (
     Prediction,
     PredictedOutcome,
 )
+from .recommendations import Advice, advise
 from .redundancy import RedundancyAssessment, assess_redundancy
+from .risk import RiskAssessment, RiskFactor, estimate_risk
 from .rollback import RollbackEstimate, estimate_rollback
+from .service import (
+    predict_change,
+    render_prediction_json,
+    render_prediction_markdown,
+)
 from .simulator import (
     Evaluation,
     predict,
@@ -51,6 +59,7 @@ from .simulator import (
 )
 
 __all__ = [
+    "Advice",
     "BlastRadius",
     "Boundary",
     "ChangeRequest",
@@ -65,7 +74,10 @@ __all__ = [
     "Prediction",
     "PredictedOutcome",
     "RedundancyAssessment",
+    "RiskAssessment",
+    "RiskFactor",
     "RollbackEstimate",
+    "advise",
     "affected_critical_paths",
     "assess_confidence",
     "assess_redundancy",
@@ -75,9 +87,14 @@ __all__ = [
     "estimate_blast_radius",
     "estimate_rollback",
     "interface_node_id",
+    "estimate_risk",
     "known_change_types",
     "predict",
+    "predict_change",
     "register_change_type",
     "register_evaluator",
     "registered_evaluators",
+    "render_prediction_json",
+    "render_prediction_markdown",
+    "resolve_interface",
 ]

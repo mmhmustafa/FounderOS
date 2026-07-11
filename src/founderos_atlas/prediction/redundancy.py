@@ -47,11 +47,13 @@ def assess_redundancy(
             alternate_path_exists=True,
             detail="an alternate topology path exists without the changed element",
         )
+    # Atlas can verify redundancy, but it cannot verify its ABSENCE —
+    # undiscovered links may exist. Never assume; say Unknown.
     return RedundancyAssessment(
-        redundant=False,
+        redundant=None,
         alternate_path_exists=False,
         detail=(
-            "no alternate path is visible in the discovered topology; "
-            "undiscovered links may exist"
+            "no alternate path is known in the discovered topology; "
+            "redundancy is unknown, not assumed"
         ),
     )
