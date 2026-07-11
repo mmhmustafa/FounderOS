@@ -173,4 +173,183 @@
     predictDevice.addEventListener("change", filterInterfaces);
     if (predictDevice.value) filterInterfaces();
   }
+
+  // -- Universal search (PR-038) --------------------------------------------
+  // Ctrl+K opens the overlay; results come from /api/search — deterministic,
+  // evidence-based, grouped, ranked server-side. This code only renders.
+  var searchOverlay = byId("atlas-search");
+  var searchInput = byId("atlas-search-input");
+  if (searchOverlay && searchInput) {
+    var DEBOUNCE_MS = 150;
+    var RECENT_KEY = "atlas-recent-searches";
+    var searchTimer = null;
+    var activeIndex = -1;
+    var resultLinks = [];
+
+    var openSearch = function () {
+      searchOverlay.hidden = false;
+      searchInput.value = "";
+      renderResults(null);
+      renderRecent();
+      searchInput.focus();
+    };
+    var closeSearch = function () {
+      searchOverlay.hidden = true;
+      activeIndex = -1;
+    };
+
+    var recentSearches = function () {
+      try {
+        var raw = window.localStorage.getItem(RECENT_KEY);
+        var list = raw ? JSON.parse(raw) : [];
+        return Array.isArray(list) ? list : [];
+      } catch (error) { return []; }
+    };
+    var rememberSearch = function (query) {
+      if (!query) return;
+      try {
+        var list = recentSearches().filter(function (item) { return item !== query; });
+        list.unshift(query);
+        window.localStorage.setItem(RECENT_KEY, JSON.stringify(list.slice(0, 8)));
+      } catch (error) { /* private mode: recent searches are optional */ }
+    };
+    var renderRecent = function () {
+      var container = byId("atlas-search-recent");
+      var list = byId("atlas-search-recent-list");
+      if (!container || !list) return;
+      var items = recentSearches();
+      container.hidden = items.length === 0 || searchInput.value.trim() !== "";
+      list.textContent = "";
+      items.forEach(function (query) {
+        var item = document.createElement("li");
+        var link = document.createElement("a");
+        link.href = "#";
+        link.textContent = query;
+        link.addEventListener("click", function (event) {
+          event.preventDefault();
+          searchInput.value = query;
+          runSearch(query);
+        });
+        item.appendChild(link);
+        list.appendChild(item);
+      });
+    };
+
+    var highlight = function (text, needle) {
+      var target = document.createDocumentFragment();
+      var lower = text.toLowerCase();
+      var index = needle ? lower.indexOf(needle.toLowerCase()) : -1;
+      if (index < 0) {
+        target.appendChild(document.createTextNode(text));
+        return target;
+      }
+      target.appendChild(document.createTextNode(text.slice(0, index)));
+      var mark = document.createElement("mark");
+      mark.textContent = text.slice(index, index + needle.length);
+      target.appendChild(mark);
+      target.appendChild(document.createTextNode(text.slice(index + needle.length)));
+      return target;
+    };
+
+    var renderResults = function (payload) {
+      var container = byId("atlas-search-results");
+      var status = byId("atlas-search-status");
+      if (!container) return;
+      container.textContent = "";
+      resultLinks = [];
+      activeIndex = -1;
+      if (!payload) { if (status) status.hidden = true; return; }
+      if (status) {
+        status.hidden = false;
+        status.textContent = payload.total === 0
+          ? "No evidence matches “" + payload.query + "”. Atlas never invents results — try a hostname, IP, interface, site, or serial."
+          : payload.total + " result(s) across " + payload.groups.length + " group(s).";
+      }
+      payload.groups.forEach(function (group) {
+        var head = document.createElement("div");
+        head.className = "search-group-head";
+        head.textContent = group.label + " (" + group.count + ")";
+        container.appendChild(head);
+        group.results.forEach(function (result) {
+          var link = document.createElement("a");
+          link.className = "search-result";
+          link.href = result.href;
+          var title = document.createElement("div");
+          title.className = "search-result-title";
+          title.appendChild(highlight(result.title, payload.query));
+          var meta = document.createElement("div");
+          meta.className = "search-result-meta muted";
+          var bits = [result.subtitle];
+          if (result.match && result.match.field) {
+            bits.push("matched " + result.match.field + " (" + result.match.rank + ")");
+          }
+          if (result.detail && result.detail.confidence_percent) {
+            bits.push("identity " + result.detail.confidence_percent + "%");
+          }
+          if (result.detail && result.detail.neighbor) {
+            bits.push("neighbor " + result.detail.neighbor);
+          }
+          meta.textContent = bits.filter(Boolean).join(" · ");
+          link.appendChild(title);
+          link.appendChild(meta);
+          link.addEventListener("click", function () { rememberSearch(payload.query); });
+          container.appendChild(link);
+          resultLinks.push(link);
+        });
+      });
+    };
+
+    var runSearch = function (query) {
+      var status = byId("atlas-search-status");
+      renderRecent();
+      if (!query) { renderResults(null); return; }
+      if (status) { status.hidden = false; status.textContent = "Searching…"; }
+      fetch("/api/search?q=" + encodeURIComponent(query))
+        .then(function (response) { return response.json(); })
+        .then(function (payload) {
+          if (searchInput.value.trim() === payload.query) renderResults(payload);
+        })
+        .catch(function () {
+          if (status) { status.hidden = false; status.textContent = "Search unavailable — is the Atlas server still running?"; }
+        });
+    };
+
+    searchInput.addEventListener("input", function () {
+      window.clearTimeout(searchTimer);
+      var query = searchInput.value.trim();
+      searchTimer = window.setTimeout(function () { runSearch(query); }, DEBOUNCE_MS);
+    });
+
+    var setActive = function (index) {
+      if (!resultLinks.length) return;
+      if (activeIndex >= 0) resultLinks[activeIndex].classList.remove("active");
+      activeIndex = (index + resultLinks.length) % resultLinks.length;
+      resultLinks[activeIndex].classList.add("active");
+      resultLinks[activeIndex].scrollIntoView({ block: "nearest" });
+    };
+
+    searchInput.addEventListener("keydown", function (event) {
+      if (event.key === "ArrowDown") { event.preventDefault(); setActive(activeIndex + 1); }
+      else if (event.key === "ArrowUp") { event.preventDefault(); setActive(activeIndex - 1); }
+      else if (event.key === "Enter" && activeIndex >= 0 && resultLinks[activeIndex]) {
+        event.preventDefault();
+        rememberSearch(searchInput.value.trim());
+        window.location.href = resultLinks[activeIndex].href;
+      }
+    });
+
+    document.addEventListener("keydown", function (event) {
+      if ((event.ctrlKey || event.metaKey) && (event.key === "k" || event.key === "K")) {
+        event.preventDefault();
+        if (searchOverlay.hidden) openSearch(); else closeSearch();
+      } else if (event.key === "Escape" && !searchOverlay.hidden) {
+        closeSearch();
+      }
+    });
+    var trigger = byId("atlas-search-trigger");
+    if (trigger) trigger.addEventListener("click", openSearch);
+    searchOverlay.addEventListener("click", function (event) {
+      if (event.target === searchOverlay) closeSearch();
+    });
+  }
 })();

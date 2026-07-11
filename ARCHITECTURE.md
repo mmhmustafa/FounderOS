@@ -24,6 +24,7 @@ recommendations).
 | **Predict** | **Predictive change intelligence** | `prediction/` | deterministic answers to *what happens if* |
 | **Reason** | **Path intelligence** | `path_intelligence/` | deterministic answers to *why can't A reach B* |
 | **Federate** | **Enterprise federation** | `federation/` | one canonical enterprise graph from many observation points |
+| **Find** | **Universal search** | `search/` | deterministic grouped search over everything Atlas knows |
 
 Shared invariants: per-profile scope isolation (PR-031A), explainable
 scores (every point is a named factor), banded confidence capped below
@@ -257,6 +258,59 @@ of truth.
 `search_enterprise()` · `merge_observations()` ·
 `build_enterprise_snapshot()` · `write_enterprise_artifacts()` — shared
 by GUI, CLI, future REST APIs, and the assistant.
+
+## Universal Search (PR-038, codename SEARCH)
+
+The front door to Atlas: Ctrl+K anywhere opens one deterministic search
+box over everything the evidence contains. No Elasticsearch, no fuzzy
+AI ranking, no invented objects, never a secret.
+
+### Index design
+
+A flat in-memory tuple of `SearchEntry` values (group, title, subtitle,
+href, detail, keys), built in two pure layers:
+
+- `entries_from_graph` — canonical devices (hostname, aliases,
+  management addresses, serial, enterprise id, platform, OS, site,
+  health, last seen, observation count, identity confidence),
+  canonical interfaces (with deterministic short aliases — `Gi0/1`
+  finds `GigabitEthernet0/1` — SVI-derived VLAN ids, descriptions,
+  neighbors), sites, and topology links (cross-profile and boundary
+  flags) from the UNITY Enterprise Graph.
+- `entries_from_workspace` — profiles (names, ids, seeds), credential
+  set NAMES only (no usernames, no secrets), and per-scope report
+  evidence: the latest prediction, path-investigation history, change
+  summaries, and discovery runs — including the enterprise scope's own
+  reports.
+
+**Automatic rebuilds without a daemon**: `SearchService` caches the
+index behind a deterministic fingerprint over the evidence files (every
+scope's artifacts + history run list + workspace state). Discovery,
+federation, prediction, investigation, or change updates change the
+fingerprint; the next search rebuilds. Identical evidence ⇒ identical
+index ⇒ identical results.
+
+### Ranking rules (deterministic, spec order)
+
+exact on the primary name (0) → exact on a canonical identifier
+(1: enterprise id, serial, alias, run id) → prefix (2) → partial (3);
+historical objects (predictions, investigations, changes, runs) add
++10 so live objects always rank first. Ties break on (group order,
+title, subtitle). Every hit names the field that matched and its rank
+label — the WHY of the result.
+
+### Experience
+
+Persistent topbar trigger + Ctrl+K overlay on every page: search while
+typing (150 ms debounce), grouped results with counts, highlighted
+matches, arrow/Enter/Escape keyboard navigation, recent searches
+(client-side localStorage), honest empty state ("Atlas never invents
+results"). `GET /api/search?q=` serves the same grouped JSON to the GUI,
+CLI, future REST clients, and the future Atlas Assistant
+(`search_enterprise` / `search_devices` / `search_interfaces` /
+`search_predictions`). Device hits open the new canonical **Device
+Details** page (`/devices/<enterprise_id>`): identity, merge evidence,
+observations, interfaces with neighbors, links.
 
 ## Path Intelligence (PR-037, codename FLOW)
 

@@ -12,6 +12,11 @@
       <span class="brand-name">Atlas</span>
       <span class="brand-tag">Enterprise Network Intelligence</span>
     </div>
+    <button type="button" class="search-trigger" id="atlas-search-trigger"
+            aria-label="Search the enterprise (Ctrl+K)">
+      <span>Search the enterprise…</span>
+      <kbd>Ctrl</kbd><kbd>K</kbd>
+    </button>
     {% if scope_selector %}
     <form class="scope-form" method="get" action="">
       <label class="scope-label">Network
@@ -50,6 +55,26 @@
       {% block content %}{% endblock %}
     </main>
   </div>
+
+  <div class="search-overlay" id="atlas-search" hidden>
+    <div class="search-panel" role="dialog" aria-label="Enterprise search">
+      <input type="search" id="atlas-search-input" autocomplete="off"
+             placeholder="Search devices, interfaces, IPs, sites, predictions… (Esc to close)">
+      <div class="search-status muted" id="atlas-search-status" hidden></div>
+      <div class="search-recent" id="atlas-search-recent" hidden>
+        <div class="search-group-head">Recent searches</div>
+        <ul id="atlas-search-recent-list"></ul>
+      </div>
+      <div class="search-results" id="atlas-search-results"></div>
+      <div class="search-foot muted">
+        <span><kbd>↑</kbd><kbd>↓</kbd> navigate</span>
+        <span><kbd>Enter</kbd> open</span>
+        <span><kbd>Esc</kbd> close</span>
+        <span>Deterministic, evidence-based — Atlas never invents results.</span>
+      </div>
+    </div>
+  </div>
+
   <script src="{{ url_for('static', filename='atlas.js') }}"></script>
 </body>
 </html>

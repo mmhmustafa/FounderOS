@@ -40,6 +40,7 @@ from founderos_atlas.federation import (
     write_enterprise_artifacts,
 )
 from founderos_atlas.history import HistoryRepository, generate_timeline
+from founderos_atlas.search import SearchService, search_enterprise
 from founderos_atlas.sites import SiteCatalogRepository
 from founderos_atlas.incidents import (
     IncidentArtifacts,
@@ -920,6 +921,72 @@ def register_routes(app) -> None:
             )
         flash("Path investigation complete.", "success")
         return redirect(url_for("paths_page"))
+
+    # -- Universal search (PR-038: the front door to Atlas) -------------------
+
+    search_service = SearchService()
+
+    def current_search_index():
+        """The cached index; rebuilt automatically when evidence changes
+        (discovery, federation, prediction, investigations, changes)."""
+
+        return search_service.index_for(
+            output_dir(),
+            profile_service().list_profiles(),
+            workspace_root=cfg("ATLAS_WORKSPACE_ROOT"),
+            catalog=SiteCatalogRepository(cfg("ATLAS_WORKSPACE_ROOT")).load(),
+            credential_sets=credential_service().list_sets(),
+            credential_memory=CredentialSuccessMemory(cfg("ATLAS_WORKSPACE_ROOT")),
+        )
+
+    @app.route("/api/search")
+    def api_search():
+        query = request.args.get("q", "").strip()
+        response = search_enterprise(current_search_index(), query)
+        return jsonify(response.to_dict())
+
+    @app.route("/devices/<path:enterprise_id>")
+    def device_details(enterprise_id: str):
+        context, _scopes, _scope_id = scoped_context("topology")
+        graph, _snapshot = enterprise_world()
+        device = graph.device_by_id(enterprise_id)
+        if device is None:
+            return (
+                render_template(
+                    "device.html",
+                    found=False,
+                    enterprise_id=enterprise_id,
+                    **context,
+                ),
+                404,
+            )
+        decision = graph.decision_for(device.enterprise_id)
+        interfaces = graph.interfaces.get(device.enterprise_id, ())
+        neighbor_by_port = {}
+        links = []
+        for link in graph.links:
+            if link.local_enterprise_id == device.enterprise_id:
+                links.append(link)
+                if link.local_interface:
+                    neighbor_by_port[link.local_interface.casefold()] = (
+                        link.remote_hostname
+                    )
+            elif link.remote_enterprise_id == device.enterprise_id:
+                links.append(link)
+                if link.remote_interface:
+                    neighbor_by_port[link.remote_interface.casefold()] = (
+                        link.local_hostname
+                    )
+        return render_template(
+            "device.html",
+            found=True,
+            device=device,
+            decision=decision,
+            interfaces=interfaces,
+            neighbor_by_port=neighbor_by_port,
+            links=links,
+            **context,
+        )
 
     # -- Incidents ----------------------------------------------------------
 

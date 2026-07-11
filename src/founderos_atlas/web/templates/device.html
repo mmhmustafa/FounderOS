@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}Device Details{% endblock %}
+{% block content %}
+{% if not found %}
+<h1>Device not found</h1>
+<p class="muted">No canonical enterprise device matches <code>{{ enterprise_id }}</code>. It may have been re-identified by a newer discovery — <a href="/topology?scope=all">open the enterprise inventory</a> or search again.</p>
+{% else %}
+<div class="page-head">
+  <h1>{{ device.hostname }}</h1>
+  <span class="muted">canonical enterprise device</span>
+</div>
+
+<div class="columns">
+  <section class="card">
+    <h2>Identity</h2>
+    <ul class="kv">
+      <li><span>Hostname</span><span>{{ device.hostname }}</span></li>
+      {% if device.aliases %}<li><span>Aliases</span><span>{{ device.aliases | join(', ') }}</span></li>{% endif %}
+      <li><span>Management IPs</span><span>{{ device.management_ips | join(', ') or '—' }}</span></li>
+      <li><span>Platform</span><span>{{ device.platform or '—' }}</span></li>
+      <li><span>OS version</span><span>{{ device.os_version or '—' }}</span></li>
+      <li><span>Serial number</span><span>{{ device.serial_number or '—' }}</span></li>
+      <li><span>Site</span><span>{{ device.site.label }}</span></li>
+      <li><span>Enterprise ID</span><span><code>{{ device.enterprise_id }}</code></span></li>
+      {% if device.credential_ref %}<li><span>Credential</span><span><code>{{ device.credential_ref }}</code></span></li>{% endif %}
+    </ul>
+  </section>
+
+  <section class="card">
+    <h2>Identity Evidence</h2>
+    {% if decision %}
+    <p>{{ decision.reason }}</p>
+    <ul>
+      {% for item in decision.evidence %}<li class="muted">Evidence: {{ item }}</li>{% endfor %}
+    </ul>
+    <p><strong>Identity confidence:</strong> {{ decision.confidence_band | title }} ({{ decision.confidence_percent }}%)</p>
+    {% endif %}
+    <h2>Observations</h2>
+    <ul>
+      {% for obs in device.observations %}
+      <li class="muted">Observed by {{ obs.profile_name }}{% if obs.observed_at %} at {{ obs.observed_at }}{% endif %}{% if obs.run_id %} (run {{ obs.run_id }}){% endif %}{% if obs.management_ip %} via {{ obs.management_ip }}{% endif %}</li>
+      {% endfor %}
+    </ul>
+  </section>
+</div>
+
+<section class="card" id="interfaces">
+  <h2>Interfaces</h2>
+  {% if interfaces %}
+  <table class="grid">
+    <thead><tr><th>Interface</th><th>Status</th><th>IP address</th><th>Description</th><th>Neighbor</th><th>Observed by</th></tr></thead>
+    <tbody>
+      {% for iface in interfaces %}
+      <tr>
+        <td>{{ iface.name }}</td>
+        <td>{{ iface.status or 'unknown' }}/{{ iface.protocol_status or 'unknown' }}</td>
+        <td>{{ iface.ip_address or '—' }}</td>
+        <td>{{ iface.description or '—' }}</td>
+        <td>{{ neighbor_by_port.get(iface.name | lower) or '—' }}</td>
+        <td>{{ iface.observed_by | join(', ') }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No interface table collected for this device yet.</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Links</h2>
+  {% if links %}
+  <ul>
+    {% for link in links %}
+    <li>{{ link.local_hostname }} {{ link.local_interface or '?' }} ↔ {{ link.remote_hostname }} {{ link.remote_interface or '?' }}
+      {% if link.is_boundary %}<span class="badge hop-badge hop-badge-unknown">boundary</span>{% elif link.cross_profile %}<span class="badge hop-badge hop-badge-pass">cross-profile</span>{% endif %}
+      <span class="muted">observed by {{ link.observed_by | join(', ') }}</span></li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="muted">No discovered links for this device.</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Act on this device</h2>
+  <div class="actions">
+    <a class="btn" href="/predict?scope=all">Predict a change</a>
+    <a class="btn" href="/paths?scope=all">Investigate a path</a>
+    <a class="btn" href="/topology?scope=all">Enterprise topology</a>
+  </div>
+</section>
+{% endif %}
+{% endblock %}

@@ -672,6 +672,30 @@ Federation happens after discovery and never modifies profile scopes;
 enterprise artifacts live in `.atlas/enterprise/` and are regenerated
 deterministically from profile evidence.
 
+## Universal Search (PR-038)
+
+Press **Ctrl+K** anywhere (or click the topbar search box) and search
+the entire enterprise while you type:
+
+- **Everything Atlas knows is searchable**: devices (hostname, alias,
+  management IP, serial, enterprise id, platform, OS, site), interfaces
+  (`Gi0/1` finds `GigabitEthernet0/1`; `VLAN20` finds the discovered
+  `Vlan20` SVI), sites, topology links, profiles, credential **names
+  only**, predictions, path investigations, change summaries, and
+  discovery history.
+- **Deterministic ranking, never fuzzy**: exact match → canonical
+  identity (serial, enterprise id) → prefix → partial, with historical
+  results after live objects. Every hit says which field matched.
+- **Grouped results with counts**, highlighted matches, arrow-key
+  navigation, Enter to open, Escape to close, and recent searches.
+- **Device Details**: a device hit opens its canonical page — identity
+  evidence and confidence, every observation with provenance, the
+  interface table with neighbors, and links.
+- The index is in-memory and rebuilds automatically whenever evidence
+  changes (discovery, federation, prediction, investigations, changes)
+  — no search engine to install, and the empty state is honest: Atlas
+  never invents results.
+
 ## Next Step
 
 Extract a reusable deterministic Topology Change Set contract for richer operational journeys before considering persistence or live transport.
