@@ -542,6 +542,32 @@ Everything is deterministic and rule-based — no AI. The JSON report is the
 contract a future AI layer will consume (summary, evidence, risk,
 confidence, recommendations) without recomputing anything.
 
+## Root Cause Analysis (PR-035)
+
+Atlas explains **why** — with evidence, never with AI. Every discovery
+writes `root_cause_report.json`/`.md` (profile-scoped, archived in
+history):
+
+- observed problems (failed interfaces, vanished devices, devices that
+  would not answer) each get **competing hypotheses** — configuration
+  change, physical failure, deliberate shutdown, authentication issue,
+  upstream isolation, expected maintenance — with supporting **and
+  contradicting** evidence listed;
+- **confidence is calculated, banded (very-high/high/medium/low), and
+  never 100%** — the arithmetic is documented in the report;
+- the **reasoning chain** follows the causal graph (configuration →
+  interface → protocol → topology) and cites an evidence id in every
+  sentence, so you can inspect exactly why Atlas concluded what it did;
+- correlation only ever links evidence sharing a device, an interface, or
+  a *real previous-topology adjacency* — unrelated events are never
+  stitched together;
+- **incidents automatically include the analysis**, the dashboard leads
+  with *Most Likely Root Cause* when confidence is high, and the Morning
+  Brief adds *Most Important Root Cause*;
+- **historical replay**: the same engine re-analyzes any archived
+  discovery's stored evidence and reproduces the stored explanation byte
+  for byte — "what happened yesterday" is a query, not a memory.
+
 ## Next Step
 
 Extract a reusable deterministic Topology Change Set contract for richer operational journeys before considering persistence or live transport.

@@ -20,6 +20,16 @@
   <div class="tile"><strong>Last Discovery</strong><span>{{ summary.last_discovery }}</span></div>
 </div>
 
+{% if summary.has_confident_root_cause %}
+<section class="card root-cause">
+  <h2>Most Likely Root Cause</h2>
+  <p><strong>{{ summary.root_cause_headline }}</strong></p>
+  <p class="muted">Confidence: {{ summary.root_cause_band | title }} ({{ summary.root_cause_percent }}%)</p>
+  {% if summary.root_cause_next_step %}<p>Suggested next step: {{ summary.root_cause_next_step }}</p>{% endif %}
+  <a class="btn btn-sm" href="/artifacts/{{ artifact_prefix or '' }}root_cause_report.md">Open full analysis</a>
+</section>
+{% endif %}
+
 {% if summary.health_score is not none %}
 <div class="columns">
   <section class="card">

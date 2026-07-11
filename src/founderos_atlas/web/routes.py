@@ -187,6 +187,8 @@ def register_routes(app) -> None:
             incident_report_md=out / "incident_report.md",
             intelligence_report=out / "intelligence_report.json",
             intelligence_report_md=out / "intelligence_report.md",
+            root_cause_report=out / "root_cause_report.json",
+            root_cause_report_md=out / "root_cause_report.md",
             link_base=out,
         )
 
@@ -616,10 +618,12 @@ def register_routes(app) -> None:
             )
         scope = scopes[scope_id]
         report = load_json(scope.output_dir / "incident_report.json")
+        root_cause_data = load_json(scope.output_dir / "root_cause_report.json") or {}
         return render_template(
             "incidents.html",
             global_view=False,
             report=report,
+            root_cause=root_cause_data.get("most_important"),
             artifact_prefix=artifact_prefix(scope),
             **context,
         )
@@ -657,9 +661,14 @@ def register_routes(app) -> None:
         (out / "incident_report.json").write_text(
             render_incident_report_json(report), encoding="utf-8"
         )
-        (out / "incident_report.md").write_text(
-            render_incident_report_markdown(report), encoding="utf-8"
-        )
+        incident_markdown = render_incident_report_markdown(report)
+        # Investigations automatically include the root cause analysis.
+        root_cause_data = load_json(out / "root_cause_report.json")
+        if root_cause_data:
+            from founderos_atlas.root_cause import root_cause_incident_section
+
+            incident_markdown += root_cause_incident_section(root_cause_data)
+        (out / "incident_report.md").write_text(incident_markdown, encoding="utf-8")
         flash("Incident investigation generated.", "success")
         return redirect(url_for("incidents"))
 

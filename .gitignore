@@ -33,6 +33,8 @@ deliverables/*
 /state_change_report.md
 /intelligence_report.json
 /intelligence_report.md
+/root_cause_report.json
+/root_cause_report.md
 /dashboard.html
 /incident_report.json
 /incident_report.md

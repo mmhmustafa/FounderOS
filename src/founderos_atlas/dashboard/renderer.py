@@ -72,11 +72,22 @@ class DashboardRenderer:
                 "          <li>No intelligence report yet. "
                 "Run: founderos atlas discover</li>"
             )
-        entries = [
-            f"Enterprise Health: {summary.health_score}/100",
-            f"Trend: {summary.health_trend}",
-            f"Confidence: {summary.health_confidence}",
-        ]
+        entries = []
+        if summary.has_confident_root_cause:
+            # A confident explanation beats a raw alarm.
+            entries.append(
+                f"Most Likely Root Cause ({summary.root_cause_band}, "
+                f"{summary.root_cause_percent}%): {summary.root_cause_headline}"
+            )
+            if summary.root_cause_next_step:
+                entries.append(f"Next step: {summary.root_cause_next_step}")
+        entries.extend(
+            (
+                f"Enterprise Health: {summary.health_score}/100",
+                f"Trend: {summary.health_trend}",
+                f"Confidence: {summary.health_confidence}",
+            )
+        )
         entries.extend(f"Priority: {item}" for item in summary.priority_queue[:3])
         entries.extend(
             f"Recommendation: {item}" for item in summary.top_recommendations[:3]

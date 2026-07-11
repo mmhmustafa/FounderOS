@@ -1,0 +1,129 @@
+# Atlas Architecture
+
+Atlas is an Enterprise Network Decision Platform built on the FounderOS
+runtime. It evolves through five deliberate stages:
+
+    Observe  ->  Understand  ->  Reason  ->  Predict  ->  Advise
+
+Every stage is **deterministic**: rule-based engines over collected
+evidence. No AI or LLM participates in observation, reasoning, or
+prediction; a future AI layer will only *explain* — consuming the JSON
+contracts the engines already emit (summary, evidence, risk, confidence,
+recommendations).
+
+## Engine stack (Observe -> Understand -> Reason)
+
+| Stage | Engine | Package | Output |
+|---|---|---|---|
+| Observe | Discovery (multi-hop, boundaries, multi-credential) | `discovery/`, `credentials/`, `transport/` | topology snapshots, configs, per-run history |
+| Observe | Canonical identity & enterprise topology | `identity/`, `enterprise/` | one canonical device set with provenance |
+| Understand | Change intelligence (topology / config / operational) | `change/`, `config_intelligence/`, `state/` | classified diffs per profile scope |
+| Understand | Site inference | `sites/` | evidence-based site assignments (may be Unknown) |
+| Understand | Enterprise intelligence | `enterprise_intelligence/` | explained health score, risks, priorities, trends |
+| Reason | Root cause analysis | `root_cause/` | evidence-cited explanations of *why* |
+| **Predict** | **Predictive change intelligence** | `prediction/` | deterministic answers to *what happens if* |
+
+Shared invariants: per-profile scope isolation (PR-031A), explainable
+scores (every point is a named factor), banded confidence capped below
+100%, honest unknowns, byte-identical output for identical evidence, and
+zero secrets in any artifact.
+
+## Prediction Architecture (PR-036A)
+
+### Pipeline
+
+    Change Request
+        v  dependency resolution        (dependency.py)
+        v  critical path evaluation     (critical_paths.py)
+        v  redundancy evaluation        (redundancy.py)
+        v  impact estimation            (impact.py — blast radius)
+        v  risk estimation              (simulator.py)
+        v  confidence calculation       (confidence.py)
+        v  recommendations              (recommendations.py)
+    Prediction (models.py — plain JSON, AI-consumable later)
+
+The pipeline lives in `simulator.predict()` and is *closed for
+modification, open for extension*: per-change-type **evaluators** are
+registered (`register_evaluator`), and a change type without an evaluator
+still predicts honestly — explicit unknowns, low confidence — instead of
+failing or guessing.
+
+### Change Request model
+
+`ChangeRequest(request_id, change_type, target_device, target_object,
+parameters)` — `change_type` is an open registry (`change_requests.py`)
+seeded with shutdown-interface, remove-vlan, delete-route, modify-acl,
+disable-protocol, reboot-device, upgrade-firmware. New types (disable-hsrp,
+modify-security-group, restart-kubernetes-cni, ...) register at runtime
+with zero model changes. `Boundary` scopes the evaluation (profiles,
+sites, devices; empty = whole enterprise).
+
+### Dependency model
+
+`DependencyGraph` of typed nodes and directed edges across the layers
+
+    device -> interface -> protocol -> topology -> service -> application -> users
+
+Node *kinds are open strings* — VLAN, VRF, OSPF, HSRP, STP, LACP,
+firewall, application, Kubernetes CNI, cloud resources all become nodes
+without a schema change. Links are modeled through **both interface
+endpoints**, so shutting either end breaks the path. The first builder
+(`build_topology_dependency_graph`) populates device/interface/link layers
+from the topology snapshot; future builders (config parsers, service maps,
+cloud inventories) only *add* nodes and edges, and impact/redundancy
+automatically get richer (tested).
+
+### Blast Radius model
+
+Not a number: affected devices, interfaces, protocols, paths, services,
+applications, sites, and a user estimate, plus severity and summary.
+Semantics are **reachability-based** — a node of any kind is affected when
+it *loses connectivity* once the changed element is removed, not merely
+when it is adjacent. Layers Atlas cannot see are declared in the
+prediction's `unknowns`, never silently zeroed.
+
+### Critical Path & Redundancy models
+
+`CriticalPath(hops, dependencies, redundancy, criticality)` — the first
+identifier reports device pairs whose connectivity **breaks** without the
+changed node. `RedundancyAssessment(redundant, alternate_path_exists,
+detail, confidence_band)` answers "does an alternate path exist?" from
+topology reachability today; routing tables, HSRP/LACP awareness, and
+WAN/SD-WAN policies refine it later behind the same model.
+
+### Rollback model
+
+`RollbackEstimate(complexity, reversible, prerequisites, dependencies,
+estimated_effort, confidence)` — rule-based per change type: an interface
+shutdown reverses with one command; deleting a route is low-complexity
+*only when* the configuration was captured first (Atlas says so as a
+prerequisite); reboots and firmware upgrades are honestly irreversible.
+
+### Confidence model
+
+Documented arithmetic (`confidence.py`): base 0.50 + topology evidence
++ freshness + captured configuration + history + modeled change type
+− unknown dependency layers − contradictions, clamped to **0.95 — never
+100%** — and banded with the same very-high/high/medium/low vocabulary the
+root-cause engine uses (reused, not duplicated).
+
+### Relationship to existing engines
+
+The simulator consumes what already exists — topology snapshots,
+history records, configuration presence, enterprise intelligence — as
+inputs; it re-implements none of it. Predictions serialize to plain JSON
+like every other Atlas artifact.
+
+### Future roadmap (later PRs; no redesign required)
+
+1. Configuration-aware evaluators (VLAN/route/ACL simulation from parsed
+   configs) — new graph builders + evaluators.
+2. Routing & gateway protocol awareness (OSPF/BGP/HSRP nodes; redundancy
+   beyond physical topology).
+3. Service/application dependency ingestion — richer blast radii and
+   user-impact estimates.
+4. Change-request intake in the GUI with prediction reports per CAB
+   review; prediction artifacts archived like every other report.
+5. WAN/SD-WAN, firewall policy, cloud and Kubernetes builders — all new
+   node kinds and evaluators on the same graph and pipeline.
+6. AI explanation layer over the Prediction JSON (explain, never decide).

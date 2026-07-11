@@ -71,6 +71,13 @@ from founderos_atlas.enterprise_intelligence import (
     render_intelligence_json,
     render_intelligence_markdown,
 )
+from founderos_atlas.root_cause import (
+    analyze as analyze_root_cause,
+    render_root_cause_json,
+    render_root_cause_markdown,
+    root_cause_brief_section,
+    root_cause_incident_section,
+)
 from founderos_atlas.workspace import (
     AtlasWorkspaceError,
     DiscoveryScope,
@@ -217,6 +224,8 @@ def atlas_discover_command(
     state_change_markdown_output: str | Path = "state_change_report.md",
     intelligence_json_output: str | Path | None = None,
     intelligence_markdown_output: str | Path | None = None,
+    root_cause_json_output: str | Path | None = None,
+    root_cause_markdown_output: str | Path | None = None,
     clock: Clock | None = None,
     browser_opener: BrowserOpener | None = None,
     progress: Callable[[str], None] | None = None,
@@ -280,6 +289,14 @@ def atlas_discover_command(
             intelligence_markdown_output = (
                 scope.output_dir / Path(intelligence_markdown_output).name
             )
+        if root_cause_json_output is not None:
+            root_cause_json_output = (
+                scope.output_dir / Path(root_cause_json_output).name
+            )
+        if root_cause_markdown_output is not None:
+            root_cause_markdown_output = (
+                scope.output_dir / Path(root_cause_markdown_output).name
+            )
         history_root = scope.history_root
         emit(f"Using profile: {active_profile}")
     else:
@@ -303,6 +320,14 @@ def atlas_discover_command(
     if intelligence_markdown_output is None:
         intelligence_markdown_output = (
             Path(snapshot_output).parent / "intelligence_report.md"
+        )
+    if root_cause_json_output is None:
+        root_cause_json_output = (
+            Path(snapshot_output).parent / "root_cause_report.json"
+        )
+    if root_cause_markdown_output is None:
+        root_cause_markdown_output = (
+            Path(snapshot_output).parent / "root_cause_report.md"
         )
     started_at = read_clock()
     emit("")
@@ -444,6 +469,8 @@ def atlas_discover_command(
             state_change_markdown_output,
             intelligence_json_output=intelligence_json_output,
             intelligence_markdown_output=intelligence_markdown_output,
+            root_cause_json_output=root_cause_json_output,
+            root_cause_markdown_output=root_cause_markdown_output,
             history_root=history_root,
         )
         opener = browser_opener or webbrowser.open
@@ -535,6 +562,8 @@ def _build_reports(
     *,
     intelligence_json_output: str | Path = "intelligence_report.json",
     intelligence_markdown_output: str | Path = "intelligence_report.md",
+    root_cause_json_output: str | Path = "root_cause_report.json",
+    root_cause_markdown_output: str | Path = "root_cause_report.md",
     history_root: str | Path = Path(".atlas") / "history",
 ):
     """Write every artifact of the run; returns summary lines and paths."""
@@ -714,6 +743,39 @@ def _build_reports(
         f"finding(s) (saved: {intelligence_json_destination})"
     )
 
+    # Root cause analysis: explain WHY, deterministically, from the same
+    # evidence — archived so history can replay yesterday's explanation.
+    root_cause = analyze_root_cause(
+        generated_at=completed_at.isoformat(timespec="seconds"),
+        state_report=evidence.state_report,
+        topology_report=evidence.topology_report,
+        config_report=evidence.config_report,
+        failed_details=evidence.failed_details,
+        previous_snapshot=evidence.previous_snapshot,
+        recurring_hosts=evidence.recurring_unstable_hosts,
+    )
+    root_cause_json_destination = Path(root_cause_json_output).resolve()
+    root_cause_json_destination.write_text(
+        render_root_cause_json(root_cause), encoding="utf-8"
+    )
+    root_cause_markdown_destination = Path(root_cause_markdown_output).resolve()
+    root_cause_markdown_destination.write_text(
+        render_root_cause_markdown(root_cause), encoding="utf-8"
+    )
+    destinations["root_cause_report.json"] = root_cause_json_destination
+    destinations["root_cause_report.md"] = root_cause_markdown_destination
+    most_important = root_cause.most_important
+    if most_important is not None:
+        pipeline_lines.append(
+            f"Root cause: {most_important.primary.statement} "
+            f"({most_important.primary.band} confidence) "
+            f"(saved: {root_cause_json_destination})"
+        )
+    else:
+        pipeline_lines.append(
+            f"Root cause: nothing to explain (saved: {root_cause_json_destination})"
+        )
+
     if journey_runner is not None:
         brief = journey_runner(snapshot, baseline.snapshot)
     else:
@@ -723,9 +785,11 @@ def _build_reports(
     if not isinstance(brief, MorningBriefJourneyResult):
         raise TypeError("Atlas Morning Brief returned an invalid result")
     brief_destination = Path(brief_output).resolve()
-    # Morning Brief v2: the deterministic intelligence section rides along.
+    # Morning Brief v2: intelligence + the most important root cause.
     brief_destination.write_text(
-        brief.markdown + intelligence_brief_section(intelligence),
+        brief.markdown
+        + intelligence_brief_section(intelligence)
+        + root_cause_brief_section(root_cause),
         encoding="utf-8",
     )
     destinations["brief"] = brief_destination
@@ -1112,9 +1176,19 @@ def atlas_investigate_command(
         json_destination = Path(json_output).resolve()
         json_destination.write_text(render_incident_report_json(report), encoding="utf-8")
         markdown_destination = Path(markdown_output).resolve()
-        markdown_destination.write_text(
-            render_incident_report_markdown(report), encoding="utf-8"
-        )
+        incident_markdown = render_incident_report_markdown(report)
+        # Every investigation automatically carries the run's root cause
+        # analysis when one exists (PR-035).
+        root_cause_path = Path(snapshot_path).parent / "root_cause_report.json"
+        if root_cause_path.is_file():
+            try:
+                root_cause_data = json.loads(
+                    root_cause_path.read_text(encoding="utf-8")
+                )
+                incident_markdown += root_cause_incident_section(root_cause_data)
+            except (OSError, json.JSONDecodeError):
+                pass
+        markdown_destination.write_text(incident_markdown, encoding="utf-8")
     except (OSError, TypeError, ValueError) as error:
         raise CliError(f"Atlas incident investigation failed: {error}") from error
     return 0, render_atlas_investigate(
@@ -1228,6 +1302,8 @@ def _save_history(
         "state_change_report.md",
         "intelligence_report.json",
         "intelligence_report.md",
+        "root_cause_report.json",
+        "root_cause_report.md",
     )
     artifacts = {
         name: destinations[name] for name in archive_names if name in destinations
@@ -1333,6 +1409,8 @@ def atlas_dashboard_command(
     incident_report_md: str | Path = "incident_report.md",
     intelligence_report: str | Path = "intelligence_report.json",
     intelligence_report_md: str | Path = "intelligence_report.md",
+    root_cause_report: str | Path = "root_cause_report.json",
+    root_cause_report_md: str | Path = "root_cause_report.md",
     browser_opener: BrowserOpener | None = None,
     profile: str | None = None,
     profile_service: ProfileService | None = None,
@@ -1358,6 +1436,8 @@ def atlas_dashboard_command(
         incident_report_md = _scoped_path(incident_report_md, scope)
         intelligence_report = _scoped_path(intelligence_report, scope)
         intelligence_report_md = _scoped_path(intelligence_report_md, scope)
+        root_cause_report = _scoped_path(root_cause_report, scope)
+        root_cause_report_md = _scoped_path(root_cause_report_md, scope)
         scope.output_dir.mkdir(parents=True, exist_ok=True)
     try:
         destination = Path(output_path).resolve()
@@ -1378,6 +1458,8 @@ def atlas_dashboard_command(
             incident_report_md=incident_report_md,
             intelligence_report=intelligence_report,
             intelligence_report_md=intelligence_report_md,
+            root_cause_report=root_cause_report,
+            root_cause_report_md=root_cause_report_md,
             link_base=destination.parent,
         )
         destination.write_text(DashboardRenderer(summary).render(), encoding="utf-8")
@@ -1417,6 +1499,8 @@ def _regenerate_dashboard(
             incident_report_md=destination.parent / "incident_report.md",
             intelligence_report=destination.parent / "intelligence_report.json",
             intelligence_report_md=destination.parent / "intelligence_report.md",
+            root_cause_report=destination.parent / "root_cause_report.json",
+            root_cause_report_md=destination.parent / "root_cause_report.md",
             link_base=destination.parent,
         )
         destination.write_text(DashboardRenderer(summary).render(), encoding="utf-8")

@@ -45,6 +45,21 @@
   </form>
 </section>
 
+{% if root_cause and root_cause.primary %}
+<section class="card root-cause">
+  <h2>Root Cause Analysis</h2>
+  <p><strong>{{ root_cause.problem }}</strong></p>
+  <p>Likely cause ({{ root_cause.primary.band | title }} confidence, {{ root_cause.primary.confidence_percent }}%): {{ root_cause.primary.statement }}</p>
+  {% if root_cause.reasoning %}
+  <ol>
+    {% for line in root_cause.reasoning %}<li>{{ line }}</li>{% endfor %}
+  </ol>
+  {% endif %}
+  <p>Recommended next step: {{ root_cause.primary.next_step }}</p>
+  <a class="btn btn-sm" href="/artifacts/{{ artifact_prefix or '' }}root_cause_report.md">Open full analysis</a>
+</section>
+{% endif %}
+
 {% if report %}
 <section class="card">
   <h2>Latest incident report</h2>

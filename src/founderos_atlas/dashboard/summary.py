@@ -60,6 +60,15 @@ class DashboardSummary:
     priority_queue: tuple[str, ...] = ()
     improvements: tuple[str, ...] = ()
     regressions: tuple[str, ...] = ()
+    # Root cause analysis (PR-035); shown when confidence is high enough.
+    root_cause_headline: str | None = None
+    root_cause_band: str | None = None
+    root_cause_percent: int | None = None
+    root_cause_next_step: str | None = None
+
+    @property
+    def has_confident_root_cause(self) -> bool:
+        return self.root_cause_band in ("high", "very-high")
 
 
 def build_dashboard_summary(
@@ -80,6 +89,8 @@ def build_dashboard_summary(
     incident_report_md: str | Path = "incident_report.md",
     intelligence_report: str | Path = "intelligence_report.json",
     intelligence_report_md: str | Path = "intelligence_report.md",
+    root_cause_report: str | Path = "root_cause_report.json",
+    root_cause_report_md: str | Path = "root_cause_report.md",
     link_base: str | Path = ".",
 ) -> DashboardSummary:
     snapshot = _load_json(snapshot_path)
@@ -125,6 +136,7 @@ def build_dashboard_summary(
     operational_changes = _operational_changes(operational)
     incident_investigation = _incident_investigation(_load_json(incident_report))
     intelligence = _intelligence_summary(_load_json(intelligence_report))
+    root_cause = _root_cause_summary(_load_json(root_cause_report))
 
     status, status_detail = _network_status(
         snapshot, change_count, severity_counts, snapshot_warnings, failed_hosts,
@@ -153,6 +165,7 @@ def build_dashboard_summary(
         DashboardAction("Open Operational Changes", _href(Path(state_change_report_md), base)),
         DashboardAction("Open Incident Report", _href(Path(incident_report_md), base)),
         DashboardAction("Open Intelligence Report", _href(Path(intelligence_report_md), base)),
+        DashboardAction("Open Root Cause Analysis", _href(Path(root_cause_report_md), base)),
     )
     return DashboardSummary(
         last_discovery=last_discovery,
@@ -171,6 +184,7 @@ def build_dashboard_summary(
         incident_investigation=incident_investigation,
         actions=actions,
         **intelligence,
+        **root_cause,
     )
 
 
@@ -411,6 +425,29 @@ def _intelligence_summary(report: dict[str, Any] | None) -> dict[str, Any]:
         "priority_queue": tuple(str(p.get("title")) for p in priorities[:5]),
         "improvements": tuple(improvements),
         "regressions": tuple(regressions),
+    }
+
+
+def _root_cause_summary(report: dict[str, Any] | None) -> dict[str, Any]:
+    """The most likely root cause for the dashboard, or empties."""
+
+    if report is None:
+        return {}
+    most = report.get("most_important")
+    if not isinstance(most, dict):
+        return {}
+    primary = most.get("primary") or {}
+    if not primary.get("statement"):
+        return {}
+    return {
+        "root_cause_headline": str(primary["statement"]),
+        "root_cause_band": str(primary.get("band") or "low"),
+        "root_cause_percent": (
+            int(primary["confidence_percent"])
+            if isinstance(primary.get("confidence_percent"), (int, float))
+            else None
+        ),
+        "root_cause_next_step": str(primary.get("next_step") or ""),
     }
 
 
