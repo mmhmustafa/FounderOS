@@ -185,17 +185,28 @@
     var searchTimer = null;
     var activeIndex = -1;
     var resultLinks = [];
+    var lastFocused = null;
 
+    // Lifecycle: the single overlay in base.html toggles via the `hidden`
+    // attribute (with a matching CSS state) and mirrors aria-hidden.
+    // Closing PRESERVES the last query and its results — deliberate UX:
+    // reopening selects the text so the engineer can resume or overtype.
     var openSearch = function () {
+      lastFocused = document.activeElement;
       searchOverlay.hidden = false;
-      searchInput.value = "";
-      renderResults(null);
+      searchOverlay.setAttribute("aria-hidden", "false");
       renderRecent();
       searchInput.focus();
+      searchInput.select();
     };
     var closeSearch = function () {
       searchOverlay.hidden = true;
+      searchOverlay.setAttribute("aria-hidden", "true");
       activeIndex = -1;
+      // Restore focus to whatever opened the modal, where practical.
+      if (lastFocused && typeof lastFocused.focus === "function") {
+        lastFocused.focus();
+      }
     };
 
     var recentSearches = function () {
@@ -329,7 +340,10 @@
     };
 
     searchInput.addEventListener("keydown", function (event) {
-      if (event.key === "ArrowDown") { event.preventDefault(); setActive(activeIndex + 1); }
+      // Escape wins over everything — including the browser's native
+      // clear-the-search-input behavior — and closes from inside the input.
+      if (event.key === "Escape") { event.preventDefault(); closeSearch(); }
+      else if (event.key === "ArrowDown") { event.preventDefault(); setActive(activeIndex + 1); }
       else if (event.key === "ArrowUp") { event.preventDefault(); setActive(activeIndex - 1); }
       else if (event.key === "Enter" && activeIndex >= 0 && resultLinks[activeIndex]) {
         event.preventDefault();

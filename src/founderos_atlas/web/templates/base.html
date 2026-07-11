@@ -56,8 +56,8 @@
     </main>
   </div>
 
-  <div class="search-overlay" id="atlas-search" hidden>
-    <div class="search-panel" role="dialog" aria-label="Enterprise search">
+  <div class="search-overlay" id="atlas-search" hidden aria-hidden="true">
+    <div class="search-panel" role="dialog" aria-modal="true" aria-label="Enterprise search">
       <input type="search" id="atlas-search-input" autocomplete="off"
              placeholder="Search devices, interfaces, IPs, sites, predictions… (Esc to close)">
       <div class="search-status muted" id="atlas-search-status" hidden></div>

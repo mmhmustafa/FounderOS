@@ -438,5 +438,154 @@ class SearchGuiTests(unittest.TestCase):
             self.assertIn("GW", group["results"][0]["title"])
 
 
+class SearchModalLifecycleTests(unittest.TestCase):
+    """PR-038 bug fix: the modal must start hidden and close reliably.
+
+    Root cause of the original regression: ``.search-overlay`` declared
+    ``display: flex``, and author CSS overrides the user-agent's
+    ``[hidden] { display: none }`` rule — so the modal painted on page
+    load and every close handler ran invisibly. These tests pin the
+    explicit hidden state and the lifecycle wiring. (The Python test
+    environment has no JS engine, so keyboard behavior is pinned at the
+    source level; the live behavior was verified manually in a browser.)
+    """
+
+    def build_client(self, workdir: Path):
+        from founderos_atlas.web import create_app
+
+        service = make_service(workdir)
+        add_profile(service, "Hyderabad", "10.0.0.1")
+        run_discover(workdir, service, hyderabad_network(), "Hyderabad", FIXED)
+        app = create_app(
+            profile_service=service,
+            output_dir=workdir,
+            history_root=workdir / ".atlas" / "history",
+            workspace_root=workdir / "workspace",
+        )
+        app.config.update(TESTING=True)
+        return app.test_client()
+
+    def test_modal_starts_hidden_with_dialog_semantics(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            client = self.build_client(Path(tmp))
+            page = client.get("/?scope=all").data.decode("utf-8")
+            self.assertIn(
+                '<div class="search-overlay" id="atlas-search" hidden'
+                ' aria-hidden="true">',
+                page,
+            )
+            self.assertIn('aria-modal="true"', page)
+            self.assertIn('role="dialog"', page)
+
+    def test_hidden_state_actually_hides_despite_display_flex(self) -> None:
+        """THE regression pin: author CSS must define the hidden state."""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = self.build_client(Path(tmp))
+            css = client.get("/static/atlas.css").data.decode("utf-8")
+            self.assertIn(".search-overlay[hidden]", css)
+            rule = css.split(".search-overlay[hidden]", 1)[1].split("}", 1)[0]
+            self.assertIn("display: none", rule)
+
+    def test_exactly_one_modal_and_backdrop_per_page(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            client = self.build_client(Path(tmp))
+            for path in ("/?scope=all", "/topology?scope=all", "/paths",
+                         "/predict", "/credentials"):
+                page = client.get(path).data.decode("utf-8")
+                self.assertEqual(
+                    1, page.count('id="atlas-search"'), path
+                )
+                self.assertEqual(
+                    1, page.count('class="search-overlay"'), path
+                )
+                self.assertEqual(
+                    1, page.count('id="atlas-search-input"'), path
+                )
+
+    def test_device_details_page_carries_the_same_single_modal(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workdir = Path(tmp)
+            client = self.build_client(workdir)
+            payload = client.get("/api/search?q=A1").get_json()
+            href = next(
+                g for g in payload["groups"] if g["id"] == "devices"
+            )["results"][0]["href"]
+            page = client.get(href).data.decode("utf-8")
+            self.assertEqual(1, page.count('id="atlas-search"'))
+            self.assertIn('hidden aria-hidden="true"', page)
+
+    def test_keyboard_lifecycle_wiring_is_single_and_complete(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            client = self.build_client(Path(tmp))
+            script = client.get("/static/atlas.js").data.decode("utf-8")
+            # One document-level keydown handler: Ctrl+K / Meta+K toggle
+            # (with preventDefault against the browser default) + Escape.
+            self.assertEqual(
+                1, script.count('document.addEventListener("keydown"')
+            )
+            self.assertIn("event.ctrlKey || event.metaKey", script)
+            toggle = script.split("event.ctrlKey || event.metaKey", 1)[1]
+            self.assertIn("event.preventDefault()", toggle[:200])
+            self.assertIn(
+                "if (searchOverlay.hidden) openSearch(); else closeSearch();",
+                script,
+            )
+            # Escape closes from inside the input too, ahead of navigation.
+            input_handler = script.split(
+                'searchInput.addEventListener("keydown"', 1
+            )[1]
+            self.assertLess(
+                input_handler.index('"Escape"'),
+                input_handler.index('"ArrowDown"'),
+            )
+            # Arrow/Enter navigation intact.
+            self.assertIn('"ArrowUp"', script)
+            self.assertIn('"Enter"', script)
+
+    def test_open_close_focus_and_aria_are_managed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            client = self.build_client(Path(tmp))
+            script = client.get("/static/atlas.js").data.decode("utf-8")
+            self.assertIn("lastFocused = document.activeElement", script)
+            self.assertIn("lastFocused.focus()", script)
+            self.assertIn('setAttribute("aria-hidden", "false")', script)
+            self.assertIn('setAttribute("aria-hidden", "true")', script)
+            # Reopening selects the preserved query instead of clearing it.
+            self.assertIn("searchInput.select()", script)
+            # Backdrop click closes (only the backdrop, not the panel).
+            self.assertIn(
+                "if (event.target === searchOverlay) closeSearch();", script
+            )
+
+    def test_results_are_replaced_never_appended(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            client = self.build_client(Path(tmp))
+            script = client.get("/static/atlas.js").data.decode("utf-8")
+            render = script.split("var renderResults", 1)[1]
+            # The container is emptied before any result is appended.
+            self.assertLess(
+                render.index('container.textContent = ""'),
+                render.index("container.appendChild"),
+            )
+            recent = script.split("var renderRecent", 1)[1]
+            self.assertLess(
+                recent.index('list.textContent = ""'),
+                recent.index("list.appendChild"),
+            )
+
+    def test_search_behaviour_unchanged_by_the_fix(self) -> None:
+        """No regression to ranking or grouped results."""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = self.build_client(Path(tmp))
+            payload = client.get("/api/search?q=A1").get_json()
+            devices = next(
+                g for g in payload["groups"] if g["id"] == "devices"
+            )
+            self.assertEqual("A1", devices["results"][0]["title"])
+            self.assertEqual("exact", devices["results"][0]["match"]["rank"])
+
+
 if __name__ == "__main__":
     unittest.main()
