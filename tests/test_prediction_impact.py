@@ -348,18 +348,23 @@ class PredictGuiTests(unittest.TestCase):
             self.assertIn(b"shutdown-interface: A1 GigabitEthernet0/1", page)
             self.assertIn(b"Recommendation:", page)
 
-    def test_predictions_require_a_specific_scope(self) -> None:
+    def test_all_networks_scope_predicts_against_the_enterprise(self) -> None:
+        """PR-037A: All Networks is the enterprise scope, not a refusal."""
+
         with tempfile.TemporaryDirectory() as tmp:
             workdir = Path(tmp)
             client = self.build_world(workdir)
             page = client.get("/predict?scope=all").data
-            self.assertIn(b"Select a specific network", page)
+            self.assertNotIn(b"Select a specific network", page)
+            self.assertIn(b"Enterprise scope", page)
+            self.assertIn(b"A1", page)
             response = client.post(
                 "/predict/run",
                 data={"device": "A1", "interface": "Gi0/1"},
                 follow_redirects=True,
             )
-            self.assertIn(b"Select a specific network scope", response.data)
+            self.assertIn(b"Risk:", response.data)
+            self.assertNotIn(PASSWORD.encode(), response.data)
 
 
 class InterfaceResolutionTests(unittest.TestCase):

@@ -17,7 +17,12 @@ from .models import (
     EnterpriseDevice,
     EnterpriseTopology,
 )
-from .view import ScopeContribution, build_enterprise_topology, build_enterprise_view
+from .view import (
+    ScopeContribution,
+    build_enterprise_topology,
+    build_enterprise_view,
+    gather_scope_contributions,
+)
 
 __all__ = [
     "DeviceObservation",
@@ -26,4 +31,5 @@ __all__ = [
     "ScopeContribution",
     "build_enterprise_topology",
     "build_enterprise_view",
+    "gather_scope_contributions",
 ]

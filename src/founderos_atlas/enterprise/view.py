@@ -21,7 +21,7 @@ change reports (PR-031A) are untouched.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace as _replace
 import json
 from pathlib import Path
 from typing import Any
@@ -171,8 +171,22 @@ def build_enterprise_topology(
         _finalize(index, cluster, engine, credential_memory)
         for index, cluster in enumerate(clusters)
     )
+    # Distinct clusters must never share an enterprise id. Without strong
+    # evidence, two devices may legitimately reuse hostname AND address
+    # (separate administrative domains) — they stay separate objects, so
+    # their ids are disambiguated deterministically, never merged.
+    seen_ids: dict[str, int] = {}
+    unique: list[EnterpriseDevice] = []
+    for device in devices:
+        count = seen_ids.get(device.enterprise_id, 0)
+        seen_ids[device.enterprise_id] = count + 1
+        if count:
+            device = _replace(
+                device, enterprise_id=f"{device.enterprise_id}:{count + 1}"
+            )
+        unique.append(device)
     ordered = tuple(
-        sorted(devices, key=lambda item: (item.site.label, item.hostname.casefold()))
+        sorted(unique, key=lambda item: (item.site.label, item.hostname.casefold()))
     )
     return EnterpriseTopology(
         devices=ordered,
@@ -181,14 +195,14 @@ def build_enterprise_topology(
     )
 
 
-def build_enterprise_view(
-    base_output_dir: str | Path,
-    profiles,
-    *,
-    catalog: SiteCatalog | None = None,
-    credential_memory=None,
-) -> EnterpriseTopology:
-    """The enterprise topology from every profile's scoped latest state."""
+def gather_scope_contributions(
+    base_output_dir: str | Path, profiles
+) -> tuple[ScopeContribution, ...]:
+    """Every profile's latest snapshot as an observation contribution.
+
+    Shared by the enterprise view and the federation layer (PR-037A) so
+    observation gathering has exactly one implementation.
+    """
 
     contributions: list[ScopeContribution] = []
     for profile in profiles:
@@ -208,8 +222,22 @@ def build_enterprise_view(
                 domain_hint=getattr(profile, "domain_hint", None),
             )
         )
+    return tuple(contributions)
+
+
+def build_enterprise_view(
+    base_output_dir: str | Path,
+    profiles,
+    *,
+    catalog: SiteCatalog | None = None,
+    credential_memory=None,
+) -> EnterpriseTopology:
+    """The enterprise topology from every profile's scoped latest state."""
+
     return build_enterprise_topology(
-        tuple(contributions), catalog=catalog, credential_memory=credential_memory
+        gather_scope_contributions(base_output_dir, profiles),
+        catalog=catalog,
+        credential_memory=credential_memory,
     )
 
 

@@ -15,6 +15,27 @@
   <div class="tile"><strong>Configurations</strong><span>{{ summary.configurations_collected }}</span></div>
 </div>
 
+{% if enterprise_contributions %}
+<section class="card">
+  <h2>Enterprise Summary</h2>
+  <div class="tiles">
+    <div class="tile"><strong>Canonical devices</strong><span>{{ enterprise_device_count }}</span></div>
+    <div class="tile"><strong>Observations</strong><span>{{ enterprise_observation_count }}</span></div>
+    <div class="tile"><strong>Merged devices</strong><span>{{ enterprise_merged_count }}</span></div>
+    <div class="tile"><strong>Cross-profile links</strong><span>{{ enterprise_cross_profile_links }}</span></div>
+    <div class="tile"><strong>Unknown boundaries</strong><span>{{ enterprise_boundaries | length }}</span></div>
+  </div>
+  <p>
+    Contributing profiles:
+    {% for c in enterprise_contributions %}
+    <strong>{{ c.profile_name }}</strong>
+    ({% if c.fresh %}<span class="ok">fresh</span>{% elif c.fresh is sameas false %}<span class="warn">stale</span>{% else %}unknown{% endif %}{% if c.observed_at %}, {{ c.observed_at }}{% endif %}){{ ", " if not loop.last }}
+    {% endfor %}
+  </p>
+  <p class="muted">One enterprise observed from multiple discovery points. Duplicate observations merge only on deterministic evidence — see <a href="/topology">Enterprise Topology</a> for the inventory, merge decisions, and boundaries; <a href="/predict">Predict</a> and <a href="/paths">Paths</a> now operate across the whole enterprise.</p>
+</section>
+{% endif %}
+
 {% if summary.networks %}
 <section class="card">
   <h2>Networks</h2>

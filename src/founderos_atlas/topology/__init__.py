@@ -2,7 +2,7 @@
 
 from .graph import DuplicateDeviceError, TopologyGraph, TopologyGraphError, TopologyWarning
 from .reconciler import TopologyReconciler
-from .snapshot import SNAPSHOT_SCHEMA_VERSION, TopologySnapshot
+from .snapshot import SNAPSHOT_SCHEMA_VERSION, TopologySnapshot, content_address
 from .exporter import TopologySnapshotExporter
 
 __all__ = [
@@ -14,4 +14,5 @@ __all__ = [
     "TopologySnapshotExporter",
     "TopologyWarning",
     "SNAPSHOT_SCHEMA_VERSION",
+    "content_address",
 ]

@@ -636,6 +636,42 @@ replayed later); the latest report lives in
 destinations, and incomplete topology are explained honestly and end in
 a "run a fresh discovery" recommendation rather than a guess.
 
+## Enterprise Federation (PR-037A)
+
+**One enterprise, many observation points.** Discovery profiles remain
+entry points (credentials, seeds, boundaries, schedules) with fully
+isolated per-profile evidence — but they are not network boundaries.
+After discovery, Atlas federates every profile's latest evidence into
+one canonical Enterprise Graph, and **All Networks becomes the
+enterprise scope**:
+
+- **Enterprise Summary** (dashboard): canonical devices, observations,
+  merged devices, cross-profile links, unknown boundaries, and every
+  contributing profile with its evidence freshness.
+- **Enterprise Topology**: ONE interactive viewer spanning every lab
+  where evidence exists, plus the canonical inventory — merge badges,
+  identity confidence, and full provenance on demand (which profile
+  observed the device, when, in which run, via which address).
+- **Merge decisions are explainable**: serial numbers always merge
+  (95% identity confidence); hostname+IP merges only when profiles
+  declare the same administrative domain (75%); a hostname alone or an
+  IP alone **never** merges — real enterprises reuse both. If Atlas
+  cannot prove two observations are the same object, they stay separate.
+- **Unknown boundaries stay visible**: neighbors announced by CDP/LLDP
+  but never discovered are listed as boundaries, never invented into
+  the inventory — and a far-end *name* never attaches to another
+  profile's device.
+- **Enterprise Prediction and Enterprise Paths**: Predict and Paths now
+  work at All Networks against the federated snapshot. Blast radii and
+  path investigations cross profiles wherever strong identity evidence
+  connects them (discover a shared WAN gateway from two labs and FLOW
+  walks Hyderabad → gateway → Secunderabad). Stale or missing evidence
+  lowers confidence honestly instead of refusing.
+
+Federation happens after discovery and never modifies profile scopes;
+enterprise artifacts live in `.atlas/enterprise/` and are regenerated
+deterministically from profile evidence.
+
 ## Next Step
 
 Extract a reusable deterministic Topology Change Set contract for richer operational journeys before considering persistence or live transport.

@@ -23,6 +23,7 @@ recommendations).
 | Reason | Root cause analysis | `root_cause/` | evidence-cited explanations of *why* |
 | **Predict** | **Predictive change intelligence** | `prediction/` | deterministic answers to *what happens if* |
 | **Reason** | **Path intelligence** | `path_intelligence/` | deterministic answers to *why can't A reach B* |
+| **Federate** | **Enterprise federation** | `federation/` | one canonical enterprise graph from many observation points |
 
 Shared invariants: per-profile scope isolation (PR-031A), explainable
 scores (every point is a named factor), banded confidence capped below
@@ -183,6 +184,79 @@ factor now applies only when the change actually touches forwarding).
 The advice ladder gains a top rule: management lost without a verified
 alternate → **"Do not proceed until an alternate management path is
 verified"** — you must be able to reach the device to roll back at all.
+
+## Enterprise Federation (PR-037A, codename UNITY)
+
+Discovery profiles are observation points, never enterprise boundaries.
+Discovery keeps running per profile into fully isolated scopes;
+federation happens AFTER discovery, reading each profile's latest
+artifacts and assembling ONE canonical Enterprise Graph.
+
+### Pipeline
+
+```
+profile scopes (isolated, untouched)
+  → gather_scope_contributions (one observation set per profile:
+    snapshot + run id + timestamp + site/domain hints)
+  → PR-033 canonical identity engine (REUSED, not duplicated):
+      serial numbers always merge · hostname+IP merges only within a
+      declared administrative domain · hostname alone / IP alone NEVER
+  → federation layer adds:
+      canonical interfaces (union per device, newest state wins
+        deterministically, observers listed)
+      canonical links (edges resolved onto canonical devices — a far-end
+        NAME resolves only within the observing profile; cross-profile
+        connectivity arises only through devices merged on strong
+        evidence — connectivity is never invented)
+      merge decisions (the WHY + documented confidence per device)
+      unknown boundaries (announced-but-undiscovered neighbors stay
+        visible as boundary links, never inventory)
+  → enterprise TopologySnapshot (same content-addressed contract as
+    every per-profile snapshot) → every existing engine — prediction,
+    path intelligence, the interactive topology viewer, device pickers —
+    operates at enterprise scope UNCHANGED
+```
+
+### Models
+
+`EnterpriseGraph` (devices = PR-033 `EnterpriseDevice` with untouched
+per-observation provenance; `CanonicalInterface`; `CanonicalLink` with
+`LinkObservation` provenance and cross-profile/boundary flags;
+`MergeDecision`; `ContributionSummary` with freshness). Confidence
+arithmetic is documented: serial merge 95%, corroborated hostname+IP
+merge 75%, single observation with serial 90%, without 60% — capped
+below 100% like everything else.
+
+### Provenance
+
+Every canonical object references the observations that produced it:
+profile, run id, timestamp, observed hostname and management address;
+links record which profile saw them in which run; interfaces list their
+observers; credential information is a reference, never a secret.
+Distinct never-merged devices are guaranteed distinct enterprise ids.
+
+### Enterprise scope (All Networks)
+
+All Networks is no longer a read-only aggregation: the dashboard gains
+an Enterprise Summary (canonical/observation/merge counts, contributing
+profiles with freshness, boundaries); Topology renders ONE federated
+interactive viewer plus the canonical inventory with merge reasons and
+provenance on demand; Predict and Paths run against the enterprise
+snapshot (blast radii and investigations cross profiles wherever strong
+evidence connects them), with freshness and configuration evidence
+derived from every contributing profile. Incomplete evidence lowers
+confidence and is displayed — it never auto-refuses. Enterprise
+artifacts live in `.atlas/enterprise/` and are regenerated
+deterministically from profile evidence — a view, never a second source
+of truth.
+
+### Services
+
+`get_enterprise_graph()` · `get_enterprise_inventory()` ·
+`resolve_canonical_device()` (unique match or honest ambiguity) ·
+`search_enterprise()` · `merge_observations()` ·
+`build_enterprise_snapshot()` · `write_enterprise_artifacts()` — shared
+by GUI, CLI, future REST APIs, and the assistant.
 
 ## Path Intelligence (PR-037, codename FLOW)
 

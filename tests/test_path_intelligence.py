@@ -491,18 +491,22 @@ class PathsGuiTests(unittest.TestCase):
             self.assertIn(b"GHOST", response.data)
             self.assertIn(b"fresh discovery", response.data)
 
-    def test_paths_require_a_specific_scope(self) -> None:
+    def test_all_networks_scope_investigates_the_enterprise(self) -> None:
+        """PR-037A: All Networks is the enterprise scope, not a refusal."""
+
         with tempfile.TemporaryDirectory() as tmp:
             workdir = Path(tmp)
             _, client = self.build_world(workdir)
             page = client.get("/paths?scope=all").data
-            self.assertIn(b"Select a specific network", page)
+            self.assertNotIn(b"Select a specific network", page)
+            self.assertIn(b"Enterprise scope", page)
             response = client.post(
                 "/paths/run",
                 data={"source": "A1", "destination": "A2"},
                 follow_redirects=True,
             )
-            self.assertIn(b"Select a specific network scope", response.data)
+            self.assertIn(b"Connected", response.data)
+            self.assertNotIn(PASSWORD.encode(), response.data)
 
 
 if __name__ == "__main__":

@@ -112,29 +112,6 @@ def history_rows(history_index, *, scope_label: str | None = None) -> list[dict[
     return rows
 
 
-def enterprise_device_rows(topology) -> list[dict[str, Any]]:
-    """Enterprise devices shaped for the topology table — never a secret."""
-
-    rows: list[dict[str, Any]] = []
-    for device in topology.devices:
-        rows.append(
-            {
-                "hostname": device.hostname,
-                "management_ips": ", ".join(device.management_ips) or "—",
-                "platform": device.platform or "—",
-                "site": device.site.label,
-                "site_confidence": (
-                    device.site.confidence
-                    if device.site.confidence is not None
-                    else "—"
-                ),
-                "networks": ", ".join(device.profile_names),
-                "credential_ref": device.credential_ref or "—",
-            }
-        )
-    return rows
-
-
 def credential_set_rows(sets) -> list[dict[str, Any]]:
     """Credential sets shaped for templates — references only, no secrets."""
 

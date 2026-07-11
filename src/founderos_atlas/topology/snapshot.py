@@ -41,6 +41,31 @@ def _canonical_json(value: Any) -> str:
     )
 
 
+def content_address(
+    *,
+    created_at: str | None,
+    devices: tuple,
+    edges: tuple,
+    warnings: tuple,
+    metadata: Mapping[str, Any],
+) -> str:
+    """The canonical content address for snapshot content.
+
+    Public so other builders (e.g. the enterprise federation layer) can
+    construct valid ``TopologySnapshot`` values without duplicating the
+    addressing scheme.
+    """
+
+    content = {
+        "created_at": created_at,
+        "devices": devices,
+        "edges": edges,
+        "warnings": warnings,
+        "metadata": metadata,
+    }
+    return f"atlas-topology:{sha256(_canonical_json(content).encode('utf-8')).hexdigest()}"
+
+
 @dataclass(frozen=True)
 class TopologySnapshot:
     snapshot_id: str
@@ -186,14 +211,13 @@ class TopologySnapshot:
             "in_memory_only": True,
             **dict(metadata or {}),
         }
-        content = {
-            "created_at": created_at,
-            "devices": devices,
-            "edges": edges,
-            "warnings": warnings,
-            "metadata": snapshot_metadata,
-        }
-        resolved_id = f"atlas-topology:{sha256(_canonical_json(content).encode('utf-8')).hexdigest()}"
+        resolved_id = content_address(
+            created_at=created_at,
+            devices=devices,
+            edges=edges,
+            warnings=warnings,
+            metadata=snapshot_metadata,
+        )
         return cls(
             snapshot_id=resolved_id,
             created_at=created_at,

@@ -463,13 +463,18 @@ class EnterpriseScenarioTests(unittest.TestCase):
             page = client.get("/topology?scope=all").data
             for expected in (
                 b"Enterprise Device Inventory",
-                b"<td>R1</td>", b"<td>SW1</td>", b"<td>R11</td>",
+                b"<td>R1</td>", b"<td>SW1</td>", b"<td>R11",
                 b"<td>hyderabad</td>", b"<td>secunderabad</td>",
-                b"Observed via",
+                b"Observed by",
             ):
                 self.assertIn(expected, page)
-            # R11 is one canonical row observed via both networks.
+            # R11 is ONE canonical inventory row observed via both
+            # networks — since PR-037A badged as merged — plus exactly one
+            # merge-decision row explaining WHY.
+            self.assertEqual(1, page.count(b"<td>R11 <span"))
             self.assertEqual(1, page.count(b"<td>R11</td>"))
+            self.assertIn(b"merged", page)
+            self.assertIn(b"Merge Decisions", page)
             self.assertIn(b"Hyderabad Lab, Secunderabad Lab", page)
             # Site filter, including honest unknown handling.
             page = client.get("/topology?scope=all&site=secunderabad").data

@@ -4,7 +4,45 @@
 {% if global_view %}
 <h1>Topology — All Networks</h1>
 
-{% if enterprise and site_options %}
+{% if enterprise %}
+<section class="card">
+  <h2>Enterprise Federation</h2>
+  <div class="tiles">
+    <div class="tile"><strong>Canonical devices</strong><span>{{ enterprise_device_count }}</span></div>
+    <div class="tile"><strong>Observations</strong><span>{{ enterprise_observation_count }}</span></div>
+    <div class="tile"><strong>Merged devices</strong><span>{{ enterprise_merged_count }}</span></div>
+    <div class="tile"><strong>Cross-profile links</strong><span>{{ enterprise_cross_profile_links }}</span></div>
+    <div class="tile"><strong>Unknown boundaries</strong><span>{{ enterprise_boundaries | length }}</span></div>
+  </div>
+  <table class="grid">
+    <thead><tr><th>Contributing profile</th><th>Last observed</th><th>Devices</th><th>Links</th><th>Freshness</th></tr></thead>
+    <tbody>
+      {% for c in enterprise_contributions %}
+      <tr>
+        <td>{{ c.profile_name }}</td>
+        <td>{{ c.observed_at or '—' }}</td>
+        <td>{{ c.device_count }}</td>
+        <td>{{ c.edge_count }}</td>
+        <td>{% if c.fresh %}<span class="ok">fresh</span>{% elif c.fresh is sameas false %}<span class="warn">stale</span>{% else %}unknown{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="muted">One enterprise observed from multiple discovery points. Profiles are observation points, not network boundaries; their isolated per-profile evidence is federated here after discovery.</p>
+</section>
+
+{% if has_topology %}
+<section class="card">
+  <div class="page-head">
+    <h2>Enterprise Topology</h2>
+    <a class="btn" href="{{ topology_src }}" target="_blank">Open in new tab</a>
+  </div>
+  <iframe class="topology-frame" src="{{ topology_src }}" title="Atlas enterprise topology viewer"></iframe>
+  <p class="muted">One federated graph: cross-profile links appear only where deterministic identity evidence connects them. Connectivity is never invented.</p>
+</section>
+{% endif %}
+
+{% if site_options %}
 <div class="actions" style="margin-bottom: 14px;">
   <a class="btn btn-sm {{ '' if site_filter else 'btn-primary' }}" href="/topology">All sites</a>
   {% for option in site_options %}
@@ -13,6 +51,7 @@
   {% endfor %}
 </div>
 {% endif %}
+{% endif %}
 
 {% if inventory %}
 <section class="card">
@@ -20,7 +59,7 @@
   <table class="grid">
     <thead>
       {% if enterprise %}
-      <tr><th>Device</th><th>Management IPs</th><th>Platform</th><th>Site</th><th>Confidence</th><th>Observed via</th><th>Credential</th></tr>
+      <tr><th>Device</th><th>Management IPs</th><th>Platform</th><th>Site</th><th>Observed by</th><th>Observations</th><th>Identity confidence</th><th>Provenance</th></tr>
       {% else %}
       <tr><th>Network</th><th>Device</th><th>Management IP</th><th>Platform</th><th>OS Version</th></tr>
       {% endif %}
@@ -29,13 +68,25 @@
       {% for device in inventory %}
       {% if enterprise %}
       <tr>
-        <td>{{ device.hostname }}</td>
-        <td>{{ device.management_ips }}</td>
+        <td>{{ device.hostname }}{% if device.merged %} <span class="badge hop-badge hop-badge-pass">merged</span>{% endif %}</td>
+        <td>{{ device.management_ips | join(', ') or '—' }}</td>
         <td>{{ device.platform }}</td>
         <td>{{ device.site }}</td>
-        <td>{{ device.site_confidence }}</td>
-        <td>{{ device.networks }}</td>
-        <td><code>{{ device.credential_ref }}</code></td>
+        <td>{{ device.observed_by | join(', ') }}</td>
+        <td>{{ device.observation_count }}</td>
+        <td>{% if device.merge_confidence_percent is not none %}{{ device.merge_confidence_band | title }} ({{ device.merge_confidence_percent }}%){% else %}—{% endif %}</td>
+        <td>
+          <details>
+            <summary class="muted">Why / observations</summary>
+            <p>{{ device.merge_reason }}</p>
+            <ul>
+              {% for item in device.merge_evidence %}<li class="muted">Evidence: {{ item }}</li>{% endfor %}
+              {% for obs in device.observations %}
+              <li class="muted">Observed by {{ obs.profile_name }}{% if obs.observed_at %} at {{ obs.observed_at }}{% endif %}{% if obs.run_id %} (run {{ obs.run_id }}){% endif %}{% if obs.management_ip %} via {{ obs.management_ip }}{% endif %}</li>
+              {% endfor %}
+            </ul>
+          </details>
+        </td>
       </tr>
       {% else %}
       <tr>
@@ -50,7 +101,7 @@
     </tbody>
   </table>
   {% if enterprise %}
-  <p class="muted">Canonical enterprise devices: multiple networks may observe one device (strong-evidence identity merging), site assignment is evidence-based and may honestly be unknown, and networks are never compared against each other.</p>
+  <p class="muted">Canonical enterprise devices with full observation provenance. Merging is strictly evidence-based: serial numbers always merge; hostname+IP merges only within a declared administrative domain; a hostname alone or an IP alone never merges. Site assignment is evidence-based and may honestly be unknown.</p>
   {% else %}
   <p class="muted">Combined inventory: the latest successful state of every active network. Networks are never compared against each other.</p>
   {% endif %}
@@ -61,15 +112,48 @@
 <p class="muted">No topology has been generated yet in any network. <a href="/discovery">Run a discovery</a> to build the interactive topology viewer.</p>
 {% endif %}
 
+{% if enterprise and merge_decisions %}
+<section class="card">
+  <h2>Merge Decisions</h2>
+  <table class="grid">
+    <thead><tr><th>Device</th><th>Observations</th><th>Profiles</th><th>Why merged</th><th>Confidence</th></tr></thead>
+    <tbody>
+      {% for d in merge_decisions %}
+      <tr>
+        <td>{{ d.hostname }}</td>
+        <td>{{ d.observation_count }}</td>
+        <td>{{ d.profiles | join(', ') }}</td>
+        <td>{{ d.reason }} {% for item in d.evidence %}<span class="muted">({{ item }})</span>{% endfor %}</td>
+        <td>{{ d.confidence_band | title }} ({{ d.confidence_percent }}%)</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="muted">Every merge is explainable: Atlas states the deterministic evidence that proved two observations describe one object. Without such evidence, observations remain separate.</p>
+</section>
+{% endif %}
+
+{% if enterprise and enterprise_boundaries %}
+<section class="card">
+  <h2>Unknown Boundaries</h2>
+  <ul>
+    {% for b in enterprise_boundaries %}
+    <li>{{ b.remote }} — announced as a neighbor of {{ b.local }}{% if b.local_interface %} ({{ b.local_interface }}){% endif %}, observed by {{ b.observed_by | join(', ') }}, never discovered directly.</li>
+    {% endfor %}
+  </ul>
+  <p class="muted">Boundaries stay visible: Atlas reports what it has not discovered instead of inventing it.</p>
+</section>
+{% endif %}
+
 {% if viewers %}
 <section class="card">
-  <h2>Interactive Viewers</h2>
+  <h2>Per-Network Viewers</h2>
   <div class="actions">
     {% for viewer in viewers %}
     <a class="btn" href="{{ viewer.href }}" target="_blank">{{ viewer.label }}</a>
     {% endfor %}
   </div>
-  <p class="muted">Each active network keeps its own interactive topology viewer — by design; a single federated cross-network graph is future work.</p>
+  <p class="muted">Each network also keeps its own per-profile topology viewer, exactly as its last discovery produced it.</p>
 </section>
 {% endif %}
 

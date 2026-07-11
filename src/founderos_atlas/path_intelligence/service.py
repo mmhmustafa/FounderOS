@@ -45,17 +45,35 @@ def investigate_path_for_scope(
     history_root: str | Path,
     generated_at: str,
     profile_id: str | None = None,
+    fresh: bool | None = None,
+    failed_hosts: tuple[str, ...] | None = None,
+    captured_config_devices: tuple[str, ...] | None = None,
 ) -> PathInvestigationResult:
-    """Investigate one source→destination pair using scope evidence on disk."""
+    """Investigate one source→destination pair using scope evidence on disk.
+
+    ``fresh``, ``failed_hosts``, and ``captured_config_devices`` may be
+    supplied by callers whose evidence lives outside this scope's history
+    (the enterprise federation layer, PR-037A, derives them from every
+    contributing profile); when omitted they are derived from the scope's
+    own artifacts exactly as before.
+    """
 
     out = Path(output_dir)
     snapshot = _read_json(out / "topology_snapshot.json")
     records = HistoryRepository(history_root).load().records[:5]
-    fresh = _is_fresh(records[0].completed_at if records else None, generated_at)
-    failed_hosts = tuple(
-        str(host) for host in (records[0].failures if records else ())
+    if fresh is None:
+        fresh = _is_fresh(
+            records[0].completed_at if records else None, generated_at
+        )
+    if failed_hosts is None:
+        failed_hosts = tuple(
+            str(host) for host in (records[0].failures if records else ())
+        )
+    captured = (
+        captured_config_devices
+        if captured_config_devices is not None
+        else _captured_config_devices(out, snapshot)
     )
-    captured = _captured_config_devices(out, snapshot)
     result = investigate_path(
         source,
         destination,

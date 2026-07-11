@@ -29,7 +29,16 @@ from founderos_atlas.dashboard import (
     build_dashboard_summary,
 )
 from founderos_atlas.discovery import BoundaryPolicy
-from founderos_atlas.enterprise import build_enterprise_view
+from founderos_atlas.federation import (
+    enterprise_captured_configs,
+    enterprise_failed_hosts,
+    enterprise_scope_dir,
+    enterprise_seed_addresses,
+    get_enterprise_graph,
+    get_enterprise_inventory,
+    overall_freshness,
+    write_enterprise_artifacts,
+)
 from founderos_atlas.history import HistoryRepository, generate_timeline
 from founderos_atlas.sites import SiteCatalogRepository
 from founderos_atlas.incidents import (
@@ -57,7 +66,6 @@ from .models import (
     change_summaries,
     credential_set_rows,
     device_inventory,
-    enterprise_device_rows,
     history_rows,
     load_json,
     prediction_targets,
@@ -122,6 +130,59 @@ def register_routes(app) -> None:
         if scope.is_default:
             return ""
         return f".atlas/profiles/{scope.scope_id}/"
+
+    ENTERPRISE_ARTIFACT_PREFIX = ".atlas/enterprise/"
+
+    def now_iso() -> str:
+        clock = cfg("ATLAS_CLOCK")
+        return (clock() if clock else datetime.now(timezone.utc)).isoformat(
+            timespec="seconds"
+        )
+
+    def enterprise_world():
+        """The federated enterprise graph + snapshot for All Networks.
+
+        Rebuilt deterministically from every profile scope's latest
+        evidence on each request — a view over the isolated scopes, never
+        a second source of truth. Returns ``(graph, snapshot_dict)``;
+        the snapshot is None when no profile has discovered yet.
+        """
+
+        graph = get_enterprise_graph(
+            output_dir(),
+            profile_service().list_profiles(),
+            catalog=SiteCatalogRepository(cfg("ATLAS_WORKSPACE_ROOT")).load(),
+            credential_memory=CredentialSuccessMemory(cfg("ATLAS_WORKSPACE_ROOT")),
+            now=now_iso(),
+        )
+        if not graph.devices:
+            return graph, None
+        snapshot = write_enterprise_artifacts(output_dir(), graph)
+        return graph, snapshot.to_dict()
+
+    def enterprise_context(graph) -> dict:
+        """Federation facts every enterprise page displays."""
+
+        return {
+            "enterprise_contributions": [
+                contribution.to_dict() for contribution in graph.contributions
+            ],
+            "enterprise_fresh": overall_freshness(graph.contributions),
+            "enterprise_device_count": graph.device_count,
+            "enterprise_observation_count": graph.observation_count,
+            "enterprise_merged_count": graph.merged_device_count,
+            "enterprise_cross_profile_links": len(graph.cross_profile_links),
+            "enterprise_boundaries": [
+                {
+                    "local": link.local_hostname,
+                    "local_interface": link.local_interface,
+                    "remote": link.remote_hostname,
+                    "observed_by": list(link.observed_by),
+                }
+                for link in graph.boundaries
+            ],
+            "enterprise_unknowns": list(graph.unknowns),
+        }
 
     def aggregation_scopes(
         scopes: dict[str, DiscoveryScope],
@@ -221,10 +282,14 @@ def register_routes(app) -> None:
                 for scope in aggregated
             )
             recent, _ = merged_history_rows(aggregated)
+            # Enterprise summary (PR-037A): one network, many observation
+            # points — canonical counts with merge and boundary visibility.
+            graph, _snapshot = enterprise_world()
             return render_template(
                 "dashboard_global.html",
                 summary=aggregate_dashboard_summaries(networks),
                 recent=recent[:8],
+                **(enterprise_context(graph) if graph.devices else {}),
                 **context,
             )
         scope = scopes[scope_id]
@@ -499,29 +564,34 @@ def register_routes(app) -> None:
                 if (scope.output_dir / "atlas_topology.html").is_file()
             ]
             if any(not scope.is_default for scope in with_data):
-                # Enterprise view: canonical devices with site + provenance.
-                topology_view = build_enterprise_view(
-                    output_dir(),
-                    profile_service().list_profiles(),
-                    catalog=SiteCatalogRepository(cfg("ATLAS_WORKSPACE_ROOT")).load(),
-                    credential_memory=CredentialSuccessMemory(
-                        cfg("ATLAS_WORKSPACE_ROOT")
-                    ),
-                )
-                rows = enterprise_device_rows(topology_view)
+                # Enterprise federation (PR-037A): one canonical graph with
+                # provenance, merge decisions, and visible boundaries.
+                graph, snapshot = enterprise_world()
+                rows = get_enterprise_inventory(graph)
                 site_options = sorted({row["site"] for row in rows})
                 site_filter = request.args.get("site", "").strip()
                 if site_filter:
                     rows = [row for row in rows if row["site"] == site_filter]
+                visible_ids = {row["enterprise_id"] for row in rows}
+                merge_rows = [
+                    decision.to_dict()
+                    for decision in graph.merge_decisions
+                    if decision.merged and decision.enterprise_id in visible_ids
+                ]
                 return render_template(
                     "topology.html",
                     global_view=True,
                     enterprise=True,
                     inventory=rows,
+                    merge_decisions=merge_rows,
                     site_options=site_options,
                     site_filter=site_filter,
                     viewers=viewers,
-                    has_topology=False,
+                    has_topology=snapshot is not None,
+                    topology_src=(
+                        f"/artifacts/{ENTERPRISE_ARTIFACT_PREFIX}atlas_topology.html"
+                    ),
+                    **enterprise_context(graph),
                     **context,
                 )
             inventory = device_inventory(
@@ -599,15 +669,60 @@ def register_routes(app) -> None:
 
     # -- Prediction (PR-036B: what happens if I make this change?) -----------
 
+    def validated_change_target(
+        snapshot: dict, device: str, interface: str, label: str
+    ):
+        """Server-side validation of a (device, interface) pair against a
+        snapshot — canonical values out, or an error message. Client-side
+        selection is a convenience, never the authority."""
+
+        from founderos_atlas.prediction import resolve_interface
+
+        device_entry = next(
+            (
+                entry
+                for entry in (snapshot or {}).get("devices") or ()
+                if isinstance(entry, dict)
+                and str(entry.get("hostname") or "").casefold() == device.casefold()
+            ),
+            None,
+        )
+        if device_entry is None:
+            return None, None, (
+                f"{device} is not in {label}'s latest discovery. "
+                "Run discovery first."
+            )
+        device = str(device_entry.get("hostname"))  # canonical casing
+        inventory = tuple(
+            str(item.get("name"))
+            for item in device_entry.get("interfaces") or ()
+            if isinstance(item, dict) and item.get("name")
+        )
+        if not inventory:
+            return None, None, (
+                "No discovered interfaces are available. Run discovery first."
+            )
+        canonical, problem = resolve_interface(interface, inventory)
+        if canonical is None:
+            return None, None, f"Interface not accepted for {device}: {problem}."
+        return device, canonical, None
+
     @app.route("/predict")
     def predict_page():
         context, scopes, scope_id = scoped_context("predict")
         if scope_id == GLOBAL_SCOPE_ID:
+            # Enterprise prediction (PR-037A): the federated snapshot spans
+            # every contributing profile; blast radii may cross sites.
+            graph, snapshot = enterprise_world()
+            enterprise_dir = enterprise_scope_dir(output_dir())
             return render_template(
                 "predict.html",
-                needs_scope=True,
-                devices=[],
-                prediction=None,
+                needs_scope=False,
+                enterprise=True,
+                devices=prediction_targets(snapshot),
+                prediction=load_json(enterprise_dir / "prediction_report.json"),
+                artifact_prefix=ENTERPRISE_ARTIFACT_PREFIX,
+                **enterprise_context(graph),
                 **context,
             )
         scope = scopes[scope_id]
@@ -618,6 +733,7 @@ def register_routes(app) -> None:
         return render_template(
             "predict.html",
             needs_scope=False,
+            enterprise=False,
             devices=devices,
             prediction=prediction,
             artifact_prefix=artifact_prefix(scope),
@@ -636,92 +752,82 @@ def register_routes(app) -> None:
 
         scopes = known_scopes()
         scope_id = active_scope_id(scopes)
-        if scope_id == GLOBAL_SCOPE_ID:
-            flash("Select a specific network scope to run a prediction.", "error")
-            return redirect(url_for("predict_page"))
-        scope = scopes[scope_id]
         device = request.form.get("device", "").strip()
         interface = request.form.get("interface", "").strip()
         if not device or not interface:
             flash("A device and an interface are required.", "error")
             return redirect(url_for("predict_page"))
-        # Server-side validation against the scope's LATEST snapshot —
-        # client-side selection is a convenience, never the authority.
-        from founderos_atlas.prediction import resolve_interface
-
-        snapshot = load_json(scope.snapshot_path) or {}
-        device_entry = next(
-            (
-                entry
-                for entry in snapshot.get("devices") or ()
-                if isinstance(entry, dict)
-                and str(entry.get("hostname") or "").casefold() == device.casefold()
-            ),
-            None,
+        evidence_overrides: dict = {}
+        if scope_id == GLOBAL_SCOPE_ID:
+            # Enterprise prediction (PR-037A): evidence comes from every
+            # contributing profile scope, never guessed.
+            graph, snapshot = enterprise_world()
+            if snapshot is None:
+                flash("No discovery has run yet in any network.", "error")
+                return redirect(url_for("predict_page"))
+            profiles = profile_service().list_profiles()
+            out_dir = enterprise_scope_dir(output_dir())
+            history_root = out_dir / "history"
+            seed_addresses = enterprise_seed_addresses(profiles)
+            evidence_overrides = {
+                "fresh": overall_freshness(graph.contributions),
+                "history_available": bool(graph.contributions),
+                "configuration_captured": device.casefold()
+                in {
+                    name.casefold()
+                    for name in enterprise_captured_configs(
+                        output_dir(), profiles, graph
+                    )
+                },
+            }
+            scope_label = GLOBAL_SCOPE_LABEL
+        else:
+            scope = scopes[scope_id]
+            snapshot = load_json(scope.snapshot_path) or {}
+            out_dir = scope.output_dir
+            history_root = scope.history_root
+            # Profile seed addresses are proven management entry points;
+            # they feed the management-plane reachability evaluation.
+            seed_addresses = ()
+            for profile in profile_service().list_profiles():
+                if profile.profile_id == scope.scope_id:
+                    seed_addresses = profile.all_seeds
+                    break
+            scope_label = scope.label
+        device, interface, problem = validated_change_target(
+            snapshot, device, interface, scope_label
         )
-        if device_entry is None:
-            flash(
-                f"{device} is not in {scope.label}'s latest discovery. "
-                "Run discovery first.",
-                "error",
-            )
+        if problem is not None:
+            flash(problem, "error")
             return redirect(url_for("predict_page"))
-        device = str(device_entry.get("hostname"))  # canonical casing
-        inventory = tuple(
-            str(item.get("name"))
-            for item in device_entry.get("interfaces") or ()
-            if isinstance(item, dict) and item.get("name")
-        )
-        if not inventory:
-            flash(
-                "No discovered interfaces are available. Run discovery first.",
-                "error",
-            )
-            return redirect(url_for("predict_page"))
-        canonical, problem = resolve_interface(interface, inventory)
-        if canonical is None:
-            flash(
-                f"Interface not accepted for {device}: {problem}.", "error"
-            )
-            return redirect(url_for("predict_page"))
-        interface = canonical
-        clock = cfg("ATLAS_CLOCK")
-        generated_at = (
-            clock() if clock else datetime.now(timezone.utc)
-        ).isoformat(timespec="seconds")
+        generated_at = now_iso()
         change = ChangeRequest(
             request_id=f"gui-{device}-{interface}".replace(" ", "-"),
             change_type="shutdown-interface",
             target_device=device,
             target_object=interface,
             requested_at=generated_at,
-            profile_id=scope.scope_id,
+            profile_id=scope_id,
             reason=(request.form.get("reason", "").strip() or None),
             maintenance_window=(
                 request.form.get("maintenance_window", "").strip() or None
             ),
             requester=(request.form.get("requester", "").strip() or None),
         )
-        # Profile seed addresses are proven management entry points; they
-        # feed the management-plane reachability evaluation.
-        seed_addresses: tuple[str, ...] = ()
-        for profile in profile_service().list_profiles():
-            if profile.profile_id == scope.scope_id:
-                seed_addresses = profile.all_seeds
-                break
         prediction = predict_change(
             change,
-            output_dir=scope.output_dir,
-            history_root=scope.history_root,
+            output_dir=out_dir,
+            history_root=history_root,
             generated_at=generated_at,
             site_catalog=SiteCatalogRepository(cfg("ATLAS_WORKSPACE_ROOT")).load(),
             seed_addresses=seed_addresses,
+            **evidence_overrides,
         )
-        scope.output_dir.mkdir(parents=True, exist_ok=True)
-        (scope.output_dir / "prediction_report.json").write_text(
+        out_dir.mkdir(parents=True, exist_ok=True)
+        (out_dir / "prediction_report.json").write_text(
             render_prediction_json(prediction), encoding="utf-8"
         )
-        (scope.output_dir / "prediction_report.md").write_text(
+        (out_dir / "prediction_report.md").write_text(
             render_prediction_markdown(prediction), encoding="utf-8"
         )
         flash("Prediction generated.", "success")
@@ -731,26 +837,36 @@ def register_routes(app) -> None:
 
     @app.route("/paths")
     def paths_page():
+        from founderos_atlas.path_intelligence import load_investigation_history
+
         context, scopes, scope_id = scoped_context("paths")
         if scope_id == GLOBAL_SCOPE_ID:
+            # Enterprise path intelligence (PR-037A): FLOW investigates
+            # across the federated canonical topology.
+            graph, snapshot = enterprise_world()
+            enterprise_dir = enterprise_scope_dir(output_dir())
             return render_template(
                 "paths.html",
-                needs_scope=True,
-                devices=[],
-                investigation=None,
-                past_investigations=[],
+                needs_scope=False,
+                enterprise=True,
+                devices=prediction_targets(snapshot),
+                investigation=load_json(
+                    enterprise_dir / "path_investigation_report.json"
+                ),
+                past_investigations=load_investigation_history(enterprise_dir)[:10],
+                artifact_prefix=ENTERPRISE_ARTIFACT_PREFIX,
+                **enterprise_context(graph),
                 **context,
             )
         scope = scopes[scope_id]
         snapshot = load_json(scope.snapshot_path)
         devices = prediction_targets(snapshot)
         investigation = load_json(scope.output_dir / "path_investigation_report.json")
-        from founderos_atlas.path_intelligence import load_investigation_history
-
         past = load_investigation_history(scope.output_dir)
         return render_template(
             "paths.html",
             needs_scope=False,
+            enterprise=False,
             devices=devices,
             investigation=investigation,
             past_investigations=past[:10],
@@ -764,31 +880,44 @@ def register_routes(app) -> None:
 
         scopes = known_scopes()
         scope_id = active_scope_id(scopes)
-        if scope_id == GLOBAL_SCOPE_ID:
-            flash(
-                "Select a specific network scope to investigate a path.", "error"
-            )
-            return redirect(url_for("paths_page"))
-        scope = scopes[scope_id]
         source = request.form.get("source", "").strip()
         destination = request.form.get("destination", "").strip()
         if not source or not destination:
             flash("A source and a destination device are required.", "error")
             return redirect(url_for("paths_page"))
-        clock = cfg("ATLAS_CLOCK")
-        generated_at = (
-            clock() if clock else datetime.now(timezone.utc)
-        ).isoformat(timespec="seconds")
+        generated_at = now_iso()
         # The engine itself resolves and reports unknown devices with
         # evidence-based explanations — no pre-validation needed here.
-        investigate_path_for_scope(
-            source,
-            destination,
-            output_dir=scope.output_dir,
-            history_root=scope.history_root,
-            generated_at=generated_at,
-            profile_id=scope.scope_id,
-        )
+        if scope_id == GLOBAL_SCOPE_ID:
+            graph, snapshot = enterprise_world()
+            if snapshot is None:
+                flash("No discovery has run yet in any network.", "error")
+                return redirect(url_for("paths_page"))
+            profiles = profile_service().list_profiles()
+            enterprise_dir = enterprise_scope_dir(output_dir())
+            investigate_path_for_scope(
+                source,
+                destination,
+                output_dir=enterprise_dir,
+                history_root=enterprise_dir / "history",
+                generated_at=generated_at,
+                profile_id=GLOBAL_SCOPE_ID,
+                fresh=overall_freshness(graph.contributions),
+                failed_hosts=enterprise_failed_hosts(output_dir(), profiles),
+                captured_config_devices=enterprise_captured_configs(
+                    output_dir(), profiles, graph
+                ),
+            )
+        else:
+            scope = scopes[scope_id]
+            investigate_path_for_scope(
+                source,
+                destination,
+                output_dir=scope.output_dir,
+                history_root=scope.history_root,
+                generated_at=generated_at,
+                profile_id=scope.scope_id,
+            )
         flash("Path investigation complete.", "success")
         return redirect(url_for("paths_page"))
 

@@ -898,9 +898,13 @@ class LegacyScopePolicyTests(unittest.TestCase):
             self.assertIn(b"<strong>Networks</strong><span>2</span>", page)
             self.assertIn(b"<strong>Devices</strong><span>2</span>", page)
             page = client.get("/topology?scope=all").data
-            self.assertEqual(2, page.count(b"<td>R1</td>"))
-            self.assertEqual(1, page.count(b"<td>Site One</td>"))
-            self.assertEqual(1, page.count(b"<td>Site Two</td>"))
+            # Two canonical R1 rows: never deduplicated on name alone.
+            # (PR-037A: R1 appears once per inventory row; each site also
+            # appears once in the contributing-profiles table.)
+            self.assertEqual(2, page.count(b"<td>R1"))
+            self.assertEqual(2, page.count(b"<td>Site One</td>"))
+            self.assertEqual(2, page.count(b"<td>Site Two</td>"))
+            self.assertNotIn(b"badge hop-badge hop-badge-pass\">merged", page)
             # Each site keeps its own clean first-discovery scope.
             self.assertFalse(
                 (scope_dir(workdir, "site-one") / "change_report.json").exists()

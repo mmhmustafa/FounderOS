@@ -34,22 +34,37 @@ def predict_change(
     generated_at: str,
     site_catalog: SiteCatalog | None = None,
     seed_addresses: tuple[str, ...] = (),
+    fresh: bool | None = None,
+    history_available: bool | None = None,
+    configuration_captured: bool | None = None,
 ) -> Prediction:
     """Predict one change using the scope's current evidence on disk.
 
     ``seed_addresses`` are the profile's proven entry addresses; together
     with the snapshot's per-device management address they drive the
     management-plane reachability evaluation (PR-036C).
+
+    ``fresh``, ``history_available``, and ``configuration_captured`` may
+    be supplied by callers whose evidence lives outside this scope's
+    history (the enterprise federation layer, PR-037A, derives them from
+    every contributing profile); when omitted they are derived from the
+    scope's own artifacts exactly as before.
     """
 
     out = Path(output_dir)
     snapshot = _read_json(out / "topology_snapshot.json")
     records = HistoryRepository(history_root).load().records[:5]
-    history_available = bool(records)
-    fresh = _is_fresh(records[0].completed_at if records else None, generated_at)
-    configuration_captured = (
-        out / "configs" / safe_artifact_name(request.target_device) / "running_config.txt"
-    ).is_file()
+    if history_available is None:
+        history_available = bool(records)
+    if fresh is None:
+        fresh = _is_fresh(
+            records[0].completed_at if records else None, generated_at
+        )
+    if configuration_captured is None:
+        configuration_captured = (
+            out / "configs" / safe_artifact_name(request.target_device)
+            / "running_config.txt"
+        ).is_file()
     intelligence = _read_json(out / "intelligence_report.json") or {}
     health = (intelligence.get("health") or {}).get("score")
     health_score = int(health) if isinstance(health, (int, float)) else None

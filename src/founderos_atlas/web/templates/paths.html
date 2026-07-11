@@ -7,6 +7,22 @@
 <p class="muted">Select a specific network in the Network selector above — path investigations run against one network's evidence.</p>
 {% else %}
 
+{% if enterprise %}
+<section class="card">
+  <h2>Enterprise scope</h2>
+  <p>
+    Investigating across the federated enterprise graph —
+    {{ enterprise_device_count }} canonical device(s) from
+    {{ enterprise_contributions | length }} contributing profile(s):
+    {% for c in enterprise_contributions %}
+    <strong>{{ c.profile_name }}</strong>
+    ({% if c.fresh %}<span class="ok">fresh</span>{% elif c.fresh is sameas false %}<span class="warn">stale</span>{% else %}unknown{% endif %}){{ ", " if not loop.last }}
+    {% endfor %}
+  </p>
+  <p class="muted">Paths may cross profiles wherever deterministic identity evidence connects them. Evidence keeps its provenance; unknown boundaries stay visible and are never traversed by guesswork.</p>
+</section>
+{% endif %}
+
 <section class="card">
   <h2>Investigate device-to-device connectivity</h2>
   <form class="form" method="post" action="/paths/run">

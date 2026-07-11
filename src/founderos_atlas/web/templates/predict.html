@@ -7,6 +7,22 @@
 <p class="muted">Select a specific network in the Network selector above — predictions run against one network's evidence.</p>
 {% else %}
 
+{% if enterprise %}
+<section class="card">
+  <h2>Enterprise scope</h2>
+  <p>
+    Predicting against the federated enterprise graph —
+    {{ enterprise_device_count }} canonical device(s) from
+    {{ enterprise_contributions | length }} contributing profile(s):
+    {% for c in enterprise_contributions %}
+    <strong>{{ c.profile_name }}</strong>
+    ({% if c.fresh %}<span class="ok">fresh</span>{% elif c.fresh is sameas false %}<span class="warn">stale</span>{% else %}unknown{% endif %}){{ ", " if not loop.last }}
+    {% endfor %}
+  </p>
+  <p class="muted">Blast radius may cross sites and profiles. Evidence keeps its provenance; stale contributions lower confidence honestly instead of blocking the prediction.</p>
+</section>
+{% endif %}
+
 <section class="card">
   <h2>Proposed change: shutdown interface</h2>
   <form class="form" method="post" action="/predict/run">
