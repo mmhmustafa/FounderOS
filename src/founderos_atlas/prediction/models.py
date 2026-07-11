@@ -196,6 +196,8 @@ class Prediction:
     risk: Any = None                      # risk.RiskAssessment
     advice: Any = None                    # recommendations.Advice
     explanation: tuple[str, ...] = ()
+    # PR-036C: plane-aware impact (management/control/data/observability).
+    planes: tuple[Any, ...] = ()          # planes.PlaneImpact
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -219,4 +221,5 @@ class Prediction:
             "risk": self.risk.to_dict() if self.risk is not None else None,
             "advice": self.advice.to_dict() if self.advice is not None else None,
             "explanation": list(self.explanation),
+            "planes": [plane.to_dict() for plane in self.planes],
         }

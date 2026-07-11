@@ -24,6 +24,48 @@ import re
 
 _NAME_PATTERN = re.compile(r"^([A-Za-z][A-Za-z-]*)\s*([0-9][0-9/\.:]*)$")
 
+# Interface type classification (PR-036C). Names come from discovery, so
+# classifying by canonical name IS evidence-based; anything unmatched is
+# honestly "unknown" rather than forced into a category.
+TYPE_PHYSICAL = "physical"
+TYPE_SVI = "svi"
+TYPE_LOOPBACK = "loopback"
+TYPE_TUNNEL = "tunnel"
+TYPE_PORT_CHANNEL = "port-channel"
+TYPE_SUBINTERFACE = "subinterface"
+TYPE_UNKNOWN = "unknown"
+
+LOGICAL_TYPES = (TYPE_SVI, TYPE_LOOPBACK, TYPE_TUNNEL, TYPE_PORT_CHANNEL)
+
+_PHYSICAL_PREFIXES = (
+    "ethernet", "fastethernet", "gigabitethernet", "tengigabitethernet",
+    "twentyfivegige", "fortygigabitethernet", "hundredgige", "serial",
+    "management",
+)
+
+
+def classify_interface(name: str) -> str:
+    """Deterministic interface type from the canonical discovered name."""
+
+    cleaned = (name or "").strip().casefold()
+    if not cleaned:
+        return TYPE_UNKNOWN
+    if cleaned.startswith("vlan"):
+        return TYPE_SVI
+    if cleaned.startswith("loopback"):
+        return TYPE_LOOPBACK
+    if cleaned.startswith("tunnel"):
+        return TYPE_TUNNEL
+    if cleaned.startswith("port-channel") or cleaned.startswith("po"):
+        # "po" alone is ambiguous with nothing else in Cisco naming; the
+        # canonical inventory names are full words, so this stays safe.
+        if cleaned.startswith("port-channel"):
+            return TYPE_PORT_CHANNEL
+    for prefix in _PHYSICAL_PREFIXES:
+        if cleaned.startswith(prefix):
+            return TYPE_SUBINTERFACE if "." in cleaned else TYPE_PHYSICAL
+    return TYPE_UNKNOWN
+
 
 def resolve_interface(
     requested: str, available: tuple[str, ...] | list[str]

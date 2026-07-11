@@ -80,6 +80,25 @@
     <li>Projected enterprise health impact: {{ prediction.blast_radius.attributes.estimated_health_impact }} point(s)</li>
     {% endif %}
   </ul>
+  {% if prediction.planes %}
+  <h2>Plane Impact</h2>
+  <div class="columns">
+    {% for plane in prediction.planes %}
+    <section class="card plane-{{ plane.status }}">
+      <h2>{{ plane.plane | title }} Plane</h2>
+      <p><strong>{{ plane.status | replace('_', ' ') | title }}</strong>
+         — {{ plane.confidence_band | title }} confidence ({{ plane.confidence_percent }}%)</p>
+      <p>{{ plane.explanation }}</p>
+      {% if plane.evidence %}
+      <ul>{% for item in plane.evidence %}<li>Evidence: {{ item }}</li>{% endfor %}</ul>
+      {% endif %}
+      {% if plane.missing_evidence %}
+      <ul>{% for item in plane.missing_evidence %}<li class="muted">Missing: {{ item }}</li>{% endfor %}</ul>
+      {% endif %}
+    </section>
+    {% endfor %}
+  </div>
+  {% endif %}
   <h2>Why</h2>
   <ol>
     {% for line in prediction.explanation %}<li>{{ line }}</li>{% endfor %}

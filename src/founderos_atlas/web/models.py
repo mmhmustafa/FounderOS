@@ -184,11 +184,14 @@ def prediction_targets(snapshot: dict | None) -> list[dict[str, Any]]:
         )
         key = (local.casefold(), str(edge.get("local_interface") or "").casefold())
         neighbor_by_port.setdefault(key, str(edge.get("remote_hostname")))
+    from founderos_atlas.prediction import classify_interface
+
     targets: list[dict[str, Any]] = []
     for device in snapshot.get("devices") or ():
         if not isinstance(device, dict):
             continue
         hostname = str(device.get("hostname") or "")
+        management_ip = str(device.get("management_ip") or "")
         options: list[dict[str, str]] = []
         for interface in device.get("interfaces") or ():
             if not isinstance(interface, dict):
@@ -198,10 +201,22 @@ def prediction_targets(snapshot: dict | None) -> list[dict[str, Any]]:
                 continue
             status = str(interface.get("status") or "?")
             protocol = str(interface.get("protocol_status") or "?")
-            parts = [name, f"{status}/{protocol}"]
+            interface_type = classify_interface(name)
+            parts = [name]
+            if interface_type not in ("physical", "unknown"):
+                # Logical interfaces carry their semantics into the label.
+                parts.append(f"[{interface_type.upper() if interface_type == 'svi' else interface_type}]")
+            parts.append(f"{status}/{protocol}")
             ip = interface.get("ip_address")
-            if ip and str(ip).casefold() not in ("unassigned", "none"):
-                parts.append(str(ip))
+            clean_ip = (
+                str(ip)
+                if ip and str(ip).casefold() not in ("unassigned", "none")
+                else None
+            )
+            if clean_ip:
+                parts.append(clean_ip)
+                if management_ip and clean_ip == management_ip:
+                    parts.append("management address")
             description = interface.get("description")
             if description:
                 parts.append(str(description))

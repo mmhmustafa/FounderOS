@@ -33,7 +33,8 @@ from .dependency import (
     interface_node_id,
 )
 from .impact import BlastRadius, estimate_blast_radius
-from .interfaces import resolve_interface
+from .interfaces import classify_interface, resolve_interface
+from .planes import PlaneImpact, evaluate_planes
 from .models import (
     Boundary,
     ChangeRequest,
@@ -71,6 +72,7 @@ __all__ = [
     "DependencyGraph",
     "DependencyNode",
     "Evaluation",
+    "PlaneImpact",
     "Prediction",
     "PredictedOutcome",
     "RedundancyAssessment",
@@ -83,7 +85,9 @@ __all__ = [
     "assess_redundancy",
     "build_topology_dependency_graph",
     "change_type",
+    "classify_interface",
     "device_node_id",
+    "evaluate_planes",
     "estimate_blast_radius",
     "estimate_rollback",
     "interface_node_id",

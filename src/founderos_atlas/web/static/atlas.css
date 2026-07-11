@@ -56,6 +56,10 @@ h3 { margin: 0 0 8px; font-size: 14px; }
 .tile span { font-size: 26px; font-weight: 700; }
 .tile span.tile-text { font-size: 18px; }
 .card.root-cause { border-left: 8px solid var(--accent); }
+.card.plane-lost { border-left: 6px solid var(--red); }
+.card.plane-degraded { border-left: 6px solid var(--amber); }
+.card.plane-unknown { border-left: 6px solid var(--slate); }
+.card.plane-no_known_impact { border-left: 6px solid var(--green); }
 
 .columns { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; margin-bottom: 18px; }
 .card { background: var(--panel); border-radius: 10px; padding: 18px; box-shadow: 0 1px 3px rgba(15,23,42,.08); margin-bottom: 18px; }

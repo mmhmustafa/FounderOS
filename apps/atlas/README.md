@@ -587,6 +587,18 @@ deterministically from the network's own evidence:
 - **confidence** that grows with evidence and never reaches 100%, and an
   explicit list of what Atlas cannot see.
 
+Predictions are **plane-aware** (PR-036C): every result evaluates the
+Management, Control, Data, and Observability planes separately — so
+shutting an SVI that owns the very address Atlas manages the device
+through says **Management Plane: Lost** ("Vlan1 owns 10.10.10.2, the
+management address Atlas uses; discovery, configuration collection, and
+monitoring using this address may become unavailable") with the top
+recommendation *"Do not proceed until an alternate management path is
+verified"* — while honestly noting that physical links stay up and that
+data-plane impact is Unknown without gateway evidence. Alternate
+management paths count only when verified; candidates are never assumed
+reachable. Each plane carries its own confidence.
+
 The dashboard shows the latest prediction; the CAB-ready report lives in
 `prediction_report.md` per network. Only interface shutdown is modeled in
 this slice — other change types are registered architecture for future

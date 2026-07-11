@@ -702,12 +702,20 @@ def register_routes(app) -> None:
             ),
             requester=(request.form.get("requester", "").strip() or None),
         )
+        # Profile seed addresses are proven management entry points; they
+        # feed the management-plane reachability evaluation.
+        seed_addresses: tuple[str, ...] = ()
+        for profile in profile_service().list_profiles():
+            if profile.profile_id == scope.scope_id:
+                seed_addresses = profile.all_seeds
+                break
         prediction = predict_change(
             change,
             output_dir=scope.output_dir,
             history_root=scope.history_root,
             generated_at=generated_at,
             site_catalog=SiteCatalogRepository(cfg("ATLAS_WORKSPACE_ROOT")).load(),
+            seed_addresses=seed_addresses,
         )
         scope.output_dir.mkdir(parents=True, exist_ok=True)
         (scope.output_dir / "prediction_report.json").write_text(

@@ -33,8 +33,14 @@ def predict_change(
     history_root: str | Path,
     generated_at: str,
     site_catalog: SiteCatalog | None = None,
+    seed_addresses: tuple[str, ...] = (),
 ) -> Prediction:
-    """Predict one change using the scope's current evidence on disk."""
+    """Predict one change using the scope's current evidence on disk.
+
+    ``seed_addresses`` are the profile's proven entry addresses; together
+    with the snapshot's per-device management address they drive the
+    management-plane reachability evaluation (PR-036C).
+    """
 
     out = Path(output_dir)
     snapshot = _read_json(out / "topology_snapshot.json")
@@ -59,6 +65,7 @@ def predict_change(
         health_score=health_score,
         historically_unstable=historically_unstable,
         device_sites=device_sites,
+        seed_addresses=seed_addresses,
     )
 
 
@@ -113,6 +120,25 @@ def render_prediction_markdown(prediction: Prediction) -> str:
     impact = blast.attributes.get("estimated_health_impact")
     if isinstance(impact, int) and impact < 0:
         lines.append(f"- Projected enterprise health impact: {impact} point(s)")
+    if prediction.planes:
+        lines.extend(("", "## Plane Impact", ""))
+        for plane in prediction.planes:
+            lines.extend(
+                (
+                    f"### {plane.plane.title()} Plane — "
+                    f"{plane.status.replace('_', ' ')} "
+                    f"({plane.confidence_band}, {plane.confidence_percent}%)",
+                    "",
+                    plane.explanation,
+                    "",
+                )
+            )
+            for item in plane.evidence:
+                lines.append(f"- Evidence: {item}")
+            for item in plane.missing_evidence:
+                lines.append(f"- Missing evidence: {item}")
+            if plane.affected:
+                lines.append(f"- Affected: {', '.join(plane.affected)}")
     lines.extend(("", "## Risk Factors", ""))
     for factor in prediction.risk.factors:
         lines.append(f"- {factor.points:+d} {factor.name}: {factor.detail}")

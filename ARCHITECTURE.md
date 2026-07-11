@@ -148,6 +148,41 @@ topology-layer only (routing/HSRP/LACP unknown → stated as unknown);
 services/applications/users appear in blast radii only when future
 builders add them; predictions are on-demand and not archived in history.
 
+### Plane-aware logical-interface prediction (PR-036C)
+
+Real CML testing exposed a model gap: shutting SW1's `Vlan1` SVI (owner of
+`10.10.10.2`, the address Atlas connects through) predicted *zero* impact
+because only physical adjacency was modeled. PR-036C adds plane-aware
+impact (`prediction/planes.py`):
+
+- **Interface semantics** — canonical-name classification (physical / SVI
+  / loopback / tunnel / port-channel / subinterface / unknown); logical
+  interfaces are never treated as ordinary unused ports.
+- **Management plane** — deterministic reachability: does the target
+  interface own the device's active management address (the address Atlas
+  discovered it through) or a profile seed? Alternate paths are *verified*
+  only when the candidate address is itself a proven connection address;
+  a merely-existing second address is a candidate, never assumed.
+- **Control plane** — protocol impact only from explicit role evidence
+  (the `role_evidence` extension point for future collectors); no
+  evidence → no known impact, with the missing evidence listed.
+- **Data plane** — gateway impact only with gateway role evidence;
+  otherwise honestly unknown, while noting that discovered physical links
+  remain up (Layer-2 switching continues).
+- **Observability plane** — follows management: a lost management address
+  is a monitoring blind spot (future discovery, collection, alerting).
+
+Each plane carries status (no_known_impact / degraded / lost / unknown),
+severity, **its own confidence**, affected objects, supporting and missing
+evidence, and an explanation. Risk gains management/gateway/control
+factors (management loss +25 covering the single shared dependency —
+SSH/discovery/collection/monitoring — never double-counted; unverified
+alternate +10; verified alternate −10; the unknown-forwarding-redundancy
+factor now applies only when the change actually touches forwarding).
+The advice ladder gains a top rule: management lost without a verified
+alternate → **"Do not proceed until an alternate management path is
+verified"** — you must be able to reach the device to roll back at all.
+
 ### Future roadmap (later PRs; no redesign required)
 
 1. Configuration-aware evaluators (VLAN/route/ACL simulation from parsed

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace as dataclass_replace
+from typing import Any
 
 from .change_requests import change_type
 from .confidence import assess_confidence
@@ -41,6 +42,13 @@ from .models import (
     PredictedOutcome,
     SEVERITY_HIGH,
     SEVERITY_LOW,
+)
+from .planes import (
+    ALTERNATE_VERIFIED,
+    PLANE_CONTROL,
+    PLANE_DATA,
+    STATUS_LOST,
+    evaluate_planes,
 )
 from .recommendations import advise
 from .redundancy import RedundancyAssessment
@@ -85,6 +93,8 @@ def predict(
     health_score: int | None = None,
     historically_unstable: bool = False,
     device_sites: Mapping[str, str] | None = None,
+    seed_addresses: tuple[str, ...] = (),
+    role_evidence: Mapping[str, Any] | None = None,
 ) -> Prediction:
     """Run the deterministic prediction pipeline for one change request.
 
@@ -225,6 +235,53 @@ def predict(
         },
     )
 
+    # Plane-aware impact (PR-036C): management / control / data /
+    # observability, evaluated from the device's discovered evidence.
+    planes: tuple = ()
+    management_lost = False
+    management_alternate_verified: bool | None = None
+    management_detail = ""
+    gateway_lost = False
+    control_lost = False
+    if request.target_object and isinstance(snapshot, dict):
+        device_entry = next(
+            (
+                entry
+                for entry in snapshot.get("devices") or ()
+                if isinstance(entry, dict)
+                and str(entry.get("hostname") or "").casefold()
+                == request.target_device.casefold()
+            ),
+            None,
+        )
+        if device_entry is not None:
+            planes, management = evaluate_planes(
+                device_entry=device_entry,
+                target_interface=request.target_object,
+                seed_addresses=seed_addresses,
+                role_evidence=role_evidence,
+                isolated_devices=blast_radius.affected_devices,
+                fresh=fresh,
+            )
+            management_lost = management.owns_management_address
+            management_alternate_verified = (
+                management.alternate_status == ALTERNATE_VERIFIED
+            )
+            management_detail = management.alternate_detail
+            gateway_lost = any(
+                plane.plane == PLANE_DATA
+                and plane.status == STATUS_LOST
+                and bool((role_evidence or {}).get("gateway"))
+                for plane in planes
+            )
+            control_lost = any(
+                plane.plane == PLANE_CONTROL and plane.status == STATUS_LOST
+                for plane in planes
+            )
+            for plane in planes:
+                for missing in plane.missing_evidence:
+                    unknowns.append(missing)
+
     risk = estimate_risk(
         critical_path_count=len(critical_paths),
         affected_device_count=len(blast_radius.affected_devices),
@@ -233,6 +290,10 @@ def predict(
         health_score=health_score,
         historically_unstable=historically_unstable,
         confidence_band=confidence.band,
+        management_lost=management_lost,
+        management_alternate_verified=management_alternate_verified,
+        gateway_lost=gateway_lost,
+        control_lost=control_lost,
     )
     advice = advise(
         risk=risk,
@@ -243,6 +304,9 @@ def predict(
         subject=request.subject,
         target_known=evaluation.target_node_id is not None,
         touches_links=touches_links,
+        management_lost=management_lost,
+        management_alternate_verified=management_alternate_verified,
+        management_detail=management_detail,
     )
     explanation = _explain(
         request=request,
@@ -255,6 +319,12 @@ def predict(
         snapshot=snapshot,
         history_available=history_available,
     )
+    if planes:
+        explanation = explanation + tuple(
+            f"{plane.plane.title()} plane: {plane.status.replace('_', ' ')} "
+            f"({plane.confidence_percent}% confidence) — {plane.explanation}"
+            for plane in planes
+        )
     spec = change_type(request.change_type)
     return Prediction(
         prediction_id=f"prediction:{request.request_id}",
@@ -282,6 +352,7 @@ def predict(
         risk=risk,
         advice=advice,
         explanation=explanation,
+        planes=planes,
     )
 
 

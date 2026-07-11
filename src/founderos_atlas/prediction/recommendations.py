@@ -35,6 +35,9 @@ ACTION_MAINTENANCE = "Proceed during a maintenance window"
 ACTION_INVESTIGATE = "Investigate redundancy first"
 ACTION_CAB = "High Risk — CAB approval recommended"
 ACTION_DISCOVER = "Run a fresh discovery first"
+ACTION_VERIFY_MGMT = (
+    "Do not proceed until an alternate management path is verified"
+)
 
 
 @dataclass(frozen=True)
@@ -59,6 +62,9 @@ def advise(
     subject: str,
     target_known: bool = True,
     touches_links: bool = False,
+    management_lost: bool = False,
+    management_alternate_verified: bool | None = None,
+    management_detail: str = "",
 ) -> Advice:
     reasons: list[str] = []
     if not target_known:
@@ -69,6 +75,15 @@ def advise(
                 "impact cannot be traced on current evidence.",
             ),
         )
+    if management_lost:
+        reasons.append(
+            f"{subject} owns the management address Atlas uses to reach the "
+            "device; services using this address may become unavailable "
+            "(SSH management, future discovery, configuration collection, "
+            "monitoring)."
+        )
+        if management_detail:
+            reasons.append(management_detail + ".")
     if critical_paths:
         pairs = ", ".join(
             f"{path.hops[0]}–{path.hops[-1]}" for path in critical_paths[:3]
@@ -104,7 +119,11 @@ def advise(
         "for the arithmetic."
     )
 
-    if risk.level == RISK_CRITICAL or critical_paths:
+    if management_lost and not management_alternate_verified:
+        # Losing manageability outranks everything: an engineer must be
+        # able to reach the device to roll back at all.
+        action = ACTION_VERIFY_MGMT
+    elif risk.level == RISK_CRITICAL or critical_paths:
         action = ACTION_CAB
     elif risk.level == RISK_HIGH and redundancy.redundant is None:
         action = ACTION_INVESTIGATE
