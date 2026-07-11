@@ -21,6 +21,7 @@ NAV_ITEMS = (
     ("credentials", "Credentials", "/credentials"),
     ("topology", "Topology", "/topology"),
     ("predict", "Predict", "/predict"),
+    ("paths", "Paths", "/paths"),
     ("history", "History", "/history"),
     ("changes", "Changes", "/changes"),
     ("incidents", "Incidents", "/incidents"),

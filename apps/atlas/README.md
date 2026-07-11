@@ -604,6 +604,38 @@ The dashboard shows the latest prediction; the CAB-ready report lives in
 this slice — other change types are registered architecture for future
 PRs (see `ARCHITECTURE.md`).
 
+## Path Intelligence (PR-037)
+
+Ask Atlas the question every investigation starts with: **"why can't A
+reach B?"** The **Paths** page takes a source and a destination device
+and investigates end-to-end connectivity from evidence alone — no packet
+simulation, no traceroute, no guessing:
+
+- the **known path** is constructed from discovered topology (CDP/LLDP
+  edges in the current snapshot); equal-cost alternatives are reported
+  as **ambiguity with every candidate listed**, never guessed through;
+- **every hop is validated** in order: device exists → management
+  reachability → ingress/egress interfaces exist in the collected
+  inventory → operational state (up / down / administratively down);
+- the walk **stops at the first deterministic failure** and explains
+  WHY with cited evidence — an administratively shut interface says "an
+  operator disabled it", an operationally down link points at the
+  physical layer, an unreachable device cites the discovery failure;
+  hops after the failure are honestly marked *not evaluated*;
+- the result reads as an **investigation story** — a numbered, expandable
+  timeline (green Pass / yellow Warning / red Failure / grey Unknown)
+  with per-hop evidence, confidence, link and management state;
+- **evidence-based next actions** per failure type, what Atlas cannot
+  see, and confidence capped below 100%.
+
+Every investigation is recorded per network in
+`path_investigations.json` (timestamp, profile, source, destination,
+evidence, result, confidence — the complete result, so it can be
+replayed later); the latest report lives in
+`path_investigation_report.md`. Unknown devices, undiscovered
+destinations, and incomplete topology are explained honestly and end in
+a "run a fresh discovery" recommendation rather than a guess.
+
 ## Next Step
 
 Extract a reusable deterministic Topology Change Set contract for richer operational journeys before considering persistence or live transport.

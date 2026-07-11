@@ -727,6 +727,71 @@ def register_routes(app) -> None:
         flash("Prediction generated.", "success")
         return redirect(url_for("predict_page"))
 
+    # -- Path Intelligence (PR-037: where does communication stop, and why?) --
+
+    @app.route("/paths")
+    def paths_page():
+        context, scopes, scope_id = scoped_context("paths")
+        if scope_id == GLOBAL_SCOPE_ID:
+            return render_template(
+                "paths.html",
+                needs_scope=True,
+                devices=[],
+                investigation=None,
+                past_investigations=[],
+                **context,
+            )
+        scope = scopes[scope_id]
+        snapshot = load_json(scope.snapshot_path)
+        devices = prediction_targets(snapshot)
+        investigation = load_json(scope.output_dir / "path_investigation_report.json")
+        from founderos_atlas.path_intelligence import load_investigation_history
+
+        past = load_investigation_history(scope.output_dir)
+        return render_template(
+            "paths.html",
+            needs_scope=False,
+            devices=devices,
+            investigation=investigation,
+            past_investigations=past[:10],
+            artifact_prefix=artifact_prefix(scope),
+            **context,
+        )
+
+    @app.route("/paths/run", methods=["POST"])
+    def paths_run():
+        from founderos_atlas.path_intelligence import investigate_path_for_scope
+
+        scopes = known_scopes()
+        scope_id = active_scope_id(scopes)
+        if scope_id == GLOBAL_SCOPE_ID:
+            flash(
+                "Select a specific network scope to investigate a path.", "error"
+            )
+            return redirect(url_for("paths_page"))
+        scope = scopes[scope_id]
+        source = request.form.get("source", "").strip()
+        destination = request.form.get("destination", "").strip()
+        if not source or not destination:
+            flash("A source and a destination device are required.", "error")
+            return redirect(url_for("paths_page"))
+        clock = cfg("ATLAS_CLOCK")
+        generated_at = (
+            clock() if clock else datetime.now(timezone.utc)
+        ).isoformat(timespec="seconds")
+        # The engine itself resolves and reports unknown devices with
+        # evidence-based explanations — no pre-validation needed here.
+        investigate_path_for_scope(
+            source,
+            destination,
+            output_dir=scope.output_dir,
+            history_root=scope.history_root,
+            generated_at=generated_at,
+            profile_id=scope.scope_id,
+        )
+        flash("Path investigation complete.", "success")
+        return redirect(url_for("paths_page"))
+
     # -- Incidents ----------------------------------------------------------
 
     @app.route("/incidents")

@@ -22,6 +22,7 @@ recommendations).
 | Understand | Enterprise intelligence | `enterprise_intelligence/` | explained health score, risks, priorities, trends |
 | Reason | Root cause analysis | `root_cause/` | evidence-cited explanations of *why* |
 | **Predict** | **Predictive change intelligence** | `prediction/` | deterministic answers to *what happens if* |
+| **Reason** | **Path intelligence** | `path_intelligence/` | deterministic answers to *why can't A reach B* |
 
 Shared invariants: per-profile scope isolation (PR-031A), explainable
 scores (every point is a named factor), banded confidence capped below
@@ -182,6 +183,61 @@ factor now applies only when the change actually touches forwarding).
 The advice ladder gains a top rule: management lost without a verified
 alternate → **"Do not proceed until an alternate management path is
 verified"** — you must be able to reach the device to roll back at all.
+
+## Path Intelligence (PR-037, codename FLOW)
+
+The first vertical slice of end-to-end connectivity investigation:
+given a source and a destination device, `investigate_path()`
+(`path_intelligence/`) answers *where does communication stop, and why*
+— from evidence alone. No packet simulation, no traceroute, no AI.
+
+### Pipeline
+
+```
+Source + Destination
+  → resolve devices (hostname or management address; Unknown reported)
+  → construct path from discovered adjacency (CDP/LLDP edges in the
+    current snapshot; BFS over sorted neighbors; equal-cost alternatives
+    are enumerated and reported as AMBIGUOUS, never guessed through)
+  → validate every hop in order:
+      device exists → management reachability (last run's failures)
+      → ingress/egress interfaces exist in collected inventory
+      → operational state (up / down / administratively down)
+  → stop at the FIRST deterministic failure; later hops are marked
+    "not evaluated", never assumed healthy
+  → narrate the investigation story (numbered steps with evidence)
+  → recommend evidence-based next actions per failure type
+```
+
+### Models
+
+`PathInvestigationResult` (status connected/failed/ambiguous/unknown,
+path, hops, steps, failure type + summary, recommendations, banded
+confidence, unknowns, evidence refs, basis) → `HopResult` (per-hop
+status pass/warning/failed/unknown, ingress/egress interface, link
+state, management state, per-hop confidence, cited evidence, missing
+evidence) → `InvestigationStep` (the narrated story). Everything
+serializes to plain JSON; the same structure feeds the GUI, CLI,
+future REST APIs, and the assistant.
+
+### Failure vocabulary (deterministic; protocol failures are never invented)
+
+interface-down · administrative-shutdown · missing-topology-edge ·
+device-unreachable · discovery-incomplete · unknown-path ·
+unknown-device · unknown-destination · ambiguous-topology.
+
+### Evidence & confidence
+
+Hops validated against direct snapshot state carry ~90% confidence;
+hops with missing evidence (device known only from neighbor
+announcements, interfaces absent from the collected table) drop to ~50%
+and surface the gap as a warning plus an unknown; stale snapshots cost
+a documented penalty; the overall confidence is the minimum over the
+evaluated hops, capped at 95%. `investigate_path_for_scope()` runs
+against a scope's real artifacts (snapshot, history freshness, last
+run's failed hosts, captured configurations) and appends the complete
+result to `path_investigations.json` (newest first, capped) so any
+past investigation can be replayed exactly.
 
 ### Future roadmap (later PRs; no redesign required)
 

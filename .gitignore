@@ -37,6 +37,9 @@ deliverables/*
 /root_cause_report.md
 /prediction_report.json
 /prediction_report.md
+/path_investigation_report.json
+/path_investigation_report.md
+/path_investigations.json
 /dashboard.html
 /incident_report.json
 /incident_report.md

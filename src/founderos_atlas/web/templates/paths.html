@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% block title %}Path Intelligence{% endblock %}
+{% block content %}
+<h1>Path Intelligence — {{ active_scope_label }}</h1>
+
+{% if needs_scope %}
+<p class="muted">Select a specific network in the Network selector above — path investigations run against one network's evidence.</p>
+{% else %}
+
+<section class="card">
+  <h2>Investigate device-to-device connectivity</h2>
+  <form class="form" method="post" action="/paths/run">
+    <div class="form-row">
+      <label>Source device
+        <select name="source" required>
+          <option value="" selected disabled>— Select a device —</option>
+          {% for d in devices %}
+          <option value="{{ d.hostname }}">{{ d.hostname }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Destination device
+        <select name="destination" required>
+          <option value="" selected disabled>— Select a device —</option>
+          {% for d in devices %}
+          <option value="{{ d.hostname }}">{{ d.hostname }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-primary" type="submit">Investigate Path</button>
+    </div>
+    <p class="muted">Deterministic and evidence-based: Atlas constructs the path from discovered topology (CDP/LLDP and known links), validates every hop against collected state, stops at the first deterministic failure, and explains why. No packets are sent; ambiguity and missing evidence are reported, never guessed through.</p>
+  </form>
+  {% if not devices %}
+  <p class="muted">No topology yet — <a href="/discovery">run a discovery</a> first.</p>
+  {% endif %}
+</section>
+
+{% if investigation %}
+<section class="card root-cause">
+  <h2>Investigation — {{ investigation.source }} → {{ investigation.destination }}</h2>
+  <div class="job-head">
+    <span class="badge job-badge job-badge-{{ 'completed' if investigation.status == 'connected' else ('failed' if investigation.status == 'failed' else 'interrupted') }}">{{ investigation.status | title }}</span>
+    <span>Confidence: {{ investigation.confidence_band | title }} ({{ investigation.confidence_percent }}%)</span>
+    <span class="muted">{{ investigation.generated_at }}</span>
+  </div>
+  {% if investigation.path %}
+  <p><strong>Path:</strong> {{ investigation.path | join(' → ') }}</p>
+  {% endif %}
+  {% if investigation.failure_summary %}
+  <p class="hop-text-failed"><strong>Where communication stops:</strong> {{ investigation.failure_summary }}</p>
+  {% endif %}
+
+  <h2>Investigation Story</h2>
+  <ol class="path-timeline">
+    {% for step in investigation.steps %}
+    <li class="hop hop-{{ step.status }}">
+      <details {% if step.status in ('failed', 'warning') %}open{% endif %}>
+        <summary><span class="hop-dot"></span><strong>{{ step.title }}</strong>
+          <span class="badge hop-badge hop-badge-{{ step.status }}">{{ step.status | title }}</span>
+        </summary>
+        <p>{{ step.detail }}</p>
+        {% if step.evidence %}
+        <ul>{% for item in step.evidence %}<li class="muted">Evidence: {{ item }}</li>{% endfor %}</ul>
+        {% endif %}
+      </details>
+    </li>
+    {% endfor %}
+  </ol>
+
+  {% if investigation.hops %}
+  <h2>Hop Detail</h2>
+  <ol class="path-timeline">
+    {% for hop in investigation.hops %}
+    <li class="hop hop-{{ hop.status }}">
+      <details {% if hop.status == 'failed' %}open{% endif %}>
+        <summary><span class="hop-dot"></span><strong>Hop {{ hop.hop_number }}: {{ hop.device }}</strong>
+          <span class="badge hop-badge hop-badge-{{ hop.status }}">{{ hop.status | title }}</span>
+          <span class="muted">{{ hop.confidence_band | title }} ({{ hop.confidence_percent }}%)</span>
+        </summary>
+        <p>{{ hop.explanation }}</p>
+        <p class="muted">Ingress: {{ hop.ingress_interface or '—' }} · Egress: {{ hop.egress_interface or '—' }} · Link: {{ hop.link_state }} · Management: {{ hop.management_state }}</p>
+        {% if hop.evidence %}
+        <ul>{% for item in hop.evidence %}<li class="muted">Evidence: {{ item }}</li>{% endfor %}</ul>
+        {% endif %}
+        {% if hop.missing_evidence %}
+        <ul>{% for item in hop.missing_evidence %}<li class="muted">Missing: {{ item }}</li>{% endfor %}</ul>
+        {% endif %}
+      </details>
+    </li>
+    {% endfor %}
+  </ol>
+  {% endif %}
+
+  <h2>Recommended Next Actions</h2>
+  <ul>
+    {% for item in investigation.recommendations %}<li>{{ item }}</li>{% endfor %}
+  </ul>
+  {% if investigation.unknowns %}
+  <h2>What Atlas Cannot See</h2>
+  <ul>
+    {% for item in investigation.unknowns %}<li>{{ item }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+  <a class="btn btn-sm" href="/artifacts/{{ artifact_prefix or '' }}path_investigation_report.md">Open full report</a>
+</section>
+{% endif %}
+
+{% if past_investigations %}
+<section class="card">
+  <h2>Recent investigations</h2>
+  <table class="grid">
+    <thead><tr><th>When</th><th>Source</th><th>Destination</th><th>Result</th><th>Confidence</th></tr></thead>
+    <tbody>
+      {% for entry in past_investigations %}
+      <tr>
+        <td>{{ entry.generated_at }}</td>
+        <td>{{ entry.source }}</td>
+        <td>{{ entry.destination }}</td>
+        <td><span class="badge hop-badge hop-badge-{{ 'pass' if entry.status == 'connected' else ('failed' if entry.status == 'failed' else 'unknown') }}">{{ entry.status | title }}</span></td>
+        <td>{{ entry.confidence_percent }}%</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="muted">Each investigation is stored with its evidence so it can be replayed later.</p>
+</section>
+{% endif %}
+{% endif %}
+{% endblock %}

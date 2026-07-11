@@ -61,6 +61,23 @@ h3 { margin: 0 0 8px; font-size: 14px; }
 .card.plane-unknown { border-left: 6px solid var(--slate); }
 .card.plane-no_known_impact { border-left: 6px solid var(--green); }
 
+/* Path Intelligence timeline (PR-037): green pass, amber warning, red failure, grey unknown. */
+.path-timeline { list-style: none; margin: 0 0 18px; padding: 0; }
+.path-timeline .hop { border-left: 3px solid var(--line); margin: 0; padding: 0 0 6px 18px; position: relative; }
+.path-timeline .hop:last-child { padding-bottom: 0; }
+.path-timeline .hop .hop-dot { display: inline-block; width: 12px; height: 12px; border-radius: 999px; background: var(--slate); position: absolute; left: -7.5px; top: 6px; }
+.path-timeline .hop-pass { border-left-color: var(--green); } .path-timeline .hop-pass .hop-dot { background: var(--green); }
+.path-timeline .hop-warning { border-left-color: var(--amber); } .path-timeline .hop-warning .hop-dot { background: var(--amber); }
+.path-timeline .hop-failed { border-left-color: var(--red); } .path-timeline .hop-failed .hop-dot { background: var(--red); }
+.path-timeline .hop-unknown { border-left-color: var(--slate); }
+.path-timeline summary { cursor: pointer; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 4px 0; }
+.hop-badge { font-weight: 700; padding: 2px 10px; border-radius: 999px; color: #fff; background: var(--slate); font-size: 12px; }
+.hop-badge-pass { background: var(--green); }
+.hop-badge-warning { background: var(--amber); }
+.hop-badge-failed { background: var(--red); }
+.hop-badge-unknown { background: var(--slate); }
+.hop-text-failed { color: var(--red); }
+
 .columns { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; margin-bottom: 18px; }
 .card { background: var(--panel); border-radius: 10px; padding: 18px; box-shadow: 0 1px 3px rgba(15,23,42,.08); margin-bottom: 18px; }
 .card ul { margin: 0; padding-left: 18px; color: #334155; }
