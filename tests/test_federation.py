@@ -479,7 +479,9 @@ class EnterpriseGuiTests(unittest.TestCase):
             workdir = Path(tmp)
             _, client = self.build_world(workdir)
             page = client.get("/?scope=all").data
-            self.assertIn(b"Enterprise Summary", page)
+            # PR-040: All Networks lands on MISSION; the enterprise
+            # summary lives in its Enterprise Health card.
+            self.assertIn(b"Enterprise Health", page)
             self.assertIn(b"Canonical devices", page)
             self.assertIn(b"Hyderabad", page)
             self.assertIn(b"Secunderabad", page)

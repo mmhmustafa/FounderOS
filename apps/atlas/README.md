@@ -729,6 +729,33 @@ press **Analyse Plan**:
 Compass is an advisor, not an approval gate. The engineer remains in
 control.
 
+## Mission Workspace (PR-040)
+
+Atlas now opens on **Mission** — the operational workspace. Engineers
+don't wake up thinking "I need Prediction"; they think "why can't users
+reach SAP?" or "I have a window tonight". Mission asks **"What are you
+trying to do?"** and launches the right workflow:
+
+- 🔍 **Investigate an Issue** → Path Intelligence
+- 🛠 **Plan a Change** → Compass
+- 🌐 **Discover Infrastructure** → Discovery
+- 📈 **Review Overnight Changes** → Changes
+- 🔎 **Search the Enterprise** → the same Ctrl+K overlay
+- 📚 **Review Previous Investigations** → stored investigations
+
+Below the launchers: **Enterprise Health** (freshness per profile with
+evidence age), **Today's Recommendations** (deterministic and
+evidence-cited — stale discoveries, failed runs, unanalysed plans,
+active issues, low-confidence predictions; a healthy world honestly
+says nothing needs attention), pending Compass plans, recent
+investigations/predictions/changes/discoveries — every item resumes its
+workflow with one click — and locally-stored recent searches and
+devices (this browser only; nothing sensitive persisted).
+
+Mission orchestrates; the engines execute. No logic moved, nothing
+duplicated, and the per-network dashboards are unchanged when you
+select a specific scope.
+
 ## Next Step
 
 Extract a reusable deterministic Topology Change Set contract for richer operational journeys before considering persistence or live transport.

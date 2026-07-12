@@ -78,6 +78,19 @@ h3 { margin: 0 0 8px; font-size: 14px; }
 .hop-badge-unknown { background: var(--slate); }
 .hop-text-failed { color: var(--red); }
 
+/* Mission workspace (PR-040): calm, action-first landing page. */
+.mission-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; }
+.mission-action { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; text-align: left; padding: 16px; border: 1px solid var(--line); border-radius: 10px; background: #fff; color: inherit; text-decoration: none; cursor: pointer; font: inherit; }
+.mission-action:hover { border-color: var(--accent); box-shadow: 0 2px 8px rgba(15,23,42,.08); }
+.mission-icon { font-size: 22px; }
+.mission-recs { list-style: none; margin: 0; padding: 0; }
+.mission-recs li { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.mission-recs li:last-child { border-bottom: none; }
+.mission-recs li > span:first-child { flex: 1 1 320px; }
+.mission-list { list-style: none; margin: 0 0 10px; padding: 0; }
+.mission-list li { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+.mission-list li:last-child { border-bottom: none; }
+
 /* Universal search (PR-038): Ctrl+K overlay, grouped deterministic results. */
 .search-trigger { display: flex; align-items: center; gap: 8px; margin-left: 24px; padding: 7px 14px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--muted); font-size: 13px; cursor: pointer; }
 .search-trigger kbd, .search-foot kbd { border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 1px 5px; font-size: 11px; background: #f8fafc; color: #475569; }

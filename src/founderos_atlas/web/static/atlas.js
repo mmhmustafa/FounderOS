@@ -362,8 +362,77 @@
     });
     var trigger = byId("atlas-search-trigger");
     if (trigger) trigger.addEventListener("click", openSearch);
+    // MISSION (PR-040) and any other page can offer "Search the
+    // Enterprise" buttons — same overlay, never a duplicate.
+    Array.prototype.forEach.call(
+      document.querySelectorAll(".js-open-search"),
+      function (button) { button.addEventListener("click", openSearch); }
+    );
     searchOverlay.addEventListener("click", function (event) {
       if (event.target === searchOverlay) closeSearch();
     });
+
+    // -- Mission context awareness (PR-040) -------------------------------
+    // Stored locally in THIS browser only (localStorage) — Atlas never
+    // persists this server-side and no sensitive data is recorded.
+    var DEVICES_KEY = "atlas-recent-devices";
+    var readList = function (key) {
+      try {
+        var raw = window.localStorage.getItem(key);
+        var list = raw ? JSON.parse(raw) : [];
+        return Array.isArray(list) ? list : [];
+      } catch (error) { return []; }
+    };
+    if (window.location.pathname.indexOf("/devices/") === 0) {
+      var heading = document.querySelector("main h1");
+      if (heading && heading.textContent.trim() &&
+          heading.textContent.trim() !== "Device not found") {
+        try {
+          var entry = {
+            title: heading.textContent.trim(),
+            href: window.location.pathname
+          };
+          var devices = readList(DEVICES_KEY).filter(function (item) {
+            return item.href !== entry.href;
+          });
+          devices.unshift(entry);
+          window.localStorage.setItem(
+            DEVICES_KEY, JSON.stringify(devices.slice(0, 8))
+          );
+        } catch (error) { /* private mode: context awareness is optional */ }
+      }
+    }
+    var renderMissionList = function (id, items, onClick) {
+      var list = byId(id);
+      if (!list || !items.length) return;
+      list.textContent = "";
+      items.forEach(function (item) {
+        var row = document.createElement("li");
+        var link = document.createElement("a");
+        link.href = item.href || "#";
+        link.textContent = item.title || item;
+        if (onClick) {
+          link.addEventListener("click", function (event) { onClick(event, item); });
+        }
+        row.appendChild(link);
+        list.appendChild(row);
+      });
+    };
+    renderMissionList(
+      "mission-recent-devices",
+      readList(DEVICES_KEY)
+    );
+    renderMissionList(
+      "mission-recent-searches",
+      recentSearches().map(function (query) {
+        return { title: query, href: "#" };
+      }),
+      function (event, item) {
+        event.preventDefault();
+        openSearch();
+        searchInput.value = item.title;
+        runSearch(item.title);
+      }
+    );
   }
 })();

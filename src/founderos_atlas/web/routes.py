@@ -273,31 +273,160 @@ def register_routes(app) -> None:
     def dashboard():
         context, scopes, scope_id = scoped_context("dashboard")
         if scope_id == GLOBAL_SCOPE_ID:
-            aggregated = aggregation_scopes(scopes)
-            networks = tuple(
-                NetworkSummary(
-                    scope_id=scope.scope_id,
-                    label=scope.label,
-                    summary=summary_for(scope),
-                )
-                for scope in aggregated
-            )
-            recent, _ = merged_history_rows(aggregated)
-            # Enterprise summary (PR-037A): one network, many observation
-            # points — canonical counts with merge and boundary visibility.
-            graph, _snapshot = enterprise_world()
-            return render_template(
-                "dashboard_global.html",
-                summary=aggregate_dashboard_summaries(networks),
-                recent=recent[:8],
-                **(enterprise_context(graph) if graph.devices else {}),
-                **context,
-            )
+            return mission_workspace(context, scopes)
         scope = scopes[scope_id]
         return render_template(
             "dashboard.html",
             summary=summary_for(scope),
             artifact_prefix=artifact_prefix(scope),
+            **context,
+        )
+
+    def mission_workspace(context: dict, scopes: dict):
+        """MISSION (PR-040): the workflow-oriented enterprise workspace.
+
+        Pure orchestration — every card reads artifacts the existing
+        engines already produced; no engine logic lives here and the
+        engines remain authoritative.
+        """
+
+        from founderos_atlas.compass import PlanRepository
+        from founderos_atlas.path_intelligence import load_investigation_history
+
+        from .mission import (
+            build_recommendations,
+            describe_age,
+            merge_recent,
+            shape_investigations,
+            shape_prediction,
+        )
+
+        aggregated = aggregation_scopes(scopes)
+        networks = tuple(
+            NetworkSummary(
+                scope_id=scope.scope_id,
+                label=scope.label,
+                summary=summary_for(scope),
+            )
+            for scope in aggregated
+        )
+        summary = aggregate_dashboard_summaries(networks)
+        recent, _ = merged_history_rows(aggregated)
+        graph, _snapshot = enterprise_world()
+        now = now_iso()
+
+        # Compass plans (advisor state, straight from the repository).
+        repository = PlanRepository(output_dir())
+        plans = []
+        draft_plan_count = 0
+        for plan in repository.list_plans():
+            _, assessment = repository.get(plan.plan_id)
+            if plan.status != "analysed":
+                draft_plan_count += 1
+            plans.append(
+                {
+                    "plan": plan,
+                    "risk": (
+                        (assessment or {}).get("risk", {}).get("overall_risk")
+                        if assessment
+                        else None
+                    ),
+                }
+            )
+
+        # Recent investigations: the enterprise scope plus every network.
+        enterprise_dir = enterprise_scope_dir(output_dir())
+        investigation_sets = [
+            shape_investigations(
+                load_investigation_history(enterprise_dir),
+                scope_id=GLOBAL_SCOPE_ID,
+                network=GLOBAL_SCOPE_LABEL,
+            )
+        ]
+        prediction_rows = [
+            shape_prediction(
+                load_json(enterprise_dir / "prediction_report.json"),
+                scope_id=GLOBAL_SCOPE_ID,
+                network=GLOBAL_SCOPE_LABEL,
+            )
+        ]
+        change_rows = []
+        failures = []
+        for scope in aggregated:
+            investigation_sets.append(
+                shape_investigations(
+                    load_investigation_history(scope.output_dir),
+                    scope_id=scope.scope_id,
+                    network=scope.label,
+                )
+            )
+            prediction_rows.append(
+                shape_prediction(
+                    load_json(scope.output_dir / "prediction_report.json"),
+                    scope_id=scope.scope_id,
+                    network=scope.label,
+                )
+            )
+            report = load_json(scope.output_dir / "state_change_report.json")
+            if isinstance(report, dict) and (
+                report.get("change_count") or report.get("active_issue_count")
+            ):
+                change_rows.append(
+                    {
+                        "network": scope.label,
+                        "scope_id": scope.scope_id,
+                        "change_count": report.get("change_count") or 0,
+                        "active_issue_count": report.get("active_issue_count")
+                        or 0,
+                    }
+                )
+            record = HistoryRepository(scope.history_root).latest()
+            if record is not None and record.failures:
+                failures.append(
+                    {
+                        "network": scope.label,
+                        "scope_id": scope.scope_id,
+                        "run_id": record.record_id,
+                        "count": len(record.failures),
+                    }
+                )
+        investigations = merge_recent(investigation_sets)
+        predictions = [row for row in prediction_rows if row]
+        predictions.sort(
+            key=lambda row: str(row.get("generated_at") or ""), reverse=True
+        )
+        recommendations = build_recommendations(
+            contributions=[c.to_dict() for c in graph.contributions],
+            draft_plan_count=draft_plan_count,
+            discovery_failures=failures,
+            predictions=predictions,
+            active_issues=[
+                {
+                    "network": row["network"],
+                    "scope_id": row["scope_id"],
+                    "count": row["active_issue_count"],
+                }
+                for row in change_rows
+                if row["active_issue_count"]
+            ],
+            has_any_data=bool(aggregated),
+            now=now,
+        )
+        freshness_ages = {
+            contribution.profile_id: describe_age(contribution.observed_at, now)
+            for contribution in graph.contributions
+        }
+        return render_template(
+            "mission.html",
+            summary=summary,
+            recent=recent[:6],
+            plans=plans,
+            investigations=investigations,
+            predictions=predictions[:4],
+            change_rows=change_rows,
+            recommendations=recommendations,
+            freshness_ages=freshness_ages,
+            **(enterprise_context(graph) if graph.devices else {}),
             **context,
         )
 

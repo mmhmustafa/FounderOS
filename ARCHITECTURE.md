@@ -26,6 +26,7 @@ recommendations).
 | **Federate** | **Enterprise federation** | `federation/` | one canonical enterprise graph from many observation points |
 | **Find** | **Universal search** | `search/` | deterministic grouped search over everything Atlas knows |
 | **Advise** | **Compass change planning** | `compass/` | evidence-ordered execution plans for many changes |
+| **Work** | **Mission workspace** | `web/mission.py` | workflow orchestration over every engine (never logic) |
 
 Shared invariants: per-profile scope isolation (PR-031A), explainable
 scores (every point is a named factor), banded confidence capped below
@@ -259,6 +260,43 @@ of truth.
 `search_enterprise()` · `merge_observations()` ·
 `build_enterprise_snapshot()` · `write_enterprise_artifacts()` — shared
 by GUI, CLI, future REST APIs, and the assistant.
+
+## Mission Workspace (PR-040)
+
+MISSION is NOT a dashboard and NOT an engine — it is the operational
+workspace: the All Networks landing page asks *"What are you trying to
+do?"* and orchestrates the existing engines. No engine logic lives in
+MISSION; every card READS artifacts the engines already produced, and
+the engines remain authoritative.
+
+### Workflow orchestration
+
+| Engineer's goal | Engines behind it |
+|---|---|
+| Investigate an Issue | Path Intelligence → Search → History → RCA |
+| Plan a Change | Compass → Prediction → Enterprise Graph → Risk |
+| Discover Infrastructure | Discovery Profiles → Federation → Topology |
+| Review Overnight Changes | Changes → Enterprise Health → History |
+| Search the Enterprise | Universal Search (the same Ctrl+K overlay — embedded, never duplicated) |
+
+### Structure
+
+`web/mission.py` holds the view-model assembly only: deterministic
+Today's Recommendations (each exists ONLY because evidence exists — a
+stale contribution with its age, a failed discovery run with its run
+id, an unanalysed plan count, an active-issue count, a medium/low-
+confidence prediction — and each cites that evidence), plus shaping
+helpers for recent investigations/predictions. The route gathers data
+through EXISTING services (aggregate dashboard summaries, enterprise
+graph + freshness, history repository, Compass `PlanRepository`,
+path-investigation history, prediction/state-change reports).
+
+Context awareness: the active scope stays in the Flask session
+(existing); recent searches and recently viewed devices live in
+browser localStorage only — nothing sensitive is persisted
+server-side. Scoped dashboards (`/?scope=<profile>`) are unchanged;
+the old global dashboard template is retired in favor of MISSION,
+which keeps the enterprise health tiles and per-network table.
 
 ## Compass Change Planning (PR-039)
 

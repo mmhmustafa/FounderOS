@@ -74,7 +74,9 @@ class WebShellTests(unittest.TestCase):
             body = response.data
             self.assertIn(b"Atlas", body)
             self.assertIn(b"Enterprise Network Intelligence", body)
-            self.assertIn(b"Dashboard", body)
+            # PR-040: the landing page is the MISSION workspace.
+            self.assertIn(b"Mission", body)
+            self.assertIn(b"What are you trying to do?", body)
             self.assertIn(b"Run Discovery", body)
 
     def test_profiles_route_lists_without_password(self) -> None:
