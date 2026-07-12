@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block title %}Advisor{% endblock %}
+{% block content %}
+<h1>Atlas Advisor</h1>
+<p class="muted">How can I help today? Advisor answers only from collected evidence — every response cites its sources, states its confidence, and recommends the workflow to act on it. It never guesses.</p>
+
+<section class="card">
+  <form class="advisor-ask" method="post" action="/advisor/ask">
+    <input type="text" name="question" id="advisor-question" autocomplete="off"
+           placeholder="Ask Atlas Advisor… (e.g. Explain enterprise health · Find SW2 · What changed?)" required>
+    <button class="btn btn-primary" type="submit">Ask</button>
+  </form>
+  <div class="advisor-quick">
+    <form method="post" action="/advisor/ask"><input type="hidden" name="question" value="Investigate an issue"><button class="btn btn-sm" type="submit">🔍 Investigate an Issue</button></form>
+    <form method="post" action="/advisor/ask"><input type="hidden" name="question" value="Help me plan maintenance"><button class="btn btn-sm" type="submit">🛠 Plan a Change</button></form>
+    <form method="post" action="/advisor/ask"><input type="hidden" name="question" value="Summarize discovery"><button class="btn btn-sm" type="submit">🌐 Discover Infrastructure</button></form>
+    <form method="post" action="/advisor/ask"><input type="hidden" name="question" value="What changed?"><button class="btn btn-sm" type="submit">📈 Explain Recent Changes</button></form>
+    <form method="post" action="/advisor/ask"><input type="hidden" name="question" value="Explain enterprise health"><button class="btn btn-sm" type="submit">📊 Summarize Enterprise Health</button></form>
+  </div>
+</section>
+
+{% if response %}
+<section class="card root-cause advisor-response">
+  <div class="job-head">
+    <h2 style="margin:0;">{{ response.question }}</h2>
+    <span class="badge hop-badge hop-badge-{{ 'pass' if response.confidence == 'High' else ('warning' if response.confidence == 'Medium' else ('failed' if response.confidence == 'Low' else 'unknown')) }}">Confidence: {{ response.confidence }}</span>
+  </div>
+
+  <h2>Summary</h2>
+  <p>{{ response.summary }}</p>
+
+  <h2>Evidence</h2>
+  {% if response.evidence %}
+  <details open>
+    <summary class="muted">Evidence used ({{ response.evidence | length }})</summary>
+    <ul>
+      {% for item in response.evidence %}
+      <li>✓ {% if item.href %}<a href="{{ item.href }}">{{ item.label }}</a>{% else %}{{ item.label }}{% endif %} <span class="muted">— {{ item.detail }}</span></li>
+      {% endfor %}
+    </ul>
+  </details>
+  {% else %}
+  <p class="muted">No evidence supports this answer — which is exactly what the confidence says.</p>
+  {% endif %}
+
+  <h2>Confidence</h2>
+  <p>{{ response.confidence }} <span class="muted">— {{ response.confidence_basis }}</span></p>
+
+  {% if response.unknowns %}
+  <h2>What Atlas Cannot See</h2>
+  <ul>
+    {% for item in response.unknowns %}<li class="muted">{{ item }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+
+  <h2>Recommended Next Action</h2>
+  <div class="actions">
+    <a class="btn btn-primary" href="{{ response.next_action.href }}">{{ response.next_action.label }}</a>
+  </div>
+
+  {% if response.followups %}
+  <h2>Follow-up</h2>
+  <div class="advisor-quick">
+    {% for item in response.followups %}
+    {% if item.question %}
+    <form method="post" action="/advisor/ask"><input type="hidden" name="question" value="{{ item.question }}"><button class="btn btn-sm" type="submit">{{ item.label }}</button></form>
+    {% else %}
+    <a class="btn btn-sm" href="{{ item.href }}">{{ item.label }}</a>
+    {% endif %}
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <details class="advisor-steps">
+    <summary class="muted">How this answer was prepared ({{ response.steps | length }} step(s))</summary>
+    <ol>
+      {% for step in response.steps %}<li class="muted">{{ step }}</li>{% endfor %}
+    </ol>
+    <p class="muted">These are the operations Advisor actually performed against the existing engines — real orchestration, never simulated reasoning.</p>
+  </details>
+</section>
+{% endif %}
+
+<div class="columns">
+  <section class="card">
+    <h2>Recent Conversations</h2>
+    {% if conversations %}
+    <ul class="mission-list">
+      {% for entry in conversations %}
+      <li>
+        <span class="activity-kind">{{ entry.response.intent }}</span>
+        <a href="/advisor?conversation={{ loop.index0 }}">{{ entry.response.question }}</a>
+        <span class="muted">{{ entry.asked_at or '' }} · {{ entry.response.confidence }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="muted">No conversations yet. Try a quick action above — for example <strong>Summarize Enterprise Health</strong> — and Advisor will answer with cited evidence.</p>
+    {% endif %}
+  </section>
+
+  <section class="card">
+    <h2>Continue Elsewhere</h2>
+    <p class="muted">Advisor guides; the workflows do the work.</p>
+    <ul class="mission-list">
+      <li><span class="activity-kind">Mission</span><a href="/?scope=all">Open the operational home</a></li>
+      <li><span class="activity-kind">Investigations</span><a href="/paths?scope=all">Recent path investigations</a></li>
+      <li><span class="activity-kind">Plans</span><a href="/compass">Maintenance plans in Compass</a></li>
+      <li><span class="activity-kind">Search</span><button type="button" class="btn btn-sm js-open-search">Ctrl+K — search the enterprise</button></li>
+    </ul>
+    <div class="mission-inline-recent">
+      <span class="muted">Recent searches:</span>
+      <ul id="mission-recent-searches" class="mission-chips"><li class="muted">appear here — stored in this browser only</li></ul>
+    </div>
+  </section>
+</div>
+{% endblock %}

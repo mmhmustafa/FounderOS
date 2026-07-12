@@ -1285,6 +1285,65 @@ def register_routes(app) -> None:
         flash("Plan analysed.", "success")
         return redirect(url_for("compass_plan_page", plan_id=plan_id))
 
+    # -- Atlas Advisor (PR-042: the conversational guide) ----------------------
+
+    def advisor_repository():
+        from founderos_atlas.advisor import ConversationRepository
+
+        return ConversationRepository(output_dir())
+
+    def advisor_ask(question: str):
+        """Answer through the SAME cached graph and search index the GUI
+        uses — Advisor orchestrates, it never re-derives."""
+
+        from founderos_atlas.advisor import ask
+
+        graph, snapshot = enterprise_world()
+        return ask(
+            question,
+            base_output_dir=output_dir(),
+            profiles=profile_service().list_profiles(),
+            graph=graph,
+            snapshot=snapshot,
+            search_index=current_search_index(),
+            generated_at=now_iso(),
+            repository=advisor_repository(),
+        )
+
+    @app.route("/advisor")
+    def advisor_page():
+        context, _scopes, _scope_id = scoped_context("advisor")
+        conversations = advisor_repository().list_conversations()
+        latest = None
+        selected = request.args.get("conversation", "").strip()
+        if selected.isdigit() and int(selected) < len(conversations):
+            latest = conversations[int(selected)].get("response")
+        elif conversations:
+            latest = conversations[0].get("response")
+        return render_template(
+            "advisor.html",
+            conversations=conversations[:8],
+            response=latest,
+            **context,
+        )
+
+    @app.route("/advisor/ask", methods=["POST"])
+    def advisor_ask_route():
+        question = request.form.get("question", "").strip()
+        if not question:
+            flash("Ask a question first.", "error")
+            return redirect(url_for("advisor_page"))
+        advisor_ask(question)
+        return redirect(url_for("advisor_page"))
+
+    @app.route("/api/advisor/ask", methods=["POST"])
+    def api_advisor_ask():
+        payload = request.get_json(silent=True) or request.form
+        question = str(payload.get("question") or "").strip()
+        if not question:
+            return jsonify(error="A question is required."), 400
+        return jsonify(advisor_ask(question).to_dict())
+
     # -- Universal search (PR-038: the front door to Atlas) -------------------
 
     search_service = SearchService()

@@ -16,6 +16,7 @@ from typing import Any
 
 NAV_ITEMS = (
     ("dashboard", "Mission", "/"),
+    ("advisor", "Advisor", "/advisor"),
     ("discovery", "Discover", "/discovery"),
     ("profiles", "Profiles", "/profiles"),
     ("credentials", "Credentials", "/credentials"),

@@ -35,6 +35,7 @@ recommendations).
 | **Find** | **Universal search** | `search/` | deterministic grouped search over everything Atlas knows |
 | **Advise** | **Compass change planning** | `compass/` | evidence-ordered execution plans for many changes |
 | **Work** | **Mission workspace** | `web/mission.py` | workflow orchestration over every engine (never logic) |
+| **Guide** | **Atlas Advisor** | `advisor/` | evidence-cited conversational routing (never generation) |
 
 Shared invariants: per-profile scope isolation (PR-031A), explainable
 scores (every point is a named factor), banded confidence capped below
@@ -268,6 +269,50 @@ of truth.
 `search_enterprise()` · `merge_observations()` ·
 `build_enterprise_snapshot()` · `write_enterprise_artifacts()` — shared
 by GUI, CLI, future REST APIs, and the assistant.
+
+## Atlas Advisor (PR-042)
+
+Advisor is NOT an AI chatbot — it is an evidence ORCHESTRATION layer,
+never an answer-generation layer.
+
+### Pipeline
+
+```
+question
+  → deterministic intent router (advisor/router.py: fixed-order,
+    casefolded keyword rules — first match wins; no AI, no fuzziness;
+    extraction helpers parse search queries, path endpoints, and
+    prediction targets with strict regexes that never guess)
+  → intent handler (advisor/engine.py) performing REAL work through
+    an EXISTING engine:
+      health       → intelligence reports + graph freshness
+      changes      → per-profile state-change reports
+      discovery    → archived discovery runs
+      search       → the PR-038 search index (rank → confidence)
+      path         → the FLOW engine, run pure (no persistence);
+                     endpoints that resolve to no evidence fall back
+                     to workflow routing instead of investigating noise
+      prediction   → the prediction engine, run pure, with alias-safe
+                     interface resolution
+      compass      → the plan repository
+      continue     → stored investigations across every scope
+      enterprise   → the federated graph's own counts
+      unknown      → "I don't currently have enough evidence." +
+                     the four recovery workflows — never a guess
+  → one FIXED response structure: Summary · Evidence (each item
+    openable) · Confidence (High/Medium/Low/Unknown, mapped from the
+    engines' shared bands, with the basis stated) · Recommended Next
+    Action · Follow-ups · the steps ACTUALLY performed (real
+    orchestration, never simulated reasoning)
+```
+
+The route feeds Advisor the SAME cached enterprise graph and search
+index the GUI uses — no second source of truth, nothing re-derived.
+Conversations persist locally (`.atlas/advisor/conversations.json`,
+capped, no secrets) so Recent Conversations can be re-opened.
+`POST /api/advisor/ask` serves the identical structured JSON for
+future clients. Mission launches Advisor; Advisor's every answer ends
+in a Mission workflow — the engineer always remains in control.
 
 ## Mission Workspace (PR-040)
 

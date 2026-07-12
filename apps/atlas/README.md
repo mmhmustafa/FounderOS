@@ -756,6 +756,32 @@ Mission orchestrates; the engines execute. No logic moved, nothing
 duplicated, and the per-network dashboards are unchanged when you
 select a specific scope.
 
+## Atlas Advisor (PR-042)
+
+**The conversational interface to Atlas — not an AI chatbot.** Open
+**Advisor** (or the 💬 card on Mission) and ask in plain words:
+
+- *"Explain enterprise health"* → per-network scores with freshness,
+  citing each intelligence report.
+- *"Find SW2"* → the canonical device with provenance; confidence comes
+  from the search match rank.
+- *"Can A1 reach B1?"* → Advisor RUNS a real path investigation and
+  reports the walked path or the exact failed hop.
+- *"What happens if I disable Gi0/1 on A1?"* → Advisor RUNS the
+  prediction engine and reports risk, blast radius, and the
+  recommendation.
+- *"What changed?"*, *"Summarize discovery"*, *"Help me plan
+  maintenance"*, *"Continue my investigation"* — each routed
+  deterministically to the engine that owns the answer.
+
+Every response has the same shape: **Summary · Evidence (openable) ·
+Confidence (with its basis) · Recommended Next Action · Follow-ups**,
+plus "How this answer was prepared" — the operations Advisor actually
+performed. When the evidence doesn't exist, Advisor says *"I don't
+currently have enough evidence."* and offers the workflow that would
+produce it. It never guesses, never generates, and never replaces the
+engines — it guides you to them.
+
 ## Next Step
 
 Extract a reusable deterministic Topology Change Set contract for richer operational journeys before considering persistence or live transport.
