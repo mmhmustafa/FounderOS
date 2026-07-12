@@ -179,6 +179,102 @@ def shape_investigations(
     return shaped
 
 
+def build_activity_stream(
+    *,
+    discoveries: list[dict],
+    investigations: list[dict],
+    predictions: list[dict],
+    plans: list[dict],
+    changes: list[dict],
+    limit: int = 10,
+) -> list[dict]:
+    """One combined operational timeline, newest first.
+
+    Pure shaping of rows the route already loaded — discoveries,
+    investigations, predictions, maintenance plans, and change reports
+    become one stream so the engineer reads a single "what happened"
+    narrative instead of five separate lists.
+    """
+
+    stream: list[dict] = []
+    for row in discoveries:
+        stream.append(
+            {
+                "kind": "Discovery",
+                "text": (
+                    f"Discovery completed — {row.get('profile')} · "
+                    f"{row.get('device_count')} device(s) · "
+                    f"{row.get('network_status')}"
+                ),
+                "when": row.get("started_at"),
+                "sort": str(row.get("started_at_iso") or ""),
+                "href": "/history?scope=all",
+            }
+        )
+    for row in investigations:
+        stream.append(
+            {
+                "kind": "Investigation",
+                "text": (
+                    f"Path investigation — {row.get('title')} "
+                    f"({row.get('status')}) · {row.get('network')}"
+                ),
+                "when": row.get("generated_at"),
+                "sort": str(row.get("generated_at") or ""),
+                "href": row.get("href"),
+            }
+        )
+    for row in predictions:
+        stream.append(
+            {
+                "kind": "Prediction",
+                "text": (
+                    f"Prediction created — {row.get('subject')} · "
+                    f"risk {row.get('risk')} · {row.get('network')}"
+                ),
+                "when": row.get("generated_at"),
+                "sort": str(row.get("generated_at") or ""),
+                "href": row.get("href"),
+            }
+        )
+    for row in plans:
+        plan = row.get("plan")
+        if plan is None:
+            continue
+        stream.append(
+            {
+                "kind": "Maintenance plan",
+                "text": (
+                    f"Maintenance plan {plan.status} — {plan.title} · "
+                    f"{len(plan.changes)} change(s)"
+                ),
+                "when": plan.updated_at,
+                "sort": str(plan.updated_at or ""),
+                "href": f"/compass/{plan.plan_id}",
+            }
+        )
+    for row in changes:
+        stream.append(
+            {
+                "kind": "Changes",
+                "text": (
+                    f"Operational changes — {row.get('network')}: "
+                    f"{row.get('change_count')} change(s)"
+                    + (
+                        f", {row.get('active_issue_count')} active issue(s)"
+                        if row.get("active_issue_count")
+                        else ""
+                    )
+                ),
+                "when": row.get("generated_at"),
+                "sort": str(row.get("generated_at") or ""),
+                "href": f"/changes?scope={row.get('scope_id')}",
+            }
+        )
+    stream.sort(key=lambda item: item["sort"], reverse=True)
+    return stream[:limit]
+
+
 def shape_prediction(
     report: dict | None, *, scope_id: str, network: str
 ) -> dict | None:

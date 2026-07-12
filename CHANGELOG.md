@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### EPIC-002 / PR-040.1 - Mission UX Alignment (MISSION REFINEMENT)
+
+- **Product-design sprint, zero backend change**: Mission no longer reads as "Dashboard v2". The page now flows Status → **"What would you like to do?"** → **Continue Working** → Today's Recommendations → Enterprise Health → **Recent Activity** — actions first, metrics demoted to supporting decisions (pinned by a test asserting the DOM order).
+- **Continue Working replaces the engine cards**: the dominating Latest Predictions card and the separate plans/investigations/changes/discoveries columns are folded into one resume list — Resume Investigation, Resume Plan, Review Prediction — because Mission is about workflows, not engines. Its empty state teaches with concrete starting points (routing issue, VLAN problem, device unreachable, change tonight).
+- **One operational timeline**: `build_activity_stream` (pure view-model shaping in `web/mission.py`) merges discoveries, investigations, predictions, maintenance-plan edits, and detected changes into a single newest-first Recent Activity stream with kind chips and resume links.
+- **Dashboard terminology disappears**: the scoped page is now **Mission — <profile>** too, opening with its status strip and the same five workflow launchers (scoped targets) before its metric panels — which are all preserved (Latest Prediction, risks/recommendations, changes, discoveries). Action verbs aligned: Run Discovery, Review Changes, Search Enterprise.
+- Visual refinement: slim status strip, activity-kind chips, inline recent-searches/devices chips (still browser-local only), fewer cards (9 → 5 on a healthy enterprise page) — calm over dashboard overload. Expert tools remain one click away in the sidebar (pinned by test).
+- Tests: `tests/test_mission.py` updated to the new structure and grown to 19 (actions-before-metrics DOM order; the five workflow launchers with "Dashboard" asserted absent; Continue Working resume flows for investigations/plans/predictions with their timeline entries; teaching empty state with all four examples; scoped Mission keeps metrics and gains workflows; expert sidebar preserved); one wording assertion in `test_web_app.py` follows the new heading. Verified live in a browser: section order, all five launchers, search-from-card open/Escape-close, no "Dashboard" text anywhere.
+
 ### EPIC-002 / PR-041 - Atlas Product Readiness (POLISH)
 
 - **No new engines — a refinement sprint** treating every page as a Fortune-500 demo. Backward compatible throughout: scope ids, URLs, sessions, and artifacts are unchanged.

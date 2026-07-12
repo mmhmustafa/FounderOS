@@ -1,7 +1,7 @@
 """Acceptance tests for PR-040 — the MISSION operational workspace.
 
 MISSION is orchestration, never business logic: the All Networks
-landing page presents workflows ("What are you trying to do?"), an
+landing page presents workflows ("What would you like to do?"), an
 Enterprise Health card, deterministic evidence-cited recommendations,
 and resume-able recent activity — every card reading artifacts the
 existing engines already produced. Scoped dashboards, search, Compass,
@@ -139,29 +139,52 @@ class MissionGuiTests(unittest.TestCase):
         app.config.update(TESTING=True)
         return service, app.test_client()
 
-    def test_mission_is_the_all_networks_landing_page(self) -> None:
+    def test_mission_is_the_enterprise_landing_page(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             _, client = self.build_world(Path(tmp))
             page = client.get("/?scope=all").data
             self.assertIn(b"Mission", page)
-            self.assertIn(b"What are you trying to do?", page)
+            # PR-040.1: the page opens with the question, not metrics.
+            self.assertIn(b"What would you like to do?", page)
             for action in (
                 b"Investigate an Issue", b"Plan a Change",
-                b"Discover Infrastructure", b"Review Overnight Changes",
-                b"Search the Enterprise", b"Review Previous Investigations",
+                b"Run Discovery", b"Review Changes",
+                b"Search Enterprise",
             ):
                 self.assertIn(action, page)
+            self.assertNotIn(b"Dashboard", page)
             self.assertNotIn(PASSWORD.encode(), page)
 
-    def test_enterprise_health_freshness_and_recent_discoveries(self) -> None:
+    def test_actions_come_before_metrics(self) -> None:
+        """PR-040.1: the first thing an engineer sees is never metrics."""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            _, client = self.build_world(Path(tmp))
+            page = client.get("/?scope=all").data.decode("utf-8")
+            self.assertLess(
+                page.index("What would you like to do?"),
+                page.index("Enterprise Health"),
+            )
+            self.assertLess(
+                page.index("Continue Working"),
+                page.index("Enterprise Health"),
+            )
+            # The status strip (one sentence, not metrics) may lead.
+            self.assertLess(
+                page.index("status-banner"),
+                page.index("What would you like to do?"),
+            )
+
+    def test_enterprise_health_freshness_and_activity(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             _, client = self.build_world(Path(tmp))
             page = client.get("/?scope=all").data
             self.assertIn(b"Enterprise Health", page)
             self.assertIn(b"<strong>Networks</strong><span>2</span>", page)
             self.assertIn(b"Canonical devices", page)
-            self.assertIn(b"Enterprise freshness:", page)
-            self.assertIn(b"Recent Discoveries", page)
+            self.assertIn(b"Discovery freshness:", page)
+            self.assertIn(b"Recent Activity", page)
+            self.assertIn(b"Discovery completed", page)
             self.assertIn(b"Hyderabad", page)
             self.assertIn(b"Secunderabad", page)
 
@@ -241,11 +264,13 @@ class MissionGuiTests(unittest.TestCase):
             )
             client.post("/compass/core-upgrade/analyse", follow_redirects=True)
             page = client.get("/?scope=all").data.decode("utf-8")
-            self.assertIn("Pending Maintenance Plans", page)
+            # PR-040.1: plans surface as resumable work, not a stats card.
+            self.assertIn("Continue Working", page)
             self.assertIn("Core Upgrade", page)
             self.assertIn("Tonight", page)
-            self.assertIn("Open Plan", page)
+            self.assertIn("Resume Plan", page)
             self.assertIn('href="/compass/core-upgrade"', page)
+            self.assertIn("Maintenance plan analysed", page)  # the timeline
 
     def test_investigations_appear_and_resume(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -258,10 +283,11 @@ class MissionGuiTests(unittest.TestCase):
                 follow_redirects=True,
             )
             page = client.get("/?scope=all").data.decode("utf-8")
-            self.assertIn("Recent Investigations", page)
+            self.assertIn("Continue Working", page)
             self.assertIn("A2 → B1", page)
             self.assertIn("connected", page)
-            self.assertIn("Continue", page)
+            self.assertIn("Resume Investigation", page)
+            self.assertIn("Path investigation", page)  # the timeline entry
             resume = client.get("/paths?scope=all").data
             self.assertIn(b"A2 \xe2\x86\x92 B1", resume)
 
@@ -281,9 +307,12 @@ class MissionGuiTests(unittest.TestCase):
                 "Hyderabad", FIXED + timedelta(hours=2),
             )
             page = client.get("/?scope=all").data.decode("utf-8")
-            self.assertIn("Latest Predictions", page)
+            # PR-040.1: the prediction is a resumable item plus a
+            # timeline entry — no dominating engine card.
+            self.assertIn("Review Prediction", page)
             self.assertIn("GW GigabitEthernet0/1", page)
-            self.assertIn("Recent Changes", page)
+            self.assertIn("Prediction created", page)
+            self.assertIn("Operational changes", page)  # timeline entry
             self.assertIn("active issue(s)", page)
             self.assertIn("Review Changes", page)  # the recommendation
 
@@ -292,13 +321,13 @@ class MissionGuiTests(unittest.TestCase):
             _, client = self.build_world(Path(tmp))
             page = client.get("/?scope=all").data.decode("utf-8")
             self.assertEqual(1, page.count('id="atlas-search"'))
-            self.assertGreaterEqual(page.count("js-open-search"), 2)
+            self.assertGreaterEqual(page.count("js-open-search"), 1)
             self.assertIn("mission-recent-searches", page)
             self.assertIn("mission-recent-devices", page)
             script = client.get("/static/atlas.js").data.decode("utf-8")
             self.assertIn("js-open-search", script)
             self.assertIn("atlas-recent-devices", script)
-            self.assertIn("stored locally", page.casefold())
+            self.assertIn("stored in this browser only", page.casefold())
 
     def test_context_scope_selection_persists(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -308,32 +337,51 @@ class MissionGuiTests(unittest.TestCase):
             self.assertIn(b"Topology \xe2\x80\x94 Hyderabad", page)
             client.get("/?scope=all")
             page = client.get("/").data
-            self.assertIn(b"What are you trying to do?", page)
+            self.assertIn(b"What would you like to do?", page)
 
-    def test_scoped_dashboards_are_unchanged(self) -> None:
+    def test_scoped_mission_keeps_metrics_and_gains_workflows(self) -> None:
+        """PR-040.1: Dashboard terminology disappears — the scoped page
+        is Mission too, actions first, its metric panels preserved."""
+
         with tempfile.TemporaryDirectory() as tmp:
             _, client = self.build_world(Path(tmp))
             page = client.get("/?scope=hyderabad").data
-            self.assertNotIn(b"What are you trying to do?", page)
+            self.assertIn(b"Mission \xe2\x80\x94 Hyderabad", page)
+            self.assertNotIn(b"Dashboard", page)
+            self.assertIn(b"What would you like to do?", page)
             self.assertIn(b"Recent Discoveries", page)
+            text = page.decode("utf-8")
+            self.assertLess(
+                text.index("What would you like to do?"),
+                text.index("Recent Discoveries"),
+            )
+            # Enterprise-only cards stay off the scoped page.
+            self.assertNotIn(b"Continue Working", page)
 
-    def test_empty_world_shows_honest_onboarding(self) -> None:
+    def test_empty_world_teaches_with_examples(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             _, client = self.build_world(Path(tmp), discover=False)
             page = client.get("/?scope=all").data.decode("utf-8")
-            self.assertIn("What are you trying to do?", page)
+            self.assertIn("What would you like to do?", page)
             self.assertIn("No discovery has run yet", page)
             self.assertIn("Run Discovery", page)
+            # The Continue Working empty state teaches by example.
+            self.assertIn("Start your first investigation", page)
+            for example in ("Routing issue", "VLAN problem",
+                            "Device unreachable", "Change tonight"):
+                self.assertIn(example, page)
 
-    def test_quick_actions_are_present(self) -> None:
+    def test_expert_tools_stay_in_the_sidebar(self) -> None:
+        """Mission is the front door, never a replacement for expert
+        navigation."""
+
         with tempfile.TemporaryDirectory() as tmp:
             _, client = self.build_world(Path(tmp))
             page = client.get("/?scope=all").data.decode("utf-8")
-            self.assertIn("Quick Actions", page)
-            for label in ("Run Discovery", "New Investigation",
-                          "New Maintenance Plan", "Open Topology",
-                          "Review Predictions", "Open Compass"):
-                self.assertIn(label, page)
+            for href in ('href="/predict"', 'href="/paths"',
+                         'href="/topology"', 'href="/history"',
+                         'href="/compass"'):
+                self.assertIn(href, page)
 
 
 if __name__ == "__main__":

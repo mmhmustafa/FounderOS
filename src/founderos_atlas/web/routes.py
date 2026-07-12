@@ -335,6 +335,7 @@ def register_routes(app) -> None:
         from founderos_atlas.path_intelligence import load_investigation_history
 
         from .mission import (
+            build_activity_stream,
             build_recommendations,
             describe_age,
             merge_recent,
@@ -419,6 +420,7 @@ def register_routes(app) -> None:
                         "change_count": report.get("change_count") or 0,
                         "active_issue_count": report.get("active_issue_count")
                         or 0,
+                        "generated_at": report.get("generated_at"),
                     }
                 )
             record = HistoryRepository(scope.history_root).latest()
@@ -457,6 +459,13 @@ def register_routes(app) -> None:
             contribution.profile_id: describe_age(contribution.observed_at, now)
             for contribution in graph.contributions
         }
+        activity = build_activity_stream(
+            discoveries=recent[:6],
+            investigations=investigations,
+            predictions=predictions,
+            plans=plans,
+            changes=change_rows,
+        )
         return render_template(
             "mission.html",
             summary=summary,
@@ -467,6 +476,7 @@ def register_routes(app) -> None:
             change_rows=change_rows,
             recommendations=recommendations,
             freshness_ages=freshness_ages,
+            activity=activity,
             **(enterprise_context(graph) if graph.devices else {}),
             **context,
         )

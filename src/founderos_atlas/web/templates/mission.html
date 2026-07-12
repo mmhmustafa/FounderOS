@@ -3,8 +3,15 @@
 {% block content %}
 <h1>Mission — Enterprise</h1>
 
+{% if summary.networks %}
+<div class="status-banner status-{{ summary.status | lower }} mission-status">
+  <span class="badge">{{ summary.status }}</span>
+  <span>{{ summary.status_detail }}</span>
+</div>
+{% endif %}
+
 <section class="card mission-actions">
-  <h2>What are you trying to do?</h2>
+  <h2>What would you like to do?</h2>
   <div class="mission-grid">
     <a class="mission-action" href="/paths?scope=all">
       <span class="mission-icon">🔍</span>
@@ -18,37 +25,91 @@
     </a>
     <a class="mission-action" href="/discovery">
       <span class="mission-icon">🌐</span>
-      <strong>Discover Infrastructure</strong>
+      <strong>Run Discovery</strong>
       <span class="muted">Refresh or extend the enterprise evidence.</span>
     </a>
     <a class="mission-action" href="/changes?scope=all">
-      <span class="mission-icon">📈</span>
-      <strong>Review Overnight Changes</strong>
+      <span class="mission-icon">📋</span>
+      <strong>Review Changes</strong>
       <span class="muted">What changed since the last discovery?</span>
     </a>
     <button type="button" class="mission-action js-open-search">
       <span class="mission-icon">🔎</span>
-      <strong>Search the Enterprise</strong>
+      <strong>Search Enterprise</strong>
       <span class="muted">Ctrl+K — devices, interfaces, plans, history.</span>
     </button>
-    <a class="mission-action" href="/paths?scope=all">
-      <span class="mission-icon">📚</span>
-      <strong>Review Previous Investigations</strong>
-      <span class="muted">Every investigation is stored with its evidence.</span>
-    </a>
   </div>
+</section>
+
+<section class="card">
+  <h2>Continue Working</h2>
+  {% set latest_plan = plans | first if plans else none %}
+  {% set latest_investigation = investigations | first if investigations else none %}
+  {% set latest_prediction = predictions | first if predictions else none %}
+  {% if latest_investigation or latest_plan or latest_prediction %}
+  <ul class="mission-list">
+    {% if latest_investigation %}
+    <li>
+      <span class="activity-kind">Investigation</span>
+      <span><strong>{{ latest_investigation.title }}</strong> <span class="badge hop-badge hop-badge-{{ 'pass' if latest_investigation.status == 'connected' else ('failed' if latest_investigation.status == 'failed' else 'unknown') }}">{{ latest_investigation.status }}</span> <span class="muted">{{ latest_investigation.network }}</span></span>
+      <a class="btn btn-sm" href="{{ latest_investigation.href }}">Resume Investigation</a>
+    </li>
+    {% endif %}
+    {% if latest_plan %}
+    <li>
+      <span class="activity-kind">Maintenance plan</span>
+      <span><strong>{{ latest_plan.plan.title }}</strong> <span class="muted">{{ latest_plan.plan.maintenance_window or 'no window set' }} · {{ latest_plan.plan.changes | length }} change(s) · {{ latest_plan.plan.status }}</span>{% if latest_plan.risk %} <span class="badge hop-badge hop-badge-{{ 'failed' if latest_plan.risk in ('high', 'critical') else ('warning' if latest_plan.risk == 'medium' else 'pass') }}">{{ latest_plan.risk }}</span>{% endif %}</span>
+      <a class="btn btn-sm" href="/compass/{{ latest_plan.plan.plan_id }}">Resume Plan</a>
+    </li>
+    {% endif %}
+    {% if latest_prediction %}
+    <li>
+      <span class="activity-kind">Prediction</span>
+      <span><strong>{{ latest_prediction.subject }}</strong> <span class="badge hop-badge hop-badge-{{ 'failed' if latest_prediction.risk in ('high', 'critical') else ('warning' if latest_prediction.risk == 'medium' else 'pass') }}">{{ latest_prediction.risk }}</span> <span class="muted">{{ latest_prediction.confidence_band | title if latest_prediction.confidence_band else '?' }} ({{ latest_prediction.confidence_percent }}%)</span></span>
+      <a class="btn btn-sm" href="{{ latest_prediction.href }}">Review Prediction</a>
+    </li>
+    {% endif %}
+  </ul>
+  {% else %}
+  <p class="muted">Nothing in progress yet. Start your first investigation — common starting points:</p>
+  <ul class="mission-examples muted">
+    <li>Routing issue — "why can't A reach B?" → <a href="/paths?scope=all">Investigate a path</a></li>
+    <li>VLAN problem — search the SVI (e.g. <code>VLAN20</code>) with Ctrl+K</li>
+    <li>Device unreachable — <a href="/paths?scope=all">walk the path</a> to it hop by hop</li>
+    <li>Change tonight — <a href="/compass">plan it with Compass</a> before touching anything</li>
+  </ul>
+  {% endif %}
+  <div class="mission-inline-recent">
+    <span class="muted">Recent searches:</span>
+    <ul id="mission-recent-searches" class="mission-chips"><li class="muted">appear here — stored in this browser only</li></ul>
+  </div>
+</section>
+
+<section class="card">
+  <h2>Today's Recommendations</h2>
+  {% if recommendations %}
+  <ul class="mission-recs">
+    {% for rec in recommendations %}
+    <li>
+      <span>{{ rec.text }}</span>
+      <span class="muted">Evidence: {{ rec.evidence }}</span>
+      <a class="btn btn-sm" href="{{ rec.href }}">{{ rec.action }}</a>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="muted">Nothing needs your attention: evidence is fresh, plans are analysed, and no active issues are recorded. Recommendations appear only when deterministic evidence produces them.</p>
+  {% endif %}
 </section>
 
 {% if summary.networks %}
 <section class="card">
   <h2>Enterprise Health</h2>
-  <div class="status-banner status-{{ summary.status | lower }}">
-    <span class="badge">{{ summary.status }}</span>
-    <span>{{ summary.status_detail }}</span>
-  </div>
   <div class="tiles">
     <div class="tile"><strong>Networks</strong><span>{{ summary.network_count }}</span></div>
     <div class="tile"><strong>Devices</strong><span>{{ summary.device_count }}</span></div>
+    <div class="tile"><strong>Relationships</strong><span>{{ summary.relationship_count }}</span></div>
+    <div class="tile"><strong>Configurations</strong><span>{{ summary.configurations_collected }}</span></div>
     {% if enterprise_contributions %}
     <div class="tile"><strong>Canonical devices</strong><span>{{ enterprise_device_count }}</span></div>
     <div class="tile"><strong>Observations</strong><span>{{ enterprise_observation_count }}</span></div>
@@ -57,7 +118,7 @@
   </div>
   {% if enterprise_contributions %}
   <p>
-    Enterprise freshness:
+    Discovery freshness:
     {% for c in enterprise_contributions %}
     <strong>{{ c.profile_name }}</strong>
     ({% if c.fresh %}<span class="ok">fresh</span>{% elif c.fresh is sameas false %}<span class="warn">stale{% if freshness_ages.get(c.profile_id) %} — {{ freshness_ages.get(c.profile_id) }}{% endif %}</span>{% else %}unknown{% endif %}){{ ", " if not loop.last }}
@@ -83,153 +144,33 @@
       {% endfor %}
     </tbody>
   </table>
-  <div class="actions" style="margin-top: 10px;">
-    <a class="btn" href="/discovery">Run Discovery</a>
-    <a class="btn" href="/topology?scope=all">Open Topology</a>
-  </div>
+  <p class="muted">Metrics support decisions — the workflows above are the point. <a href="/topology?scope=all">Open the enterprise topology</a> for the full graph.</p>
 </section>
 {% else %}
 <section class="card">
   <h2>Enterprise Health</h2>
-  <p class="muted">No discovery has run yet in any network. <a href="/discovery">Run a discovery</a> to give Atlas evidence to reason about.</p>
+  <p class="muted">No discovery has run yet in any scope. <a href="/discovery">Run a discovery</a> to give Atlas evidence to reason about.</p>
 </section>
 {% endif %}
 
 <section class="card">
-  <h2>Today's Recommendations</h2>
-  {% if recommendations %}
-  <ul class="mission-recs">
-    {% for rec in recommendations %}
+  <h2>Recent Activity</h2>
+  {% if activity %}
+  <ul class="activity-stream">
+    {% for item in activity %}
     <li>
-      <span>{{ rec.text }}</span>
-      <span class="muted">Evidence: {{ rec.evidence }}</span>
-      <a class="btn btn-sm" href="{{ rec.href }}">{{ rec.action }}</a>
+      <span class="activity-kind">{{ item.kind }}</span>
+      <a href="{{ item.href }}">{{ item.text }}</a>
+      <span class="muted">{{ item.when or '' }}</span>
     </li>
     {% endfor %}
   </ul>
   {% else %}
-  <p class="muted">Nothing needs your attention: evidence is fresh, plans are analysed, and no active issues are recorded. Recommendations appear only when deterministic evidence produces them.</p>
+  <p class="muted">The operational timeline appears here: discoveries, investigations, predictions, maintenance plans, and detected changes — newest first.</p>
   {% endif %}
-</section>
-
-<div class="columns">
-  <section class="card">
-    <h2>Pending Maintenance Plans</h2>
-    {% if plans %}
-    <ul class="mission-list">
-      {% for row in plans %}
-      <li>
-        <strong>{{ row.plan.title }}</strong>
-        <span class="muted">{{ row.plan.maintenance_window or 'no window set' }} · {{ row.plan.changes | length }} change(s) · {{ row.plan.status }}</span>
-        {% if row.risk %}<span class="badge hop-badge hop-badge-{{ 'failed' if row.risk in ('high', 'critical') else ('warning' if row.risk == 'medium' else 'pass') }}">{{ row.risk }}</span>{% endif %}
-        <a class="btn btn-sm" href="/compass/{{ row.plan.plan_id }}">Open Plan</a>
-      </li>
-      {% endfor %}
-    </ul>
-    {% else %}
-    <p class="muted">No maintenance plans yet.</p>
-    <a class="btn btn-sm" href="/compass">New Maintenance Plan</a>
-    {% endif %}
-  </section>
-
-  <section class="card">
-    <h2>Recent Investigations</h2>
-    {% if investigations %}
-    <ul class="mission-list">
-      {% for item in investigations %}
-      <li>
-        <strong>{{ item.title }}</strong>
-        <span class="badge hop-badge hop-badge-{{ 'pass' if item.status == 'connected' else ('failed' if item.status == 'failed' else 'unknown') }}">{{ item.status }}</span>
-        <span class="muted">{{ item.network }}{% if item.generated_at %} · {{ item.generated_at }}{% endif %}</span>
-        <a class="btn btn-sm" href="{{ item.href }}">Continue</a>
-      </li>
-      {% endfor %}
-    </ul>
-    {% else %}
-    <p class="muted">No investigations yet.</p>
-    <a class="btn btn-sm" href="/paths?scope=all">New Investigation</a>
-    {% endif %}
-  </section>
-</div>
-
-<div class="columns">
-  <section class="card">
-    <h2>Latest Predictions</h2>
-    {% if predictions %}
-    <ul class="mission-list">
-      {% for item in predictions %}
-      <li>
-        <strong>{{ item.subject }}</strong>
-        <span class="badge hop-badge hop-badge-{{ 'failed' if item.risk in ('high', 'critical') else ('warning' if item.risk == 'medium' else 'pass') }}">{{ item.risk }}</span>
-        <span class="muted">{{ item.network }} · {{ item.confidence_band | title if item.confidence_band else '?' }} ({{ item.confidence_percent }}%)</span>
-        <a class="btn btn-sm" href="{{ item.href }}">Review</a>
-      </li>
-      {% endfor %}
-    </ul>
-    {% else %}
-    <p class="muted">No predictions yet.</p>
-    <a class="btn btn-sm" href="/predict?scope=all">Review Predictions</a>
-    {% endif %}
-  </section>
-
-  <section class="card">
-    <h2>Recent Changes</h2>
-    {% if change_rows %}
-    <ul class="mission-list">
-      {% for row in change_rows %}
-      <li>
-        <strong>{{ row.network }}</strong>
-        <span class="muted">{{ row.change_count }} change(s){% if row.active_issue_count %} · <span class="warn">{{ row.active_issue_count }} active issue(s)</span>{% endif %}</span>
-        <a class="btn btn-sm" href="/changes?scope={{ row.scope_id | urlencode }}">Review</a>
-      </li>
-      {% endfor %}
-    </ul>
-    {% else %}
-    <p class="muted">No operational changes recorded between the latest discoveries.</p>
-    {% endif %}
-  </section>
-</div>
-
-<div class="columns">
-  <section class="card">
-    <h2>Recent Discoveries</h2>
-    {% if recent %}
-    <ul class="mission-list">
-      {% for r in recent %}
-      <li><span>{{ r.started_at }} — <strong>{{ r.profile }}</strong> — {{ r.device_count }} device(s) — {{ r.network_status }}</span></li>
-      {% endfor %}
-    </ul>
-    {% else %}
-    <p class="muted">No discovery history yet.</p>
-    {% endif %}
-    <a class="btn btn-sm" href="/history?scope=all">Open History</a>
-  </section>
-
-  <section class="card">
-    <h2>Recent Activity (this browser)</h2>
-    <div class="columns">
-      <div>
-        <h2 class="muted" style="font-size:13px;">Recent searches</h2>
-        <ul class="mission-list" id="mission-recent-searches"><li class="muted">Your recent searches appear here — stored locally in this browser only.</li></ul>
-      </div>
-      <div>
-        <h2 class="muted" style="font-size:13px;">Recent devices</h2>
-        <ul class="mission-list" id="mission-recent-devices"><li class="muted">Devices you view appear here — stored locally in this browser only.</li></ul>
-      </div>
-    </div>
-  </section>
-</div>
-
-<section class="card">
-  <h2>Quick Actions</h2>
-  <div class="actions">
-    <a class="btn" href="/discovery">Run Discovery</a>
-    <a class="btn" href="/paths?scope=all">New Investigation</a>
-    <a class="btn" href="/compass">New Maintenance Plan</a>
-    <button type="button" class="btn js-open-search">Search</button>
-    <a class="btn" href="/topology?scope=all">Open Topology</a>
-    <a class="btn" href="/predict?scope=all">Review Predictions</a>
-    <a class="btn" href="/compass">Open Compass</a>
+  <div class="mission-inline-recent">
+    <span class="muted">Recently viewed devices:</span>
+    <ul id="mission-recent-devices" class="mission-chips"><li class="muted">appear here — stored in this browser only</li></ul>
   </div>
 </section>
 {% endblock %}

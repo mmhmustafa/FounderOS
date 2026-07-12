@@ -1,12 +1,43 @@
 {% extends "base.html" %}
-{% block title %}Dashboard{% endblock %}
+{% block title %}Mission{% endblock %}
 {% block content %}
-<h1>Dashboard{% if active_scope_label %} — {{ active_scope_label }}{% endif %}</h1>
+<h1>Mission{% if active_scope_label %} — {{ active_scope_label }}{% endif %}</h1>
 
-<div class="status-banner status-{{ summary.status | lower }}">
+<div class="status-banner status-{{ summary.status | lower }} mission-status">
   <span class="badge">{{ summary.status }}</span>
   <span>{{ summary.status_detail }}</span>
 </div>
+
+<section class="card mission-actions">
+  <h2>What would you like to do?</h2>
+  <div class="mission-grid">
+    <a class="mission-action" href="/paths">
+      <span class="mission-icon">🔍</span>
+      <strong>Investigate an Issue</strong>
+      <span class="muted">Walk a path through this scope's evidence.</span>
+    </a>
+    <a class="mission-action" href="/predict">
+      <span class="mission-icon">🛠</span>
+      <strong>Plan a Change</strong>
+      <span class="muted">Predict the impact before touching anything.</span>
+    </a>
+    <a class="mission-action" href="/discovery">
+      <span class="mission-icon">🌐</span>
+      <strong>Run Discovery</strong>
+      <span class="muted">Refresh this scope's evidence.</span>
+    </a>
+    <a class="mission-action" href="/changes">
+      <span class="mission-icon">📋</span>
+      <strong>Review Changes</strong>
+      <span class="muted">What changed since the last discovery?</span>
+    </a>
+    <button type="button" class="mission-action js-open-search">
+      <span class="mission-icon">🔎</span>
+      <strong>Search Enterprise</strong>
+      <span class="muted">Ctrl+K — devices, interfaces, plans, history.</span>
+    </button>
+  </div>
+</section>
 
 <div class="tiles">
   {% if summary.health_score is not none %}
