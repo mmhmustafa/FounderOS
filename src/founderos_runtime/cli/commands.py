@@ -664,6 +664,8 @@ def _build_reports(
         "devices": graph.summary()["device_count"],
         "relationships": _logical_relationships(graph),
         "configurations_collected": len(collected_dirs),
+        # PR-043: the platform mix this run discovered (driver families).
+        "platforms": dict(snapshot.metadata.get("platforms") or {}),
         "topology_changes": (
             topology_report.change_count if topology_report is not None else None
         ),

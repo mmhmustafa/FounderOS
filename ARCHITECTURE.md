@@ -24,6 +24,7 @@ recommendations).
 | Stage | Engine | Package | Output |
 |---|---|---|---|
 | Observe | Discovery (multi-hop, boundaries, multi-credential) | `discovery/`, `credentials/`, `transport/` | topology snapshots, configs, per-run history |
+| Observe | **Platform drivers** (detection + normalization) | `platforms/` | canonical models from any supported platform |
 | Observe | Canonical identity & enterprise topology | `identity/`, `enterprise/` | one canonical device set with provenance |
 | Understand | Change intelligence (topology / config / operational) | `change/`, `config_intelligence/`, `state/` | classified diffs per profile scope |
 | Understand | Site inference | `sites/` | evidence-based site assignments (may be Unknown) |
@@ -269,6 +270,48 @@ of truth.
 `search_enterprise()` · `merge_observations()` ·
 `build_enterprise_snapshot()` · `write_enterprise_artifacts()` — shared
 by GUI, CLI, future REST APIs, and the assistant.
+
+## Multi-Platform Discovery Framework (PR-043)
+
+Atlas discovers PLATFORMS and reasons about ENTERPRISES — never vendors.
+
+### Architecture
+
+```
+SSH → platform detection (lightweight probe, e.g. "show version")
+    → Platform Registry (the ONE place platform logic loads from)
+    → Platform Driver (everything platform-specific)
+    → canonical models (NetworkDevice / NetworkInterface /
+      NetworkNeighbor / metadata evidence)
+    → enterprise graph — every downstream engine unchanged
+```
+
+- **`PlatformDriver`** (`platforms/base.py`): probe matcher, parse-only
+  adapter, and a declarative capability collection plan; the base class
+  owns the generic collect → parse → annotate flow. Capabilities are
+  RECORDED, never raised: collected / empty / not-configured /
+  unavailable / not-collected. Discovery succeeds whenever meaningful
+  evidence is collected.
+- **`PlatformRegistry`** (`platforms/registry.py`): ordered detection,
+  extensible at runtime — a future Junos driver is one class plus one
+  `register()`; discovery itself never changes. Unknown platforms get
+  an honest, actionable message (what the probe said, which drivers are
+  supported, what's on the roadmap) and fail per-device, never the run.
+- **Drivers**: `drivers/ios.py` reuses the battle-tested Cisco IOS
+  adapter unchanged (a refactor, not a rewrite — routes honestly
+  not-collected yet); `drivers/frr.py` speaks FRRouting vtysh directly
+  (identity, interfaces, OSPF adjacencies → canonical neighbors that
+  traverse exactly like CDP; routes and BGP peers summarized into
+  canonical metadata; absent daemons and unknown commands are
+  capability facts).
+- **Traversal** (`discovery/multihop.py`): per-host detection is the
+  default (the probe output is reused, never re-executed); passing an
+  explicit adapter pins the legacy single-adapter path. The canonical
+  neighbor protocol vocabulary opened to routing adjacencies
+  (cdp/lldp/ospf/bgp/isis) — one typo-guard set, not scattered checks.
+- Snapshots record the platform mix (`metadata.platforms`), devices
+  carry their driver stamp and capability report in canonical metadata,
+  and the discovery summary shows the platform line.
 
 ## Atlas Advisor (PR-042)
 

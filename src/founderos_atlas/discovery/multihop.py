@@ -14,11 +14,37 @@ from dataclasses import dataclass
 
 from ..transport import AtlasTransportError, DeviceTransport
 from .adapter import DiscoveryAdapter
-from .adapters import CiscoIOSAdapter
 from .engine import DiscoveryEngine
 from .exceptions import AtlasDiscoveryError
 from .models import DiscoveryResult, NetworkNeighbor
 from .policy import BoundaryPolicy
+
+
+def _discover_with_registry(transport, registry, host: str) -> DiscoveryResult:
+    """Detect the platform with a lightweight probe, then drive discovery.
+
+    The probe output is handed to the matching driver so the detection
+    command is never executed twice. An unrecognized platform raises the
+    registry's honest, actionable explanation.
+    """
+
+    from founderos_atlas.platforms import UnsupportedPlatformError
+
+    probe_output = ""
+    driver = None
+    for probe_command in registry.probe_commands():
+        probe_output = transport.execute(probe_command)
+        driver = registry.detect(probe_output)
+        if driver is not None and driver.probe_command == probe_command:
+            break
+        if driver is not None:
+            break
+    if driver is None:
+        raise UnsupportedPlatformError(registry.unsupported_message(probe_output))
+    discovery = driver.discover(
+        transport, management_ip_hint=host, probe_output=probe_output
+    )
+    return discovery.result
 
 
 HostTransportFactory = Callable[[str], DeviceTransport]
@@ -84,12 +110,22 @@ def discover_multihop(
     transport_factory: HostTransportFactory,
     *,
     adapter: DiscoveryAdapter | None = None,
+    registry=None,
     config: MultiHopConfig | None = None,
     policy: BoundaryPolicy | None = None,
     extra_seeds: tuple[str, ...] = (),
     on_neighbor: NeighborObserver | None = None,
 ) -> MultiHopDiscoveryReport:
     """Discover the seed device(s), then reachable neighbors breadth-first.
+
+    Platform handling (PR-043): by default every host is platform-detected
+    with a lightweight probe and discovered through the matching
+    ``PlatformDriver`` from the ``registry`` (defaulting to Atlas's
+    built-in registry: Cisco IOS/IOS-XE, FRRouting). Passing an explicit
+    ``adapter`` pins the legacy single-adapter behavior for callers and
+    tests that inject their own parser. An unrecognized platform is a
+    per-device failure with an honest explanation — never a crash of the
+    whole discovery (unless it is the only seed, the unchanged contract).
 
     With one seed, its failure aborts the discovery (unchanged contract);
     with multiple seeds, individual seed failures are recorded and discovery
@@ -110,9 +146,14 @@ def discover_multihop(
         raise ValueError("seed_host must be a non-empty string")
     if not callable(transport_factory):
         raise TypeError("transport_factory must be callable")
-    resolved_adapter = adapter if adapter is not None else CiscoIOSAdapter()
+    resolved_adapter = adapter
+    resolved_registry = registry
+    if resolved_adapter is None and resolved_registry is None:
+        from founderos_atlas.platforms import default_registry
+
+        resolved_registry = default_registry()
     resolved_config = config if config is not None else MultiHopConfig()
-    engine = DiscoveryEngine(resolved_adapter)
+    engine = DiscoveryEngine(resolved_adapter) if resolved_adapter else None
 
     seed = seed_host.strip()
     seeds: list[str] = [seed]
@@ -141,8 +182,16 @@ def discover_multihop(
         try:
             transport = transport_factory(host)
             with transport:
-                raw_outputs = transport.execute_many(resolved_adapter.required_commands)
-            result = engine.discover(raw_outputs, management_ip_hint=host)
+                if engine is not None:
+                    # Legacy pinned-adapter path: unchanged behavior.
+                    raw_outputs = transport.execute_many(
+                        resolved_adapter.required_commands
+                    )
+                    result = engine.discover(raw_outputs, management_ip_hint=host)
+                else:
+                    result = _discover_with_registry(
+                        transport, resolved_registry, host
+                    )
         except (AtlasTransportError, AtlasDiscoveryError) as error:
             if depth == 0:
                 if len(seeds) == 1:
@@ -212,7 +261,8 @@ def discover_multihop(
                             neighbor.remote_hostname,
                             depth + 1,
                             SKIPPED,
-                            "no management IP advertised over CDP",
+                            "no management IP advertised over "
+                            f"{neighbor.protocol.upper()}",
                             hostname=neighbor.remote_hostname,
                         )
                     )
@@ -221,7 +271,11 @@ def discover_multihop(
                 continue
             enqueued_hosts.add(next_host)
             queue.append(
-                (next_host, depth + 1, f"cdp neighbor of {result.device.hostname}")
+                (
+                    next_host,
+                    depth + 1,
+                    f"{neighbor.protocol} neighbor of {result.device.hostname}",
+                )
             )
 
     if not results and first_seed_error is not None:

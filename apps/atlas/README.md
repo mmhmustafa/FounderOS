@@ -782,6 +782,29 @@ currently have enough evidence."* and offers the workflow that would
 produce it. It never guesses, never generates, and never replaces the
 engines — it guides you to them.
 
+## Multi-Platform Discovery (PR-043)
+
+Atlas is not a Cisco tool. Discovery now runs
+`SSH → platform detection → platform driver → canonical model`:
+
+- a lightweight probe identifies each device's platform before
+  discovery; the **Platform Registry** loads the matching driver;
+- **Cisco IOS / IOS-XE** and **FRRouting** (vtysh) ship as the first
+  two drivers — FRR identity, interfaces, OSPF adjacencies (which
+  traverse like CDP), route and BGP summaries, and configuration all
+  normalize into the same canonical models;
+- **capabilities are recorded, never raised**: OSPF not configured,
+  LLDP unavailable, a missing daemon — each becomes an honest
+  capability fact and discovery still succeeds;
+- unknown platforms fail per device with an honest explanation (what
+  the probe said, which drivers exist, what's on the roadmap: NX-OS,
+  Junos, EOS, FortiOS, PAN-OS) — the rest of the run continues;
+- every downstream engine — federation, prediction, path intelligence,
+  Compass, Advisor, Mission, search — is untouched: they consume only
+  canonical models and never see a platform-specific object.
+
+Adding the next platform is one driver class plus one registry entry.
+
 ## Next Step
 
 Extract a reusable deterministic Topology Change Set contract for richer operational journeys before considering persistence or live transport.

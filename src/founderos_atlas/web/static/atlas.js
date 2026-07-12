@@ -56,6 +56,7 @@
       setText("summary-devices", job.summary.devices);
       setText("summary-relationships", job.summary.relationships);
       setText("summary-configs", job.summary.configurations_collected);
+      setText("summary-platforms", job.summary.platforms || "—");
       setText("summary-duration", job.summary.duration_seconds + " seconds");
       show("job-warning", Boolean(job.warning));
       if (job.warning) setText("job-warning", job.warning);

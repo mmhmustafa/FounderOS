@@ -1599,6 +1599,9 @@ def make_pipeline_runner(app):
         record = HistoryRepository(scope.history_root).latest()
         if record is None:
             return {}
+        # PR-043: the platform mix comes from the run's own snapshot.
+        snapshot = load_json(scope.snapshot_path) or {}
+        platforms = (snapshot.get("metadata") or {}).get("platforms") or {}
         return {
             "devices": record.device_count,
             "relationships": record.relationship_count,
@@ -1606,6 +1609,9 @@ def make_pipeline_runner(app):
             "duration_seconds": record.duration_seconds,
             "network_status": record.network_status,
             "failed_devices": len(record.failures),
+            "platforms": ", ".join(
+                f"{name}: {count}" for name, count in sorted(platforms.items())
+            ),
         }
 
     return run

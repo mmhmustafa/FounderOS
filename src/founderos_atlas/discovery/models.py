@@ -102,8 +102,17 @@ class NetworkNeighbor:
         object.__setattr__(self, "remote_interface", _optional(self.remote_interface, "remote_interface"))
         object.__setattr__(self, "remote_management_ip", _ip(self.remote_management_ip, "remote_management_ip"))
         protocol = _required(self.protocol, "protocol").lower()
-        if protocol not in {"cdp", "lldp", "manual", "inferred"}:
-            raise ValueError("protocol must be cdp, lldp, manual, or inferred")
+        # PR-043: adjacency evidence is platform-neutral. Link-layer
+        # discovery (cdp/lldp) and routing adjacencies (ospf/bgp/isis)
+        # are all legitimate neighbor sources; the closed set stays a
+        # typo guard, extended rather than scattered.
+        if protocol not in {
+            "cdp", "lldp", "ospf", "bgp", "isis", "manual", "inferred",
+        }:
+            raise ValueError(
+                "protocol must be one of cdp, lldp, ospf, bgp, isis, "
+                "manual, or inferred"
+            )
         object.__setattr__(self, "protocol", protocol)
         object.__setattr__(self, "metadata", _freeze_mapping(self.metadata, "metadata"))
 

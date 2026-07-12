@@ -58,6 +58,7 @@ def run_multihop_discovery(
     seed_host: str,
     *,
     adapter: DiscoveryAdapter | None = None,
+    registry=None,
     config: MultiHopConfig | None = None,
     policy=None,
     extra_seeds: tuple[str, ...] = (),
@@ -67,13 +68,15 @@ def run_multihop_discovery(
 
     Traversal lives in ``discovery.multihop``; this composition only wires it
     to the existing reconciliation and snapshot pipeline. ``policy``,
-    ``extra_seeds``, and ``on_neighbor`` pass through to the traversal.
+    ``extra_seeds``, ``on_neighbor``, and the platform ``registry``
+    (PR-043) pass through to the traversal.
     """
 
     report = discover_multihop(
         seed_host,
         transport_factory,
         adapter=adapter,
+        registry=registry,
         config=config,
         policy=policy,
         extra_seeds=extra_seeds,
@@ -95,6 +98,11 @@ def run_multihop_discovery(
     )
     graph = TopologyReconciler().reconcile(canonical_results)
     failed_hosts = tuple(sorted(visit.host for visit in report.failed))
+    # Platform mix (PR-043): how many devices each driver family produced.
+    platform_counts: dict[str, int] = {}
+    for result in report.results:
+        family = result.platform_family or "unknown"
+        platform_counts[family] = platform_counts.get(family, 0) + 1
     snapshot = TopologySnapshot.from_graph(
         graph,
         metadata={
@@ -105,6 +113,7 @@ def run_multihop_discovery(
             "max_depth": report.config.max_depth,
             "max_devices": report.config.max_devices,
             "identity_resolution": True,
+            "platforms": dict(sorted(platform_counts.items())),
             **({"failed_hosts": failed_hosts} if failed_hosts else {}),
         },
     )

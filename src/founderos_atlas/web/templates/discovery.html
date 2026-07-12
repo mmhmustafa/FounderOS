@@ -72,6 +72,7 @@
       <li><span>Devices discovered</span><span id="summary-devices">{{ job.summary.devices if job and job.summary else '' }}</span></li>
       <li><span>Relationships</span><span id="summary-relationships">{{ job.summary.relationships if job and job.summary else '' }}</span></li>
       <li><span>Configurations collected</span><span id="summary-configs">{{ job.summary.configurations_collected if job and job.summary else '' }}</span></li>
+      <li><span>Platforms</span><span id="summary-platforms">{{ job.summary.platforms if job and job.summary and job.summary.platforms else '—' }}</span></li>
       <li><span>Duration</span><span id="summary-duration">{% if job and job.summary %}{{ job.summary.duration_seconds }} seconds{% endif %}</span></li>
     </ul>
     <div class="flash flash-error" id="job-warning" {% if not (job and job.warning) %}hidden{% endif %}>{{ job.warning if job else '' }}</div>

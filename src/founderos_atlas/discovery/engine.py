@@ -54,16 +54,22 @@ class DiscoveryEngine:
             else replace(neighbor, local_device_id=device.device_id)
             for neighbor in self._adapter.parse_neighbors(normalized)
         )
+        # Fact sources follow the adapter's own command vocabulary
+        # (PR-043: platforms other than Cisco IOS use different commands).
+        commands = tuple(self._adapter.required_commands)
+        inventory_cmd = commands[0] if len(commands) > 0 else "inventory"
+        interfaces_cmd = commands[1] if len(commands) > 1 else "interfaces"
+        neighbors_cmd = commands[2] if len(commands) > 2 else "neighbors"
         warnings = list(device.metadata.get("parse_warnings", ()))
         if not interfaces:
             warnings.append(
-                "no interfaces were parsed from 'show ip interface brief'; "
+                f"no interfaces were parsed from '{interfaces_cmd}'; "
                 "the device output may not match the parser yet"
             )
         facts = (
-            DiscoveryFact("inventory", "show version", {"device_id": device.device_id}),
-            DiscoveryFact("interfaces", "show ip interface brief", {"count": len(interfaces)}),
-            DiscoveryFact("neighbors", "show cdp neighbors detail", {"count": len(neighbors)}),
+            DiscoveryFact("inventory", inventory_cmd, {"device_id": device.device_id}),
+            DiscoveryFact("interfaces", interfaces_cmd, {"count": len(interfaces)}),
+            DiscoveryFact("neighbors", neighbors_cmd, {"count": len(neighbors)}),
         )
         metadata: dict[str, object] = {
             "transport": "none",
