@@ -6,7 +6,7 @@
 {% if global_view %}
 <section class="card">
   <h2>New investigation</h2>
-  <p class="muted">Select a specific network in the Network selector above to run an investigation — incidents are scoped to one network.</p>
+  <p class="muted">Incident investigations run against one observation point's artifacts — pick a discovery profile in the Scope selector above to start one. For enterprise-wide "why can't A reach B?" questions, use <a href="/paths?scope=all">Path Intelligence</a> instead.</p>
 </section>
 
 {% if reports %}
@@ -25,7 +25,14 @@
 {% endif %}
 {% endfor %}
 {% else %}
-<p class="muted">No incident report generated yet in any network.</p>
+<section class="card">
+  <h2>What is an incident investigation?</h2>
+  <p class="muted">Describe a problem ("VPN down since 09:00") and Atlas correlates it deterministically against the scope's evidence — topology, changes, operational state, history — and produces an explained, confidence-rated report. No investigation has run yet.</p>
+  <div class="actions">
+    <a class="btn" href="/paths?scope=all">Investigate a path instead</a>
+    <a class="btn" href="/changes?scope=all">Review recent changes</a>
+  </div>
+</section>
 {% endif %}
 
 {% else %}

@@ -137,18 +137,21 @@
     if (status === "queued" || status === "running") poll(panel.dataset.jobId);
   }
 
-  // Predict page: the interface dropdown only offers the selected device's
-  // discovered interfaces (labels keep the device prefix hidden once
-  // filtered). The server re-validates the pairing regardless.
-  var predictDevice = byId("predict-device");
-  var predictInterface = byId("predict-interface");
-  if (predictDevice && predictInterface) {
+  // Device-aware interface dropdowns (Predict, Compass, and any future
+  // form): the interface select only offers the selected device's
+  // discovered interfaces. Options carrying data-keep (e.g. "none /
+  // device-level") stay available. The server re-validates regardless.
+  function bindInterfaceFilter(deviceId, interfaceId, noteId, allowEmpty) {
+    var deviceSelect = byId(deviceId);
+    var interfaceSelect = byId(interfaceId);
+    if (!deviceSelect || !interfaceSelect) return;
     var filterInterfaces = function () {
-      var device = predictDevice.value;
+      var device = deviceSelect.value;
       var visible = 0;
-      Array.prototype.forEach.call(predictInterface.options, function (option) {
+      Array.prototype.forEach.call(interfaceSelect.options, function (option) {
         if (!option.dataset.device) {
-          option.hidden = true;  // the "select a device first" placeholder
+          // Placeholder / "none" options: keep only when flagged.
+          option.hidden = !option.dataset.keep;
           return;
         }
         var matches = option.dataset.device === device;
@@ -165,14 +168,16 @@
           option.textContent = option.dataset.shortLabel;
         }
       });
-      predictInterface.value = "";
-      var note = byId("predict-no-interfaces");
+      interfaceSelect.value = "";
+      var note = byId(noteId);
       if (note) note.hidden = visible > 0;
-      predictInterface.disabled = visible === 0;
+      interfaceSelect.disabled = visible === 0 && !allowEmpty;
     };
-    predictDevice.addEventListener("change", filterInterfaces);
-    if (predictDevice.value) filterInterfaces();
+    deviceSelect.addEventListener("change", filterInterfaces);
+    if (deviceSelect.value) filterInterfaces();
   }
+  bindInterfaceFilter("predict-device", "predict-interface", "predict-no-interfaces", false);
+  bindInterfaceFilter("compass-device", "compass-interface", null, true);
 
   // -- Universal search (PR-038) --------------------------------------------
   // Ctrl+K opens the overlay; results come from /api/search — deterministic,

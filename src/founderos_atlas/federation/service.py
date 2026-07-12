@@ -254,6 +254,59 @@ def enterprise_seed_addresses(profiles) -> tuple[str, ...]:
     return tuple(seeds)
 
 
+def enterprise_evidence_fingerprint(
+    base_output_dir: str | Path, profiles, *, workspace_root: str | Path | None = None
+) -> tuple:
+    """Deterministic identity of the evidence the enterprise graph is
+    built FROM: every profile scope's snapshot and run history plus the
+    workspace's saved state. Deliberately EXCLUDES the derived
+    ``.atlas/enterprise/`` artifacts — a cache keyed on its own output
+    would invalidate itself on every write."""
+
+    parts: list[tuple] = []
+    for profile in profiles:
+        scope = profile_scope(base_output_dir, profile.profile_id, profile.name)
+        parts.append(
+            (
+                "profile",
+                profile.profile_id,
+                profile.name,
+                getattr(profile, "site_hint", None),
+                getattr(profile, "domain_hint", None),
+            )
+        )
+        parts.append(_file_stamp(scope.snapshot_path))
+        root = scope.history_root
+        runs = (
+            tuple(sorted(entry.name for entry in root.iterdir() if entry.is_dir()))
+            if root.is_dir()
+            else ()
+        )
+        parts.append(("history", str(root), runs))
+    if workspace_root is not None:
+        workspace = Path(workspace_root)
+        if workspace.is_dir():
+            for path in sorted(workspace.glob("*.json")):
+                parts.append(_file_stamp(path))
+    return tuple(parts)
+
+
+def _file_stamp(path: Path) -> tuple:
+    try:
+        stat = path.stat()
+    except OSError:
+        return (str(path), None)
+    return (str(path), stat.st_mtime_ns, stat.st_size)
+
+
+def contribution_is_fresh(observed_at: str | None, now: str) -> bool:
+    """Whether evidence observed at ``observed_at`` is still fresh at
+    ``now`` (public: freshness is a function of the current clock and
+    callers with cached graphs must be able to re-evaluate it)."""
+
+    return _is_fresh(observed_at, now)
+
+
 def overall_freshness(contributions: tuple[ContributionSummary, ...]) -> bool:
     """The enterprise evidence is fresh only when every contribution is."""
 

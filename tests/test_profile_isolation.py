@@ -599,7 +599,9 @@ class WebScopeTests(unittest.TestCase):
             self.assertIn(b"Lab B", page)
             self.assertIn(b"<span>1</span>", page)
             page = client.get("/?scope=all").data
-            self.assertIn(b"All Networks", page)
+            # PR-041: enterprise-first language — the global scope's
+            # label is "Enterprise" (the id stays "all").
+            self.assertIn(b"Enterprise", page)
             self.assertIn(b"<span>3</span>", page)  # 2 + 1 devices combined
             self.assertIn(b"Lab A", page)
             self.assertIn(b"Lab B", page)
@@ -693,7 +695,7 @@ class WebScopeTests(unittest.TestCase):
             workdir = Path(tmp)
             _, client = self.build_world(workdir)
             page = client.get("/").data
-            self.assertIn(b"All Networks", page)
+            self.assertIn(b"Enterprise", page)
             self.assertIn(b'value="lab-a"', page)
             self.assertIn(b'value="lab-b"', page)
             # No legacy data -> the Local workspace option stays hidden.

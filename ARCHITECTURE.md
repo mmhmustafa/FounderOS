@@ -11,6 +11,14 @@ prediction; a future AI layer will only *explain* — consuming the JSON
 contracts the engines already emit (summary, evidence, risk, confidence,
 recommendations).
 
+> **Platform v1 (PR-041).** Companion documents: [VISION.md](VISION.md)
+> · [ENGINEERING_PRINCIPLES.md](ENGINEERING_PRINCIPLES.md) ·
+> [ROADMAP.md](ROADMAP.md) · [DECISION_LOG.md](DECISION_LOG.md) ·
+> [docs/DEMO.md](docs/DEMO.md) ·
+> [docs/PRODUCT_AUDIT.md](docs/PRODUCT_AUDIT.md).
+> The global scope's user-facing label is **Enterprise** (scope id
+> `all` is stable for URLs and sessions).
+
 ## Engine stack (Observe -> Understand -> Reason)
 
 | Stage | Engine | Package | Output |

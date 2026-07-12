@@ -258,13 +258,13 @@ def entries_from_workspace(
             )
         )
 
-    # The enterprise scope's own reports (All Networks predictions and
+    # The enterprise scope's own reports (enterprise predictions and
     # cross-profile investigations, PR-037A) are evidence too.
     entries.extend(
         _scope_report_entries(
             Path(base_output_dir) / ".atlas" / "enterprise",
             "all",
-            "All Networks",
+            "Enterprise",
             None,
         )
     )

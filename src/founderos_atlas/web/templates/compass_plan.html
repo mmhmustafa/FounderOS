@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Compass Plan{% endblock %}
 {% block content %}
+<a class="back-link" href="/compass">← All maintenance plans</a>
 <div class="page-head">
   <h1>{{ plan.title }}</h1>
   <span class="badge hop-badge hop-badge-{{ 'pass' if plan.status == 'analysed' else 'unknown' }}">{{ plan.status }}</span>
@@ -49,16 +50,16 @@
   <form class="form" method="post" action="/compass/{{ plan.plan_id }}/changes">
     <div class="form-row">
       <label>Device
-        <select name="device" required>
+        <select name="device" id="compass-device" required>
           <option value="" selected disabled>— Select a device —</option>
           {% for d in devices %}<option value="{{ d.hostname }}">{{ d.hostname }}</option>{% endfor %}
         </select>
       </label>
       <label>Interface (optional)
-        <select name="interface">
-          <option value="">— none / device-level —</option>
+        <select name="interface" id="compass-interface">
+          <option value="" data-keep="1">— none / device-level —</option>
           {% for d in devices %}{% for i in d.interfaces %}
-          <option value="{{ i.name }}">{{ d.hostname }} — {{ i.name }}</option>
+          <option value="{{ i.name }}" data-device="{{ d.hostname }}">{{ d.hostname }} — {{ i.label }}</option>
           {% endfor %}{% endfor %}
         </select>
       </label>

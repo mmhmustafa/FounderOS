@@ -31,7 +31,10 @@ from pathlib import Path
 DEFAULT_SCOPE_ID = "default"
 DEFAULT_SCOPE_LABEL = "Local workspace"
 GLOBAL_SCOPE_ID = "all"
-GLOBAL_SCOPE_LABEL = "All Networks"
+# PR-041 (POLISH): enterprise-first language. The id stays "all" for
+# backward compatibility (URLs, sessions, stored reports); the label a
+# user sees is the enterprise.
+GLOBAL_SCOPE_LABEL = "Enterprise"
 
 PROFILE_SCOPES_SUBDIR = Path(".atlas") / "profiles"
 SCOPE_HISTORY_DIRNAME = "history"

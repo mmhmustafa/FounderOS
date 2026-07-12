@@ -30,8 +30,10 @@ from .models import (
 )
 from .snapshot import build_enterprise_snapshot
 from .service import (
+    contribution_is_fresh,
     enterprise_captured_configs,
     enterprise_failed_hosts,
+    enterprise_evidence_fingerprint,
     enterprise_scope_dir,
     enterprise_seed_addresses,
     get_enterprise_graph,
@@ -52,7 +54,9 @@ __all__ = [
     "MergeDecision",
     "build_enterprise_graph",
     "build_enterprise_snapshot",
+    "contribution_is_fresh",
     "enterprise_captured_configs",
+    "enterprise_evidence_fingerprint",
     "enterprise_failed_hosts",
     "enterprise_scope_dir",
     "enterprise_seed_addresses",

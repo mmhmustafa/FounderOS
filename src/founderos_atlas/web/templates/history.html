@@ -27,7 +27,14 @@
   </tbody>
 </table>
 {% else %}
-<p class="muted">No discovery history yet. <a href="/discovery">Run a discovery</a> to start building network memory.</p>
+<section class="card">
+  <h2>What is discovery history?</h2>
+  <p class="muted">Every discovery run is archived — devices found, relationships, failures, configuration status — so Atlas can compare runs, detect changes, and replay past evidence exactly. Nothing has been archived yet.</p>
+  <div class="actions">
+    <a class="btn" href="/discovery">Run a discovery</a>
+    <a class="btn" href="/profiles">Create a discovery profile</a>
+  </div>
+</section>
 {% endif %}
 
 {% if issues %}

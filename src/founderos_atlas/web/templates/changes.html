@@ -37,7 +37,14 @@
 </section>
 {% endfor %}
 {% else %}
-<p class="muted">No change intelligence yet. <a href="/discovery">Run a discovery</a> at least twice for a network to compare.</p>
+<section class="card">
+  <h2>What is change intelligence?</h2>
+  <p class="muted">Atlas compares each discovery against the previous one within the same observation point — topology, configuration, and operational state — and classifies every difference. Run a discovery at least twice for a profile to see what changed overnight.</p>
+  <div class="actions">
+    <a class="btn" href="/discovery">Run a discovery</a>
+    <a class="btn" href="/history?scope=all">Open History</a>
+  </div>
+</section>
 {% endif %}
 
 {% else %}

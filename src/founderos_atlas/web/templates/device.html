@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Device Details{% endblock %}
 {% block content %}
+<a class="back-link" href="/topology?scope=all">← Enterprise inventory</a>
 {% if not found %}
 <h1>Device not found</h1>
 <p class="muted">No canonical enterprise device matches <code>{{ enterprise_id }}</code>. It may have been re-identified by a newer discovery — <a href="/topology?scope=all">open the enterprise inventory</a> or search again.</p>

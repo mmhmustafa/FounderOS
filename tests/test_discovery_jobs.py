@@ -126,7 +126,8 @@ class DiscoveryJobApiTests(unittest.TestCase):
             _, _, client, _ = two_lab_world(Path(tmp))
             response = client.post("/api/discovery/jobs", data={})
             self.assertEqual(400, response.status_code)
-            self.assertIn("Select a network profile", response.get_json()["error"])
+            # PR-041 terminology: enterprise-first wording.
+            self.assertIn("Select a discovery profile", response.get_json()["error"])
 
     def test_api_unknown_profile_is_404(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -140,26 +140,67 @@ def register_routes(app) -> None:
             timespec="seconds"
         )
 
-    def enterprise_world():
-        """The federated enterprise graph + snapshot for All Networks.
+    # PR-041 (performance): the enterprise graph is deterministic for a
+    # given set of evidence files, so cache it behind the same fingerprint
+    # the search index uses. Enterprise pages stop rebuilding the graph
+    # and rewriting artifacts on every request; a discovery, prediction,
+    # investigation, or plan change moves the fingerprint and the next
+    # request rebuilds. Freshness flags still track the current clock.
+    enterprise_cache: dict = {"fingerprint": None, "graph": None, "snapshot": None}
 
-        Rebuilt deterministically from every profile scope's latest
-        evidence on each request — a view over the isolated scopes, never
-        a second source of truth. Returns ``(graph, snapshot_dict)``;
-        the snapshot is None when no profile has discovered yet.
+    def enterprise_world():
+        """The federated enterprise graph + snapshot for the Enterprise
+        scope — a cached VIEW over the isolated profile scopes, never a
+        second source of truth. Returns ``(graph, snapshot_dict)``; the
+        snapshot is None when no profile has discovered yet.
         """
 
-        graph = get_enterprise_graph(
-            output_dir(),
-            profile_service().list_profiles(),
-            catalog=SiteCatalogRepository(cfg("ATLAS_WORKSPACE_ROOT")).load(),
-            credential_memory=CredentialSuccessMemory(cfg("ATLAS_WORKSPACE_ROOT")),
-            now=now_iso(),
+        from dataclasses import replace as dc_replace
+
+        from founderos_atlas.federation import (
+            contribution_is_fresh,
+            enterprise_evidence_fingerprint,
         )
-        if not graph.devices:
-            return graph, None
-        snapshot = write_enterprise_artifacts(output_dir(), graph)
-        return graph, snapshot.to_dict()
+
+        profiles = profile_service().list_profiles()
+        fingerprint = enterprise_evidence_fingerprint(
+            output_dir(), profiles, workspace_root=cfg("ATLAS_WORKSPACE_ROOT")
+        )
+        now = now_iso()
+        if fingerprint != enterprise_cache["fingerprint"]:
+            graph = get_enterprise_graph(
+                output_dir(),
+                profiles,
+                catalog=SiteCatalogRepository(cfg("ATLAS_WORKSPACE_ROOT")).load(),
+                credential_memory=CredentialSuccessMemory(
+                    cfg("ATLAS_WORKSPACE_ROOT")
+                ),
+                now=now,
+            )
+            snapshot = (
+                write_enterprise_artifacts(output_dir(), graph).to_dict()
+                if graph.devices
+                else None
+            )
+            enterprise_cache.update(
+                fingerprint=fingerprint, graph=graph, snapshot=snapshot
+            )
+            return graph, snapshot
+        # Same evidence: reuse the graph, but re-evaluate freshness
+        # against the CURRENT clock — stale is a function of time.
+        graph = enterprise_cache["graph"]
+        graph = dc_replace(
+            graph,
+            contributions=tuple(
+                dc_replace(
+                    contribution,
+                    fresh=contribution_is_fresh(contribution.observed_at, now),
+                )
+                for contribution in graph.contributions
+            ),
+        )
+        enterprise_cache["graph"] = graph
+        return graph, enterprise_cache["snapshot"]
 
     def enterprise_context(graph) -> dict:
         """Federation facts every enterprise page displays."""
@@ -645,8 +686,9 @@ def register_routes(app) -> None:
             return (
                 jsonify(
                     error=(
-                        "Select a network profile to discover. All Networks "
-                        "is a view — discovery always targets one profile."
+                        "Select a discovery profile. The Enterprise scope "
+                        "is a federated view — discovery always runs from "
+                        "one observation point."
                     )
                 ),
                 400,
