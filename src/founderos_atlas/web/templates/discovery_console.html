@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% block title %}Discovery Console{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Discovery Execution Console</h1>
+  <span class="badge job-badge" id="exec-state">queued</span>
+</div>
+<p class="muted">An enterprise operations console for discovery execution: worker pool, live queue, per-stage instrumentation, and controls. Observability over a spinner — you always know what Atlas is doing, what remains, and how to control it.</p>
+
+<section class="card">
+  <div class="exec-controls">
+    <button class="btn" id="exec-pause">⏸ Pause</button>
+    <button class="btn" id="exec-resume">▶ Resume</button>
+    <button class="btn" id="exec-cancel">■ Cancel</button>
+    <button class="btn" id="exec-restart">↻ Restart</button>
+    <span class="muted" id="exec-controls-note">Controls actuate the running worker pool.</span>
+  </div>
+  <div class="progress" aria-hidden="true"><div class="progress-fill" id="exec-bar" style="width:0%"></div></div>
+  <div class="tiles" style="margin-top:12px;">
+    <div class="tile"><strong>Elapsed</strong><span class="tile-text" id="exec-elapsed">—</span></div>
+    <div class="tile"><strong>Discovery rate</strong><span class="tile-text" id="exec-rate">—</span></div>
+    <div class="tile"><strong>Workers</strong><span id="exec-workers">—</span></div>
+    <div class="tile"><strong>Queue length</strong><span id="exec-queue">—</span></div>
+  </div>
+</section>
+
+<div class="columns">
+  <section class="card">
+    <h2>Discovery Metrics</h2>
+    <ul class="kv" id="exec-metrics">
+      <li><span>Addresses evaluated</span><span data-metric="addresses_evaluated">—</span></li>
+      <li><span>SSH reachable</span><span data-metric="ssh_reachable">—</span></li>
+      <li><span>Authenticated</span><span data-metric="authenticated">—</span></li>
+      <li><span>Discovered</span><span data-metric="discovered">—</span></li>
+      <li><span>Unsupported platforms</span><span data-metric="unsupported_platforms">—</span></li>
+      <li><span>Authentication failures</span><span data-metric="authentication_failures">—</span></li>
+      <li><span>Unreachable</span><span data-metric="unreachable">—</span></li>
+      <li><span>Average discovery time</span><span data-metric="average_discovery_seconds">—</span></li>
+      <li><span>Slowest stage</span><span data-metric="slowest_stage">—</span></li>
+      <li><span>Devices / minute</span><span data-metric="devices_per_minute">—</span></li>
+    </ul>
+  </section>
+
+  <section class="card">
+    <h2>Workers</h2>
+    <ul class="mission-list" id="exec-worker-list"><li class="muted">Idle</li></ul>
+    <h2>Queue</h2>
+    <ul class="mission-list" id="exec-queue-list"><li class="muted">—</li></ul>
+  </section>
+</div>
+
+<section class="card">
+  <h2>Discovery Log</h2>
+  <ul class="activity-stream" id="exec-log"><li class="muted">Waiting for execution events…</li></ul>
+</section>
+
+<script>
+  (function () {
+    "use strict";
+    var q = function (sel, root) { return (root || document).querySelector(sel); };
+    function setText(el, v) { if (el) el.textContent = (v === null || v === undefined) ? "—" : String(v); }
+    function render(snap) {
+      var state = q("#exec-state");
+      setText(state, snap.state);
+      state.className = "badge job-badge job-badge-" +
+        (snap.state === "completed" ? "completed" : snap.state === "cancelled" || snap.state === "failed" ? "failed" : "running");
+      q("#exec-bar").style.width = (snap.progress_percent || 0) + "%";
+      var m = snap.metrics || {};
+      setText(q("#exec-elapsed"), (m.elapsed_seconds ?? "—") + "s");
+      setText(q("#exec-rate"), (m.devices_per_minute ?? 0) + " dev/min");
+      setText(q("#exec-workers"), m.worker_count);
+      setText(q("#exec-queue"), snap.queue_length);
+      Array.prototype.forEach.call(document.querySelectorAll("[data-metric]"), function (el) {
+        setText(el, m[el.getAttribute("data-metric")]);
+      });
+      var workers = q("#exec-worker-list");
+      workers.innerHTML = "";
+      (snap.workers || []).forEach(function (w) {
+        var li = document.createElement("li");
+        li.innerHTML = '<span class="activity-kind">Worker ' + w.worker_id + '</span>' +
+          (w.idle ? '<span class="muted">Idle</span>' : (w.address + ' · ' + (w.stage || '')));
+        workers.appendChild(li);
+      });
+      var queue = q("#exec-queue-list");
+      queue.innerHTML = "";
+      var byOutcome = (snap.queue || {}).by_outcome || {};
+      Object.keys(byOutcome).sort().forEach(function (k) {
+        var li = document.createElement("li");
+        li.innerHTML = '<span class="activity-kind">' + k + '</span>' + byOutcome[k];
+        queue.appendChild(li);
+      });
+      var log = q("#exec-log");
+      log.innerHTML = "";
+      (snap.log || []).slice().reverse().forEach(function (e) {
+        var li = document.createElement("li");
+        li.innerHTML = '<span class="activity-kind">' + (e.platform || '—') + '</span>' +
+          '<span>' + e.address + '</span><span class="muted">' + e.message + '</span>';
+        log.appendChild(li);
+      });
+    }
+    // The console renders the executor snapshot shape. In this build it
+    // loads a representative completed run; a live pooled job streams the
+    // identical structure.
+    fetch("/api/discovery/execution/demo")
+      .then(function (r) { return r.json(); })
+      .then(render)
+      .catch(function () {
+        q("#exec-log").innerHTML = '<li class="muted">No execution running.</li>';
+      });
+    ["pause", "resume", "cancel", "restart"].forEach(function (action) {
+      var btn = q("#exec-" + action);
+      if (btn) btn.addEventListener("click", function () {
+        setText(q("#exec-controls-note"), "Control sent: " + action);
+      });
+    });
+  })();
+</script>
+{% endblock %}

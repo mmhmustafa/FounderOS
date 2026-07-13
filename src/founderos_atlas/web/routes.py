@@ -843,6 +843,61 @@ def register_routes(app) -> None:
     def api_discovery_job_list():
         return jsonify(jobs=job_manager().list_recent())
 
+    @app.route("/discovery/console")
+    def discovery_console():
+        """The live execution console (PR-043.3): worker pool, queue,
+        per-stage metrics, and controls for a pooled discovery run."""
+
+        context, _scopes, _scope_id = scoped_context("discovery")
+        return render_template("discovery_console.html", **context)
+
+    @app.route("/api/discovery/execution/demo")
+    def api_discovery_execution_demo():
+        """A representative execution snapshot so the console renders and
+        is testable without a live long-running run. Deterministic; the
+        same shape a real pooled run's ``execution.snapshot()`` returns."""
+
+        from founderos_atlas.discovery.executor import (
+            DiscoveryExecution,
+            OUTCOME_AUTH_FAILED,
+            OUTCOME_DISCOVERED,
+            OUTCOME_UNREACHABLE,
+            StageTimer,
+            run_pool,
+        )
+
+        addresses = [f"172.20.20.{i}" for i in range(11, 27)]
+
+        def demo_clock():
+            demo_clock.t += 0.01
+            return demo_clock.t
+
+        demo_clock.t = 0.0
+
+        def worker(address, timer):
+            last = int(address.rsplit(".", 1)[-1])
+            with timer.stage("tcp_connect"):
+                pass
+            if last % 7 == 0:
+                return None, OUTCOME_UNREACHABLE, None, f"{address} unreachable"
+            if last % 5 == 0:
+                return None, OUTCOME_AUTH_FAILED, None, f"{address} auth failed"
+            with timer.stage("authentication"):
+                pass
+            platform = "frr" if last % 3 == 0 else "ios"
+            return (
+                {"address": address},
+                OUTCOME_DISCOVERED,
+                platform,
+                f"{address} — {platform} inventory complete",
+            )
+
+        execution = DiscoveryExecution(
+            addresses, worker_count=4, clock=demo_clock
+        )
+        run_pool(execution, worker)
+        return jsonify(execution.snapshot())
+
     # -- Topology / History / Changes --------------------------------------
 
     @app.route("/topology")

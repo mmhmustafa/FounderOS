@@ -25,6 +25,7 @@ recommendations).
 |---|---|---|---|
 | Observe | Discovery (multi-hop, boundaries, multi-credential) | `discovery/`, `credentials/`, `transport/` | topology snapshots, configs, per-run history |
 | Observe | **Platform drivers** (detection + normalization) | `platforms/` | canonical models from any supported platform |
+| Observe | **Discovery execution** (worker pool + instrumentation) | `discovery/executor.py` | parallel, observable, controllable discovery |
 | Observe | Canonical identity & enterprise topology | `identity/`, `enterprise/` | one canonical device set with provenance |
 | Understand | Change intelligence (topology / config / operational) | `change/`, `config_intelligence/`, `state/` | classified diffs per profile scope |
 | Understand | Site inference | `sites/` | evidence-based site assignments (may be Unknown) |

@@ -7,15 +7,25 @@ from dataclasses import replace
 from .discovery import DiscoveryEngine, DiscoveryResult
 from .discovery.adapter import DiscoveryAdapter
 from .discovery.adapters import CiscoIOSAdapter
+from .discovery.executor import (
+    DiscoveryExecution,
+    OUTCOME_AUTH_FAILED,
+    OUTCOME_DISCOVERED,
+    OUTCOME_UNREACHABLE,
+    OUTCOME_UNSUPPORTED,
+    run_pool,
+)
 from .discovery.multihop import (
     HostTransportFactory,
     MultiHopConfig,
     MultiHopDiscoveryReport,
+    _discover_with_registry,
     discover_multihop,
 )
 from .identity import IdentityResolver
 from .topology import TopologyGraph, TopologyReconciler, TopologySnapshot
-from .transport import DeviceTransport
+from .transport import AtlasTransportError, DeviceTransport
+from .transport.exceptions import AuthenticationError, PermissionDeniedError
 
 
 def run_live_discovery(
@@ -134,6 +144,115 @@ def run_multihop_discovery(
         },
     )
     return report, graph, snapshot
+
+
+def _reconcile_results(results, *, metadata_extra: dict) -> tuple[
+    TopologyGraph, TopologySnapshot
+]:
+    """The shared reconciliation + snapshot path — identical to multihop's,
+    so pooled and sequential discovery produce byte-identical graphs for
+    the same evidence (PR-043.3)."""
+
+    from founderos_atlas.platforms import relationship_counts
+
+    resolution = IdentityResolver().resolve(results)
+    canonical_results = resolution.canonicalize(results)
+    graph = TopologyReconciler().reconcile(canonical_results)
+    platform_counts: dict[str, int] = {}
+    for result in results:
+        family = result.platform_family or "unknown"
+        platform_counts[family] = platform_counts.get(family, 0) + 1
+    hostname_by_id = {
+        device.device_id: device.hostname for device in graph.devices()
+    }
+    relationships = relationship_counts(
+        graph.edges(),
+        hostname_by_device_id=hostname_by_id,
+        discovered_hostnames={device.hostname for device in graph.devices()},
+    )
+    snapshot = TopologySnapshot.from_graph(
+        graph,
+        metadata={
+            "source": "atlas_live_discovery",
+            "transport": "ssh",
+            "read_only": True,
+            "identity_resolution": True,
+            "platforms": dict(sorted(platform_counts.items())),
+            "relationships": relationships,
+            **metadata_extra,
+        },
+    )
+    return graph, snapshot
+
+
+def run_pooled_discovery(
+    addresses: list[str],
+    transport_factory: HostTransportFactory,
+    *,
+    registry=None,
+    worker_count: int = 4,
+    completed_addresses: frozenset[str] = frozenset(),
+    clock=None,
+    on_progress=None,
+) -> tuple[DiscoveryExecution, TopologyGraph, TopologySnapshot]:
+    """Discover a FLAT candidate list concurrently through the worker pool.
+
+    Used by the enterprise entry modes (management network / multiple
+    seeds / CSV import) where candidates are known up front. Each worker
+    detects the platform and drives the SAME per-host pipeline
+    (``_discover_with_registry``) — correctness and canonical output are
+    unchanged; only execution is parallel. Results reconcile in candidate
+    order, so the graph is deterministic regardless of completion order.
+    """
+
+    from founderos_atlas.platforms import (
+        UnsupportedPlatformError,
+        default_registry,
+    )
+
+    resolved_registry = registry or default_registry()
+    execution = DiscoveryExecution(
+        list(addresses),
+        worker_count=worker_count,
+        completed=set(completed_addresses),
+        clock=clock,
+    )
+
+    def worker(address: str, timer):
+        try:
+            with timer.stage("tcp_connect"):
+                transport = transport_factory(address)
+                transport.connect()
+            try:
+                with timer.stage("discovery"):
+                    result = _discover_with_registry(
+                        transport, resolved_registry, address
+                    )
+            finally:
+                transport.disconnect()
+        except UnsupportedPlatformError as error:
+            return None, OUTCOME_UNSUPPORTED, None, str(error)[:120]
+        except (AuthenticationError, PermissionDeniedError) as error:
+            return None, OUTCOME_AUTH_FAILED, None, str(error)[:120]
+        except AtlasTransportError as error:
+            return None, OUTCOME_UNREACHABLE, None, str(error)[:120]
+        platform = result.platform_family
+        return (
+            result,
+            OUTCOME_DISCOVERED,
+            platform,
+            f"{result.device.hostname} — {platform} inventory complete",
+        )
+
+    run_pool(execution, worker, on_progress=on_progress)
+    graph, snapshot = _reconcile_results(
+        execution.results_in_order(),
+        metadata_extra={
+            "discovery_mode": "pooled",
+            "worker_count": worker_count,
+        },
+    )
+    return execution, graph, snapshot
 
 
 def run_discovery_plan(

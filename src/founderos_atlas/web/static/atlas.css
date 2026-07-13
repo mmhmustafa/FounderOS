@@ -121,6 +121,9 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 .wizard-method span { flex: 1 1 100%; }
 .wizard-fields { margin-top: 6px; }
 
+/* Discovery Execution Console (PR-043.3): the operations console. */
+.exec-controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 12px; }
+
 /* Atlas Advisor (PR-042): the conversational guide — calm, structured. */
 .advisor-ask { display: flex; gap: 10px; margin-bottom: 12px; }
 .advisor-ask input { flex: 1; padding: 11px 14px; border: 1px solid var(--line); border-radius: 8px; font-size: 15px; }

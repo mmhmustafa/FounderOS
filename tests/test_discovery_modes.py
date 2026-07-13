@@ -483,6 +483,16 @@ class WizardGuiTests(unittest.TestCase):
             profile = service.get_profile("Hyderabad")
             self.assertEqual("10.0.0.1", profile.management_ip)
             self.assertNotIn(PASSWORD.encode(), response.data)
+            # The wizard launches an async job (daemon thread). Await its
+            # completion before the temp dir is torn down, otherwise
+            # cleanup races the still-writing job (Windows: .atlas busy).
+            import time as _time
+
+            for _ in range(200):
+                jobs = client.get("/api/discovery/jobs").get_json()["jobs"]
+                if jobs and jobs[0]["status"] not in ("queued", "running"):
+                    break
+                _time.sleep(0.05)
 
     def test_start_requires_credentials(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
