@@ -184,6 +184,23 @@
   bindInterfaceFilter("predict-device", "predict-interface", "predict-no-interfaces", false);
   bindInterfaceFilter("compass-device", "compass-interface", null, true);
 
+  // Discovery wizard (PR-043.2): show only the selected method's fields.
+  var wizardForm = byId("wizard-form");
+  if (wizardForm) {
+    var showMode = function () {
+      var mode = (wizardForm.querySelector('input[name="mode"]:checked') || {}).value;
+      Array.prototype.forEach.call(
+        wizardForm.querySelectorAll(".wizard-fields"),
+        function (block) { block.hidden = block.dataset.mode !== mode; }
+      );
+    };
+    Array.prototype.forEach.call(
+      wizardForm.querySelectorAll('input[name="mode"]'),
+      function (radio) { radio.addEventListener("change", showMode); }
+    );
+    showMode();
+  }
+
   // -- Universal search (PR-038) --------------------------------------------
   // Ctrl+K opens the overlay; results come from /api/search — deterministic,
   // evidence-based, grouped, ranked server-side. This code only renders.

@@ -134,3 +134,64 @@ def run_multihop_discovery(
         },
     )
     return report, graph, snapshot
+
+
+def run_discovery_plan(
+    plan,
+    transport_factory: HostTransportFactory,
+    *,
+    registry=None,
+    policy=None,
+    on_neighbor=None,
+    completed_addresses: frozenset[str] = frozenset(),
+):
+    """Run any resolved ``DiscoveryPlan`` (PR-043.2) through the multihop
+    engine and report per-candidate outcomes.
+
+    Every entry method (seed / management network / multiple seeds / CSV)
+    resolves to a candidate list; this composition seeds the traversal
+    with those addresses, reuses per-host platform detection and identity
+    dedup unchanged, and maps the traversal's visits back onto the
+    candidates. Resume skips already-completed addresses without
+    re-attempting them. Returns ``(report, graph, snapshot, candidates,
+    summary)``.
+    """
+
+    from .discovery import (
+        classify_candidate_outcomes,
+        summarize_candidates,
+    )
+
+    addresses = [
+        address
+        for address in plan.seed_addresses
+        if address not in completed_addresses
+    ]
+    if not addresses:
+        raise ValueError("no candidate addresses remain to attempt")
+    report, graph, snapshot = run_multihop_discovery(
+        transport_factory,
+        addresses[0],
+        registry=registry,
+        config=MultiHopConfig(
+            max_depth=plan.effective_depth, max_devices=plan.max_devices
+        ),
+        policy=policy,
+        extra_seeds=tuple(addresses[1:]),
+        on_neighbor=on_neighbor,
+    )
+    visits = tuple(
+        (visit.host, visit.status, visit.detail) for visit in report.visits
+    )
+    candidates = classify_candidate_outcomes(
+        plan, visits, completed_addresses=completed_addresses
+    )
+    summary = {
+        "mode": plan.mode,
+        "policy": plan.policy,
+        **summarize_candidates(candidates),
+        "platforms": dict(snapshot.metadata.get("platforms") or {}),
+        "relationships": dict(snapshot.metadata.get("relationships") or {}),
+        "devices_discovered": snapshot.device_count,
+    }
+    return report, graph, snapshot, candidates, summary

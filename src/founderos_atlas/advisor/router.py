@@ -52,6 +52,8 @@ _RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
         "status of the enterprise",
     )),
     (INTENT_DISCOVERY, (
+        "run discovery", "run a discovery", "start discovery",
+        "resume discovery", "discover ", "scan ", "onboard",
         "summarize discovery", "discovery summary", "last discovery",
         "latest discovery", "discovery", "discovered",
     )),
@@ -130,6 +132,31 @@ def path_endpoints(question: str) -> tuple[str | None, str | None]:
                 return second, first  # "X unreachable from Y": Y -> X
             return first, second
     return None, None
+
+
+def discovery_launch(question: str) -> dict | None:
+    """Recognize a discovery LAUNCH/RESUME request (vs a summary ask).
+
+    Returns the parsed intent — a CIDR, a resume flag, or a named target
+    — so Advisor can guide the engineer to the Discovery Wizard. Advisor
+    never runs discovery itself; it points to the workflow (PR-043.2).
+    """
+
+    folded = " ".join(str(question or "").casefold().split())
+    cidr = re.search(r"\b(\d{1,3}(?:\.\d{1,3}){3}/\d{1,2})\b", question or "")
+    launch = any(
+        verb in folded
+        for verb in ("run discovery", "run a discovery", "start discovery",
+                     "scan ", "discover ", "onboard")
+    )
+    resume = "resume" in folded
+    if cidr:
+        return {"kind": "subnet", "cidr": cidr.group(1)}
+    if resume and "discover" in folded:
+        return {"kind": "resume"}
+    if launch:
+        return {"kind": "launch"}
+    return None
 
 
 def prediction_target(question: str) -> tuple[str | None, str | None]:

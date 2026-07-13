@@ -176,6 +176,51 @@ def _answer_changes(question, intent, context) -> AdvisorResponse:
 
 
 def _answer_discovery(question, intent, context) -> AdvisorResponse:
+    launch = router.discovery_launch(question)
+    if launch is not None:
+        # A launch/resume request: Advisor guides to the wizard — it
+        # never runs side-effectful discovery itself.
+        if launch["kind"] == "subnet":
+            summary = (
+                f"To discover the management network {launch['cidr']}, open "
+                "the Discovery Wizard, choose Management Network, and enter "
+                f"{launch['cidr']}. Atlas expands it to candidate addresses, "
+                "detects each platform, and builds the enterprise graph."
+            )
+            next_label = "Open the Discovery Wizard"
+        elif launch["kind"] == "resume":
+            summary = (
+                "Interrupted discoveries can be resumed from the Discover "
+                "page — already-discovered devices stay cached and only "
+                "unfinished candidates are re-attempted."
+            )
+            next_label = "Open Discovery"
+        else:
+            summary = (
+                "Start discovery from the Discovery Wizard — seed device, "
+                "management subnet, multiple seeds, or an imported device "
+                "list. Every method produces the same canonical enterprise "
+                "model."
+            )
+            next_label = "Open the Discovery Wizard"
+        return AdvisorResponse(
+            question=question, intent=intent, summary=summary,
+            evidence=(),
+            confidence=CONFIDENCE_HIGH,
+            confidence_basis="a discovery-launch request routed to its workflow",
+            next_action_label=next_label,
+            next_action_href=(
+                "/discovery" if launch["kind"] == "resume" else "/discovery/wizard"
+            ),
+            followups=(
+                FollowUp("Summarize discovery",
+                         question="Summarize discovery"),
+                FollowUp("Explain enterprise health",
+                         question="Explain enterprise health"),
+            ),
+            steps=("Classifying the question as a discovery request…",),
+            generated_at=context.generated_at,
+        )
     steps = ["Reading discovery history per profile…"]
     lines = []
     evidence = []

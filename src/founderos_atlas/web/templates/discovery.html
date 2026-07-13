@@ -1,7 +1,11 @@
 {% extends "base.html" %}
 {% block title %}Discover{% endblock %}
 {% block content %}
-<h1>Run Discovery</h1>
+<div class="page-head">
+  <h1>Run Discovery</h1>
+  <a class="btn btn-primary" href="/discovery/wizard">Discovery Wizard</a>
+</div>
+<p class="muted">Onboard an unknown network with the <a href="/discovery/wizard">Discovery Wizard</a> — seed device, management subnet, multiple seeds, or an imported device list.</p>
 
 {% if profiles %}
 <section class="card">

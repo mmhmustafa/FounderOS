@@ -805,6 +805,30 @@ Atlas is not a Cisco tool. Discovery now runs
 
 Adding the next platform is one driver class plus one registry entry.
 
+## Discovery Modes (PR-043.2)
+
+Onboard an unknown network with the **Discovery Wizard** using whatever
+you know:
+
+- **Seed device** — one address, discovered recursively (as before).
+- **Management network** — a CIDR like `172.20.20.0/24`; Atlas expands
+  it (excluding network, broadcast, and your exclusions), estimates the
+  candidate count, and — after a safety check for large ranges —
+  attempts every usable address, detecting each platform.
+- **Multiple seeds** — several starting addresses for disconnected sites.
+- **Import device list** — a CSV of hostname / management_ip / platform
+  / site.
+
+Every method resolves to the same candidate list, so the Enterprise
+Graph, Prediction, Paths, Mission, and Advisor are unchanged. Pick a
+**policy** (Fast / Balanced / Deep), set the scope, and review the
+candidates and safety estimate before starting. Interrupted runs
+**resume** — cached devices stay, only unfinished candidates are
+re-attempted. Credential rotation tries your credential sets in order
+until one authenticates, and passwords are never shown or stored in
+plaintext. Ask **Advisor** "run discovery on 172.20.20.0/24" and it
+points you straight to the wizard.
+
 ## Next Step
 
 Extract a reusable deterministic Topology Change Set contract for richer operational journeys before considering persistence or live transport.

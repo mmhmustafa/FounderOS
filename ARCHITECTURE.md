@@ -271,6 +271,49 @@ of truth.
 `build_enterprise_snapshot()` · `write_enterprise_artifacts()` — shared
 by GUI, CLI, future REST APIs, and the assistant.
 
+## Enterprise Discovery Modes (PR-043.2)
+
+Real engineers rarely start from one seed. Four deterministic entry
+methods (`discovery/entry.py`) all resolve to the SAME candidate list
+the multihop engine already consumes, so discovery keeps producing
+canonical models and every downstream engine is untouched:
+
+```
+entry method → resolve_plan() → DiscoveryPlan (candidates + policy + scope)
+   1. Seed device        — one address, recursive (unchanged)
+   2. Management network  — a CIDR expanded to candidates (network/
+                            broadcast/user exclusions removed; safety-gated)
+   3. Multiple seeds      — several addresses (disconnected sites)
+   4. Import device list  — CSV: hostname / management_ip / platform / site
+      → run_discovery_plan() seeds the traversal, reuses per-host platform
+        detection + identity dedup, and classifies each candidate outcome
+        (queued / discovered / auth-failed / unsupported / unreachable /
+        skipped)
+```
+
+- **Candidates** carry address, source, confidence, status, and reason.
+- **Safety**: `assess_scan_safety` gates CIDR scans — ok / warn (≥ a /22)
+  / confirm (≥ a /18, needs override) / reject (≥ a /13). The estimated
+  candidate count is shown before starting.
+- **Policies**: Fast (identity+interfaces+neighbors, candidates only,
+  depth 0) · Balanced (the recursive default) · Deep (+ configuration,
+  routes, OSPF/BGP, capabilities).
+- **Resume**: `run_discovery_plan(completed_addresses=…)` re-attempts
+  only unfinished candidates; cached devices are reported without a
+  reconnect.
+- **Credential rotation** is unchanged — the wizard maps a plan onto a
+  reusable profile (candidates become its entry points) and launches the
+  existing lockout-safe multi-credential discovery job, so live progress,
+  scope isolation, and artifacts all come for free.
+
+The GUI **Discovery Wizard** (`/discovery/wizard`) is a 5-step form
+(method → credentials → policy → scope → review) with a candidate/safety
+preview before Start. Mission's Discover launcher opens it; Advisor
+routes "run discovery on 172.20.20.0/24" / "resume discovery" to it
+(Advisor guides, never runs discovery itself). `resolve_plan` is pure
+and testable — nothing in the entry layer connects to a device or holds
+a secret.
+
 ## Multi-Platform Discovery Framework (PR-043)
 
 Atlas discovers PLATFORMS and reasons about ENTERPRISES — never vendors.

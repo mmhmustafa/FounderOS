@@ -115,6 +115,12 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 .mission-chips a { display: inline-block; padding: 2px 10px; border: 1px solid var(--line); border-radius: 999px; text-decoration: none; color: var(--accent); font-size: 13px; }
 .mission-chips a:hover { border-color: var(--accent); }
 
+/* Discovery wizard (PR-043.2): method cards, clean steps. */
+.wizard-methods { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin-bottom: 12px; }
+.wizard-method { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
+.wizard-method span { flex: 1 1 100%; }
+.wizard-fields { margin-top: 6px; }
+
 /* Atlas Advisor (PR-042): the conversational guide — calm, structured. */
 .advisor-ask { display: flex; gap: 10px; margin-bottom: 12px; }
 .advisor-ask input { flex: 1; padding: 11px 14px; border: 1px solid var(--line); border-radius: 8px; font-size: 15px; }

@@ -662,6 +662,124 @@ def register_routes(app) -> None:
     def discovery():
         return discovery_page(discovery_rows())
 
+    # -- Discovery Wizard (PR-043.2: enterprise discovery modes) --------------
+
+    def _wizard_plan_from_form(form):
+        """Resolve the wizard form into a DiscoveryPlan, or (None, error)."""
+
+        from founderos_atlas.discovery import DiscoveryPlanError, resolve_plan
+
+        mode = form.get("mode", "seed").strip()
+        policy = form.get("policy", "balanced").strip()
+        exclusions = _csv(form.get("exclusions"))
+
+        def limit(name, default):
+            value = form.get(name, "").strip()
+            return int(value) if value.isdigit() and int(value) > 0 else default
+
+        try:
+            plan = resolve_plan(
+                mode,
+                seed=form.get("seed", "").strip() or None,
+                seeds=_csv(form.get("seeds")),
+                cidr=form.get("cidr", "").strip() or None,
+                csv_text=form.get("csv_text", "") or None,
+                policy=policy,
+                max_depth=limit("max_depth", 1),
+                max_devices=limit("max_devices", 64),
+                timeout_seconds=limit("timeout_seconds", 15),
+                concurrency=limit("concurrency", 1),
+                exclusions=exclusions,
+                allow_large_scan=form.get("allow_large_scan") == "yes",
+            )
+        except DiscoveryPlanError as error:
+            return None, str(error)
+        return plan, None
+
+    @app.route("/discovery/wizard")
+    def discovery_wizard():
+        return render_template(
+            "discovery_wizard.html",
+            credential_sets=credential_service().list_sets(),
+            plan=None,
+            error=None,
+            **base_context("discovery"),
+        )
+
+    @app.route("/discovery/wizard/preview", methods=["POST"])
+    def discovery_wizard_preview():
+        plan, error = _wizard_plan_from_form(request.form)
+        return render_template(
+            "discovery_wizard.html",
+            credential_sets=credential_service().list_sets(),
+            plan=plan.to_dict() if plan else None,
+            form=request.form,
+            error=error,
+            **base_context("discovery"),
+        )
+
+    @app.route("/discovery/wizard/start", methods=["POST"])
+    def discovery_wizard_start():
+        plan, error = _wizard_plan_from_form(request.form)
+        if plan is None:
+            flash(error, "error")
+            return redirect(url_for("discovery_wizard"))
+        name = request.form.get("name", "").strip()
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "")
+        if not name or not username or not password:
+            flash(
+                "A profile name, username, and password are required to run "
+                "discovery.",
+                "error",
+            )
+            return redirect(url_for("discovery_wizard"))
+        seeds = plan.seed_addresses
+        try:
+            service = profile_service()
+            credential_sets = tuple(request.form.getlist("credential_sets"))
+            if service.repository.exists(name):
+                service.update_profile(
+                    name,
+                    management_ip=seeds[0],
+                    username=username,
+                    password=password,
+                    seeds=seeds[1:],
+                    max_depth=plan.effective_depth,
+                    max_devices=plan.max_devices,
+                    collect_configuration=plan.collect_configuration,
+                    credential_sets=credential_sets,
+                    description=f"{plan.mode} · {plan.policy} policy",
+                )
+            else:
+                service.add_profile(
+                    name=name,
+                    management_ip=seeds[0],
+                    username=username,
+                    password=password,
+                    seeds=seeds[1:],
+                    max_depth=plan.effective_depth,
+                    max_devices=plan.max_devices,
+                    collect_configuration=plan.collect_configuration,
+                    credential_sets=credential_sets,
+                    description=f"{plan.mode} · {plan.policy} policy",
+                )
+        except AtlasWorkspaceError as error:
+            flash(str(error), "error")
+            return redirect(url_for("discovery_wizard"))
+        try:
+            job, _ = job_manager().start(name)
+        except AtlasWorkspaceError as error:
+            flash(str(error), "error")
+            return redirect(url_for("discovery_wizard"))
+        session["scope"] = job.profile_id
+        flash(
+            f"Discovery started for {name} — {len(seeds)} candidate "
+            f"address(es), {plan.policy} policy.",
+            "success",
+        )
+        return redirect(url_for("discovery"))
+
     @app.route("/discovery/run", methods=["POST"])
     def discovery_run():
         """No-JS fallback: run through the same job manager, synchronously."""
