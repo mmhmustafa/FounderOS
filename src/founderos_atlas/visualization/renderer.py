@@ -8,7 +8,18 @@ import json
 from pathlib import Path
 from typing import Any
 
+from founderos_atlas.platforms.classify import (
+    ROLE_UNKNOWN,
+    ROLE_UNRESOLVED,
+    RELATION_PEER,
+    RELATION_PHYSICAL,
+    RELATION_ROUTING,
+    classify_role,
+    relationship_kind,
+)
 from founderos_atlas.topology import TopologySnapshot
+
+from .stencils import stencil_data_uri
 
 
 CYTOSCAPE_CDN = "https://unpkg.com/cytoscape@3.29.2/dist/cytoscape.min.js"
@@ -51,6 +62,13 @@ class TopologyRenderer:
             hostname_to_id[str(device["hostname"]).casefold()] = device_id
             for alias in _device_aliases(device):
                 hostname_to_id.setdefault(alias.casefold(), device_id)
+            # PR-043.1: adjacencies naming a peer by an address that a
+            # DISCOVERED device owns resolve onto that device (exact
+            # address-identity evidence) instead of spawning a duplicate
+            # unresolved node.
+            management_ip = str(device.get("management_ip") or "").strip()
+            if management_ip:
+                hostname_to_id.setdefault(management_ip.casefold(), device_id)
         neighbor_counts = self._neighbor_counts()
         configured = {
             str(name).casefold() for name in self._context.get("configured_hostnames") or ()
@@ -66,6 +84,7 @@ class TopologyRenderer:
             vendor = str(device["vendor"])
             hostname_key = str(device["hostname"]).casefold()
             depth = (device.get("metadata") or {}).get("discovery_depth")
+            role, role_evidence = classify_role(device)
             node_data = {
                 "id": device_id,
                 "label": str(device["hostname"]),
@@ -77,6 +96,11 @@ class TopologyRenderer:
                 "os": f"{device['os_name']} {device['os_version']}",
                 "interfaces": len(device["interfaces"]),
                 "neighbors": neighbor_counts.get(hostname_key, 0),
+                "role": role,
+                "role_evidence": role_evidence,
+                "stencil": stencil_data_uri(role),
+                "discovery_status": "Managed device (discovered)",
+                "observation": "direct discovery",
                 "discovery_depth": "unknown" if depth is None else str(depth),
                 "last_discovered": last_discovered,
                 "config_collected": "Yes" if hostname_key in configured else "No",
@@ -103,6 +127,11 @@ class TopologyRenderer:
                         "interfaces": 0,
                         "kind": "removed",
                         "change": "removed",
+                        "role": ROLE_UNKNOWN,
+                        "role_evidence": "device no longer discovered",
+                        "stencil": stencil_data_uri(ROLE_UNKNOWN),
+                        "discovery_status": "No longer discovered",
+                        "observation": "previous discovery",
                         "color": "#dc2626",
                     }
                 }
@@ -110,9 +139,19 @@ class TopologyRenderer:
         logical_edges: dict[tuple, dict[str, Any]] = {}
         for edge in self._snapshot.edges:
             remote_hostname = str(edge["remote_hostname"])
+            edge_metadata = dict(edge.get("metadata") or {})
+            relation = relationship_kind(str(edge["protocol"]), edge_metadata)
             target_id = hostname_to_id.get(remote_hostname.casefold())
             if target_id is None:
                 target_id = f"observed:{remote_hostname.casefold()}"
+                # An observed-but-undiscovered peer: honest unresolved
+                # semantics (PR-043.1) — never presented as a discovered
+                # device, never given an invented management address.
+                unresolved_label = (
+                    "Unknown router"
+                    if relation in (RELATION_ROUTING, RELATION_PEER)
+                    else "Observed neighbor"
+                )
                 nodes.setdefault(
                     target_id,
                     {
@@ -121,12 +160,33 @@ class TopologyRenderer:
                             "label": remote_hostname,
                             "hostname": remote_hostname,
                             "aliases": [],
-                            "management_ip": edge["remote_management_ip"] or "unknown",
+                            "management_ip": edge["remote_management_ip"]
+                            or "Unknown",
                             "vendor": "unknown",
-                            "platform": "observed neighbor",
+                            "platform": unresolved_label,
                             "os": "unknown",
                             "interfaces": 0,
                             "kind": "observed",
+                            "role": ROLE_UNRESOLVED,
+                            "role_evidence": (
+                                f"observed via {str(edge['protocol']).upper()} "
+                                "only — not discovered"
+                            ),
+                            "stencil": stencil_data_uri(ROLE_UNRESOLVED),
+                            "observed_via": str(edge["protocol"]).upper(),
+                            "router_id": str(
+                                edge_metadata.get("router_id") or ""
+                            ),
+                            "observation": str(
+                                edge_metadata.get("observation")
+                                or "neighbor announcement"
+                            ),
+                            "discovery_status": (
+                                "Not attempted — no verified management "
+                                "endpoint"
+                                if not edge["remote_management_ip"]
+                                else "Not discovered yet"
+                            ),
                             "color": _vendor_color("unknown"),
                         }
                     },
@@ -150,6 +210,7 @@ class TopologyRenderer:
                 "source_interface": iface_a,
                 "target_interface": iface_b,
                 "protocol": str(edge["protocol"]),
+                "relationship": relation,
                 "observations": 1,
             }
 
@@ -195,6 +256,37 @@ class TopologyRenderer:
             return "changed"
         return "none"
 
+    def relationship_summary(self) -> dict[str, int]:
+        """Honest relationship-type counts — never a bare "edges" number.
+
+        Physical links are verified link-layer evidence; routing
+        adjacencies and protocol peers are logical observations;
+        unresolved peers are observed identities Atlas has not
+        discovered (and never counts as devices).
+        """
+
+        elements = self.elements()
+        counts = {
+            "physical_links": 0,
+            "routing_adjacencies": 0,
+            "protocol_peers": 0,
+            "unresolved_peers": 0,
+        }
+        for edge in elements["edges"]:
+            relation = edge["data"].get("relationship")
+            if relation == RELATION_PHYSICAL:
+                counts["physical_links"] += 1
+            elif relation == RELATION_ROUTING:
+                counts["routing_adjacencies"] += 1
+            elif relation == RELATION_PEER:
+                counts["protocol_peers"] += 1
+        counts["unresolved_peers"] = sum(
+            1
+            for node in elements["nodes"]
+            if node["data"].get("kind") == "observed"
+        )
+        return counts
+
     def render(self) -> str:
         template_path = Path(__file__).resolve().parent / "templates" / "topology.html"
         template = template_path.read_text(encoding="utf-8")
@@ -205,6 +297,7 @@ class TopologyRenderer:
                 "device_count": self._snapshot.device_count,
                 "edge_count": self._snapshot.edge_count,
                 "warning_count": len(self._snapshot.warnings),
+                **self.relationship_summary(),
             }
         )
         return template.replace("__CYTOSCAPE_CDN__", CYTOSCAPE_CDN).replace(

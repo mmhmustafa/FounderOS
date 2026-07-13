@@ -20,6 +20,30 @@ from .models import DiscoveryResult, NetworkNeighbor
 from .policy import BoundaryPolicy
 
 
+def management_candidate(neighbor: NetworkNeighbor) -> bool:
+    """Whether recursive SSH to this neighbor is evidence-justified.
+
+    Atlas may attempt a discovered address ONLY when deterministic
+    evidence marks it as a usable management endpoint (PR-043.1):
+
+    - the driver explicitly said so (``metadata.management_endpoint``),
+      e.g. a previously verified canonical endpoint; or
+    - the protocol itself advertises management addresses (CDP/LLDP
+      announce the device's own entry point; ``manual`` is an operator
+      statement).
+
+    Routing evidence NEVER qualifies: an OSPF router ID, a BGP peer
+    address, a next hop, or a loopback proves a protocol relationship,
+    not SSH manageability. User seeds are handled separately and are
+    always attempted.
+    """
+
+    flag = neighbor.metadata.get("management_endpoint")
+    if flag is not None:
+        return bool(flag)
+    return neighbor.protocol in ("cdp", "lldp", "manual")
+
+
 def _discover_with_registry(transport, registry, host: str) -> DiscoveryResult:
     """Detect the platform with a lightweight probe, then drive discovery.
 
@@ -230,6 +254,32 @@ def discover_multihop(
         for neighbor in ordered_neighbors:
             if on_neighbor is not None:
                 on_neighbor(neighbor)
+            if not management_candidate(neighbor):
+                # A routing adjacency or protocol peer: preserved as an
+                # unresolved observation — never an SSH target, never a
+                # false "unreachable" (PR-043.1).
+                marker = (
+                    f"unresolved|{neighbor.remote_hostname.casefold()}"
+                    f"|{neighbor.protocol}"
+                )
+                if marker not in recorded_boundary:
+                    recorded_boundary.add(marker)
+                    observation = str(
+                        neighbor.metadata.get("observation")
+                        or f"{neighbor.protocol} adjacency"
+                    )
+                    visits.append(
+                        DeviceVisit(
+                            neighbor.remote_hostname,
+                            depth + 1,
+                            SKIPPED,
+                            "not attempted — "
+                            f"{neighbor.protocol.upper()} {observation} "
+                            "is not a verified management endpoint",
+                            hostname=neighbor.remote_hostname,
+                        )
+                    )
+                continue
             next_host = neighbor.remote_management_ip
             if policy is not None:
                 decision = policy.evaluate_neighbor(

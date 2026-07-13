@@ -42,8 +42,15 @@
   <script>
     const topologyElements = __TOPOLOGY_ELEMENTS__;
     const snapshotSummary = __SNAPSHOT_SUMMARY__;
-    document.getElementById('summary').textContent = `${snapshotSummary.device_count} discovered devices · ${snapshotSummary.edge_count} edges`;
+    const summaryParts = [`${snapshotSummary.device_count} discovered devices`];
+    summaryParts.push(`${snapshotSummary.physical_links ?? 0} physical links`);
+    if (snapshotSummary.routing_adjacencies) summaryParts.push(`${snapshotSummary.routing_adjacencies} routing adjacencies`);
+    if (snapshotSummary.protocol_peers) summaryParts.push(`${snapshotSummary.protocol_peers} BGP peerings`);
+    if (snapshotSummary.unresolved_peers) summaryParts.push(`${snapshotSummary.unresolved_peers} unresolved peer identities`);
+    document.getElementById('summary').textContent = summaryParts.join(' · ');
 
+    // The ICON is the device role; COLOR/BORDER is operational state —
+    // never shape alone (PR-043.1 stencil framework).
     const cy = cytoscape({
       container: document.getElementById('cy'),
       elements: [...topologyElements.nodes, ...topologyElements.edges],
@@ -52,16 +59,33 @@
       maxZoom: 3,
       style: [
         { selector: 'node', style: {
-          'background-color': 'data(color)', 'label': 'data(label)', 'color': '#172033',
+          'shape': 'round-rectangle',
+          'background-color': '#ffffff',
+          'background-image': 'data(stencil)',
+          'background-fit': 'contain',
+          'background-clip': 'node',
+          'label': 'data(label)', 'color': '#172033',
           'font-size': 11, 'text-valign': 'bottom', 'text-margin-y': 7,
-          'width': 44, 'height': 44, 'border-width': 2, 'border-color': '#ffffff'
+          'width': 46, 'height': 46, 'border-width': 2.5, 'border-color': '#94a3b8'
         }},
-        { selector: 'node[kind = "observed"]', style: { 'shape': 'diamond', 'border-style': 'dashed' }},
+        { selector: 'node[kind = "observed"]', style: { 'border-style': 'dashed', 'border-color': '#94a3b8', 'opacity': 0.9 }},
         { selector: 'node[change = "new"]', style: { 'border-color': '#16a34a', 'border-width': 5 }},
         { selector: 'node[change = "changed"]', style: { 'border-color': '#f59e0b', 'border-width': 5 }},
         { selector: 'node[change = "removed"]', style: { 'border-color': '#dc2626', 'border-width': 5, 'border-style': 'dashed', 'opacity': 0.75 }},
+        { selector: 'node:selected', style: { 'border-color': '#2563eb', 'border-width': 5 }},
         { selector: 'edge', style: {
           'width': 2, 'line-color': '#94a3b8', 'curve-style': 'bezier'
+        }},
+        { selector: 'edge[relationship = "physical"]', style: { 'line-style': 'solid' }},
+        { selector: 'edge[relationship = "routing-adjacency"]', style: {
+          'line-style': 'dashed', 'line-color': '#64748b',
+          'label': 'data(protocol)', 'font-size': 9, 'color': '#64748b',
+          'text-background-color': '#ffffff', 'text-background-opacity': 0.8
+        }},
+        { selector: 'edge[relationship = "protocol-peer"]', style: {
+          'line-style': 'dotted', 'line-color': '#94a3b8',
+          'label': 'data(protocol)', 'font-size': 9, 'color': '#94a3b8',
+          'text-background-color': '#ffffff', 'text-background-opacity': 0.8
         }},
         { selector: '.search-muted', style: { 'opacity': 0.18 }},
         { selector: '.search-match', style: { 'border-color': '#f59e0b', 'border-width': 5, 'opacity': 1 }}
@@ -71,9 +95,29 @@
     const details = document.getElementById('details');
     const tooltip = document.getElementById('tooltip');
     const escapeHtml = value => String(value).replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
-    const nodeDetails = data => `
-      <h2>${escapeHtml(data.label)}</h2>
-      <div class="field"><strong>Kind</strong>${escapeHtml(data.kind)}</div>
+    const nodeDetails = data => {
+      const unresolved = data.kind === 'observed';
+      const heading = unresolved && (data.observation === 'routing-adjacency' || data.observation === 'protocol-peer')
+        ? 'Unknown router' : data.label;
+      let html = `
+      <h2>${escapeHtml(heading)}</h2>`;
+      if (unresolved) {
+        html += `
+      <p style="font-size:13px;color:#475569;">This peer was observed through routing evidence. Atlas has not yet identified a verified management endpoint.</p>
+      ${data.router_id ? `<div class="field"><strong>Router ID</strong>${escapeHtml(data.router_id)}</div>` : ''}
+      <div class="field"><strong>Observed via</strong>${escapeHtml(data.observed_via ?? 'neighbor announcement')}</div>
+      <div class="field"><strong>Management address</strong>${escapeHtml(data.management_ip)}</div>
+      <div class="field"><strong>Discovery status</strong>${escapeHtml(data.discovery_status ?? 'Not discovered')}</div>
+      <div class="field"><strong>Observation type</strong>${escapeHtml(data.observation ?? 'unknown')}</div>
+      <div class="field"><strong>Role</strong>${escapeHtml(data.role ?? 'unresolved_peer')}</div>
+      <div class="field"><strong>Role evidence</strong>${escapeHtml(data.role_evidence ?? '')}</div>`;
+        return html;
+      }
+      html += `
+      <div class="field"><strong>Role</strong>${escapeHtml(data.role ?? 'unknown')}</div>
+      <div class="field"><strong>Role evidence</strong>${escapeHtml(data.role_evidence ?? 'no role evidence collected')}</div>
+      <div class="field"><strong>Discovery status</strong>${escapeHtml(data.discovery_status ?? 'unknown')}</div>
+      <div class="field"><strong>Observation type</strong>${escapeHtml(data.observation ?? 'direct discovery')}</div>
       <div class="field"><strong>Aliases</strong>${escapeHtml((data.aliases || []).join(', ') || 'None')}</div>
       <div class="field"><strong>Management IP</strong>${escapeHtml(data.management_ip)}</div>
       <div class="field"><strong>Vendor</strong>${escapeHtml(data.vendor)}</div>
@@ -85,6 +129,8 @@
       <div class="field"><strong>Last discovered</strong>${escapeHtml(data.last_discovered ?? 'unrecorded')}</div>
       <div class="field"><strong>Configuration collected</strong>${escapeHtml(data.config_collected ?? 'No')}</div>
       <div class="field"><strong>Last configuration change</strong>${escapeHtml(data.last_config_change ?? 'None recorded')}</div>`;
+      return html;
+    };
 
     cy.on('tap', 'node', event => { details.innerHTML = nodeDetails(event.target.data()); });
     cy.on('mouseover', 'node', event => {

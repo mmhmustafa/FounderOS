@@ -158,6 +158,7 @@ class _Investigation:
     def _index_snapshot(self) -> None:
         assert self.snapshot is not None
         id_to_host: dict[str, str] = {}
+        ip_to_key: dict[str, str] = {}
         for device in self.snapshot.get("devices") or ():
             if not isinstance(device, dict):
                 continue
@@ -167,6 +168,9 @@ class _Investigation:
             key = hostname.casefold()
             self.devices[key] = dict(device)
             id_to_host[str(device.get("device_id"))] = hostname
+            management_ip = str(device.get("management_ip") or "").strip()
+            if management_ip:
+                ip_to_key.setdefault(management_ip.casefold(), key)
         for edge in self.snapshot.get("edges") or ():
             if not isinstance(edge, dict):
                 continue
@@ -178,6 +182,13 @@ class _Investigation:
                 continue
             local_key = local.casefold()
             remote_key = remote.casefold()
+            if remote_key not in self.devices:
+                # PR-043.1: a routing adjacency names its peer by router
+                # ID or address. When that value exactly matches a
+                # DISCOVERED device's management address, the edge
+                # resolves onto it — deterministic address-identity
+                # evidence, never a name guess.
+                remote_key = ip_to_key.get(remote_key, remote_key)
             if remote_key not in self.devices:
                 self.neighbor_only.setdefault(remote_key, []).append(local)
             pair = tuple(sorted((local_key, remote_key)))

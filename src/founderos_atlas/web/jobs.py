@@ -287,9 +287,13 @@ class DiscoveryJobManager:
             failed = int(summary.get("failed_devices") or job.failed_devices or 0)
             job.failed_devices = failed
             if failed:
+                # PR-043.1: this counts only legitimate connection attempts
+                # to verified candidate endpoints — protocol peers observed
+                # through routing evidence are never attempted, so they can
+                # never appear here.
                 job.warning = (
-                    f"{failed} device(s) could not be reached; successful "
-                    "results were preserved."
+                    f"{failed} verified management endpoint(s) could not be "
+                    "reached; successful results were preserved."
                 )
                 job.message = "Discovery completed with warnings"
             else:

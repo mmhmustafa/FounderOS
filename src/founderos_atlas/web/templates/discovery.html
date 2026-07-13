@@ -73,6 +73,10 @@
       <li><span>Relationships</span><span id="summary-relationships">{{ job.summary.relationships if job and job.summary else '' }}</span></li>
       <li><span>Configurations collected</span><span id="summary-configs">{{ job.summary.configurations_collected if job and job.summary else '' }}</span></li>
       <li><span>Platforms</span><span id="summary-platforms">{{ job.summary.platforms if job and job.summary and job.summary.platforms else '—' }}</span></li>
+      <li><span>Physical links verified</span><span id="summary-physical">{{ job.summary.physical_links if job and job.summary and job.summary.physical_links is not none else '—' }}</span></li>
+      <li><span>Routing adjacencies observed</span><span id="summary-adjacencies">{{ job.summary.routing_adjacencies if job and job.summary and job.summary.routing_adjacencies is not none else '—' }}</span></li>
+      <li><span>Protocol peers observed</span><span id="summary-peers">{{ job.summary.protocol_peers if job and job.summary and job.summary.protocol_peers is not none else '—' }}</span></li>
+      <li><span>Unresolved peer identities</span><span id="summary-unresolved">{{ job.summary.unresolved_peers if job and job.summary and job.summary.unresolved_peers is not none else '—' }}</span></li>
       <li><span>Duration</span><span id="summary-duration">{% if job and job.summary %}{{ job.summary.duration_seconds }} seconds{% endif %}</span></li>
     </ul>
     <div class="flash flash-error" id="job-warning" {% if not (job and job.warning) %}hidden{% endif %}>{{ job.warning if job else '' }}</div>

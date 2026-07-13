@@ -25,6 +25,18 @@ from .base import (
     DriverDiscovery,
     PlatformDriver,
 )
+from .classify import (
+    DEVICE_ROLES,
+    RELATION_PEER,
+    RELATION_PHYSICAL,
+    RELATION_ROUTING,
+    RELATION_UNKNOWN,
+    ROLE_UNKNOWN,
+    ROLE_UNRESOLVED,
+    classify_role,
+    relationship_counts,
+    relationship_kind,
+)
 from .drivers import CiscoIOSDriver, FRRoutingAdapter, FRRoutingDriver
 from .registry import (
     FUTURE_PLATFORMS,
@@ -43,7 +55,17 @@ __all__ = [
     "CapabilityStatus",
     "CiscoIOSDriver",
     "DEFAULT_PROBE_COMMAND",
+    "DEVICE_ROLES",
     "DriverDiscovery",
+    "RELATION_PEER",
+    "RELATION_PHYSICAL",
+    "RELATION_ROUTING",
+    "RELATION_UNKNOWN",
+    "ROLE_UNKNOWN",
+    "ROLE_UNRESOLVED",
+    "classify_role",
+    "relationship_counts",
+    "relationship_kind",
     "FRRoutingAdapter",
     "FRRoutingDriver",
     "FUTURE_PLATFORMS",

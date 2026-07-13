@@ -103,6 +103,21 @@ def run_multihop_discovery(
     for result in report.results:
         family = result.platform_family or "unknown"
         platform_counts[family] = platform_counts.get(family, 0) + 1
+    # Relationship-type counts (PR-043.1): physical links vs routing
+    # adjacencies vs protocol peers vs unresolved peer identities —
+    # never a bare "edges" number.
+    from founderos_atlas.platforms import relationship_counts
+
+    hostname_by_id = {
+        device.device_id: device.hostname for device in graph.devices()
+    }
+    relationships = relationship_counts(
+        graph.edges(),
+        hostname_by_device_id=hostname_by_id,
+        discovered_hostnames={
+            device.hostname for device in graph.devices()
+        },
+    )
     snapshot = TopologySnapshot.from_graph(
         graph,
         metadata={
@@ -114,6 +129,7 @@ def run_multihop_discovery(
             "max_devices": report.config.max_devices,
             "identity_resolution": True,
             "platforms": dict(sorted(platform_counts.items())),
+            "relationships": relationships,
             **({"failed_hosts": failed_hosts} if failed_hosts else {}),
         },
     )

@@ -158,6 +158,17 @@ class FRRoutingAdapter(DiscoveryAdapter):
     def parse_neighbors(
         self, raw_outputs: Mapping[str, str]
     ) -> tuple[NetworkNeighbor, ...]:
+        """OSPF adjacencies as ROUTING evidence — never management targets.
+
+        The Neighbor ID column is the peer's OSPF **router ID** (an
+        identifier, frequently a loopback, never proven manageable) and
+        the Address column is the adjacency's **interface address** on
+        the shared segment. Neither is a verified management endpoint,
+        so ``remote_management_ip`` stays None (PR-043.1): the adjacency
+        is preserved as evidence, and recursive discovery never SSHes a
+        router ID or peer address on the strength of a routing table.
+        """
+
         text = raw_outputs.get(SHOW_OSPF_NEIGHBORS, "")
         if not text.strip() or text.strip().startswith("%"):
             # OSPF not configured is valid evidence, never an error.
@@ -172,9 +183,13 @@ class FRRoutingAdapter(DiscoveryAdapter):
                     local_interface=local_interface,
                     remote_hostname=match.group("neighbor_id"),
                     remote_interface=None,  # OSPF does not advertise it
-                    remote_management_ip=match.group("address"),
+                    remote_management_ip=None,  # router IDs are NOT endpoints
                     protocol="ospf",
                     metadata={
+                        "observation": "routing-adjacency",
+                        "router_id": match.group("neighbor_id"),
+                        "adjacency_address": match.group("address"),
+                        "management_endpoint": False,
                         "ospf_state": match.group("state"),
                         "source_command": SHOW_OSPF_NEIGHBORS,
                     },
@@ -226,7 +241,12 @@ class FRRoutingDriver(PlatformDriver):
         )
 
     def annotate(self, discovery: DriverDiscovery) -> DriverDiscovery:
-        """Summarize route and BGP evidence into canonical metadata."""
+        """Summarize route and BGP evidence into canonical metadata.
+
+        BGP peers additionally become PROTOCOL-PEER observations —
+        visible relationships with no management endpoint: a peer
+        address proves a TCP/179 session, never SSH manageability.
+        """
 
         routes = _parse_route_summary(discovery.raw_outputs.get(SHOW_ROUTES, ""))
         bgp_peers = _parse_bgp_peers(
@@ -238,8 +258,27 @@ class FRRoutingDriver(PlatformDriver):
             metadata["routes"] = routes
         if bgp_peers is not None:
             metadata["bgp_peers"] = bgp_peers
+        peer_neighbors = tuple(
+            NetworkNeighbor(
+                local_device_id=result.device.device_id,
+                local_interface="bgp",  # a session, not a physical port
+                remote_hostname=peer,
+                remote_interface=None,
+                remote_management_ip=None,  # peer addresses are NOT endpoints
+                protocol="bgp",
+                metadata={
+                    "observation": "protocol-peer",
+                    "peer_address": peer,
+                    "management_endpoint": False,
+                    "source_command": SHOW_BGP_SUMMARY,
+                },
+            )
+            for peer in (bgp_peers or {}).get("peers", ())
+        )
         result = replace(
-            result, device=replace(result.device, metadata=metadata)
+            result,
+            device=replace(result.device, metadata=metadata),
+            neighbors=(*result.neighbors, *peer_neighbors),
         )
         capabilities = list(discovery.capabilities)
         if routes is not None and routes["total"] > 0:

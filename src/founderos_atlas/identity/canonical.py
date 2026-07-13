@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from ipaddress import ip_address
 
 from founderos_atlas.discovery.models import NetworkDevice, NetworkNeighbor
 
@@ -35,10 +36,31 @@ def normalize_hostname(value: str) -> str:
     return value.strip().rstrip(".").casefold()
 
 
-def short_hostname(value: str) -> str:
-    """First DNS label of the normalized hostname (``r1.atlas.local`` -> ``r1``)."""
+def _is_ip_like(value: str) -> bool:
+    """Whether a name is an IP address (router IDs, peer addresses).
 
-    return normalize_hostname(value).split(".", 1)[0]
+    PR-043.1: routing protocols identify peers by IP-shaped values.
+    Those are identifiers, not FQDNs — splitting them on dots would
+    mangle ``10.99.0.2`` into ``10``.
+    """
+
+    try:
+        ip_address(value.strip().rstrip("."))
+    except ValueError:
+        return False
+    return True
+
+
+def short_hostname(value: str) -> str:
+    """First DNS label of the normalized hostname (``r1.atlas.local`` -> ``r1``).
+
+    IP-shaped values pass through untouched — they carry no DNS labels.
+    """
+
+    normalized = normalize_hostname(value)
+    if _is_ip_like(normalized):
+        return normalized
+    return normalized.split(".", 1)[0]
 
 
 def is_bare_hostname(value: str) -> bool:
@@ -47,9 +69,15 @@ def is_bare_hostname(value: str) -> bool:
 
 
 def display_label(value: str) -> str:
-    """First label of the original value with its casing preserved."""
+    """First label of the original value with its casing preserved.
 
-    return value.strip().rstrip(".").split(".", 1)[0]
+    IP-shaped values pass through untouched.
+    """
+
+    cleaned = value.strip().rstrip(".")
+    if _is_ip_like(cleaned):
+        return cleaned
+    return cleaned.split(".", 1)[0]
 
 
 @dataclass(frozen=True)

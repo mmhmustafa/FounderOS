@@ -57,6 +57,10 @@
       setText("summary-relationships", job.summary.relationships);
       setText("summary-configs", job.summary.configurations_collected);
       setText("summary-platforms", job.summary.platforms || "—");
+      setText("summary-physical", job.summary.physical_links ?? "—");
+      setText("summary-adjacencies", job.summary.routing_adjacencies ?? "—");
+      setText("summary-peers", job.summary.protocol_peers ?? "—");
+      setText("summary-unresolved", job.summary.unresolved_peers ?? "—");
       setText("summary-duration", job.summary.duration_seconds + " seconds");
       show("job-warning", Boolean(job.warning));
       if (job.warning) setText("job-warning", job.warning);

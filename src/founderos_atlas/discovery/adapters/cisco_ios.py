@@ -167,6 +167,19 @@ class CiscoIOSAdapter(DiscoveryAdapter):
                     protocol="cdp",
                     metadata={
                         "remote_platform": platform_match.group(1).strip() if platform_match else "unknown",
+                        # PR-043.1: a CDP-advertised address is the device
+                        # ANNOUNCING its own management entry — legitimate
+                        # evidence for recursive discovery eligibility.
+                        # (Asserted only when present: a CDP neighbor
+                        # without an address stays eligible-by-protocol and
+                        # is skipped for the missing address, not for
+                        # eligibility.)
+                        "observation": "link-layer",
+                        **(
+                            {"management_endpoint": True}
+                            if remote_ip_match
+                            else {}
+                        ),
                         "source_command": SHOW_NEIGHBORS,
                     },
                 )

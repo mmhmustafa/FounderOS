@@ -67,6 +67,18 @@ def build_enterprise_graph(
                     normalize_hostname(observation.hostname),
                 )
                 by_profile_hostname.setdefault(key, device.enterprise_id)
+            # PR-043.1: routing adjacencies name peers by router ID or
+            # address; an exact match against a device's DISCOVERED
+            # management address (same profile) resolves the edge —
+            # deterministic address identity, never a name guess.
+            if observation.management_ip:
+                by_profile_hostname.setdefault(
+                    (
+                        observation.profile_id,
+                        str(observation.management_ip).casefold(),
+                    ),
+                    device.enterprise_id,
+                )
 
     interfaces = _merge_interfaces(contributions, by_profile_hostname)
     links, unknowns = _build_links(

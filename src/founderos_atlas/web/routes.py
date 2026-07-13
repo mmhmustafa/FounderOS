@@ -1601,7 +1601,11 @@ def make_pipeline_runner(app):
             return {}
         # PR-043: the platform mix comes from the run's own snapshot.
         snapshot = load_json(scope.snapshot_path) or {}
-        platforms = (snapshot.get("metadata") or {}).get("platforms") or {}
+        metadata = snapshot.get("metadata") or {}
+        platforms = metadata.get("platforms") or {}
+        # PR-043.1: honest relationship categories — physical links vs
+        # routing adjacencies vs protocol peers vs unresolved peers.
+        relations = metadata.get("relationships") or {}
         return {
             "devices": record.device_count,
             "relationships": record.relationship_count,
@@ -1612,6 +1616,10 @@ def make_pipeline_runner(app):
             "platforms": ", ".join(
                 f"{name}: {count}" for name, count in sorted(platforms.items())
             ),
+            "physical_links": relations.get("physical_links"),
+            "routing_adjacencies": relations.get("routing_adjacencies"),
+            "protocol_peers": relations.get("protocol_peers"),
+            "unresolved_peers": relations.get("unresolved_peers"),
         }
 
     return run

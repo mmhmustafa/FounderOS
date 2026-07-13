@@ -207,14 +207,25 @@ class FRRoutingAdapterTests(unittest.TestCase):
         self.assertEqual("up", by_name["eth0"].protocol_status)
         self.assertIsNone(by_name["lo"].ip_address)
 
-    def test_ospf_neighbors_become_canonical_neighbors(self) -> None:
+    def test_ospf_neighbors_become_routing_adjacencies(self) -> None:
+        """PR-043.1: router IDs and peer addresses are OBSERVATIONS —
+        never management endpoints."""
+
         neighbors = FRRoutingAdapter().parse_neighbors(self.outputs())
         self.assertEqual(1, len(neighbors))
         neighbor = neighbors[0]
         self.assertEqual("ospf", neighbor.protocol)
-        self.assertEqual("10.99.0.2", neighbor.remote_management_ip)
+        self.assertIsNone(neighbor.remote_management_ip)  # never an endpoint
         self.assertEqual("eth1", neighbor.local_interface)
         self.assertEqual("10.99.0.2", neighbor.remote_hostname)
+        self.assertEqual(
+            "routing-adjacency", neighbor.metadata["observation"]
+        )
+        self.assertEqual("10.99.0.2", neighbor.metadata["router_id"])
+        self.assertEqual(
+            "10.99.0.2", neighbor.metadata["adjacency_address"]
+        )
+        self.assertIs(False, neighbor.metadata["management_endpoint"])
 
     def test_missing_ospf_is_empty_not_an_error(self) -> None:
         outputs = self.outputs()
@@ -351,7 +362,11 @@ class MixedPlatformTraversalTests(unittest.TestCase):
             "frrouting", by_hostname["delhi-r1"].device.vendor
         )
 
-    def test_ospf_neighbors_traverse_like_cdp_neighbors(self) -> None:
+    def test_ospf_adjacencies_are_observed_never_traversed(self) -> None:
+        """PR-043.1: a routing adjacency is preserved as an unresolved
+        observation — Atlas never SSHes a router ID, and the peer is
+        never falsely reported unreachable."""
+
         network = ScriptedNetwork(
             {
                 "10.20.0.1": frr_outputs(
@@ -366,9 +381,16 @@ class MixedPlatformTraversalTests(unittest.TestCase):
             config=MultiHopConfig(max_depth=1),
         )
         hostnames = [result.device.hostname for result in report.results]
-        self.assertEqual(["delhi-r1", "delhi-r2"], hostnames)
-        origins = [visit.detail for visit in report.connected]
-        self.assertIn("ospf neighbor of delhi-r1", origins)
+        self.assertEqual(["delhi-r1"], hostnames)  # peer NOT discovered
+        self.assertEqual((), report.failed)        # and NOT "unreachable"
+        skipped = [visit for visit in report.skipped]
+        self.assertEqual(1, len(skipped))
+        self.assertEqual("10.99.0.2", skipped[0].host)
+        self.assertIn("not attempted", skipped[0].detail)
+        self.assertIn("OSPF", skipped[0].detail)
+        self.assertIn("not a verified management endpoint", skipped[0].detail)
+        # No SSH was ever attempted to the router ID.
+        self.assertNotIn("10.99.0.2", network.connect_attempts)
 
     def test_unknown_platform_fails_honestly_per_device(self) -> None:
         network = ScriptedNetwork(
@@ -457,7 +479,10 @@ class MultiPlatformPipelineTests(unittest.TestCase):
 
         service = make_service(workdir)
         add_profile(service, "Hyderabad", "10.0.0.1")
-        add_profile(service, "Delhi", "10.20.0.1")
+        # delhi-r2 is reachable only through routing evidence, so the
+        # engineer supplies it as an explicit seed — user-provided seeds
+        # remain eligible (PR-043.1); router IDs alone never are.
+        add_profile(service, "Delhi", "10.20.0.1", seeds=("10.99.0.2",))
         run_discover(workdir, service, hyderabad_network(), "Hyderabad", FIXED)
         run_discover(
             workdir, service, delhi_network(), "Delhi",
@@ -538,6 +563,233 @@ class MultiPlatformPipelineTests(unittest.TestCase):
             _service, client = self.build_world(workdir)
             page = client.get("/discovery").data
             self.assertIn(b"Platforms", page)
+
+
+class ManagementEligibilityTests(unittest.TestCase):
+    """PR-043.1: recursive SSH only with management-endpoint evidence."""
+
+    def neighbor(self, protocol: str, metadata: dict | None = None):
+        from founderos_atlas.discovery.models import NetworkNeighbor
+
+        return NetworkNeighbor(
+            local_device_id="frr:x",
+            local_interface="eth0",
+            remote_hostname="peer",
+            remote_management_ip="10.9.9.9",
+            protocol=protocol,
+            metadata=metadata or {},
+        )
+
+    def test_routing_evidence_never_qualifies(self) -> None:
+        from founderos_atlas.discovery.multihop import management_candidate
+
+        for protocol in ("ospf", "bgp", "isis"):
+            self.assertFalse(
+                management_candidate(self.neighbor(protocol)), protocol
+            )
+        self.assertFalse(
+            management_candidate(
+                self.neighbor("ospf", {"management_endpoint": False})
+            )
+        )
+
+    def test_link_layer_and_operator_evidence_qualifies(self) -> None:
+        from founderos_atlas.discovery.multihop import management_candidate
+
+        for protocol in ("cdp", "lldp", "manual"):
+            self.assertTrue(
+                management_candidate(self.neighbor(protocol)), protocol
+            )
+        # An LLDP management address is a candidate endpoint (spec #4).
+        self.assertTrue(
+            management_candidate(
+                self.neighbor("lldp", {"management_endpoint": True})
+            )
+        )
+
+    def test_previously_verified_endpoint_remains_eligible(self) -> None:
+        from founderos_atlas.discovery.multihop import management_candidate
+
+        # Even over a routing protocol, an EXPLICIT verified-endpoint
+        # marker (e.g. a previously verified canonical endpoint) wins.
+        self.assertTrue(
+            management_candidate(
+                self.neighbor("ospf", {"management_endpoint": True})
+            )
+        )
+
+    def test_route_next_hops_never_become_devices(self) -> None:
+        """Routes are metadata evidence — never nodes, never seeds."""
+
+        _report, _graph, snapshot = run_multihop_discovery(
+            ScriptedNetwork(
+                {"10.20.0.1": frr_outputs("delhi-r1", "10.20.0.1")}
+            ).transport_factory,
+            "10.20.0.1",
+        )
+        data = snapshot.to_dict()
+        self.assertEqual(1, data["device_count"])  # next hops not devices
+        self.assertEqual(
+            3, data["devices"][0]["metadata"]["routes"]["total"]
+        )
+
+    def test_unresolved_peer_not_counted_and_not_unreachable(self) -> None:
+        report, _graph, snapshot = run_multihop_discovery(
+            ScriptedNetwork(
+                {
+                    "10.20.0.1": frr_outputs(
+                        "delhi-r1", "10.20.0.1",
+                        ospf_neighbors=(("10.99.0.2", "10.99.0.2", "eth1"),),
+                    ),
+                }
+            ).transport_factory,
+            "10.20.0.1",
+            config=MultiHopConfig(max_depth=1),
+        )
+        data = snapshot.to_dict()
+        self.assertEqual(1, data["device_count"])  # the peer is NOT a device
+        self.assertEqual((), report.failed)        # and NOT "unreachable"
+        self.assertNotIn("failed_hosts", data["metadata"])
+        relations = data["metadata"]["relationships"]
+        self.assertEqual(0, relations["physical_links"])
+        self.assertEqual(1, relations["routing_adjacencies"])
+        self.assertEqual(1, relations["unresolved_peers"])
+
+
+class RoleClassificationTests(unittest.TestCase):
+    def test_roles_come_from_evidence(self) -> None:
+        from founderos_atlas.platforms import classify_role
+
+        cases = (
+            ({"platform": "FRRouting", "vendor": "frrouting"},
+             "router", "FRRouting"),
+            ({"platform": "WS-C2960X-48FPS-L"}, "layer2_switch", "switch"),
+            ({"platform": "WS-C3850", "interfaces": [
+                {"name": "Vlan10", "ip_address": "10.0.0.1"}]},
+             "layer3_switch", "routed SVI"),
+            ({"platform": "IOSv", "interfaces": [{"name": "Vlan1"}]},
+             "layer2_switch", "VLAN interface"),
+            ({"platform": "ASA5516"}, "firewall", "firewall"),
+            ({"platform": "IOSv"}, "router", "router platform"),
+            ({"platform": "unknown-thing"}, "unknown", "no role evidence"),
+            ({"platform": "IOSv", "metadata": {"role": "load_balancer"}},
+             "load_balancer", "override"),
+        )
+        for device, expected_role, evidence_bit in cases:
+            role, evidence = classify_role(device)
+            self.assertEqual(expected_role, role, device)
+            self.assertIn(evidence_bit.casefold(), evidence.casefold(), device)
+
+    def test_role_is_never_inferred_from_hostname(self) -> None:
+        from founderos_atlas.platforms import classify_role
+
+        role, evidence = classify_role(
+            {"hostname": "SW1", "platform": "mystery"}
+        )
+        self.assertEqual("unknown", role)  # "SW1" proves nothing
+        self.assertIn("no role evidence", evidence)
+
+
+class StencilAndPresentationTests(unittest.TestCase):
+    def viewer(self, snapshot):
+        from founderos_atlas.visualization import TopologyRenderer
+
+        return TopologyRenderer(snapshot)
+
+    def frr_snapshot(self):
+        _report, _graph, snapshot = run_multihop_discovery(
+            ScriptedNetwork(
+                {
+                    "10.20.0.1": frr_outputs(
+                        "delhi-r1", "10.20.0.1",
+                        ospf_neighbors=(("10.99.0.2", "10.99.0.2", "eth1"),),
+                    ),
+                }
+            ).transport_factory,
+            "10.20.0.1",
+            config=MultiHopConfig(max_depth=1),
+        )
+        return snapshot
+
+    def test_stencils_are_distinct_reusable_svgs(self) -> None:
+        from founderos_atlas.platforms import DEVICE_ROLES
+        from founderos_atlas.visualization.stencils import (
+            stencil_data_uri, stencil_svg,
+        )
+
+        seen = set()
+        for role in DEVICE_ROLES:
+            svg = stencil_svg(role)
+            self.assertIn("<svg", svg)
+            self.assertNotIn(svg, seen, role)  # visually distinct markup
+            seen.add(svg)
+            self.assertTrue(
+                stencil_data_uri(role).startswith("data:image/svg+xml")
+            )
+        # The unresolved-peer stencil is dashed; the fallback is unknown.
+        self.assertIn("stroke-dasharray", stencil_svg("unresolved_peer"))
+        self.assertEqual(stencil_svg("unknown"), stencil_svg("nonsense-role"))
+
+    def test_router_and_unresolved_nodes_get_their_stencils(self) -> None:
+        elements = self.viewer(self.frr_snapshot()).elements()
+        by_kind = {}
+        for node in elements["nodes"]:
+            by_kind.setdefault(node["data"].get("kind"), []).append(node["data"])
+        router = by_kind["discovered"][0]
+        self.assertEqual("router", router["role"])
+        self.assertIn("FRRouting", router["role_evidence"])
+        self.assertIn("data:image/svg+xml", router["stencil"])
+        peer = by_kind["observed"][0]
+        self.assertEqual("unresolved_peer", peer["role"])
+        self.assertEqual("10.99.0.2", peer["router_id"])
+        self.assertEqual("OSPF", peer["observed_via"])
+        self.assertEqual("Unknown", peer["management_ip"])
+        self.assertIn("Not attempted", peer["discovery_status"])
+
+    def test_relationship_types_stay_distinct_in_the_viewer(self) -> None:
+        renderer = self.viewer(self.frr_snapshot())
+        edges = renderer.elements()["edges"]
+        self.assertEqual(
+            {"routing-adjacency"},
+            {edge["data"]["relationship"] for edge in edges},
+        )
+        summary = renderer.relationship_summary()
+        self.assertEqual(0, summary["physical_links"])
+        self.assertEqual(1, summary["routing_adjacencies"])
+        self.assertEqual(1, summary["unresolved_peers"])
+        html = renderer.render()
+        # Line styles per relationship; health borders separate from role.
+        self.assertIn('edge[relationship = "routing-adjacency"]', html)
+        self.assertIn("'line-style': 'dashed'", html)
+        self.assertIn('edge[relationship = "protocol-peer"]', html)
+        self.assertIn("'line-style': 'dotted'", html)
+        self.assertIn('node[change = "removed"]', html)
+        self.assertIn("background-image", html)
+        self.assertIn(
+            "This peer was observed through routing evidence.", html
+        )
+
+    def test_ios_lab_gets_solid_physical_links(self) -> None:
+        from tests.test_multihop_discovery import linear_chain
+
+        _report, _graph, snapshot = run_multihop_discovery(
+            linear_chain().transport_factory, "10.0.0.1",
+            config=MultiHopConfig(max_depth=2),
+        )
+        renderer = self.viewer(snapshot)
+        summary = renderer.relationship_summary()
+        self.assertGreater(summary["physical_links"], 0)
+        self.assertEqual(0, summary["routing_adjacencies"])
+        self.assertEqual(0, summary["unresolved_peers"])
+        for edge in renderer.elements()["edges"]:
+            self.assertEqual("physical", edge["data"]["relationship"])
+
+    def test_serialization_stays_deterministic(self) -> None:
+        first = self.viewer(self.frr_snapshot()).elements()
+        second = self.viewer(self.frr_snapshot()).elements()
+        self.assertEqual(
+            json.dumps(first, sort_keys=True), json.dumps(second, sort_keys=True)
+        )
 
 
 if __name__ == "__main__":
