@@ -15,6 +15,7 @@ import os
 from pathlib import Path
 from typing import Any
 
+from founderos_atlas.enterprise import EnterpriseKnowledge
 from founderos_atlas.history import HistoryRepository
 
 
@@ -71,6 +72,16 @@ class DashboardSummary:
     prediction_confidence: str | None = None
     prediction_action: str | None = None
     prediction_blast: str | None = None
+    # Discovery statistics (PR-043.8) — the address-space facts, kept
+    # strictly separate from operational health. Unused addresses are
+    # Information; they never become a warning.
+    addresses_scanned: int = 0
+    reachable_addresses: int = 0
+    authenticated_addresses: int = 0
+    managed_devices: int = 0
+    unused_addresses: int = 0
+    authentication_failures: int = 0
+    discovery_completeness: str = "—"
 
     @property
     def has_confident_root_cause(self) -> bool:
@@ -146,15 +157,21 @@ def build_dashboard_summary(
     root_cause = _root_cause_summary(_load_json(root_cause_report))
     prediction = _prediction_summary(_load_json(prediction_report))
 
+    # PR-043.8 (CONSISTENCY): read the discovery statistics and health
+    # through the one Enterprise Knowledge Graph contract, so Mission
+    # reports operational health — not subnet utilization. Unused
+    # addresses are Information and never a warning.
+    knowledge = EnterpriseKnowledge(snapshot)
+    stats = knowledge.statistics
     status, status_detail = _network_status(
-        snapshot, change_count, severity_counts, snapshot_warnings, failed_hosts,
+        snapshot, change_count, severity_counts, snapshot_warnings,
         operational,
     )
-    discovery_success = _discovery_success(device_count, failed_hosts)
+    discovery_success = _discovery_success(device_count, stats)
     recent_activity = _recent_activity(
         device_count,
         relationship_count,
-        failed_hosts,
+        stats,
         brief_exists,
         change_count,
         configurations,
@@ -191,6 +208,16 @@ def build_dashboard_summary(
         operational_changes=operational_changes,
         incident_investigation=incident_investigation,
         actions=actions,
+        addresses_scanned=stats.addresses_scanned,
+        reachable_addresses=stats.reachable,
+        authenticated_addresses=stats.authenticated,
+        managed_devices=stats.managed_devices,
+        unused_addresses=stats.unused_addresses,
+        authentication_failures=stats.authentication_failures,
+        discovery_completeness=(
+            f"{stats.discovery_completeness_percent}%"
+            if device_count else "—"
+        ),
         **intelligence,
         **root_cause,
         **prediction,
@@ -273,9 +300,15 @@ def _network_status(
     change_count: int | None,
     severity_counts: dict[str, int],
     snapshot_warnings: int,
-    failed_hosts: tuple[str, ...],
     operational: dict[str, Any] | None = None,
 ) -> tuple[str, str]:
+    """Operational health of the managed devices (PR-043.8).
+
+    Health reflects the state of MANAGED devices and topology changes —
+    never the address space. Unused/unreachable addresses are Information
+    (handled by the discovery statistics) and never appear here; missing
+    evidence lowers confidence, not health."""
+
     if snapshot is None:
         return STATUS_UNKNOWN, "No discovery has run yet. Run: founderos atlas discover"
     operational = operational or {}
@@ -300,8 +333,6 @@ def _network_status(
         if interfaces_down:
             detail += f" ({interfaces_down} interface(s) down)"
         concerns.append(detail)
-    if failed_hosts:
-        concerns.append(f"{len(failed_hosts)} host(s) failed discovery")
     if snapshot_warnings:
         concerns.append(f"{snapshot_warnings} reconciliation warning(s)")
     if concerns:
@@ -309,19 +340,21 @@ def _network_status(
     return STATUS_HEALTHY, "No warnings or active issues detected."
 
 
-def _discovery_success(device_count: int | None, failed_hosts: tuple[str, ...]) -> str:
-    if device_count is None:
+def _discovery_success(device_count: int | None, stats) -> str:
+    """Managed devices discovered / reachable managed devices (PR-043.8).
+
+    Reachable addresses that could not be authenticated are the only
+    shortfall; unused addresses never count against success."""
+
+    if not device_count:
         return "—"
-    attempted = device_count + len(failed_hosts)
-    if attempted == 0:
-        return "—"
-    return f"{round(100 * device_count / attempted)}%"
+    return f"{stats.discovery_completeness_percent}%"
 
 
 def _recent_activity(
     device_count: int | None,
     relationship_count: int | None,
-    failed_hosts: tuple[str, ...],
+    stats,
     brief_exists: bool,
     change_count: int | None,
     configurations: int,
@@ -332,8 +365,17 @@ def _recent_activity(
             f"Topology discovered: {device_count} device(s), "
             f"{relationship_count or 0} relationship(s)."
         )
-        if failed_hosts:
-            activity.append(f"Discovery failed for {len(failed_hosts)} host(s).")
+        # Unused addresses are Information, never a failure headline.
+        if stats.unused_addresses:
+            activity.append(
+                f"{stats.unused_addresses} scanned address(es) unused "
+                "(no device present)."
+            )
+        if stats.authentication_failures:
+            activity.append(
+                f"{stats.authentication_failures} reachable device(s) could "
+                "not be authenticated."
+            )
     if brief_exists:
         activity.append("Morning Brief generated.")
     if change_count is not None:

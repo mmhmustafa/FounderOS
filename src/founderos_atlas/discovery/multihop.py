@@ -13,6 +13,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from ..transport import AtlasTransportError, DeviceTransport
+from ..transport.exceptions import ConnectionTimeoutError
 from .adapter import DiscoveryAdapter
 from .engine import DiscoveryEngine
 from .exceptions import AtlasDiscoveryError
@@ -139,6 +140,8 @@ def discover_multihop(
     policy: BoundaryPolicy | None = None,
     extra_seeds: tuple[str, ...] = (),
     on_neighbor: NeighborObserver | None = None,
+    reachability=None,
+    workers: int = 1,
 ) -> MultiHopDiscoveryReport:
     """Discover the seed device(s), then reachable neighbors breadth-first.
 
@@ -188,6 +191,15 @@ def discover_multihop(
     results: list[DiscoveryResult] = []
     visits: list[DeviceVisit] = []
     seen_device_ids: set[str] = set()
+    # PR-043.6 (FALCON) identity normalization: a chassis serial number is
+    # a globally-unique hardware identity. A device reached via a SECOND
+    # address (e.g. a second management IP in the subnet) whose id fell
+    # back to the connection address is still the SAME physical device
+    # when its serial matches an already-discovered one — collapsing the
+    # audited 9→24 inflation WITHOUT the false-merge risk of sharing a
+    # data-link interface address. Serials are unique; interface IPs are
+    # not (shared/transient on point-to-point links).
+    seen_serials: dict[str, str] = {}
     enqueued_hosts: set[str] = set(seeds)
     recorded_missing_ip: set[str] = set()
     recorded_boundary: set[str] = set()
@@ -196,138 +208,194 @@ def discover_multihop(
         (host, 0, "seed") for host in seeds
     )
 
-    while queue:
-        host, depth, origin = queue.popleft()
-        if len(results) >= resolved_config.max_devices:
-            visits.append(
-                DeviceVisit(host, depth, SKIPPED, "maximum device limit reached")
+    def attempt(host: str):
+        """Reachability-gate, connect, and discover one host. Returns
+        ``(result, error)``; a pre-probe miss is a fast unreachable error.
+        Pure per-host work — safe to run concurrently (PR-043.6)."""
+
+        if reachability is not None and not reachability.is_reachable(host):
+            return None, ConnectionTimeoutError(
+                f"{host} did not answer a reachability probe on any "
+                "management port"
             )
-            continue
         try:
             transport = transport_factory(host)
             with transport:
                 if engine is not None:
-                    # Legacy pinned-adapter path: unchanged behavior.
                     raw_outputs = transport.execute_many(
                         resolved_adapter.required_commands
                     )
-                    result = engine.discover(raw_outputs, management_ip_hint=host)
-                else:
-                    result = _discover_with_registry(
-                        transport, resolved_registry, host
-                    )
+                    return engine.discover(
+                        raw_outputs, management_ip_hint=host
+                    ), None
+                return _discover_with_registry(
+                    transport, resolved_registry, host
+                ), None
         except (AtlasTransportError, AtlasDiscoveryError) as error:
-            if depth == 0:
-                if len(seeds) == 1:
-                    raise
-                if first_seed_error is None:
-                    first_seed_error = error
+            return None, error
+
+    # FALCON: process each BFS wave through a worker pool. Discovery is
+    # I/O-bound, so concurrent connects collapse a wave's wall-time from
+    # Σ(latencies) toward max-over-workers; results are INTEGRATED in the
+    # wave's FIFO order, so the visit list, dedup, and enqueue order are
+    # byte-identical to the sequential engine (only wall-time changes).
+    from concurrent.futures import ThreadPoolExecutor
+
+    pool = (
+        ThreadPoolExecutor(max_workers=max(1, int(workers)))
+        if workers and workers > 1
+        else None
+    )
+    while queue:
+        wave = list(queue)
+        queue.clear()
+        # Preserve connect economy under a device cap: only the remaining
+        # budget of hosts is attempted; the overflow is skipped WITHOUT an
+        # SSH attempt (identical to the sequential engine's top-of-loop
+        # cap check), so max_devices still bounds the work done.
+        budget = max(0, resolved_config.max_devices - len(results))
+        to_attempt = wave[:budget]
+        overflow = wave[budget:]
+        if pool is not None and len(to_attempt) > 1:
+            attempts = list(pool.map(lambda item: attempt(item[0]), to_attempt))
+        else:
+            attempts = [attempt(item[0]) for item in to_attempt]
+
+        for (host, depth, origin), (result, error) in zip(to_attempt, attempts):
+            if len(results) >= resolved_config.max_devices:
+                visits.append(
+                    DeviceVisit(host, depth, SKIPPED, "maximum device limit reached")
+                )
+                continue
+            if error is not None:
+                if depth == 0:
+                    if len(seeds) == 1:
+                        if pool is not None:
+                            pool.shutdown(wait=False)
+                        raise error
+                    if first_seed_error is None:
+                        first_seed_error = error
+                    visits.append(DeviceVisit(host, depth, FAILED, str(error)))
+                    continue
                 visits.append(DeviceVisit(host, depth, FAILED, str(error)))
                 continue
-            visits.append(DeviceVisit(host, depth, FAILED, str(error)))
-            continue
-        if result.device.device_id in seen_device_ids:
-            visits.append(
-                DeviceVisit(
-                    host,
-                    depth,
-                    SKIPPED,
-                    f"already discovered as {result.device.device_id}",
-                    hostname=result.device.hostname,
-                )
-            )
-            continue
-        seen_device_ids.add(result.device.device_id)
-        results.append(result)
-        visits.append(
-            DeviceVisit(host, depth, CONNECTED, origin, hostname=result.device.hostname)
-        )
-        if depth >= resolved_config.max_depth:
-            continue
-        ordered_neighbors = sorted(
-            result.neighbors,
-            key=lambda item: (
-                item.remote_hostname.casefold(),
-                item.remote_management_ip or "",
-            ),
-        )
-        for neighbor in ordered_neighbors:
-            if on_neighbor is not None:
-                on_neighbor(neighbor)
-            if not management_candidate(neighbor):
-                # A routing adjacency or protocol peer: preserved as an
-                # unresolved observation — never an SSH target, never a
-                # false "unreachable" (PR-043.1).
-                marker = (
-                    f"unresolved|{neighbor.remote_hostname.casefold()}"
-                    f"|{neighbor.protocol}"
-                )
-                if marker not in recorded_boundary:
-                    recorded_boundary.add(marker)
-                    observation = str(
-                        neighbor.metadata.get("observation")
-                        or f"{neighbor.protocol} adjacency"
+            serial = (result.device.serial_number or "").strip().casefold()
+            duplicate_of = None
+            if result.device.device_id in seen_device_ids:
+                duplicate_of = result.device.device_id
+            elif serial and serial in seen_serials:
+                duplicate_of = seen_serials[serial]
+            if duplicate_of is not None:
+                visits.append(
+                    DeviceVisit(
+                        host,
+                        depth,
+                        SKIPPED,
+                        f"already discovered as {duplicate_of}",
+                        hostname=result.device.hostname,
                     )
-                    visits.append(
-                        DeviceVisit(
-                            neighbor.remote_hostname,
-                            depth + 1,
-                            SKIPPED,
-                            "not attempted — "
-                            f"{neighbor.protocol.upper()} {observation} "
-                            "is not a verified management endpoint",
-                            hostname=neighbor.remote_hostname,
-                        )
-                    )
+                )
                 continue
-            next_host = neighbor.remote_management_ip
-            if policy is not None:
-                decision = policy.evaluate_neighbor(
-                    hostname=neighbor.remote_hostname,
-                    management_ip=next_host,
-                    protocol=neighbor.protocol,
-                )
-                if not decision.traversable:
+            seen_device_ids.add(result.device.device_id)
+            if serial:
+                seen_serials[serial] = result.device.device_id
+            results.append(result)
+            visits.append(
+                DeviceVisit(host, depth, CONNECTED, origin, hostname=result.device.hostname)
+            )
+            if depth >= resolved_config.max_depth:
+                continue
+            ordered_neighbors = sorted(
+                result.neighbors,
+                key=lambda item: (
+                    item.remote_hostname.casefold(),
+                    item.remote_management_ip or "",
+                ),
+            )
+            for neighbor in ordered_neighbors:
+                if on_neighbor is not None:
+                    on_neighbor(neighbor)
+                if not management_candidate(neighbor):
+                    # A routing adjacency or protocol peer: preserved as an
+                    # unresolved observation — never an SSH target, never a
+                    # false "unreachable" (PR-043.1).
                     marker = (
-                        f"{neighbor.remote_hostname.casefold()}|{next_host or ''}"
+                        f"unresolved|{neighbor.remote_hostname.casefold()}"
+                        f"|{neighbor.protocol}"
                     )
                     if marker not in recorded_boundary:
                         recorded_boundary.add(marker)
+                        observation = str(
+                            neighbor.metadata.get("observation")
+                            or f"{neighbor.protocol} adjacency"
+                        )
                         visits.append(
                             DeviceVisit(
-                                next_host or neighbor.remote_hostname,
+                                neighbor.remote_hostname,
                                 depth + 1,
                                 SKIPPED,
-                                f"boundary {decision.verdict}: {decision.reason}",
+                                "not attempted — "
+                                f"{neighbor.protocol.upper()} {observation} "
+                                "is not a verified management endpoint",
                                 hostname=neighbor.remote_hostname,
                             )
                         )
                     continue
-            if next_host is None:
-                if neighbor.remote_hostname.casefold() not in recorded_missing_ip:
-                    recorded_missing_ip.add(neighbor.remote_hostname.casefold())
-                    visits.append(
-                        DeviceVisit(
-                            neighbor.remote_hostname,
-                            depth + 1,
-                            SKIPPED,
-                            "no management IP advertised over "
-                            f"{neighbor.protocol.upper()}",
-                            hostname=neighbor.remote_hostname,
-                        )
+                next_host = neighbor.remote_management_ip
+                if policy is not None:
+                    decision = policy.evaluate_neighbor(
+                        hostname=neighbor.remote_hostname,
+                        management_ip=next_host,
+                        protocol=neighbor.protocol,
                     )
-                continue
-            if next_host in enqueued_hosts:
-                continue
-            enqueued_hosts.add(next_host)
-            queue.append(
-                (
-                    next_host,
-                    depth + 1,
-                    f"{neighbor.protocol} neighbor of {result.device.hostname}",
+                    if not decision.traversable:
+                        marker = (
+                            f"{neighbor.remote_hostname.casefold()}|{next_host or ''}"
+                        )
+                        if marker not in recorded_boundary:
+                            recorded_boundary.add(marker)
+                            visits.append(
+                                DeviceVisit(
+                                    next_host or neighbor.remote_hostname,
+                                    depth + 1,
+                                    SKIPPED,
+                                    f"boundary {decision.verdict}: {decision.reason}",
+                                    hostname=neighbor.remote_hostname,
+                                )
+                            )
+                        continue
+                if next_host is None:
+                    if neighbor.remote_hostname.casefold() not in recorded_missing_ip:
+                        recorded_missing_ip.add(neighbor.remote_hostname.casefold())
+                        visits.append(
+                            DeviceVisit(
+                                neighbor.remote_hostname,
+                                depth + 1,
+                                SKIPPED,
+                                "no management IP advertised over "
+                                f"{neighbor.protocol.upper()}",
+                                hostname=neighbor.remote_hostname,
+                            )
+                        )
+                    continue
+                if next_host in enqueued_hosts:
+                    continue
+                enqueued_hosts.add(next_host)
+                queue.append(
+                    (
+                        next_host,
+                        depth + 1,
+                        f"{neighbor.protocol} neighbor of {result.device.hostname}",
+                    )
                 )
+
+        for host, depth, _origin in overflow:
+            visits.append(
+                DeviceVisit(host, depth, SKIPPED, "maximum device limit reached")
             )
 
+    if pool is not None:
+        pool.shutdown(wait=True)
     if not results and first_seed_error is not None:
         # Every seed failed: surface the first (usually most relevant) error
         # so the operator sees the same friendly message single-seed runs get.

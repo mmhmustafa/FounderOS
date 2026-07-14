@@ -50,6 +50,20 @@ _RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
     (INTENT_HEALTH, (
         "health", "healthy", "how is the enterprise", "how is the network",
         "status of the enterprise",
+        # PR-043.8: "is there a problem in X" must answer from the graph's
+        # evidence, never fall through to "no evidence".
+        "problem", "problems", "any issue", "issues", "anything wrong",
+        "what's wrong", "whats wrong", "is anything wrong", "any concern",
+        # PR-043.10 (POLISH, Part 4): map natural operational-intent
+        # phrasings onto the same evidence-backed health workflow — a
+        # different wording must never produce "Unknown".
+        "is the network fine", "network fine", "is everything fine",
+        "everything fine", "is everything ok", "everything ok",
+        "everything okay", "all good", "is it healthy", "is everything healthy",
+        "anything critical", "any critical", "is anything critical",
+        "any risk", "any risks", "are there risks", "what are the risks",
+        "top risks", "how is ", "how healthy", "is it okay", "is it ok",
+        "is it fine", "any alerts", "anything to worry", "should i worry",
     )),
     (INTENT_DISCOVERY, (
         "run discovery", "run a discovery", "start discovery",

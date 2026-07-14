@@ -150,12 +150,15 @@ def score_health(evidence) -> HealthScore:
 
 
 def _confidence(evidence) -> str:
-    attempted = evidence.device_count + len(evidence.failed_hosts)
-    failure_share = (
-        len(evidence.failed_hosts) / attempted if attempted else 0.0
-    )
+    # PR-043.10 (POLISH, Part 2): confidence reflects DISCOVERY COVERAGE of
+    # real devices — reachable devices Atlas could not authenticate — never
+    # unused CIDR addresses. Unused addresses are coverage information, not a
+    # failure to observe a device.
+    coverage_failed = evidence.coverage_failed_count
+    attempted = evidence.device_count + coverage_failed
+    failure_share = coverage_failed / attempted if attempted else 0.0
     if evidence.is_stale or failure_share > 0.25:
         return CONFIDENCE_LOW
-    if not evidence.baseline_available or evidence.failed_hosts:
+    if not evidence.baseline_available or coverage_failed:
         return CONFIDENCE_MEDIUM
     return CONFIDENCE_HIGH

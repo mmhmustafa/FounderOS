@@ -60,60 +60,101 @@ def answer(question: str, context: AdvisorContext) -> AdvisorResponse:
 
 
 def _answer_health(question, intent, context) -> AdvisorResponse:
+    """Answer enterprise-health and "is there a problem?" questions from
+    the Enterprise Knowledge Graph itself (PR-043.8).
+
+    The graph is the single source of truth: managed devices,
+    relationships, routing observations, discovery completeness,
+    reconciliation warnings, and unresolved evidence all come from it.
+    Intelligence reports, when present, ENRICH the answer with per-profile
+    health scores — but Advisor never claims "no evidence" while the graph
+    holds managed devices. Missing evidence lowers confidence, not health.
+    """
+
+    from founderos_atlas.enterprise import EnterpriseKnowledge
     from founderos_atlas.search import health_by_profile_from_scopes
 
-    steps = ["Reading network intelligence reports…",
-             "Checking enterprise graph freshness…"]
+    steps = ["Reading the Enterprise Knowledge Graph…",
+             "Checking discovery completeness and evidence freshness…"]
+    knowledge = EnterpriseKnowledge(context.snapshot)
+    if not knowledge.has_evidence:
+        return _no_evidence(question, intent, steps, context)
+
+    contributions = tuple(getattr(context.graph, "contributions", ()))
+    fresh = overall_freshness(contributions) if contributions else True
+    stats = knowledge.statistics
+    health_level, health_reason = knowledge.health()
+    band_raw, basis = knowledge.confidence(fresh=fresh)
+    band = confidence_from_band(band_raw)
+
+    summary_bits = [
+        f"{knowledge.device_count} managed device(s)",
+        f"{knowledge.relationship_count} relationship(s)",
+    ]
+    if knowledge.routing_observations:
+        summary_bits.append(
+            f"{knowledge.routing_observations} routing observation(s)"
+        )
+    summary_bits.append(
+        f"discovery {stats.discovery_completeness_percent}% complete"
+    )
+    if knowledge.unresolved_count:
+        summary_bits.append(
+            f"{knowledge.unresolved_count} unresolved peer(s)"
+        )
+    if knowledge.ownership_conflicts:
+        summary_bits.append(
+            f"{knowledge.ownership_conflicts} ownership conflict(s)"
+        )
+
+    # Enrich with per-profile intelligence health scores when they exist.
     scores = health_by_profile_from_scopes(
         context.base_output_dir, context.profiles
     )
-    contributions = tuple(getattr(context.graph, "contributions", ()))
-    if not contributions:
-        return _no_evidence(question, intent, steps, context)
-    fresh = overall_freshness(contributions)
-    lines = []
     evidence = [_graph_evidence(context)]
+    profile_lines = []
     for contribution in contributions:
         score = scores.get(contribution.profile_name)
-        lines.append(
-            f"{contribution.profile_name}: "
-            + (f"{score}/100" if score is not None else "no health report yet")
-            + (" (fresh)" if contribution.fresh else " (stale evidence)")
-        )
-        evidence.append(
-            EvidenceItem(
-                label=f"Intelligence report — {contribution.profile_name}",
-                detail=(
-                    f"health score {score}/100" if score is not None
-                    else "not generated yet"
-                ),
-                href=f"/?scope={contribution.profile_id}",
+        if score is not None:
+            profile_lines.append(f"{contribution.profile_name} {score}/100")
+            evidence.append(
+                EvidenceItem(
+                    label=f"Intelligence report — {contribution.profile_name}",
+                    detail=f"health score {score}/100",
+                    href=f"/?scope={contribution.profile_id}",
+                )
             )
+
+    summary = (
+        f"Enterprise health is {health_level} — {health_reason} "
+        f"The graph holds " + ", ".join(summary_bits) + "."
+    )
+    if profile_lines:
+        summary += " Health scores: " + "; ".join(profile_lines) + "."
+
+    unknowns = []
+    if stats.authentication_failures:
+        unknowns.append(
+            f"{stats.authentication_failures} reachable device(s) could not "
+            "be authenticated — discovery is incomplete."
         )
-    if scores and fresh:
-        confidence, basis = CONFIDENCE_HIGH, (
-            "every contributing profile has a fresh intelligence report"
-        )
-    elif scores:
-        confidence, basis = CONFIDENCE_MEDIUM, (
-            "health reports exist but some evidence is older than the "
-            "freshness window"
-        )
-    else:
-        confidence, basis = CONFIDENCE_UNKNOWN, (
-            "no intelligence report has been generated yet"
+    if knowledge.unresolved_count:
+        unknowns.append(
+            f"{knowledge.unresolved_count} observed peer(s) are not yet "
+            "resolved to a managed device."
         )
     return AdvisorResponse(
         question=question, intent=intent,
-        summary="Enterprise health — " + "; ".join(lines) + ".",
+        summary=summary,
         evidence=tuple(evidence),
-        confidence=confidence, confidence_basis=basis,
+        confidence=band, confidence_basis=basis,
         next_action_label="Open Mission", next_action_href="/?scope=all",
         followups=(
             FollowUp("What changed?", question="What changed?"),
             FollowUp("Summarize discovery", question="Summarize discovery"),
             FollowUp("Open enterprise topology", href="/topology?scope=all"),
         ),
+        unknowns=tuple(unknowns),
         steps=tuple(steps), generated_at=context.generated_at,
     )
 

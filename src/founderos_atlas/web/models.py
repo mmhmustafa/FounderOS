@@ -64,6 +64,7 @@ def profile_row(profile) -> dict[str, Any]:
         "credential_sets_text": ", ".join(getattr(profile, "credential_sets", ())),
         "site_hint": getattr(profile, "site_hint", None) or "",
         "domain_hint": getattr(profile, "domain_hint", None) or "",
+        "archived": bool(getattr(profile, "archived", False)),
     }
 
 
@@ -166,7 +167,14 @@ def prediction_targets(snapshot: dict | None) -> list[dict[str, Any]]:
         neighbor_by_port.setdefault(key, str(edge.get("remote_hostname")))
     from founderos_atlas.prediction import classify_interface
 
+    # PR-043.10 (POLISH, Part 5): a canonical device appears ONCE regardless
+    # of how many observation profiles contributed evidence. Device rows are
+    # collapsed by canonical hostname, and each device's interfaces are
+    # unioned — Compass and Prediction target a device by name, so a
+    # duplicated name in the dropdown is only noise (access1, access1,
+    # access1 → access1).
     targets: list[dict[str, Any]] = []
+    seen_hosts: dict[str, dict[str, Any]] = {}
     for device in snapshot.get("devices") or ():
         if not isinstance(device, dict):
             continue
@@ -204,12 +212,24 @@ def prediction_targets(snapshot: dict | None) -> list[dict[str, Any]]:
             if neighbor:
                 parts.append(f"connected to {neighbor}")
             options.append({"name": name, "label": " — ".join(parts)})
-        targets.append(
-            {
-                "hostname": hostname,
-                "interfaces": options,
-                "interface_names": ", ".join(option["name"] for option in options),
-            }
+        key = hostname.casefold()
+        existing = seen_hosts.get(key)
+        if existing is None:
+            entry = {"hostname": hostname, "interfaces": options}
+            seen_hosts[key] = entry
+            targets.append(entry)
+        else:
+            # Merge interfaces from another observation of the same device,
+            # keeping each interface name once.
+            have = {option["name"].casefold() for option in existing["interfaces"]}
+            for option in options:
+                if option["name"].casefold() not in have:
+                    existing["interfaces"].append(option)
+                    have.add(option["name"].casefold())
+    for entry in targets:
+        entry["interfaces"].sort(key=lambda option: option["name"].casefold())
+        entry["interface_names"] = ", ".join(
+            option["name"] for option in entry["interfaces"]
         )
     targets.sort(key=lambda item: item["hostname"].casefold())
     return targets

@@ -51,6 +51,22 @@
   <div class="tile"><strong>Last Discovery</strong><span>{{ summary.last_discovery }}</span></div>
 </div>
 
+{% if summary.addresses_scanned %}
+<section class="card">
+  <h2>Discovery Statistics</h2>
+  <p class="muted">Address-space facts from the last discovery — information, not operational health. Unused addresses are empty slots in the scanned range, never failures.</p>
+  <div class="tiles">
+    <div class="tile"><strong>Addresses Scanned</strong><span>{{ summary.addresses_scanned }}</span></div>
+    <div class="tile"><strong>Reachable</strong><span>{{ summary.reachable_addresses }}</span></div>
+    <div class="tile"><strong>Authenticated</strong><span>{{ summary.authenticated_addresses }}</span></div>
+    <div class="tile"><strong>Managed Devices</strong><span>{{ summary.managed_devices }}</span></div>
+    <div class="tile"><strong>Discovery Completeness</strong><span>{{ summary.discovery_completeness }}</span></div>
+    <div class="tile"><strong>Unused Addresses</strong><span>{{ summary.unused_addresses }} <span class="muted">(information)</span></span></div>
+    {% if summary.authentication_failures %}<div class="tile"><strong>Authentication Failures</strong><span>{{ summary.authentication_failures }}</span></div>{% endif %}
+  </div>
+</section>
+{% endif %}
+
 {% if summary.has_confident_root_cause %}
 <section class="card root-cause">
   <h2>Most Likely Root Cause</h2>

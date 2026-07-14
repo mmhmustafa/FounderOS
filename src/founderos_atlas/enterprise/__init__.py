@@ -12,6 +12,24 @@ latest state — absence from one profile's run can never mark another
 profile's device as removed.
 """
 
+from .knowledge import (
+    DiscoveryStatistics,
+    EnterpriseKnowledge,
+    classify_discovery_visits,
+)
+from .network_identity import (
+    DUPLICATE_THRESHOLD,
+    DuplicateCandidate,
+    Network,
+    NetworkFingerprint,
+    NetworkResolution,
+    ObservationPoint,
+    SimilarityResult,
+    compare_fingerprints,
+    detect_duplicate_networks,
+    fingerprint_snapshot,
+    resolve_networks,
+)
 from .models import (
     DeviceObservation,
     EnterpriseDevice,
@@ -25,11 +43,25 @@ from .view import (
 )
 
 __all__ = [
+    "DUPLICATE_THRESHOLD",
     "DeviceObservation",
+    "DiscoveryStatistics",
+    "DuplicateCandidate",
     "EnterpriseDevice",
+    "EnterpriseKnowledge",
     "EnterpriseTopology",
+    "Network",
+    "NetworkFingerprint",
+    "NetworkResolution",
+    "ObservationPoint",
     "ScopeContribution",
+    "SimilarityResult",
     "build_enterprise_topology",
     "build_enterprise_view",
+    "classify_discovery_visits",
+    "compare_fingerprints",
+    "detect_duplicate_networks",
+    "fingerprint_snapshot",
     "gather_scope_contributions",
+    "resolve_networks",
 ]

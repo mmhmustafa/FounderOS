@@ -46,16 +46,53 @@ class RiskFactor:
         return {"name": self.name, "points": self.points, "detail": self.detail}
 
 
+# The score thresholds that decide the level — documented so the
+# explanation can state the arithmetic (PR-043.10, Part 8).
+RISK_THRESHOLDS = ((50, RISK_CRITICAL), (30, RISK_HIGH), (15, RISK_MEDIUM))
+
+
 @dataclass(frozen=True)
 class RiskAssessment:
     level: str
     score: int
     factors: tuple[RiskFactor, ...]
 
+    @property
+    def explanation(self) -> str:
+        """Plain-English WHY this risk level — states the arithmetic
+        (PR-043.10, Part 8). Every prediction can show why it is what it
+        is, from the summed factor points against the level thresholds."""
+
+        threshold_text = {
+            RISK_CRITICAL: "the risk score is 50 or more",
+            RISK_HIGH: "the risk score is between 30 and 49",
+            RISK_MEDIUM: "the risk score is between 15 and 29",
+            RISK_LOW: "the risk score is under 15",
+        }[self.level]
+        if not self.factors:
+            return (
+                f"Risk is {self.level} because {threshold_text} — the score is "
+                f"{self.score}, with no aggravating factors: no known "
+                "forwarding paths break and no shared dependencies were found."
+            )
+        drivers = sorted(self.factors, key=lambda f: -f.points)[:3]
+        arithmetic = " + ".join(
+            f"{factor.points} ({factor.detail})" for factor in drivers
+        )
+        more = (
+            f", plus {len(self.factors) - len(drivers)} smaller factor(s)"
+            if len(self.factors) > len(drivers) else ""
+        )
+        return (
+            f"Risk is {self.level} because {threshold_text}: the factors sum "
+            f"to {self.score} — {arithmetic}{more}."
+        )
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "level": self.level,
             "score": self.score,
+            "explanation": self.explanation,
             "factors": [factor.to_dict() for factor in self.factors],
         }
 

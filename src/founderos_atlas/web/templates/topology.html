@@ -6,14 +6,24 @@
 
 {% if enterprise %}
 <section class="card">
-  <h2>Enterprise Federation</h2>
+  <h2>Enterprise Knowledge</h2>
+  <p class="muted">Enterprise → Networks → Observation Profiles → Canonical Devices → Evidence. Networks are logical environments identified from technical evidence; profiles are observation points that collect it; canonical devices are the deduplicated truth.</p>
   <div class="tiles">
+    <div class="tile"><strong>Networks</strong><span>{{ enterprise_network_count }}</span></div>
+    <div class="tile"><strong>Discovery profiles</strong><span>{{ enterprise_profile_count }}</span></div>
     <div class="tile"><strong>Canonical devices</strong><span>{{ enterprise_device_count }}</span></div>
-    <div class="tile"><strong>Observations</strong><span>{{ enterprise_observation_count }}</span></div>
     <div class="tile"><strong>Merged devices</strong><span>{{ enterprise_merged_count }}</span></div>
+    <div class="tile"><strong>Duplicate candidates</strong><span>{{ enterprise_duplicate_candidates | length }}</span></div>
     <div class="tile"><strong>Cross-profile links</strong><span>{{ enterprise_cross_profile_links }}</span></div>
     <div class="tile"><strong>Unknown boundaries</strong><span>{{ enterprise_boundaries | length }}</span></div>
   </div>
+  {% if enterprise_duplicate_candidates %}
+  <div class="flash flash-warning">
+    <strong>{{ enterprise_duplicate_candidates | length }} possible duplicate network(s)</strong> —
+    {% for c in enterprise_duplicate_candidates %}{{ c.left_profile_name }} ~ {{ c.right_profile_name }} ({{ c.score }}%){% if not loop.last %}; {% endif %}{% endfor %}.
+    <a href="/profiles">Review</a> — Atlas never merges automatically.
+  </div>
+  {% endif %}
   <table class="grid">
     <thead><tr><th>Contributing profile</th><th>Last observed</th><th>Devices</th><th>Links</th><th>Freshness</th></tr></thead>
     <tbody>

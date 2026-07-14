@@ -54,7 +54,15 @@ _INTERFACE_HEAD = re.compile(
     r"(?:,\s*line protocol is\s+(?P<protocol>up|down))?",
     re.IGNORECASE,
 )
-_INET_PATTERN = re.compile(r"(?m)^\s*inet\s+(\d+\.\d+\.\d+\.\d+)(?:/\d+)?")
+# PR-043.7 (FUSION): the prefix length and secondary flag are canonical
+# observations — the correlation engine needs them for point-to-point
+# subnet matching and secondary-address ownership. Normalization records
+# them; it never infers relationships from them.
+_INET_PATTERN = re.compile(
+    r"(?m)^\s*inet\s+(?P<address>\d+\.\d+\.\d+\.\d+)"
+    r"(?:/(?P<prefix>\d+))?(?P<secondary>\s+secondary)?"
+)
+_DESCRIPTION_PATTERN = re.compile(r"(?m)^\s*Description:\s*(?P<text>\S[^\r\n]*)")
 
 # "10.0.0.2  1  Full/DR  1h02m03s  31.568s  10.30.0.2  eth0:10.30.0.1 ..."
 _OSPF_ROW = re.compile(
@@ -141,16 +149,34 @@ class FRRoutingAdapter(DiscoveryAdapter):
                 heads[index + 1].start() if index + 1 < len(heads) else len(text)
             )
             block = text[match.start():block_end]
-            inet = _INET_PATTERN.search(block)
             status = match.group("status").lower()
             protocol = (match.group("protocol") or status).lower()
+            description_match = _DESCRIPTION_PATTERN.search(block)
+            # The first non-secondary inet line is the primary address;
+            # every other assignment is a secondary observation.
+            primary: re.Match | None = None
+            secondaries: list[str] = []
+            for inet in _INET_PATTERN.finditer(block):
+                if primary is None and not inet.group("secondary"):
+                    primary = inet
+                else:
+                    secondaries.append(inet.group("address"))
+            metadata: dict[str, object] = {"source_command": SHOW_INTERFACES}
+            if primary is not None and primary.group("prefix"):
+                metadata["prefix_length"] = int(primary.group("prefix"))
+            if secondaries:
+                metadata["secondary_ips"] = tuple(secondaries)
             interfaces.append(
                 NetworkInterface(
                     name=match.group("name"),
-                    ip_address=inet.group(1) if inet else None,
+                    ip_address=primary.group("address") if primary else None,
                     status=status,
                     protocol_status=protocol,
-                    metadata={"source_command": SHOW_INTERFACES},
+                    description=(
+                        description_match.group("text").strip()
+                        if description_match else None
+                    ),
+                    metadata=metadata,
                 )
             )
         return tuple(interfaces)
@@ -258,6 +284,9 @@ class FRRoutingDriver(PlatformDriver):
             metadata["routes"] = routes
         if bgp_peers is not None:
             metadata["bgp_peers"] = bgp_peers
+            if bgp_peers.get("router_id"):
+                # An identity claim for the ownership index (PR-043.7).
+                metadata["bgp_router_id"] = bgp_peers["router_id"]
         peer_neighbors = tuple(
             NetworkNeighbor(
                 local_device_id=result.device.device_id,
@@ -320,7 +349,16 @@ def _parse_bgp_peers(text: str) -> dict | None:
     peers = re.findall(r"(?m)^(\d+\.\d+\.\d+\.\d+)\s+4\s+\d+", text)
     if not peers:
         return None
-    return {"count": len(peers), "peers": sorted(peers)}
+    summary: dict = {"count": len(peers), "peers": sorted(peers)}
+    # PR-043.7 (FUSION): the device's own BGP router identifier is an
+    # identity observation — the ownership index claims it so peer
+    # references to the router ID resolve onto this device.
+    router_id = re.search(
+        r"BGP router identifier\s+(\d+\.\d+\.\d+\.\d+)", text
+    )
+    if router_id:
+        summary["router_id"] = router_id.group(1)
+    return summary
 
 
 def _search(text: str, pattern: str) -> str | None:

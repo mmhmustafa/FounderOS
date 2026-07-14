@@ -169,6 +169,8 @@ class ExecutionMetrics:
     slowest_stage: str | None
     slowest_stage_seconds: float
     devices_per_minute: float
+    average_ssh_seconds: float = 0.0
+    worker_utilization: float = 0.0  # 0..1 — busy time / available time
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -183,6 +185,7 @@ class ExecutionMetrics:
             "elapsed_seconds": round(self.elapsed_seconds, 3),
             "worker_count": self.worker_count,
             "average_discovery_seconds": round(self.average_discovery_seconds, 4),
+            "average_ssh_seconds": round(self.average_ssh_seconds, 4),
             "average_authentication_seconds": round(
                 self.average_authentication_seconds, 4
             ),
@@ -192,6 +195,7 @@ class ExecutionMetrics:
             "slowest_stage": self.slowest_stage,
             "slowest_stage_seconds": round(self.slowest_stage_seconds, 4),
             "devices_per_minute": round(self.devices_per_minute, 2),
+            "worker_utilization_percent": int(round(self.worker_utilization * 100)),
         }
 
 
@@ -240,11 +244,19 @@ def aggregate_metrics(
         [m.stages["authentication"] for m in candidate_metrics
          if "authentication" in m.stages]
     )
+    avg_ssh = _avg(
+        [m.stages[name] for m in candidate_metrics
+         for name in ("ssh_handshake", "tcp_connect") if name in m.stages]
+    )
     avg_detect = _avg(
         [m.stages["platform_detection"] for m in candidate_metrics
          if "platform_detection" in m.stages]
     )
     dpm = (len(discovered) / elapsed_seconds * 60.0) if elapsed_seconds > 0 else 0.0
+    # Worker utilization: total busy time / available worker-seconds.
+    busy = sum(m.total_seconds for m in candidate_metrics)
+    available = elapsed_seconds * max(1, worker_count)
+    utilization = min(1.0, busy / available) if available > 0 else 0.0
     return ExecutionMetrics(
         addresses_evaluated=evaluated,
         ssh_reachable=ssh_reachable,
@@ -262,6 +274,8 @@ def aggregate_metrics(
         slowest_stage=slowest[0],
         slowest_stage_seconds=slowest[1],
         devices_per_minute=dpm,
+        average_ssh_seconds=avg_ssh,
+        worker_utilization=utilization,
     )
 
 
@@ -356,6 +370,11 @@ class DiscoveryExecution:
             self._outcomes[address] = OUTCOME_QUEUED
         self._started_at: float | None = None
         self._finished_at: float | None = None
+        self._first_device_at: float | None = None
+        # Progressive inventory: address -> {hostname, platform, role} the
+        # moment each candidate's identity is known (live topology/inventory
+        # appear immediately, before deep discovery of the rest completes).
+        self._nodes: dict[str, dict[str, Any]] = {}
 
     # -- state transitions ---------------------------------------------------
 
@@ -451,9 +470,22 @@ class DiscoveryExecution:
             if result is not None:
                 self._results[address] = result
                 self._completed_addresses.add(address)
+                if self._first_device_at is None:
+                    self._first_device_at = self._clock()
+                self._nodes[address] = _node_view(address, result)
             self._log.append(
                 LogEntry(address, metrics.platform, log_message)
             )
+
+    def nodes(self) -> list[dict[str, Any]]:
+        """Progressive inventory rows in candidate order — live topology."""
+
+        with self._lock:
+            return [
+                self._nodes[address]
+                for address in self._order
+                if address in self._nodes
+            ]
 
     # -- snapshots -----------------------------------------------------------
 
@@ -504,20 +536,78 @@ class DiscoveryExecution:
             pending = max(0, len(self._pending) - self._queue_index)
             done = len(self._metrics)
             total = len(self._pending)
+            elapsed = (
+                (self._finished_at or self._clock()) - self._started_at
+                if self._started_at is not None
+                else 0.0
+            )
+            # ETA: remaining candidates at the observed completion rate.
+            eta = None
+            if done and pending and elapsed > 0:
+                eta = round(pending * (elapsed / done), 1)
+            first_device = (
+                round(self._first_device_at - self._started_at, 2)
+                if self._first_device_at is not None
+                and self._started_at is not None
+                else None
+            )
             return {
                 "state": self._state,
                 "progress_percent": (
                     int(round(done / total * 100)) if total else 100
                 ),
+                "processed": done,
+                "total": total,
+                "eta_seconds": eta,
+                "time_to_first_device_seconds": first_device,
                 "queue": self.queue_snapshot(),
                 "queue_length": pending,
                 "workers": [w.to_dict() for w in self._workers.values()],
                 "metrics": metrics.to_dict(),
+                "nodes": self.nodes(),
                 "log": [entry.to_dict() for entry in self._log[-40:]],
                 "candidate_metrics": [
                     m.to_dict() for m in self._metrics.values()
                 ],
             }
+
+
+def _node_view(address: str, result: Any) -> dict[str, Any]:
+    """A live-inventory row for one discovered device — role via the
+    existing evidence-based classifier and stencil (PR-043.1); no new
+    classification logic here."""
+
+    device = getattr(result, "device", None)
+    if device is None:
+        return {"address": address, "hostname": address, "platform": "unknown"}
+    try:
+        from founderos_atlas.platforms.classify import classify_role
+        from founderos_atlas.visualization.stencils import stencil_data_uri
+
+        device_dict = {
+            "hostname": device.hostname,
+            "vendor": device.vendor,
+            "platform": device.platform,
+            "os_name": device.os_name,
+            "interfaces": [
+                {"name": i.name, "ip_address": i.ip_address}
+                for i in getattr(result, "interfaces", ())
+            ],
+            "metadata": dict(device.metadata),
+        }
+        role, evidence = classify_role(device_dict)
+        stencil = stencil_data_uri(role)
+    except Exception:  # noqa: BLE001 - presentation only, never fail discovery
+        role, evidence, stencil = "unknown", "", None
+    return {
+        "address": address,
+        "hostname": device.hostname,
+        "platform": device.platform,
+        "vendor": device.vendor,
+        "role": role,
+        "role_evidence": evidence,
+        "stencil": stencil,
+    }
 
 
 def run_pool(

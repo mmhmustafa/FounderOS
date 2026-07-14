@@ -34,8 +34,8 @@
   <main>
     <div id="cy" aria-label="Interactive topology graph"></div>
     <aside id="details">
-      <h2>Node details</h2>
-      <p>Click a node to inspect its normalized information.</p>
+      <h2>Details</h2>
+      <p>Click a node to inspect its normalized information, or a connection to see why Atlas created it, which evidence supports it, and what confidence it has.</p>
     </aside>
   </main>
   <div id="tooltip"></div>
@@ -44,6 +44,7 @@
     const snapshotSummary = __SNAPSHOT_SUMMARY__;
     const summaryParts = [`${snapshotSummary.device_count} discovered devices`];
     summaryParts.push(`${snapshotSummary.physical_links ?? 0} physical links`);
+    if (snapshotSummary.verified_routed) summaryParts.push(`${snapshotSummary.verified_routed} verified routed links`);
     if (snapshotSummary.routing_adjacencies) summaryParts.push(`${snapshotSummary.routing_adjacencies} routing adjacencies`);
     if (snapshotSummary.protocol_peers) summaryParts.push(`${snapshotSummary.protocol_peers} BGP peerings`);
     if (snapshotSummary.unresolved_peers) summaryParts.push(`${snapshotSummary.unresolved_peers} unresolved peer identities`);
@@ -87,6 +88,21 @@
           'label': 'data(protocol)', 'font-size': 9, 'color': '#94a3b8',
           'text-background-color': '#ffffff', 'text-background-opacity': 0.8
         }},
+        { selector: 'edge[relationship = "verified-routed"]', style: {
+          'line-style': 'dashed', 'line-color': '#2563eb', 'width': 2.5,
+          'label': 'data(protocol)', 'font-size': 9, 'color': '#2563eb',
+          'text-background-color': '#ffffff', 'text-background-opacity': 0.8
+        }},
+        { selector: 'edge[relationship = "layer-3"]', style: {
+          'line-style': 'dashed', 'line-color': '#0ea5e9'
+        }},
+        { selector: 'edge[relationship = "inferred"]', style: {
+          'line-style': 'dotted', 'line-color': '#cbd5e1'
+        }},
+        { selector: 'edge[relationship = "unknown"]', style: {
+          'line-style': 'dotted', 'line-color': '#e2e8f0'
+        }},
+        { selector: 'edge:selected', style: { 'line-color': '#f59e0b', 'width': 3.5 }},
         { selector: '.search-muted', style: { 'opacity': 0.18 }},
         { selector: '.search-match', style: { 'border-color': '#f59e0b', 'border-width': 5, 'opacity': 1 }}
       ]
@@ -132,7 +148,46 @@
       return html;
     };
 
+    // PR-043.7 (FUSION): clicking any relationship explains WHY Atlas
+    // created it, WHICH evidence supports it, and WHAT confidence it has.
+    const edgeDetails = data => {
+      const label = id => {
+        const node = cy.getElementById(id);
+        return node.length ? node.data('label') : id;
+      };
+      let html = `
+      <h2>${escapeHtml(label(data.source))} &harr; ${escapeHtml(label(data.target))}</h2>`;
+      if (data.fused_type) {
+        html += `
+      <div class="field"><strong>Relationship type</strong>${escapeHtml(data.fused_type)}</div>
+      <div class="field"><strong>Confidence</strong>${escapeHtml(data.confidence)}%</div>
+      <div class="field"><strong>Interfaces</strong>${escapeHtml(data.source_interface)} &harr; ${escapeHtml(data.target_interface)}</div>
+      <div class="field"><strong>Why this relationship exists</strong>
+        <ul style="margin:6px 0 0;padding-left:18px;font-size:13px;">
+          ${(data.evidence || []).map(item => `<li><em>P${escapeHtml(item.priority)} ${escapeHtml(item.kind)}</em> — ${escapeHtml(item.detail)}${item.source_command ? ` <span style="color:#64748b;">(${escapeHtml(item.source_command)})</span>` : ''}</li>`).join('')}
+        </ul>
+      </div>
+      <div class="field"><strong>Commands contributing evidence</strong>${escapeHtml((data.contributing_commands || []).join(', ') || 'None recorded')}</div>`;
+        if ((data.conflicts || []).length) {
+          html += `
+      <div class="field"><strong>Conflicting observations</strong>
+        <ul style="margin:6px 0 0;padding-left:18px;font-size:13px;color:#b45309;">
+          ${data.conflicts.map(item => `<li>${escapeHtml(item)}</li>`).join('')}
+        </ul>
+      </div>`;
+        }
+        return html;
+      }
+      html += `
+      <div class="field"><strong>Relationship type</strong>${escapeHtml(data.relationship ?? 'unknown')} (observed)</div>
+      <div class="field"><strong>Observed via</strong>${escapeHtml((data.protocol || 'unknown').toUpperCase())}</div>
+      <div class="field"><strong>Interfaces</strong>${escapeHtml(data.source_interface)} &harr; ${escapeHtml(data.target_interface)}</div>
+      <p style="font-size:13px;color:#475569;">This connection is a single observation that evidence correlation could not verify against a discovered device. It is shown as observed, not verified.</p>`;
+      return html;
+    };
+
     cy.on('tap', 'node', event => { details.innerHTML = nodeDetails(event.target.data()); });
+    cy.on('tap', 'edge', event => { details.innerHTML = edgeDetails(event.target.data()); });
     cy.on('mouseover', 'node', event => {
       tooltip.textContent = `${event.target.data('label')} · ${event.target.data('management_ip')}`;
       tooltip.style.display = 'block';

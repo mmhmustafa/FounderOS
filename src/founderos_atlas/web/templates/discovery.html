@@ -67,7 +67,7 @@
        style="width: {{ job.percent if job else 0 }}%"></div></div>
   <p class="muted" id="job-progress-note">Stage-based progress — device totals are unknown during recursive discovery, so Atlas reports real stages, devices contacted, and the current device instead of fake percentages.</p>
   <ul class="kv" id="job-facts">
-    <li><span>Devices discovered</span><span id="job-devices">{{ job.devices_discovered if job else 0 }}</span></li>
+    <li><span>Addresses contacted</span><span id="job-devices">{{ job.devices_discovered if job else 0 }}</span></li>
     <li><span>Current device</span><span id="job-device">{{ (job.current_device or '—') if job else '—' }}</span></li>
     <li><span>Elapsed</span><span id="job-elapsed">{% if job and job.elapsed_seconds is not none %}{{ job.elapsed_seconds }}s{% else %}—{% endif %}</span></li>
   </ul>

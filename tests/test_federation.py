@@ -495,7 +495,7 @@ class EnterpriseGuiTests(unittest.TestCase):
             # Inventory contains ALL devices; the shared gateway merged.
             for hostname in (b"A1", b"A2", b"B1", b"GW"):
                 self.assertIn(hostname, page)
-            self.assertIn(b"Enterprise Federation", page)
+            self.assertIn(b"Enterprise Knowledge", page)  # PR-043.10 wording
             self.assertIn(b"Merge Decisions", page)
             self.assertIn(b"serial number", page)
             self.assertIn(b"95%", page)

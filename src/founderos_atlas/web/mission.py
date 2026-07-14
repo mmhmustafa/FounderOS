@@ -74,14 +74,14 @@ def build_recommendations(
             {
                 "text": (
                     f"The last discovery of {failure['network']} could not "
-                    f"reach {failure['count']} host(s) — review credentials "
-                    "and reachability."
+                    f"authenticate to {failure['count']} reachable device(s) "
+                    "— review the credentials for those devices."
                 ),
                 "action": "Open History",
                 "href": f"/history?scope={failure['scope_id']}",
                 "evidence": (
                     f"discovery run {failure['run_id']} recorded "
-                    f"{failure['count']} failure(s)"
+                    f"{failure['count']} authentication failure(s)"
                 ),
             }
         )

@@ -83,7 +83,9 @@ class RecommendationTests(unittest.TestCase):
         texts = [item["text"] for item in recommendations]
         self.assertEqual(4, len(recommendations))
         # Deterministic order: failures, drafts, issues, low confidence.
-        self.assertIn("could not reach 1 host(s)", texts[0])
+        self.assertIn(
+            "could not authenticate to 1 reachable device(s)", texts[0]
+        )
         self.assertIn("2 maintenance plan(s)", texts[1])
         self.assertIn("active", texts[2])
         self.assertIn("medium confidence", texts[3])
@@ -215,12 +217,19 @@ class MissionGuiTests(unittest.TestCase):
             self.assertIn("have not been analysed yet", page)
             self.assertIn("Open Compass", page)
 
-    def test_discovery_failures_produce_a_recommendation(self) -> None:
+    def test_unreachable_candidate_produces_no_credential_recommendation(self) -> None:
+        # PR-043.10 (POLISH, Part 1): an address that never became a managed
+        # device — an unreachable candidate / never-discovered IP — must NOT
+        # generate a Mission recommendation. It is discovery coverage (shown
+        # in topology as an unresolved peer), not a credential problem. Only
+        # genuine authentication failures on reachable devices earn the
+        # "review credentials" recommendation.
         with tempfile.TemporaryDirectory() as tmp:
             workdir = Path(tmp)
             service = make_service(workdir)
             add_profile(service, "Lab A", "10.0.0.1")
-            # A2 present in CDP but unreachable: a recorded failure.
+            # A2 announced via CDP but unreachable: discovery coverage, not
+            # an authentication failure.
             from tests.test_multihop_discovery import ScriptedNetwork
             from tests.test_unified_pipeline import full_outputs
 
@@ -239,8 +248,9 @@ class MissionGuiTests(unittest.TestCase):
             )
             app.config.update(TESTING=True)
             page = app.test_client().get("/?scope=all").data.decode("utf-8")
-            self.assertIn("could not reach 1 host(s)", page)
-            self.assertIn("Open History", page)
+            # No unused/unreachable-address recommendation of either wording.
+            self.assertNotIn("could not reach", page)
+            self.assertNotIn("could not authenticate", page)
 
     def test_compass_plans_appear_with_risk_and_open_action(self) -> None:
         from founderos_atlas.compass import (

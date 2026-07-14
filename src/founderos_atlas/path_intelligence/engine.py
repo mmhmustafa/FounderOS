@@ -150,7 +150,12 @@ class _Investigation:
         if not paths:
             return self._no_path_result(source_key, destination_key)
         if len(paths) > 1:
-            return self._ambiguous_result(paths)
+            # Multiple equal-cost paths are REDUNDANCY, not ambiguity: the
+            # devices are connected via several independent paths (good
+            # design). Reachability is a strong YES; only *which* path a
+            # given flow takes is unknown without routing evidence — a
+            # footnote, never a "communication stops" failure.
+            return self._redundant_paths_result(paths)
         return self._walk_path(paths[0])
 
     # -- snapshot indexing ---------------------------------------------------
@@ -204,6 +209,45 @@ class _Investigation:
                 item["a"] == record["a"]
                 and item["a_interface"] == record["a_interface"]
                 and item["b_interface"] == record["b_interface"]
+                for item in bucket
+            ):
+                bucket.append(record)
+            self.adjacency.setdefault(local_key, set()).add(remote_key)
+            self.adjacency.setdefault(remote_key, set()).add(local_key)
+        # PR-043.8 (CONSISTENCY): Investigation walks the SAME Enterprise
+        # Knowledge Graph Topology renders. Evidence Correlation resolves
+        # peer addresses (a BGP peer, an OSPF adjacency address) onto the
+        # device that owns them via the address-ownership index — links
+        # raw edges leave dangling. Consuming the fused relationships here
+        # means any routed path visible in Topology is walkable here too.
+        metadata = dict(self.snapshot.get("metadata") or {})
+        for fused in metadata.get("correlated_relationships") or ():
+            if not isinstance(fused, dict):
+                continue
+            local = id_to_host.get(str(fused.get("left_device_id")))
+            remote = id_to_host.get(str(fused.get("right_device_id")))
+            if not local or not remote:
+                continue  # a fused pair must join two discovered devices
+            local_key = local.casefold()
+            remote_key = remote.casefold()
+            pair = tuple(sorted((local_key, remote_key)))
+            record = {
+                "a": local_key,
+                "b": remote_key,
+                "a_interface": str(fused.get("left_interface") or "") or None,
+                "b_interface": str(fused.get("right_interface") or "") or None,
+                "protocol": str(
+                    fused.get("relationship_type") or "correlated"
+                ),
+                "correlated": True,
+                "confidence": int(fused.get("confidence") or 0),
+            }
+            bucket = self.links.setdefault((pair[0], pair[1]), [])
+            if not any(
+                item["a"] == record["a"]
+                and item["a_interface"] == record["a_interface"]
+                and item["b_interface"] == record["b_interface"]
+                and item.get("correlated")
                 for item in bucket
             ):
                 bucket.append(record)
@@ -850,41 +894,129 @@ class _Investigation:
             ),
         )
 
-    def _ambiguous_result(self, paths: list[list[str]]) -> PathInvestigationResult:
+    def _validate_path_silently(
+        self, path: list[str]
+    ) -> tuple[tuple[HopResult, ...], HopResult | None]:
+        """Validate every hop of one path WITHOUT emitting story steps.
+
+        Returns ``(hops, first_failure)``. Used to assess each candidate of
+        a redundant path set before deciding how to narrate the result."""
+
+        hops: list[HopResult] = []
+        failure: HopResult | None = None
+        for index, key in enumerate(path):
+            if failure is not None:
+                hops.append(self._not_evaluated_hop(len(hops) + 1, key, failure))
+                continue
+            ingress = self._link_interface(key, path[index - 1]) if index else None
+            egress = (
+                self._link_interface(key, path[index + 1])
+                if index + 1 < len(path)
+                else None
+            )
+            hop = self._validate_hop(
+                hop_number=len(hops) + 1, key=key, ingress=ingress, egress=egress
+            )
+            hops.append(hop)
+            if hop.status == HOP_FAILED:
+                failure = hop
+        return tuple(hops), failure
+
+    def _redundant_paths_result(
+        self, paths: list[list[str]]
+    ) -> PathInvestigationResult:
+        """Multiple equal-cost paths = redundancy, reported as CONNECTED.
+
+        Every candidate is validated. If at least one path is fully up, the
+        endpoints ARE connected (a resilient design) — a strong positive
+        result. If some candidates are degraded, that reduced redundancy is
+        surfaced. Only when EVERY candidate has a broken hop is it a real
+        failure. Atlas still never guesses which single path a flow uses."""
+
         rendered = [
             " → ".join(self._display_name(key) for key in path) for path in paths
         ]
+        source_name = self._display_name(paths[0][0])
+        dest_name = self._display_name(paths[0][-1])
+
+        validated = [(path, *self._validate_path_silently(path)) for path in paths]
+        up_paths = [item for item in validated if item[2] is None]
+        down_paths = [item for item in validated if item[2] is not None]
+
         self._step(
             "Construct path from topology evidence",
-            HOP_WARNING,
-            f"{len(rendered)} equally short known paths exist; Atlas will "
-            "not guess which one traffic uses: " + " | ".join(rendered),
+            HOP_PASS if up_paths else HOP_FAILED,
+            f"{len(paths)} equal-cost redundant paths exist between "
+            f"{source_name} and {dest_name} — a resilient design: "
+            + " | ".join(rendered),
             evidence=(self._snapshot_ref(),),
         )
-        self.unknowns.append(
-            "Routing evidence (which path traffic actually takes) is not "
-            "collected yet; the choice between the equal-cost paths is "
-            "unknown."
+
+        # No candidate survives validation → genuinely unreachable.
+        if not up_paths:
+            rep_path, rep_hops, failure = validated[0]
+            return self._failed_walk_result(rep_path, list(rep_hops), failure)
+
+        # A representative fully-up path carries the hop-by-hop detail.
+        rep_path, rep_hops, _ = up_paths[0]
+        for hop in rep_hops:
+            self._step(
+                f"Validate {hop.device}"
+                + (f" (via {hop.ingress_interface})" if hop.ingress_interface else ""),
+                hop.status,
+                hop.explanation,
+                evidence=hop.evidence,
+            )
+        degraded_note = (
+            f" {len(down_paths)} of the {len(paths)} paths are currently "
+            "degraded (a hop is down), so redundancy is reduced but "
+            "connectivity holds."
+            if down_paths
+            else ""
         )
+        self._step(
+            "Conclusion",
+            HOP_PASS if not down_paths else HOP_WARNING,
+            f"{source_name} reaches {dest_name} over {len(up_paths)} of "
+            f"{len(paths)} redundant equal-cost path(s) that pass validation "
+            f"— the network has path resilience here.{degraded_note}",
+        )
+        # Honest, but a footnote — never a failure (PR-043.x path polish).
+        self.unknowns.append(
+            "Which of the equal-cost paths a given flow uses needs routing / "
+            "flow evidence (not collected yet); every candidate path is shown "
+            "so none is guessed through."
+        )
+        recommendations = [
+            f"{len(paths)} redundant equal-cost paths provide resilience: "
+            f"shutting any single link still leaves {len(paths) - 1}. Verify "
+            "each carries the expected capacity.",
+            "Collect routing / flow evidence to see which path is active for a "
+            "given flow.",
+        ]
+        if down_paths:
+            recommendations.insert(
+                0,
+                f"Restore the {len(down_paths)} degraded path(s) to recover "
+                "full redundancy: " + "; ".join(
+                    " → ".join(self._display_name(k) for k in item[0])
+                    for item in down_paths
+                ),
+            )
         return self._finish(
-            status=RESULT_AMBIGUOUS,
-            path=(),
-            hops=(),
-            failure_type=FAILURE_AMBIGUOUS_TOPOLOGY,
-            failure_summary=(
-                f"{len(rendered)} equally short paths exist between "
-                f"{self._display_name(paths[0][0])} and "
-                f"{self._display_name(paths[0][-1])}; Atlas reports the "
-                "ambiguity rather than guessing."
-            ),
-            confidence=CONFIDENCE_PARTIAL_EVIDENCE,
-            recommendations=(
-                "Investigate each candidate path individually: "
-                + "; ".join(rendered),
-                "Collect routing evidence (a future collector) so Atlas can "
-                "determine the active path deterministically.",
-            ),
-            extra_basis={"candidate_paths": rendered},
+            status=RESULT_CONNECTED,
+            path=tuple(self._display_name(key) for key in rep_path),
+            hops=rep_hops,
+            failure_type=None,
+            failure_summary=None,
+            confidence=self._overall_confidence(list(rep_hops)),
+            recommendations=tuple(recommendations),
+            extra_basis={
+                "redundant_paths": rendered,
+                "redundant_path_count": len(paths),
+                "validated_up_paths": len(up_paths),
+                "degraded_paths": len(down_paths),
+            },
         )
 
     def _no_evidence_result(self) -> PathInvestigationResult:

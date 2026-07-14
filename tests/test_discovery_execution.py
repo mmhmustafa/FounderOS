@@ -90,6 +90,21 @@ class StageTimerTests(unittest.TestCase):
         self.assertEqual(2, d["discovered"])
         self.assertEqual(1, d["authentication_failures"])
 
+    def test_operational_metrics_worker_utilization_and_ssh(self) -> None:
+        # 2 candidates each 1.0s busy; elapsed 1.0s across 2 workers =>
+        # busy 2.0 / available 2.0 = 100% utilization.
+        metrics = [
+            CandidateMetrics("a", {"tcp_connect": 0.3}, 1.0, OUTCOME_DISCOVERED, "ios"),
+            CandidateMetrics("b", {"tcp_connect": 0.5}, 1.0, OUTCOME_DISCOVERED, "ios"),
+        ]
+        agg = aggregate_metrics(metrics, elapsed_seconds=1.0, worker_count=2)
+        self.assertEqual(1.0, agg.worker_utilization)
+        self.assertEqual(100, agg.to_dict()["worker_utilization_percent"])
+        self.assertAlmostEqual(0.4, agg.average_ssh_seconds)  # (0.3+0.5)/2
+        # Half-idle: 2 busy-seconds over 4 available = 50%.
+        agg2 = aggregate_metrics(metrics, elapsed_seconds=2.0, worker_count=2)
+        self.assertEqual(50, agg2.to_dict()["worker_utilization_percent"])
+
 
 class LifecycleTests(unittest.TestCase):
     def test_transitions_are_deterministic_and_gated(self) -> None:
@@ -351,6 +366,41 @@ class PooledDiscoveryTests(unittest.TestCase):
         self.assertLess(parallel, sequential / 2)  # at least 2x, usually ~6x
 
 
+class ProgressiveInventoryTests(unittest.TestCase):
+    def test_snapshot_exposes_live_nodes_eta_and_first_device(self) -> None:
+        factory, addresses = slow_network(6, delay=0.0)
+        execution, _graph, _snapshot = run_pooled_discovery(
+            addresses, factory, worker_count=3
+        )
+        snap = execution.snapshot()
+        # Progressive inventory: a node per discovered device, with role.
+        self.assertEqual(6, len(snap["nodes"]))
+        node = snap["nodes"][0]
+        self.assertIn("hostname", node)
+        self.assertIn("role", node)          # evidence-based role (043.1)
+        self.assertIn("stencil", node)       # role stencil for live topology
+        self.assertIsNotNone(snap["time_to_first_device_seconds"])
+        self.assertEqual(6, snap["processed"])
+        self.assertEqual(6, snap["total"])
+        # Completed run: no remaining ETA.
+        self.assertIsNone(snap["eta_seconds"])
+
+    def test_nodes_appear_in_candidate_order(self) -> None:
+        network = ScriptedNetwork(
+            {
+                "10.0.0.1": device_outputs("alpha", "10.0.0.1"),
+                "10.0.0.2": device_outputs("bravo", "10.0.0.2"),
+                "10.0.0.3": device_outputs("charlie", "10.0.0.3"),
+            }
+        )
+        execution, _g, _s = run_pooled_discovery(
+            ["10.0.0.1", "10.0.0.2", "10.0.0.3"],
+            network.transport_factory, worker_count=3,
+        )
+        hostnames = [n["hostname"] for n in execution.snapshot()["nodes"]]
+        self.assertEqual(["alpha", "bravo", "charlie"], hostnames)
+
+
 class ConsoleGuiTests(unittest.TestCase):
     def build_client(self, workdir: Path):
         from founderos_atlas.web import create_app
@@ -367,19 +417,31 @@ class ConsoleGuiTests(unittest.TestCase):
         app.config.update(TESTING=True)
         return app.test_client()
 
-    def test_console_page_shows_pool_queue_metrics_and_controls(self) -> None:
+    def test_console_is_an_operations_console(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             client = self.build_client(Path(tmp))
             page = client.get("/discovery/console").data
-            self.assertIn(b"Discovery Execution Console", page)
-            for control in (b"Pause", b"Resume", b"Cancel", b"Restart"):
+            self.assertIn(b"Enterprise Discovery", page)
+            # Action bar controls.
+            for control in (b"Pause", b"Resume", b"Stop", b"Restart", b"Logs"):
                 self.assertIn(control, page)
-            self.assertIn(b"Discovery Metrics", page)
-            self.assertIn(b"Workers", page)
-            self.assertIn(b"Discovery Log", page)
-            self.assertIn(b"Devices / minute", page)
+            # The operational panels the spec requires.
+            for panel in (b"Discovery Pipeline", b"Workers", b"Queue",
+                          b"Live Inventory", b"Discovery Metrics",
+                          b"Discovery Log", b"Discovery complete"):
+                self.assertIn(panel, page)
+            # Operational metrics, not "devices discovered".
+            for metric in (b"Worker utilization", b"Avg SSH time",
+                           b"SSH reachable", b"Devices / min"):
+                self.assertIn(metric, page)
+            # Completion shortcuts.
+            self.assertIn(b"Open Mission", page)
+            self.assertIn(b"Enterprise Topology", page)
+            # Accessibility affordances.
+            self.assertIn(b'role="toolbar"', page)
+            self.assertIn(b'aria-live="polite"', page)
 
-    def test_execution_snapshot_endpoint_is_honest_and_structured(self) -> None:
+    def test_completed_demo_snapshot_is_honest_and_rich(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             client = self.build_client(Path(tmp))
             snap = client.get("/api/discovery/execution/demo").get_json()
@@ -387,16 +449,34 @@ class ConsoleGuiTests(unittest.TestCase):
             self.assertEqual(100, snap["progress_percent"])
             metrics = snap["metrics"]
             self.assertEqual(16, metrics["addresses_evaluated"])
-            # Honest categories, never a bare "discovered: 16".
             self.assertIn("authentication_failures", metrics)
-            self.assertIn("unreachable", metrics)
-            self.assertGreater(metrics["discovered"], 0)
-            self.assertEqual(4, metrics["worker_count"])
+            self.assertIn("worker_utilization_percent", metrics)
+            self.assertIn("average_ssh_seconds", metrics)
+            self.assertEqual(8, metrics["worker_count"])
+            # Progressive inventory with roles/stencils for live topology.
+            self.assertTrue(snap["nodes"])
+            self.assertIn("role", snap["nodes"][0])
+            self.assertIsNotNone(snap["time_to_first_device_seconds"])
             self.assertTrue(snap["log"])
-            self.assertTrue(snap["queue"]["by_outcome"])
             import json
 
             self.assertNotIn("password", json.dumps(snap).lower())
+
+    def test_running_demo_snapshot_shows_alive_workers_and_eta(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            client = self.build_client(Path(tmp))
+            snap = client.get(
+                "/api/discovery/execution/demo?state=running"
+            ).get_json()
+            self.assertEqual("running", snap["state"])
+            self.assertEqual(42, snap["progress_percent"])
+            self.assertEqual(48.0, snap["eta_seconds"])
+            # Workers look alive — none idle in the running sample.
+            self.assertTrue(all(not w["idle"] for w in snap["workers"]))
+            self.assertEqual(8, len(snap["workers"]))
+            self.assertIn("collecting interfaces", snap["workers"][0]["stage"])
+            self.assertGreater(snap["metrics"]["worker_utilization_percent"], 50)
+            self.assertTrue(snap["nodes"])
 
     def test_discovery_page_links_to_the_console(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

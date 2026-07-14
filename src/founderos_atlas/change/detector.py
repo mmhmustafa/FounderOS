@@ -287,7 +287,39 @@ def _logical_links(
 
 
 def _discovery_failures(current_data: Mapping[str, Any]) -> list[Change]:
-    failed_hosts = (current_data.get("metadata") or {}).get("failed_hosts") or ()
+    """Genuine discovery failures — NOT unused addresses (PR-043.9, Part 5).
+
+    Unused/unreachable addresses in a CIDR scan are discovery statistics,
+    never topology changes. When the snapshot carries discovery statistics
+    (PR-043.8), only real authentication failures — reachable devices Atlas
+    could not log into — are operationally meaningful, reported as one
+    aggregate change rather than one per empty address. Legacy snapshots
+    without statistics keep the prior per-host behavior for compatibility.
+    """
+
+    metadata = current_data.get("metadata") or {}
+    stats = metadata.get("discovery_statistics")
+    if isinstance(stats, Mapping):
+        auth_failures = int(stats.get("authentication_failures") or 0)
+        if auth_failures <= 0:
+            return []  # unused addresses are statistics, not changes
+        return [
+            Change(
+                category=CATEGORY_DISCOVERY,
+                severity="medium",
+                description=(
+                    f"{auth_failures} reachable device(s) could not be "
+                    "authenticated during discovery"
+                ),
+                recommendation=(
+                    "Verify credentials for the reachable devices that failed "
+                    "authentication."
+                ),
+                subject="authentication",
+                field="discovery",
+            )
+        ]
+    failed_hosts = metadata.get("failed_hosts") or ()
     changes = []
     for host in sorted(str(value) for value in failed_hosts):
         changes.append(

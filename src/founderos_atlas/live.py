@@ -73,13 +73,17 @@ def run_multihop_discovery(
     policy=None,
     extra_seeds: tuple[str, ...] = (),
     on_neighbor=None,
+    reachability=None,
+    workers: int = 1,
 ) -> tuple[MultiHopDiscoveryReport, TopologyGraph, TopologySnapshot]:
     """Discover the seed(s) and reachable neighbors, then reconcile.
 
     Traversal lives in ``discovery.multihop``; this composition only wires it
     to the existing reconciliation and snapshot pipeline. ``policy``,
     ``extra_seeds``, ``on_neighbor``, and the platform ``registry``
-    (PR-043) pass through to the traversal.
+    (PR-043) pass through to the traversal. ``workers`` and
+    ``reachability`` (PR-043.6) enable the concurrent, reachability-gated
+    production path.
     """
 
     report = discover_multihop(
@@ -91,6 +95,8 @@ def run_multihop_discovery(
         policy=policy,
         extra_seeds=extra_seeds,
         on_neighbor=on_neighbor,
+        reachability=reachability,
+        workers=workers,
     )
     resolution = IdentityResolver().resolve(report.results)
     canonical_results = resolution.canonicalize(report.results)
@@ -140,10 +146,92 @@ def run_multihop_discovery(
             "identity_resolution": True,
             "platforms": dict(sorted(platform_counts.items())),
             "relationships": relationships,
+            # PR-043.8 (CONSISTENCY): the discovery statistics travel WITH
+            # the Enterprise Knowledge Graph so every consumer reads the
+            # same address-space facts. Unused (unreachable) addresses are
+            # Information here, never failures.
+            "discovery_statistics": _discovery_statistics(
+                report, graph.device_count()
+            ).to_dict(),
+            **_correlation_metadata(graph),
             **({"failed_hosts": failed_hosts} if failed_hosts else {}),
         },
     )
     return report, graph, snapshot
+
+
+def _discovery_statistics(report, device_count: int):
+    """Classify the multihop report's per-address outcomes into the
+    canonical discovery statistics (PR-043.8). Delegated to the shared
+    classifier so the snapshot and every consumer agree."""
+
+    from founderos_atlas.enterprise import classify_discovery_visits
+
+    return classify_discovery_visits(
+        connected=len(report.connected),
+        failed_details=tuple(visit.detail for visit in report.failed),
+        skipped=len(report.skipped),
+        managed_devices=device_count,
+    )
+
+
+def _correlation_metadata(graph: TopologyGraph) -> dict:
+    """Fuse the reconciled graph's evidence into enterprise knowledge
+    (PR-043.7): correlated relationships with provenance, the address
+    ownership index summary, and honest unresolved observations. Topology
+    presentation consumes THIS — never raw per-protocol edges alone."""
+
+    from founderos_atlas.correlation import EvidenceCorrelationEngine
+
+    devices = [
+        {
+            "device_id": device.device_id,
+            "hostname": device.hostname,
+            "management_ip": device.management_ip,
+            "metadata": dict(device.metadata),
+            "interfaces": [
+                {
+                    "name": interface.name,
+                    "ip_address": interface.ip_address,
+                    "description": interface.description,
+                    "metadata": dict(interface.metadata),
+                }
+                for interface in graph.interfaces(device.device_id)
+            ],
+        }
+        for device in graph.devices()
+    ]
+    edges = [
+        {
+            "local_device_id": edge.local_device_id,
+            "local_interface": edge.local_interface,
+            "remote_hostname": edge.remote_hostname,
+            "remote_interface": edge.remote_interface,
+            "remote_management_ip": edge.remote_management_ip,
+            "protocol": edge.protocol,
+            "metadata": dict(edge.metadata),
+        }
+        for edge in graph.edges()
+    ]
+    correlation = EvidenceCorrelationEngine().correlate(devices, edges)
+    ownership = correlation.ownership.to_dict()
+    return {
+        "correlation": correlation.summary(),
+        "correlated_relationships": tuple(
+            relationship.to_dict() for relationship in correlation.relationships
+        ),
+        "unresolved_observations": tuple(
+            observation.to_dict() for observation in correlation.unresolved
+        ),
+        # The Enterprise Address Ownership Index (Part 4): every
+        # discovered address belongs to exactly one canonical device;
+        # conflicted addresses are excluded and reported.
+        "address_ownership": ownership["addresses"],
+        **(
+            {"ownership_conflicts": ownership["conflicts"]}
+            if ownership["conflicts"] else {}
+        ),
+    }
 
 
 def _reconcile_results(results, *, metadata_extra: dict) -> tuple[
@@ -179,6 +267,7 @@ def _reconcile_results(results, *, metadata_extra: dict) -> tuple[
             "identity_resolution": True,
             "platforms": dict(sorted(platform_counts.items())),
             "relationships": relationships,
+            **_correlation_metadata(graph),
             **metadata_extra,
         },
     )
@@ -263,6 +352,8 @@ def run_discovery_plan(
     policy=None,
     on_neighbor=None,
     completed_addresses: frozenset[str] = frozenset(),
+    workers: int | None = None,
+    reachability=None,
 ):
     """Run any resolved ``DiscoveryPlan`` (PR-043.2) through the multihop
     engine and report per-candidate outcomes.
@@ -288,6 +379,13 @@ def run_discovery_plan(
     ]
     if not addresses:
         raise ValueError("no candidate addresses remain to attempt")
+    # PR-043.7 (FUSION, Part 1): every entry method executes the SAME
+    # parallel, reachability-gated production path as seed discovery —
+    # the worker pool is sized to the candidate list exactly like
+    # ``atlas_discover_command`` sizes it. No legacy sequential path.
+    resolved_workers = (
+        workers if workers is not None else min(32, max(4, len(addresses)))
+    )
     report, graph, snapshot = run_multihop_discovery(
         transport_factory,
         addresses[0],
@@ -298,6 +396,8 @@ def run_discovery_plan(
         policy=policy,
         extra_seeds=tuple(addresses[1:]),
         on_neighbor=on_neighbor,
+        reachability=reachability,
+        workers=resolved_workers,
     )
     visits = tuple(
         (visit.host, visit.status, visit.detail) for visit in report.visits

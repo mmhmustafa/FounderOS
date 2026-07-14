@@ -23,6 +23,28 @@ from .stencils import stencil_data_uri
 
 
 CYTOSCAPE_CDN = "https://unpkg.com/cytoscape@3.29.2/dist/cytoscape.min.js"
+
+# Fused relationship type -> displayed relationship class (PR-043.7).
+# Solid = verified physical; dashed = verified routed; dotted = observed
+# but unresolved (unresolved edges keep their observation classes).
+_FUSED_RELATIONSHIP_CLASS = {
+    "verified-physical": "physical",
+    "verified-routed": "verified-routed",
+    "ospf": "routing-adjacency",
+    "bgp": "protocol-peer",
+    "static": "routing-adjacency",
+    "layer-3": "layer-3",
+    "layer-2": "physical",
+    "inferred": "inferred",
+    "unknown": "unknown",
+}
+
+# Evidence kinds that ARE protocol observations of a link (as opposed
+# to derived corroborations like ownership or subnet matches).
+_OBSERVATION_EVIDENCE_KINDS = frozenset(
+    {"link-layer", "ospf-neighbor", "bgp-peer", "static-route", "arp-mac"}
+)
+
 _VENDOR_COLORS = {
     "cisco": "#2563eb",
     "juniper": "#16a34a",
@@ -136,12 +158,61 @@ class TopologyRenderer:
                     }
                 }
 
+        # PR-043.7 (FUSION): topology is generated from Enterprise
+        # Knowledge. When the snapshot carries correlated relationships,
+        # each fused relationship renders as ONE edge with its type,
+        # confidence, and evidence; raw observations only contribute the
+        # honest unresolved (dotted) edges. Older snapshots without
+        # correlation metadata keep the observation-based path unchanged.
+        snapshot_metadata = dict(self._snapshot.metadata or {})
+        fused_list = snapshot_metadata.get("correlated_relationships")
+        ownership = {
+            str(address): dict(claim)
+            for address, claim in dict(
+                snapshot_metadata.get("address_ownership") or {}
+            ).items()
+        }
+        fused_pairs: dict[tuple[str, str], dict[str, Any]] = {}
+        for item in fused_list or ():
+            fused = dict(item)
+            pair = (str(fused["left_device_id"]), str(fused["right_device_id"]))
+            fused_pairs[pair] = fused
+
+        def _resolve_target(edge: Mapping, edge_metadata: dict) -> str | None:
+            """Remote endpoint via hostname/alias/management map, then the
+            enterprise address ownership index (an owned interface,
+            loopback, secondary, or router-id address resolves onto its
+            owner — never onto a phantom node)."""
+
+            direct = hostname_to_id.get(str(edge["remote_hostname"]).casefold())
+            if direct is not None:
+                return direct
+            for candidate in (
+                edge_metadata.get("adjacency_address"),
+                edge_metadata.get("peer_address"),
+                edge.get("remote_management_ip"),
+                edge.get("remote_hostname"),
+            ):
+                claim = ownership.get(str(candidate or "").strip())
+                if claim is not None:
+                    return str(claim["device_id"])
+            return None
+
         logical_edges: dict[tuple, dict[str, Any]] = {}
+        covered_pairs: set[tuple[str, str]] = set()
         for edge in self._snapshot.edges:
             remote_hostname = str(edge["remote_hostname"])
             edge_metadata = dict(edge.get("metadata") or {})
             relation = relationship_kind(str(edge["protocol"]), edge_metadata)
-            target_id = hostname_to_id.get(remote_hostname.casefold())
+            target_id = _resolve_target(edge, edge_metadata)
+            source_for_pair = str(edge["local_device_id"])
+            if target_id is not None:
+                pair = tuple(sorted((source_for_pair, target_id)))
+                if pair in fused_pairs:
+                    # The fused relationship renders this pair; the raw
+                    # observation stays available as its evidence.
+                    covered_pairs.add(pair)
+                    continue
             if target_id is None:
                 target_id = f"observed:{remote_hostname.casefold()}"
                 # An observed-but-undiscovered peer: honest unresolved
@@ -214,6 +285,60 @@ class TopologyRenderer:
                 "observations": 1,
             }
 
+        # One edge per fused enterprise relationship (Part 9): the line
+        # style is the relationship type, and the edge carries WHY it
+        # exists (evidence details), WHICH commands produced it, and WHAT
+        # confidence Atlas has — inspectable on click.
+        for pair in sorted(fused_pairs):
+            fused = fused_pairs[pair]
+            left, right = pair
+            if left not in nodes or right not in nodes:
+                continue  # a fused pair must join two discovered devices
+            evidence = [dict(item) for item in fused.get("evidence") or ()]
+            # "observations" keeps its long-standing meaning: how many
+            # protocol observations saw this link (2 = both directions).
+            # Derived corroborations (ownership, subnets, descriptions)
+            # are evidence, not observations.
+            observation_count = sum(
+                1 for item in evidence
+                if item.get("kind") in _OBSERVATION_EVIDENCE_KINDS
+            )
+            logical_edges[("fused", left, right)] = {
+                "source": left,
+                "target": right,
+                "source_interface": str(
+                    fused.get("left_interface") or "unknown"
+                ).casefold(),
+                "target_interface": str(
+                    fused.get("right_interface") or "unknown"
+                ).casefold(),
+                "protocol": str(
+                    (min(evidence, key=lambda e: (e.get("priority", 9), e.get("kind", "")))
+                     .get("kind"))
+                    if evidence else "evidence"
+                ),
+                "relationship": _FUSED_RELATIONSHIP_CLASS.get(
+                    str(fused.get("relationship_type")), "unknown"
+                ),
+                "fused_type": str(fused.get("relationship_type")),
+                "confidence": int(fused.get("confidence") or 0),
+                "evidence": [
+                    {
+                        "priority": item.get("priority"),
+                        "kind": item.get("kind"),
+                        "detail": item.get("detail"),
+                        "source_command": item.get("source_command"),
+                        "observed_by": item.get("observed_by"),
+                    }
+                    for item in evidence
+                ],
+                "contributing_commands": [
+                    str(value) for value in fused.get("contributing_commands") or ()
+                ],
+                "conflicts": [str(value) for value in fused.get("conflicts") or ()],
+                "observations": observation_count or len(evidence),
+            }
+
         edges: list[dict[str, Any]] = []
         for edge_data in logical_edges.values():
             digest = sha256(
@@ -270,6 +395,7 @@ class TopologyRenderer:
             "physical_links": 0,
             "routing_adjacencies": 0,
             "protocol_peers": 0,
+            "verified_routed": 0,
             "unresolved_peers": 0,
         }
         for edge in elements["edges"]:
@@ -280,6 +406,8 @@ class TopologyRenderer:
                 counts["routing_adjacencies"] += 1
             elif relation == RELATION_PEER:
                 counts["protocol_peers"] += 1
+            elif relation == "verified-routed":
+                counts["verified_routed"] += 1
         counts["unresolved_peers"] = sum(
             1
             for node in elements["nodes"]

@@ -82,6 +82,7 @@
     <span class="badge job-badge job-badge-{{ 'failed' if prediction.risk.level in ('high', 'critical') else 'completed' }}">Risk: {{ prediction.risk.level | title }}</span>
     <span>Confidence: {{ prediction.confidence.band | title }} ({{ prediction.confidence.percent }}%)</span>
   </div>
+  {% if prediction.risk.explanation %}<p class="muted">{{ prediction.risk.explanation }}</p>{% endif %}
   <p><strong>{{ prediction.advice.action }}</strong></p>
   <h2>Blast Radius</h2>
   <ul>

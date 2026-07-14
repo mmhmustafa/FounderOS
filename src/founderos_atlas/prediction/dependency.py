@@ -262,6 +262,35 @@ def build_topology_dependency_graph(snapshot: dict | None) -> DependencyGraph:
             graph.add_edge(
                 DependencyEdge(local_if_id, remote_device_id, RELATION_CONNECTS)
             )
+    # PR-043.8 (CONSISTENCY): Prediction reasons over the SAME Enterprise
+    # Knowledge Graph Topology renders — it does not independently rebuild
+    # topology. Evidence Correlation resolves peer addresses onto their
+    # owning device, so the fused relationships connect real devices where
+    # raw edges only named an address. Consuming them keeps Prediction's
+    # dependency set identical to the graph's canonical devices.
+    metadata = dict(snapshot.get("metadata") or {})
+    for fused in metadata.get("correlated_relationships") or ():
+        if not isinstance(fused, dict):
+            continue
+        local = hostname_by_id.get(str(fused.get("left_device_id")))
+        remote = hostname_by_id.get(str(fused.get("right_device_id")))
+        if not local or not remote:
+            continue
+        local_interface = str(fused.get("left_interface") or "") or None
+        remote_interface = str(fused.get("right_interface") or "") or None
+        if local_interface and remote_interface:
+            local_if_id = _ensure_interface(graph, local, local_interface)
+            remote_if_id = _ensure_interface(graph, remote, remote_interface)
+            graph.add_edge(
+                DependencyEdge(local_if_id, remote_if_id, RELATION_CONNECTS)
+            )
+        else:
+            graph.add_edge(
+                DependencyEdge(
+                    device_node_id(local), device_node_id(remote),
+                    RELATION_CONNECTS,
+                )
+            )
     return graph
 
 

@@ -61,8 +61,13 @@ class SSHDeviceTransport(DeviceTransport):
         credentials: DeviceCredentials,
         *,
         device_type: str = "cisco_ios",
-        connect_timeout: float = 15.0,
-        command_timeout: float = 60.0,
+        # PR-043.6 (FALCON): aggressive-but-configurable defaults. The
+        # reachability probe already screens dead addresses, so a live
+        # host that answered the probe but stalls the SSH handshake fails
+        # in seconds rather than the old 15s. Override per profile when a
+        # slow-WAN device needs more headroom.
+        connect_timeout: float = 5.0,
+        command_timeout: float = 30.0,
         connection_factory: ConnectionFactory | None = None,
     ) -> None:
         if not isinstance(credentials, DeviceCredentials):

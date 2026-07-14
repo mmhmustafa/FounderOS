@@ -19,6 +19,7 @@ connect time:
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Callable
 from datetime import datetime, timezone
 
@@ -80,6 +81,14 @@ class MultiCredentialTransportFactory:
         self._hints: dict[str, dict[str, str]] = {}
         self.attempts: list[CredentialAttempt] = []
         self.used_refs: dict[str, str] = {}
+        # PR-043.6 (FALCON): the multihop worker pool now calls this factory
+        # concurrently (one host per worker). Its bookkeeping — the hint map,
+        # attempt log, used-ref map, and the resolver's read-modify-write
+        # success memory — is shared mutable state, so it is guarded here.
+        # The lock covers only the in-memory/metadata operations; the slow SSH
+        # I/O in _MultiCredentialTransport.connect() runs outside it, so
+        # parallelism is preserved. RLock because _record_success -> _record.
+        self._lock = threading.RLock()
 
     def prime_neighbor(self, neighbor) -> None:
         """Record safe context hints (hostname/platform) for a future host."""
@@ -87,58 +96,63 @@ class MultiCredentialTransportFactory:
         host = getattr(neighbor, "remote_management_ip", None)
         if not host:
             return
-        hints = self._hints.setdefault(host, {})
-        hostname = getattr(neighbor, "remote_hostname", None)
-        if hostname and "hostname" not in hints:
-            hints["hostname"] = str(hostname)
-        metadata = getattr(neighbor, "metadata", None) or {}
-        platform = metadata.get("platform")
-        if platform and "platform" not in hints:
-            hints["platform"] = str(platform)
+        with self._lock:
+            hints = self._hints.setdefault(host, {})
+            hostname = getattr(neighbor, "remote_hostname", None)
+            if hostname and "hostname" not in hints:
+                hints["hostname"] = str(hostname)
+            metadata = getattr(neighbor, "metadata", None) or {}
+            platform = metadata.get("platform")
+            if platform and "platform" not in hints:
+                hints["platform"] = str(platform)
 
     def __call__(self, host: str) -> DeviceTransport:
-        hints = self._hints.get(host, {})
-        context = DeviceContext(
-            host=host,
-            hostname=hints.get("hostname"),
-            platform=hints.get("platform"),
-            site=self._site_hint,
-            profile_id=self._profile_id,
-        )
-        context = self._resolver.enrich_context(context)
-        candidates = self._resolver.candidates(
-            context,
-            set_ids=self._set_ids,
-            profile_default=self._profile_default,
-            # The operator explicitly paired the profile credential with its
-            # seed devices; everywhere else, scoped credentials go first.
-            default_first=host in self._seed_hosts,
-        )
+        with self._lock:
+            hints = dict(self._hints.get(host, {}))
+            context = DeviceContext(
+                host=host,
+                hostname=hints.get("hostname"),
+                platform=hints.get("platform"),
+                site=self._site_hint,
+                profile_id=self._profile_id,
+            )
+            context = self._resolver.enrich_context(context)
+            candidates = self._resolver.candidates(
+                context,
+                set_ids=self._set_ids,
+                profile_default=self._profile_default,
+                # The operator explicitly paired the profile credential with
+                # its seed devices; everywhere else, scoped credentials go
+                # first.
+                default_first=host in self._seed_hosts,
+            )
         return _MultiCredentialTransport(self, host, candidates, context)
 
     # -- attempt bookkeeping (called by the transport) ---------------------
 
     def _record(self, host: str, candidate: CredentialCandidate, outcome: str) -> None:
-        self.attempts.append(
-            CredentialAttempt(
-                host=host,
-                credential_ref=candidate.credential_ref,
-                label=candidate.label,
-                outcome=outcome,
+        with self._lock:
+            self.attempts.append(
+                CredentialAttempt(
+                    host=host,
+                    credential_ref=candidate.credential_ref,
+                    label=candidate.label,
+                    outcome=outcome,
+                )
             )
-        )
 
     def _record_success(
         self, host: str, candidate: CredentialCandidate, hostname: str | None
     ) -> None:
-        self._record(host, candidate, ATTEMPT_SUCCESS)
-        self.used_refs[host] = candidate.credential_ref
-        self._resolver.record_success(
-            host,
-            candidate,
-            hostname=hostname,
-            when=self._clock().isoformat(timespec="seconds"),
-        )
+        with self._lock:
+            self._record(host, candidate, ATTEMPT_SUCCESS)
+            self.used_refs[host] = candidate.credential_ref
+            self._resolver.record_success(
+                host,
+                candidate,
+                hostname=hostname,
+                when=self._clock().isoformat(timespec="seconds"),
+            )
 
 
 class _MultiCredentialTransport(DeviceTransport):

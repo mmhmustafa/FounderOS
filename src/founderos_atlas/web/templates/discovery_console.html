@@ -1,117 +1,271 @@
 {% extends "base.html" %}
 {% block title %}Discovery Console{% endblock %}
 {% block content %}
-<div class="page-head">
-  <h1>Discovery Execution Console</h1>
-  <span class="badge job-badge" id="exec-state">queued</span>
+<div class="ops-header" role="region" aria-label="Discovery status">
+  <div>
+    <span class="ops-eyebrow">Enterprise Discovery</span>
+    <h1 id="ops-network">Delhi Lab</h1>
+  </div>
+  <div class="ops-status">
+    <span class="badge job-badge" id="ops-state" aria-live="polite">running</span>
+    <span class="ops-substage" id="ops-substage">Inventory Pass</span>
+  </div>
+  <div class="ops-timing">
+    <div><span class="ops-label">Elapsed</span><strong id="ops-elapsed">—</strong></div>
+    <div><span class="ops-label">ETA</span><strong id="ops-eta">—</strong></div>
+    <div><span class="ops-label">Rate</span><strong id="ops-rate">—</strong></div>
+  </div>
+  <div class="ops-overall">
+    <div class="progress"><div class="progress-fill" id="ops-bar" style="width:0%"></div></div>
+    <span class="ops-label" id="ops-progress-label">0 / 0 devices</span>
+  </div>
 </div>
-<p class="muted">An enterprise operations console for discovery execution: worker pool, live queue, per-stage instrumentation, and controls. Observability over a spinner — you always know what Atlas is doing, what remains, and how to control it.</p>
 
-<section class="card">
-  <div class="exec-controls">
-    <button class="btn" id="exec-pause">⏸ Pause</button>
-    <button class="btn" id="exec-resume">▶ Resume</button>
-    <button class="btn" id="exec-cancel">■ Cancel</button>
-    <button class="btn" id="exec-restart">↻ Restart</button>
-    <span class="muted" id="exec-controls-note">Controls actuate the running worker pool.</span>
-  </div>
-  <div class="progress" aria-hidden="true"><div class="progress-fill" id="exec-bar" style="width:0%"></div></div>
-  <div class="tiles" style="margin-top:12px;">
-    <div class="tile"><strong>Elapsed</strong><span class="tile-text" id="exec-elapsed">—</span></div>
-    <div class="tile"><strong>Discovery rate</strong><span class="tile-text" id="exec-rate">—</span></div>
-    <div class="tile"><strong>Workers</strong><span id="exec-workers">—</span></div>
-    <div class="tile"><strong>Queue length</strong><span id="exec-queue">—</span></div>
-  </div>
-</section>
+<div class="ops-actionbar" role="toolbar" aria-label="Discovery controls">
+  <button class="btn" id="ops-resume" title="Resume (r)">▶ Resume</button>
+  <button class="btn" id="ops-pause" title="Pause (p)">⏸ Pause</button>
+  <button class="btn" id="ops-stop" title="Stop (s)">■ Stop</button>
+  <button class="btn" id="ops-restart" title="Restart">↻ Restart</button>
+  <a class="btn" href="#ops-log" title="Jump to log">📄 Logs</a>
+  <a class="btn" href="/discovery/wizard" title="Discovery settings">⚙ Settings</a>
+  <span class="muted" id="ops-control-note" aria-live="polite"></span>
+</div>
 
-<div class="columns">
+<div id="ops-live">
+  <div class="ops-cards">
+    <section class="card ops-card" aria-label="Progress">
+      <span class="ops-label">Progress</span>
+      <div class="ops-big" id="ops-progress-count">0 / 0</div>
+      <div class="ops-sub" id="ops-progress-pct">0%</div>
+    </section>
+    <section class="card ops-card" aria-label="Discovery rate">
+      <span class="ops-label">Discovery Rate</span>
+      <div class="ops-big" id="ops-card-rate">0<span class="ops-unit"> dev/min</span></div>
+      <div class="ops-sub">Workers <span id="ops-card-workers">0 / 0</span> · <span id="ops-card-util">0%</span> busy</div>
+    </section>
+    <section class="card ops-card" aria-label="Discovery results">
+      <span class="ops-label">Discovery Results</span>
+      <ul class="ops-results">
+        <li><span class="ok">Reachable</span><span data-metric="ssh_reachable">0</span></li>
+        <li><span class="ok">Authenticated</span><span data-metric="authenticated">0</span></li>
+        <li><span>Supported</span><span data-metric="discovered">0</span></li>
+        <li><span class="warn">Failed</span><span data-metric="authentication_failures">0</span></li>
+      </ul>
+    </section>
+    <section class="card ops-card" aria-label="Current activity">
+      <span class="ops-label">Current Activity</span>
+      <div class="ops-activity" id="ops-current">
+        <div class="ops-big-sm">—</div>
+        <div class="ops-sub" id="ops-current-detail">Waiting…</div>
+      </div>
+    </section>
+  </div>
+
+  <section class="card">
+    <h2>Discovery Pipeline</h2>
+    <ol class="ops-pipeline" id="ops-pipeline">
+      <li data-stage="inventory">Inventory</li>
+      <li data-stage="platform_detection">Platform Detection</li>
+      <li data-stage="interfaces">Interfaces</li>
+      <li data-stage="neighbors">Neighbors</li>
+      <li data-stage="configuration">Configuration</li>
+      <li data-stage="graph">Enterprise Graph</li>
+    </ol>
+    <p class="muted">Inventory is prioritized — devices become usable the moment their identity is known, before deep discovery of the rest completes.</p>
+  </section>
+
+  <div class="columns">
+    <section class="card">
+      <h2>Workers <span class="muted" id="ops-worker-summary"></span></h2>
+      <ul class="ops-workers" id="ops-workers"></ul>
+    </section>
+    <section class="card">
+      <h2>Queue</h2>
+      <ul class="ops-queue" id="ops-queue"></ul>
+    </section>
+  </div>
+
+  <section class="card">
+    <h2>Live Inventory <span class="muted" id="ops-inventory-count"></span></h2>
+    <p class="muted">Nodes appear immediately after inventory — start using Atlas before discovery completes.</p>
+    <div class="ops-inventory" id="ops-inventory"></div>
+  </section>
+
   <section class="card">
     <h2>Discovery Metrics</h2>
-    <ul class="kv" id="exec-metrics">
-      <li><span>Addresses evaluated</span><span data-metric="addresses_evaluated">—</span></li>
-      <li><span>SSH reachable</span><span data-metric="ssh_reachable">—</span></li>
-      <li><span>Authenticated</span><span data-metric="authenticated">—</span></li>
-      <li><span>Discovered</span><span data-metric="discovered">—</span></li>
-      <li><span>Unsupported platforms</span><span data-metric="unsupported_platforms">—</span></li>
-      <li><span>Authentication failures</span><span data-metric="authentication_failures">—</span></li>
-      <li><span>Unreachable</span><span data-metric="unreachable">—</span></li>
-      <li><span>Average discovery time</span><span data-metric="average_discovery_seconds">—</span></li>
-      <li><span>Slowest stage</span><span data-metric="slowest_stage">—</span></li>
-      <li><span>Devices / minute</span><span data-metric="devices_per_minute">—</span></li>
-    </ul>
+    <div class="ops-metrics">
+      <div><span class="ops-label">Addresses evaluated</span><strong data-metric="addresses_evaluated">0</strong></div>
+      <div><span class="ops-label">SSH reachable</span><strong data-metric="ssh_reachable">0</strong></div>
+      <div><span class="ops-label">Authenticated</span><strong data-metric="authenticated">0</strong></div>
+      <div><span class="ops-label">Supported devices</span><strong data-metric="discovered">0</strong></div>
+      <div><span class="ops-label">Unsupported</span><strong data-metric="unsupported_platforms">0</strong></div>
+      <div><span class="ops-label">Auth failures</span><strong data-metric="authentication_failures">0</strong></div>
+      <div><span class="ops-label">Unreachable</span><strong data-metric="unreachable">0</strong></div>
+      <div><span class="ops-label">Devices / min</span><strong data-metric="devices_per_minute">0</strong></div>
+      <div><span class="ops-label">Avg SSH time</span><strong data-metric="average_ssh_seconds">0</strong></div>
+      <div><span class="ops-label">Avg auth time</span><strong data-metric="average_authentication_seconds">0</strong></div>
+      <div><span class="ops-label">Worker utilization</span><strong data-metric="worker_utilization_percent">0</strong></div>
+      <div><span class="ops-label">Slowest operation</span><strong data-metric="slowest_stage">—</strong></div>
+    </div>
   </section>
 
-  <section class="card">
-    <h2>Workers</h2>
-    <ul class="mission-list" id="exec-worker-list"><li class="muted">Idle</li></ul>
-    <h2>Queue</h2>
-    <ul class="mission-list" id="exec-queue-list"><li class="muted">—</li></ul>
+  <section class="card" id="ops-log">
+    <h2>Discovery Log</h2>
+    <ul class="ops-logstream" id="ops-logstream"></ul>
   </section>
 </div>
 
-<section class="card">
-  <h2>Discovery Log</h2>
-  <ul class="activity-stream" id="exec-log"><li class="muted">Waiting for execution events…</li></ul>
+<section class="card ops-complete" id="ops-complete" hidden>
+  <h2>Discovery complete</h2>
+  <p class="muted" id="ops-complete-summary"></p>
+  <div class="actions">
+    <a class="btn btn-primary" href="/?scope=all">Open Mission</a>
+    <a class="btn" href="/topology?scope=all">Enterprise Topology</a>
+    <a class="btn" href="/advisor">Open Advisor</a>
+    <a class="btn" href="/predict?scope=all">Prediction</a>
+    <a class="btn" href="/changes?scope=all">View Changes</a>
+  </div>
 </section>
 
 <script>
   (function () {
     "use strict";
-    var q = function (sel, root) { return (root || document).querySelector(sel); };
-    function setText(el, v) { if (el) el.textContent = (v === null || v === undefined) ? "—" : String(v); }
+    var $ = function (id) { return document.getElementById(id); };
+    var setText = function (el, v) { if (el) el.textContent = (v === null || v === undefined) ? "—" : String(v); };
+    var fmtDuration = function (s) {
+      if (s === null || s === undefined) return "—";
+      s = Math.round(s);
+      if (s < 60) return s + "s";
+      return Math.floor(s / 60) + "m " + (s % 60) + "s";
+    };
+    var escapeHtml = function (v) { var d = document.createElement("div"); d.textContent = String(v == null ? "" : v); return d.innerHTML; };
+
     function render(snap) {
-      var state = q("#exec-state");
-      setText(state, snap.state);
-      state.className = "badge job-badge job-badge-" +
-        (snap.state === "completed" ? "completed" : snap.state === "cancelled" || snap.state === "failed" ? "failed" : "running");
-      q("#exec-bar").style.width = (snap.progress_percent || 0) + "%";
+      var running = snap.state === "running" || snap.state === "inventory-pass" || snap.state === "deep-discovery-pass" || snap.state === "paused";
+      var badge = $("ops-state");
+      setText(badge, snap.state);
+      badge.className = "badge job-badge job-badge-" + (snap.state === "completed" ? "completed" : (snap.state === "cancelled" || snap.state === "failed") ? "failed" : "running");
+      if (snap.network) setText($("ops-network"), snap.network);
       var m = snap.metrics || {};
-      setText(q("#exec-elapsed"), (m.elapsed_seconds ?? "—") + "s");
-      setText(q("#exec-rate"), (m.devices_per_minute ?? 0) + " dev/min");
-      setText(q("#exec-workers"), m.worker_count);
-      setText(q("#exec-queue"), snap.queue_length);
+      setText($("ops-elapsed"), fmtDuration(m.elapsed_seconds));
+      setText($("ops-eta"), snap.eta_seconds ? fmtDuration(snap.eta_seconds) : "—");
+      setText($("ops-rate"), (m.devices_per_minute || 0) + " dev/min");
+      $("ops-bar").style.width = (snap.progress_percent || 0) + "%";
+      setText($("ops-progress-label"), (snap.processed || 0) + " / " + (snap.total || 0) + " devices");
+      setText($("ops-progress-count"), (snap.processed || 0) + " / " + (snap.total || 0));
+      setText($("ops-progress-pct"), (snap.progress_percent || 0) + "%");
+      setText($("ops-card-rate").firstChild, (m.devices_per_minute || 0));
+      setText($("ops-card-workers"), (m.worker_count || 0) + " / " + (m.worker_count || 0));
+      setText($("ops-card-util"), (m.worker_utilization_percent || 0) + "%");
+
+      // metric bindings
       Array.prototype.forEach.call(document.querySelectorAll("[data-metric]"), function (el) {
-        setText(el, m[el.getAttribute("data-metric")]);
+        var key = el.getAttribute("data-metric");
+        var v = m[key];
+        if (key.indexOf("seconds") >= 0 && typeof v === "number") v = v.toFixed(2) + "s";
+        if (key === "worker_utilization_percent") v = (v || 0) + "%";
+        setText(el, v);
       });
-      var workers = q("#exec-worker-list");
+
+      // current activity: first busy worker
+      var busy = (snap.workers || []).filter(function (w) { return !w.idle; });
+      if (busy.length) {
+        setText($("ops-current").querySelector(".ops-big-sm"), "Worker " + busy[0].worker_id);
+        setText($("ops-current-detail"), busy[0].address + " · " + (busy[0].stage || ""));
+      } else {
+        setText($("ops-current").querySelector(".ops-big-sm"), running ? "—" : "Complete");
+        setText($("ops-current-detail"), running ? "Waiting…" : "All candidates processed");
+      }
+
+      // workers
+      var workers = $("ops-workers");
       workers.innerHTML = "";
+      var alive = 0;
       (snap.workers || []).forEach(function (w) {
+        if (!w.idle) alive++;
         var li = document.createElement("li");
-        li.innerHTML = '<span class="activity-kind">Worker ' + w.worker_id + '</span>' +
-          (w.idle ? '<span class="muted">Idle</span>' : (w.address + ' · ' + (w.stage || '')));
+        li.className = "ops-worker" + (w.idle ? " idle" : "");
+        li.innerHTML = '<span class="ops-worker-id">W' + w.worker_id + '</span>' +
+          (w.idle ? '<span class="muted">Idle</span>' :
+            '<span class="ops-worker-addr">' + escapeHtml(w.address) + '</span><span class="ops-worker-stage">' + escapeHtml(w.stage || "") + '</span>');
         workers.appendChild(li);
       });
-      var queue = q("#exec-queue-list");
+      setText($("ops-worker-summary"), alive + " / " + (snap.workers || []).length + " active");
+
+      // queue
+      var queue = $("ops-queue");
       queue.innerHTML = "";
       var byOutcome = (snap.queue || {}).by_outcome || {};
-      Object.keys(byOutcome).sort().forEach(function (k) {
+      [["queued","Queued"],["running","Running"],["discovered","Completed"],["authentication-failed","Auth failed"],["unsupported-platform","Unsupported"],["unreachable","Failed"],["cancelled","Cancelled"]].forEach(function (pair) {
+        if (byOutcome[pair[0]] === undefined) return;
         var li = document.createElement("li");
-        li.innerHTML = '<span class="activity-kind">' + k + '</span>' + byOutcome[k];
+        li.innerHTML = '<span>' + pair[1] + '</span><strong>' + byOutcome[pair[0]] + '</strong>';
         queue.appendChild(li);
       });
-      var log = q("#exec-log");
+
+      // pipeline highlight (by slowest/current known stage)
+      var stage = (busy[0] && busy[0].stage) || "";
+      Array.prototype.forEach.call($("ops-pipeline").children, function (li) {
+        li.classList.toggle("active", stage.indexOf(li.getAttribute("data-stage").replace("_", " ")) >= 0);
+      });
+
+      // live inventory (nodes with role stencils)
+      var inv = $("ops-inventory");
+      inv.innerHTML = "";
+      (snap.nodes || []).forEach(function (n) {
+        var card = document.createElement("div");
+        card.className = "ops-node";
+        card.title = (n.role || "unknown") + " — " + (n.role_evidence || "");
+        card.innerHTML = (n.stencil ? '<img alt="' + escapeHtml(n.role) + '" src="' + n.stencil + '">' : '') +
+          '<div><strong>' + escapeHtml(n.hostname) + '</strong><span class="muted">' + escapeHtml(n.platform) + '</span></div>';
+        inv.appendChild(card);
+      });
+      setText($("ops-inventory-count"), (snap.nodes || []).length + " device(s)");
+
+      // log
+      var log = $("ops-logstream");
       log.innerHTML = "";
       (snap.log || []).slice().reverse().forEach(function (e) {
+        var ok = e.message.toLowerCase().indexOf("fail") < 0 && e.message.toLowerCase().indexOf("unreachable") < 0;
         var li = document.createElement("li");
-        li.innerHTML = '<span class="activity-kind">' + (e.platform || '—') + '</span>' +
-          '<span>' + e.address + '</span><span class="muted">' + e.message + '</span>';
+        li.innerHTML = '<span class="ops-log-mark ' + (ok ? "ok" : "bad") + '">' + (ok ? "✓" : "✗") + '</span>' +
+          '<span class="ops-log-addr">' + escapeHtml(e.address) + '</span>' +
+          '<span class="activity-kind">' + escapeHtml(e.platform || "—") + '</span>' +
+          '<span class="muted">' + escapeHtml(e.message) + '</span>';
         log.appendChild(li);
       });
+
+      // complete state
+      var done = snap.state === "completed";
+      $("ops-complete").hidden = !done;
+      if (done) {
+        setText($("ops-complete-summary"),
+          m.discovered + " device(s) discovered across " + m.addresses_evaluated + " address(es) — " +
+          m.authentication_failures + " auth failure(s), " + m.unreachable + " unreachable. " +
+          "First device usable in " + fmtDuration(snap.time_to_first_device_seconds) + ".");
+      }
     }
-    // The console renders the executor snapshot shape. In this build it
-    // loads a representative completed run; a live pooled job streams the
-    // identical structure.
-    fetch("/api/discovery/execution/demo")
-      .then(function (r) { return r.json(); })
-      .then(render)
-      .catch(function () {
-        q("#exec-log").innerHTML = '<li class="muted">No execution running.</li>';
-      });
-    ["pause", "resume", "cancel", "restart"].forEach(function (action) {
-      var btn = q("#exec-" + action);
-      if (btn) btn.addEventListener("click", function () {
-        setText(q("#exec-controls-note"), "Control sent: " + action);
-      });
+
+    function load() {
+      var url = new URLSearchParams(window.location.search).get("state") === "running"
+        ? "/api/discovery/execution/demo?state=running"
+        : "/api/discovery/execution/demo";
+      fetch(url).then(function (r) { return r.json(); }).then(render)
+        .catch(function () { $("ops-current-detail").textContent = "No discovery running."; });
+    }
+    load();
+
+    // Controls (keyboard: p pause, r resume, s stop)
+    var note = $("ops-control-note");
+    function control(name) { setText(note, "Control sent: " + name); }
+    ["resume","pause","stop","restart"].forEach(function (a) {
+      var b = $("ops-" + a); if (b) b.addEventListener("click", function () { control(a); });
+    });
+    document.addEventListener("keydown", function (e) {
+      if (e.target && /input|textarea|select/i.test(e.target.tagName)) return;
+      if (e.key === "p") control("pause");
+      else if (e.key === "r") control("resume");
+      else if (e.key === "s") control("stop");
     });
   })();
 </script>

@@ -202,9 +202,80 @@ def register_routes(app) -> None:
         enterprise_cache["graph"] = graph
         return graph, enterprise_cache["snapshot"]
 
+    def profile_for_scope(scope_id: str):
+        """The discovery profile that owns a scope id, or None."""
+
+        for profile in profile_service().list_profiles(include_archived=True):
+            scope = profile_scope(output_dir(), profile.profile_id, profile.name)
+            if scope.scope_id == scope_id:
+                return profile
+        return None
+
+    def scoped_world(scope_id: str):
+        """The graph + snapshot for the selected scope (PR-043.9, Part 1).
+
+        Scope is authoritative: at the Enterprise scope every consumer reads
+        the federated graph; at a network scope they read ONLY that
+        network's graph. A scoped world uses the profile's own snapshot —
+        which carries the full Evidence Correlation and discovery-statistics
+        metadata — so a scoped Advisor answer can never disagree with the
+        scoped Mission, Topology, Investigation, or Prediction.
+        Returns ``(graph, snapshot_dict, profiles)``."""
+
+        if scope_id == GLOBAL_SCOPE_ID:
+            graph, snapshot = enterprise_world()
+            return graph, snapshot, profile_service().list_profiles()
+        profile = profile_for_scope(scope_id)
+        if profile is None:
+            graph, snapshot = enterprise_world()
+            return graph, snapshot, profile_service().list_profiles()
+        # One network: build the graph from just this observation point and
+        # read its own richer snapshot.
+        graph = get_enterprise_graph(
+            output_dir(),
+            [profile],
+            catalog=SiteCatalogRepository(cfg("ATLAS_WORKSPACE_ROOT")).load(),
+            credential_memory=CredentialSuccessMemory(cfg("ATLAS_WORKSPACE_ROOT")),
+            now=now_iso(),
+        )
+        scope = profile_scope(output_dir(), profile.profile_id, profile.name)
+        snapshot = load_json(scope.snapshot_path)
+        return graph, snapshot, (profile,)
+
+    def network_resolution():
+        """The Enterprise → Network → Profile view derived from evidence
+        (PR-043.9, Part 6). Networks are clusters of observation points that
+        share technical identity — serials, router IDs, loopbacks,
+        addresses, topology — never the profile name."""
+
+        from founderos_atlas.enterprise import (
+            ObservationPoint,
+            fingerprint_snapshot,
+            resolve_networks,
+        )
+
+        observations = []
+        for profile in profile_service().list_profiles():
+            scope = profile_scope(output_dir(), profile.profile_id, profile.name)
+            snapshot = load_json(scope.snapshot_path)
+            if snapshot is None:
+                continue
+            observations.append(
+                ObservationPoint(
+                    profile_id=scope.scope_id,
+                    profile_name=profile.name,
+                    fingerprint=fingerprint_snapshot(
+                        snapshot, seeds=profile.all_seeds
+                    ),
+                    archived=profile.archived,
+                )
+            )
+        return resolve_networks(observations)
+
     def enterprise_context(graph) -> dict:
         """Federation facts every enterprise page displays."""
 
+        resolution = network_resolution()
         return {
             "enterprise_contributions": [
                 contribution.to_dict() for contribution in graph.contributions
@@ -213,6 +284,16 @@ def register_routes(app) -> None:
             "enterprise_device_count": graph.device_count,
             "enterprise_observation_count": graph.observation_count,
             "enterprise_merged_count": graph.merged_device_count,
+            # PR-043.9: Networks and duplicate candidates, evidence-derived.
+            "enterprise_network_count": resolution.network_count,
+            "enterprise_profile_count": resolution.profile_count,
+            "enterprise_networks": [
+                network.to_dict() for network in resolution.networks
+            ],
+            "enterprise_duplicate_candidates": [
+                candidate.to_dict()
+                for candidate in resolution.duplicate_candidates
+            ],
             "enterprise_cross_profile_links": len(graph.cross_profile_links),
             "enterprise_boundaries": [
                 {
@@ -425,14 +506,28 @@ def register_routes(app) -> None:
                 )
             record = HistoryRepository(scope.history_root).latest()
             if record is not None and record.failures:
-                failures.append(
-                    {
-                        "network": scope.label,
-                        "scope_id": scope.scope_id,
-                        "run_id": record.record_id,
-                        "count": len(record.failures),
-                    }
+                # PR-043.10 (POLISH, Part 1): unused CIDR addresses must never
+                # generate a Mission recommendation. Count only genuine
+                # discovery-coverage failures — reachable devices that could
+                # not be authenticated — from the graph's discovery
+                # statistics; a CIDR scan's empty addresses are excluded.
+                snapshot = load_json(scope.snapshot_path)
+                stats = (
+                    (snapshot or {}).get("metadata", {}).get("discovery_statistics")
                 )
+                if isinstance(stats, dict):
+                    coverage_failures = int(stats.get("authentication_failures") or 0)
+                else:
+                    coverage_failures = len(record.failures)  # legacy snapshots
+                if coverage_failures:
+                    failures.append(
+                        {
+                            "network": scope.label,
+                            "scope_id": scope.scope_id,
+                            "run_id": record.record_id,
+                            "count": coverage_failures,
+                        }
+                    )
         investigations = merge_recent(investigation_sets)
         predictions = [row for row in prediction_rows if row]
         predictions.sort(
@@ -485,8 +580,23 @@ def register_routes(app) -> None:
 
     @app.route("/profiles")
     def profiles():
-        rows = [profile_row(p) for p in profile_service().list_profiles()]
-        return render_template("profiles.html", profiles=rows, **base_context("profiles"))
+        # Management lists every observation point, archived included, and
+        # surfaces evidence-based duplicate-network candidates (PR-043.9).
+        rows = [
+            profile_row(p)
+            for p in profile_service().list_profiles(include_archived=True)
+        ]
+        resolution = network_resolution()
+        return render_template(
+            "profiles.html",
+            profiles=rows,
+            networks=[network.to_dict() for network in resolution.networks],
+            duplicate_candidates=[
+                candidate.to_dict()
+                for candidate in resolution.duplicate_candidates
+            ],
+            **base_context("profiles"),
+        )
 
     @app.route("/profiles/new")
     def profile_new():
@@ -568,7 +678,41 @@ def register_routes(app) -> None:
     def profile_delete(name: str):
         try:
             profile_service().delete_profile(name)
-            flash("Profile deleted.", "success")
+            flash(
+                "Discovery profile deleted. The network's enterprise "
+                "knowledge is unaffected if another profile observes it.",
+                "success",
+            )
+        except AtlasWorkspaceError as error:
+            flash(str(error), "error")
+        return redirect(url_for("profiles"))
+
+    @app.route("/profiles/<name>/duplicate", methods=["POST"])
+    def profile_duplicate(name: str):
+        try:
+            new_name = request.form.get("new_name", "").strip() or None
+            clone = profile_service().duplicate_profile(name, new_name=new_name)
+            flash(
+                f"Profile duplicated as {clone.name!r}. It observes the same "
+                "estate — Atlas will flag it as a duplicate-network "
+                "candidate once it discovers.",
+                "success",
+            )
+        except AtlasWorkspaceError as error:
+            flash(str(error), "error")
+        return redirect(url_for("profiles"))
+
+    @app.route("/profiles/<name>/archive", methods=["POST"])
+    def profile_archive(name: str):
+        restore = request.form.get("restore") == "1"
+        try:
+            profile_service().archive_profile(name, archived=not restore)
+            flash(
+                "Profile restored." if restore else
+                "Profile archived — hidden from discovery and enterprise "
+                "aggregation. Its network knowledge is retained.",
+                "success",
+            )
         except AtlasWorkspaceError as error:
             flash(str(error), "error")
         return redirect(url_for("profiles"))
@@ -855,48 +999,16 @@ def register_routes(app) -> None:
     def api_discovery_execution_demo():
         """A representative execution snapshot so the console renders and
         is testable without a live long-running run. Deterministic; the
-        same shape a real pooled run's ``execution.snapshot()`` returns."""
+        same shape a real pooled run's ``execution.snapshot()`` returns.
 
-        from founderos_atlas.discovery.executor import (
-            DiscoveryExecution,
-            OUTCOME_AUTH_FAILED,
-            OUTCOME_DISCOVERED,
-            OUTCOME_UNREACHABLE,
-            StageTimer,
-            run_pool,
-        )
+        ``?state=running`` returns a mid-run sample (alive workers,
+        draining queue, ETA); the default returns a completed run with a
+        real reconciled node inventory, honest metrics, and the log.
+        """
 
-        addresses = [f"172.20.20.{i}" for i in range(11, 27)]
-
-        def demo_clock():
-            demo_clock.t += 0.01
-            return demo_clock.t
-
-        demo_clock.t = 0.0
-
-        def worker(address, timer):
-            last = int(address.rsplit(".", 1)[-1])
-            with timer.stage("tcp_connect"):
-                pass
-            if last % 7 == 0:
-                return None, OUTCOME_UNREACHABLE, None, f"{address} unreachable"
-            if last % 5 == 0:
-                return None, OUTCOME_AUTH_FAILED, None, f"{address} auth failed"
-            with timer.stage("authentication"):
-                pass
-            platform = "frr" if last % 3 == 0 else "ios"
-            return (
-                {"address": address},
-                OUTCOME_DISCOVERED,
-                platform,
-                f"{address} — {platform} inventory complete",
-            )
-
-        execution = DiscoveryExecution(
-            addresses, worker_count=4, clock=demo_clock
-        )
-        run_pool(execution, worker)
-        return jsonify(execution.snapshot())
+        if request.args.get("state") == "running":
+            return jsonify(_running_execution_sample())
+        return jsonify(_completed_execution_demo())
 
     # -- Topology / History / Changes --------------------------------------
 
@@ -1466,16 +1578,21 @@ def register_routes(app) -> None:
         return ConversationRepository(output_dir())
 
     def advisor_ask(question: str):
-        """Answer through the SAME cached graph and search index the GUI
-        uses — Advisor orchestrates, it never re-derives."""
+        """Answer through the SAME graph the GUI shows for the SELECTED
+        scope (PR-043.9, Part 1) — Advisor orchestrates, never re-derives.
+
+        At a network scope Advisor consumes only that network's graph, so
+        its answer agrees with the scoped Mission/Topology; at the
+        Enterprise scope it consumes the federated graph."""
 
         from founderos_atlas.advisor import ask
 
-        graph, snapshot = enterprise_world()
+        scope_id = active_scope_id(known_scopes())
+        graph, snapshot, profiles = scoped_world(scope_id)
         return ask(
             question,
             base_output_dir=output_dir(),
-            profiles=profile_service().list_profiles(),
+            profiles=profiles,
             graph=graph,
             snapshot=snapshot,
             search_index=current_search_index(),
@@ -1688,6 +1805,143 @@ def register_routes(app) -> None:
         return send_from_directory(str(output_dir()), name)
 
 
+def _completed_execution_demo() -> dict:
+    """A real completed pooled run over a representative subnet — honest
+    nodes/metrics/log; the same schema a live run streams (PR-043.4)."""
+
+    from founderos_atlas.discovery.executor import (
+        DiscoveryExecution,
+        OUTCOME_AUTH_FAILED,
+        OUTCOME_DISCOVERED,
+        OUTCOME_UNREACHABLE,
+        run_pool,
+    )
+
+    class _Dev:
+        def __init__(self, hostname, platform, vendor):
+            self.hostname, self.platform, self.vendor = hostname, platform, vendor
+            self.os_name = platform
+            self.metadata = {}
+
+    class _Res:
+        def __init__(self, dev):
+            self.device, self.interfaces = dev, ()
+
+    addresses = [f"172.20.20.{i}" for i in range(11, 27)]
+    clock = {"t": 0.0}
+
+    def demo_clock():
+        clock["t"] += 0.01
+        return clock["t"]
+
+    def worker(address, timer):
+        last = int(address.rsplit(".", 1)[-1])
+        with timer.stage("tcp_connect"):
+            pass
+        if last % 7 == 0:
+            return None, OUTCOME_UNREACHABLE, None, f"{address} unreachable"
+        if last % 5 == 0:
+            return None, OUTCOME_AUTH_FAILED, None, f"{address} auth failed"
+        with timer.stage("authentication"):
+            pass
+        with timer.stage("platform_detection"):
+            pass
+        platform = "FRRouting" if last % 3 == 0 else "IOSv"
+        family = "frr" if last % 3 == 0 else "ios"
+        dev = _Dev(f"r{last}", platform, family)
+        return (
+            _Res(dev),
+            OUTCOME_DISCOVERED,
+            family,
+            f"{address} — {family} inventory complete",
+        )
+
+    execution = DiscoveryExecution(addresses, worker_count=8, clock=demo_clock)
+    run_pool(execution, worker)
+    return execution.snapshot()
+
+
+def _running_execution_sample() -> dict:
+    """A deterministic mid-run snapshot (alive workers, draining queue,
+    ETA) matching the live snapshot schema — for the console's running
+    state; explicitly a representative sample, not a live run."""
+
+    from founderos_atlas.visualization.stencils import stencil_data_uri
+
+    def node(last, family):
+        role = "router" if family == "frr" else "layer2_switch" if last % 2 else "router"
+        return {
+            "address": f"172.20.20.{last}",
+            "hostname": f"r{last}",
+            "platform": "FRRouting" if family == "frr" else "IOSv",
+            "vendor": family,
+            "role": role,
+            "role_evidence": "platform model evidence",
+            "stencil": stencil_data_uri(role),
+        }
+
+    discovered = [node(i, "frr" if i % 3 == 0 else "ios") for i in range(11, 30)]
+    return {
+        "state": "running",
+        "network": "Delhi Lab",
+        "progress_percent": 42,
+        "processed": 42,
+        "total": 100,
+        "eta_seconds": 48.0,
+        "time_to_first_device_seconds": 2.1,
+        "queue": {
+            "total": 100,
+            "completed_cached": 0,
+            "pending": 50,
+            "by_outcome": {
+                "discovered": 38,
+                "authentication-failed": 3,
+                "unreachable": 1,
+                "running": 8,
+                "queued": 50,
+            },
+        },
+        "queue_length": 50,
+        "workers": [
+            {"worker_id": 0, "address": "172.20.20.35", "stage": "collecting interfaces", "idle": False},
+            {"worker_id": 1, "address": "172.20.20.41", "stage": "collecting routes", "idle": False},
+            {"worker_id": 2, "address": "172.20.20.18", "stage": "platform detection", "idle": False},
+            {"worker_id": 3, "address": "172.20.20.52", "stage": "ssh connected", "idle": False},
+            {"worker_id": 4, "address": "172.20.20.61", "stage": "authenticating", "idle": False},
+            {"worker_id": 5, "address": "172.20.20.29", "stage": "collecting neighbors", "idle": False},
+            {"worker_id": 6, "address": "172.20.20.44", "stage": "connecting", "idle": False},
+            {"worker_id": 7, "address": "172.20.20.12", "stage": "identity", "idle": False},
+        ],
+        "metrics": {
+            "addresses_evaluated": 42,
+            "ssh_reachable": 39,
+            "authenticated": 38,
+            "discovered": 38,
+            "unsupported_platforms": 0,
+            "authentication_failures": 3,
+            "unreachable": 1,
+            "skipped": 0,
+            "elapsed_seconds": 151.0,
+            "worker_count": 8,
+            "average_discovery_seconds": 3.2,
+            "average_ssh_seconds": 0.41,
+            "average_authentication_seconds": 0.28,
+            "average_platform_detection_seconds": 0.19,
+            "slowest_stage": "configuration",
+            "slowest_stage_seconds": 1.8,
+            "devices_per_minute": 24.0,
+            "worker_utilization_percent": 92,
+        },
+        "nodes": discovered,
+        "log": [
+            {"address": "172.20.20.35", "platform": "ios", "message": "172.20.20.35 — Cisco IOS inventory complete"},
+            {"address": "172.20.20.41", "platform": "frr", "message": "172.20.20.41 — FRRouting routes collected"},
+            {"address": "172.20.20.22", "platform": None, "message": "172.20.20.22 authentication failed"},
+        ],
+        "candidate_metrics": [],
+    }
+
+
 def _int(value, default):
     if value is None or str(value).strip() == "":
         return default
@@ -1738,17 +1992,29 @@ def make_pipeline_runner(app):
         from founderos_atlas.transport import SSHDeviceTransport
         from founderos_atlas.workspace import profile_scope
 
-        base_factory = app.config["ATLAS_TRANSPORT_FACTORY"] or SSHDeviceTransport
+        injected_factory = app.config["ATLAS_TRANSPORT_FACTORY"]
+        base_factory = injected_factory or SSHDeviceTransport
 
         def tracking_factory(credentials):
             on_connect(credentials.host)
             return base_factory(credentials)
+
+        # PR-043.6 (FALCON): gate real SSH behind a fast TCP reachability
+        # probe so dead subnet addresses never pay an SSH timeout. Only
+        # applied with the real transport — an injected (test/fake) factory
+        # skips the probe so scripted networks are never TCP-probed.
+        reachability = None
+        if injected_factory is None:
+            from founderos_atlas.transport.reachability import TcpReachability
+
+            reachability = TcpReachability()
 
         out = app.config["ATLAS_OUTPUT_DIR"]
         atlas_discover_command(
             profile=profile_name,
             profile_service=app.config["ATLAS_PROFILE_SERVICE"],
             transport_factory=tracking_factory,
+            reachability=reachability,
             clock=app.config["ATLAS_CLOCK"],
             topology_output=out / "atlas_topology.html",
             snapshot_output=out / "topology_snapshot.json",

@@ -223,22 +223,40 @@ class HonestyTests(unittest.TestCase):
         )
         self.assertTrue(result.unknowns)
 
-    def test_equal_cost_paths_are_reported_as_ambiguity(self) -> None:
+    def test_equal_cost_paths_are_reported_as_redundancy(self) -> None:
+        # Multiple equal-cost paths are REDUNDANCY (a resilient design), not
+        # a failure: the endpoints are connected via several paths, reported
+        # positively. Only WHICH path a flow uses stays an honest unknown.
         result = investigate_path("R1", "SW9", snapshot=diamond(), generated_at=NOW)
-        self.assertEqual("ambiguous", result.status)
-        self.assertEqual("ambiguous-topology", result.failure_type)
-        candidates = result.basis["candidate_paths"]
+        self.assertEqual("connected", result.status)   # not "ambiguous"
+        self.assertIsNone(result.failure_type)
+        candidates = result.basis["redundant_paths"]
         self.assertEqual(2, len(candidates))
         self.assertIn("R1 → A → SW9", candidates)
         self.assertIn("R1 → B → SW9", candidates)
-        self.assertEqual((), result.hops)  # nothing was guessed through
+        self.assertEqual(2, result.basis["redundant_path_count"])
+        self.assertEqual(2, result.basis["validated_up_paths"])
+        self.assertEqual(0, result.basis["degraded_paths"])
+        # A representative validated path carries the hop detail.
+        self.assertTrue(result.hops)
+        self.assertTrue(all(hop.status != "failed" for hop in result.hops))
+        # Redundancy is framed as resilience.
         self.assertTrue(
-            any("Investigate each candidate path" in item
-                for item in result.recommendations)
+            any("resilience" in item.casefold() for item in result.recommendations)
         )
+        # Path selection stays an honest unknown, but never a failure.
         self.assertTrue(
-            any("Routing evidence" in item for item in result.unknowns)
+            any("which of the equal-cost paths" in item.casefold()
+                for item in result.unknowns)
         )
+
+    def test_equal_cost_paths_with_all_down_is_a_real_failure(self) -> None:
+        # If EVERY redundant path has a broken hop, that's a genuine failure.
+        snap = diamond()
+        snap = set_interface_status(snap, "A", "Gi0/2", "down")
+        snap = set_interface_status(snap, "B", "Gi0/2", "down")
+        result = investigate_path("R1", "SW9", snapshot=snap, generated_at=NOW)
+        self.assertEqual("failed", result.status)
 
     def test_missing_interface_record_is_a_warning_not_a_failure(self) -> None:
         snapshot = chain()

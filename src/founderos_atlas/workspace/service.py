@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 
 from .credentials import CredentialProvider, resolve_credential_provider
 from .exceptions import (
+    AtlasWorkspaceError,
     CredentialStoreUnavailableError,
     DuplicateProfileError,
     InvalidProfileError,
@@ -78,8 +79,17 @@ class ProfileService:
 
     # -- read ---------------------------------------------------------------
 
-    def list_profiles(self) -> tuple[DiscoveryProfile, ...]:
-        return self._repository.list()
+    def list_profiles(
+        self, *, include_archived: bool = False
+    ) -> tuple[DiscoveryProfile, ...]:
+        """Discovery profiles. Archived observation points are excluded by
+        default (they take no part in active discovery or enterprise
+        aggregation); management views pass ``include_archived=True``."""
+
+        profiles = self._repository.list()
+        if include_archived:
+            return profiles
+        return tuple(profile for profile in profiles if not profile.archived)
 
     def get_profile(self, name: str) -> DiscoveryProfile:
         return self._repository.get(name)
@@ -210,9 +220,78 @@ class ProfileService:
         self._repository.replace(existing.name, updated)
         return updated
 
+    # -- archive / duplicate (PR-043.9) -------------------------------------
+
+    def archive_profile(self, name: str, *, archived: bool = True) -> DiscoveryProfile:
+        """Archive (or restore) an observation point without deleting it.
+
+        Archiving removes the profile from active discovery and enterprise
+        aggregation; the Network and Enterprise Knowledge it contributed
+        to are untouched and its artifacts remain on disk."""
+
+        existing = self._repository.get(name)
+        updated = replace(existing, archived=archived, updated_at=self._now())
+        self._repository.save(updated)
+        return updated
+
+    def duplicate_profile(
+        self, name: str, *, new_name: str | None = None
+    ) -> DiscoveryProfile:
+        """Clone an observation point's discovery method and settings under
+        a new identity, copying its credential.
+
+        The clone is a NEW observation point (its own ``profile_id`` and
+        scope); it observes the same estate, so Atlas will flag it as a
+        duplicate-network candidate once both have discovered — never
+        merging automatically (Part 3)."""
+
+        source = self._repository.get(name)
+        target_name = (new_name or f"{source.name} (copy)").strip()
+        if not target_name:
+            raise InvalidProfileError("A profile name is required.")
+        if self._repository.exists(target_name):
+            raise DuplicateProfileError(
+                f"A profile named {target_name!r} already exists."
+            )
+        profile_id = self._unique_profile_id(target_name)
+        credential_ref = credential_ref_for(profile_id)
+        now = self._now()
+        clone = replace(
+            source,
+            profile_id=profile_id,
+            name=target_name,
+            credential_ref=credential_ref,
+            created_at=now,
+            updated_at=now,
+            last_discovery=None,   # the clone has not discovered yet
+            archived=False,
+        )
+        # Copy the secret to the clone's own reference; the clone is
+        # independent, so deleting either never affects the other.
+        try:
+            password = self._credentials.get(source.credential_ref)
+        except AtlasWorkspaceError:
+            password = None
+        if password:
+            self._ensure_credential_store()
+            self._credentials.save(credential_ref, password)
+        try:
+            self._repository.add(clone)
+        except Exception:
+            if password:
+                self._credentials.delete(credential_ref)
+            raise
+        return clone
+
     # -- delete -------------------------------------------------------------
 
     def delete_profile(self, name: str) -> DiscoveryProfile:
+        """Remove only this observation profile and its credential.
+
+        The Network and Enterprise Knowledge are derived views over the
+        remaining profiles — a network still observed by another profile
+        survives this deletion (PR-043.9, Part 4)."""
+
         removed = self._repository.delete(name)
         self._credentials.delete(removed.credential_ref)
         return removed

@@ -231,8 +231,17 @@ def atlas_discover_command(
     progress: Callable[[str], None] | None = None,
     profile: str | None = None,
     profile_service: ProfileService | None = None,
+    workers: int | None = None,
+    reachability=None,
 ) -> tuple[int, str]:
-    """The unified Atlas pipeline: one command, the complete workflow."""
+    """The unified Atlas pipeline: one command, the complete workflow.
+
+    ``workers`` and ``reachability`` (PR-043.6) run discovery through the
+    concurrent, reachability-gated production path. ``workers`` defaults
+    to a bounded pool sized to the candidate count; ``reachability``
+    defaults to a fast TCP probe so dead addresses never pay an SSH
+    timeout. Both are injectable for tests.
+    """
 
     read_input = input_reader or input
     read_password = password_reader or getpass.getpass
@@ -373,6 +382,14 @@ def atlas_discover_command(
             on_neighbor = credential_factory.prime_neighbor
 
         traversal_factory = credential_factory or host_transport
+        # PR-043.6 (FALCON): the production discovery path runs concurrently
+        # through the multihop worker pool and gates every candidate behind
+        # a fast TCP reachability probe, so dead addresses never pay an SSH
+        # timeout. Sizing is bounded and deterministic; both are injectable.
+        candidate_count = 1 + len(active_seeds or ())
+        resolved_workers = (
+            workers if workers is not None else min(32, max(4, candidate_count))
+        )
         report, graph, snapshot = run_multihop_discovery(
             traversal_factory,
             credentials.host,
@@ -380,6 +397,8 @@ def atlas_discover_command(
             policy=active_boundary,
             extra_seeds=active_seeds or (),
             on_neighbor=on_neighbor,
+            reachability=reachability,
+            workers=resolved_workers,
         )
     except AtlasTransportError as error:
         raise CliError(str(error)) from error

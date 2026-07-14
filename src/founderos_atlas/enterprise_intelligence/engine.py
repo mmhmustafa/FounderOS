@@ -201,17 +201,60 @@ class IntelligenceEvidence:
         return tuple(sorted(set(hosts)))
 
     @property
+    def discovery_statistics(self) -> dict | None:
+        """The discovery statistics recorded in the graph (PR-043.8), or
+        None for legacy snapshots without them."""
+
+        metadata = (self.snapshot or {}).get("metadata") or {}
+        stats = metadata.get("discovery_statistics")
+        return dict(stats) if isinstance(stats, dict) else None
+
+    @property
     def unreachable_hosts(self) -> tuple[str, ...]:
+        # PR-043.10 (POLISH, Part 3): unused/candidate addresses from a CIDR
+        # scan are discovery COVERAGE, never operational risks. When the
+        # graph carries discovery statistics, non-authentication failures are
+        # unused addresses — excluded here. A device that was genuinely
+        # managed before and is now gone surfaces as a device-removed
+        # finding (a baseline comparison), not a candidate scan failure.
+        if self.discovery_statistics is not None:
+            return ()
         auth = set(self.auth_failed_hosts)
         return tuple(sorted(set(self.failed_hosts) - auth))
 
     @property
-    def recurring_unstable_hosts(self) -> tuple[str, ...]:
-        """Hosts that failed in two or more of the recent discoveries."""
+    def coverage_failed_count(self) -> int:
+        """Discovery-coverage shortfall for CONFIDENCE only (never health):
+        reachable devices that could not be authenticated. Unused addresses
+        never count."""
 
+        stats = self.discovery_statistics
+        if stats is not None:
+            return int(stats.get("authentication_failures") or 0)
+        return len(self.failed_hosts)
+
+    @property
+    def recurring_unstable_hosts(self) -> tuple[str, ...]:
+        """Hosts that failed in two or more of the recent discoveries.
+
+        PR-043.10 (POLISH, Part 3): a CIDR scan re-attempts the same unused
+        addresses every run, so they would look "repeatedly unstable" — but
+        an empty address is discovery coverage, not an unstable device. When
+        the graph carries discovery statistics, only genuine current
+        failures (reachable devices that could not be authenticated) can be
+        flagged as recurring instability."""
+
+        if self.discovery_statistics is not None:
+            genuine = set(self.auth_failed_hosts)
+            if not genuine:
+                return ()
+        else:
+            genuine = None
         counts: dict[str, int] = {}
         for record in self.recent_records:
             for host in set(record.failures):
+                if genuine is not None and host not in genuine:
+                    continue  # unused/candidate address — never instability
                 counts[host] = counts.get(host, 0) + 1
         current = set(self.failed_hosts)
         return tuple(

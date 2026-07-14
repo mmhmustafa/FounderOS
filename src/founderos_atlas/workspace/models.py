@@ -72,6 +72,10 @@ class DiscoveryProfile:
     credential_sets: tuple[str, ...] = ()
     site_hint: str | None = None
     domain_hint: str | None = None
+    # PR-043.9: a Discovery Profile is an observation point. Archiving hides
+    # it from active discovery and enterprise aggregation without deleting
+    # it or the Network/Enterprise Knowledge it contributed to.
+    archived: bool = False
 
     def __post_init__(self) -> None:
         for field_name in ("profile_id", "name", "username", "credential_ref"):
@@ -94,6 +98,8 @@ class DiscoveryProfile:
             raise InvalidProfileError("max_devices must be between 1 and 4096")
         if not isinstance(self.collect_configuration, bool):
             raise InvalidProfileError("collect_configuration must be a boolean")
+        if not isinstance(self.archived, bool):
+            raise InvalidProfileError("archived must be a boolean")
         object.__setattr__(self, "name", " ".join(self.name.strip().split()))
         object.__setattr__(self, "site", (self.site.strip() or None) if isinstance(self.site, str) else None)
         normalized_seeds: list[str] = []
@@ -151,6 +157,7 @@ class DiscoveryProfile:
             "credential_sets": list(self.credential_sets),
             "site_hint": self.site_hint,
             "domain_hint": self.domain_hint,
+            "archived": self.archived,
         }
 
     @classmethod
@@ -183,6 +190,7 @@ class DiscoveryProfile:
                 ),
                 site_hint=value.get("site_hint"),
                 domain_hint=value.get("domain_hint"),
+                archived=bool(value.get("archived", False)),
             )
         except KeyError as error:
             raise InvalidProfileError(f"profile is missing field {error}") from error
