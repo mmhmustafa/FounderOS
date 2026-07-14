@@ -1010,6 +1010,215 @@ def register_routes(app) -> None:
             return jsonify(_running_execution_sample())
         return jsonify(_completed_execution_demo())
 
+    # -- Configuration Memory (PR-044) -------------------------------------
+
+    def display_timezone():
+        """The zone the GUI renders stored UTC instants in (display only)."""
+
+        from .timefmt import resolve_timezone
+
+        return resolve_timezone(app.config.get("ATLAS_DISPLAY_TIMEZONE"))
+
+    def config_memory_store(scope):
+        """The Configuration Memory of one scope — what Atlas remembers."""
+
+        from founderos_atlas.config_memory import ConfigMemoryStore
+
+        return ConfigMemoryStore(scope.output_dir / "config-memory")
+
+    def config_memory_scopes(scopes, scope_id):
+        """The scopes a Configuration view covers: one network, or all."""
+
+        if scope_id == GLOBAL_SCOPE_ID:
+            return aggregation_scopes(scopes)
+        return (scopes[scope_id],)
+
+    @app.route("/configuration")
+    def configuration_page():
+        """Browse remembered configuration: devices, versions, timeline."""
+
+        from founderos_atlas.config_memory import enterprise_timeline, group_by_day
+
+        from .timefmt import day_key_for, format_timestamp, format_with_relative
+
+        tz = display_timezone()
+        context, scopes, scope_id = scoped_context("configuration")
+        devices: list[dict] = []
+        events: list = []
+        totals = {
+            "devices": 0, "versions": 0, "observations": 0,
+            "unique_configurations": 0, "stored_bytes": 0,
+            "deduplicated_observations": 0,
+        }
+        for scope in config_memory_scopes(scopes, scope_id):
+            store = config_memory_store(scope)
+            histories = store.histories()
+            for history in histories:
+                latest = history.latest
+                devices.append(
+                    {
+                        "device_id": history.device_id,
+                        "hostname": history.hostname,
+                        "network": history.network,
+                        "scope_id": scope.scope_id,
+                        "version_count": history.version_count,
+                        "observations": history.total_observations,
+                        "last_seen": (
+                            format_with_relative(latest.last_seen, tz=tz)
+                            if latest
+                            else "—"
+                        ),
+                        "platform": latest.snapshot.platform if latest else "—",
+                    }
+                )
+            events.extend(
+                enterprise_timeline(histories, config_text=store.config_text)
+            )
+            for key, value in store.statistics().items():
+                if key in totals:
+                    totals[key] += value
+        devices.sort(key=lambda row: row["hostname"].casefold())
+        events.sort(key=lambda item: item.occurred_at, reverse=True)
+        # Sorting and day-keying use the stored UTC instants; only the
+        # rendered strings are converted to the operator's zone.
+        days = group_by_day(tuple(events[:60]), day_of=day_key_for(tz))
+        for day in days:
+            for event in day["events"]:
+                event["occurred_at"] = format_timestamp(event["occurred_at"], tz=tz)
+        return render_template(
+            "configuration.html",
+            devices=devices,
+            timeline=days,
+            change_count=len(events),
+            totals=totals,
+            search=request.args.get("q", "").strip(),
+            **context,
+        )
+
+    def _find_history(scopes, scope_id, device_id):
+        """(store, history, scope) for a device across the active scope(s)."""
+
+        for scope in config_memory_scopes(scopes, scope_id):
+            store = config_memory_store(scope)
+            history = store.history(device_id)
+            if history is not None:
+                return store, history, scope
+        return None, None, None
+
+    @app.route("/configuration/<path:device_id>")
+    def configuration_device(device_id: str):
+        """One device's version history, with an optional comparison."""
+
+        from founderos_atlas.config_memory import (
+            config_view,
+            device_timeline,
+            extract_facts,
+            semantic_diff,
+            text_diff,
+        )
+
+        from .timefmt import format_timestamp, format_with_relative
+
+        tz = display_timezone()
+        context, scopes, scope_id = scoped_context("configuration")
+        store, history, _scope = _find_history(scopes, scope_id, device_id)
+        if history is None:
+            flash(
+                "Atlas has no remembered configuration for that device in "
+                "this scope.",
+                "error",
+            )
+            return redirect(url_for("configuration_page"))
+
+        latest = history.latest
+        # Default comparison: the previous version against the latest.
+        current_number = _int(request.args.get("current"), latest.version)
+        default_previous = max(1, current_number - 1)
+        previous_number = _int(request.args.get("previous"), default_previous)
+        current = history.version(current_number) or latest
+        previous = history.version(previous_number)
+
+        comparison = None
+        semantic = ()
+        facts = None
+        viewer = None
+        current_text = store.config_text(current.config_sha256)
+        if current_text is not None:
+            # view() keeps the counts AND the detail behind them; an
+            # operator opening a device asks "which neighbours", not "how
+            # many".
+            facts = extract_facts(current_text).view()
+            # Reading a remembered configuration is the point of
+            # remembering it. Masked — export is the only raw path.
+            viewer = config_view(current_text).to_dict()
+        if previous is not None and previous.version != current.version:
+            before = store.config_text(previous.config_sha256)
+            after = current_text
+            if before is not None and after is not None:
+                comparison = text_diff(before, after, context_lines=3).to_dict()
+                semantic = tuple(
+                    event.to_dict()
+                    for event in semantic_diff(
+                        extract_facts(before), extract_facts(after)
+                    )
+                )
+        def _version_row(version):
+            row = version.to_dict()
+            row["first_seen"] = format_timestamp(version.first_seen, tz=tz)
+            row["last_seen"] = format_with_relative(version.last_seen, tz=tz)
+            return row
+
+        def _timeline_row(event):
+            row = event.to_dict()
+            row["occurred_at"] = format_timestamp(event.occurred_at, tz=tz)
+            return row
+
+        return render_template(
+            "configuration_device.html",
+            history=history.to_dict(),
+            versions=[_version_row(version) for version in history.versions],
+            current=current.to_dict(),
+            previous=previous.to_dict() if previous else None,
+            comparison=comparison,
+            semantic=semantic,
+            facts=facts,
+            viewer=viewer,
+            timeline=[
+                _timeline_row(event)
+                for event in device_timeline(history, config_text=store.config_text)
+            ],
+            **context,
+        )
+
+    @app.route("/configuration/<path:device_id>/export/<int:version>")
+    def configuration_export(device_id: str, version: int):
+        """Export one remembered version as text.
+
+        SENSITIVE: this is the exact device configuration. It is served
+        only to the local operator over the loopback GUI, never masked —
+        an export is the one place the raw text is the point.
+        """
+
+        from flask import Response
+
+        from founderos_atlas.config import safe_artifact_name
+
+        _context, scopes, scope_id = scoped_context("configuration")
+        store, history, _scope = _find_history(scopes, scope_id, device_id)
+        if history is None:
+            abort(404)
+        text = store.version_text(device_id, version)
+        if text is None:
+            abort(404)
+        filename = f"{safe_artifact_name(history.hostname)}-v{version}.txt"
+        return Response(
+            text,
+            # mimetype= appends its own charset; passing one here produced
+            # "text/plain; charset=utf-8; charset=utf-8".
+            content_type="text/plain; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
     # -- Topology / History / Changes --------------------------------------
 
     @app.route("/topology")
@@ -1782,12 +1991,18 @@ def register_routes(app) -> None:
 
     @app.route("/settings")
     def settings():
+        from .timefmt import AUTO, timezone_label
+
         provider = resolve_credential_provider()
         try:
             available = provider.available()
         except Exception:  # pragma: no cover - defensive
             available = False
+        tz_setting = str(app.config.get("ATLAS_DISPLAY_TIMEZONE") or AUTO)
         context = {
+            "display_timezone_setting": tz_setting,
+            "display_timezone_label": timezone_label(display_timezone()),
+            "display_timezone_is_auto": tz_setting.casefold() == AUTO,
             "workspace_root": str(cfg("ATLAS_WORKSPACE_ROOT")),
             "output_dir": str(output_dir()),
             "history_root": str(cfg("ATLAS_HISTORY_ROOT")),

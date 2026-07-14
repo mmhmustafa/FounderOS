@@ -7,6 +7,7 @@ runs the same in-process backend services the CLI uses (never a subprocess).
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
@@ -20,6 +21,7 @@ from founderos_atlas.workspace import (
 )
 
 from .jobs import DiscoveryJobManager
+from .timefmt import AUTO
 from .routes import make_pipeline_runner, register_routes
 
 
@@ -87,6 +89,12 @@ def create_app(
         ATLAS_TRANSPORT_FACTORY=transport_factory,
         ATLAS_CLOCK=clock,
         ATLAS_HOST=DEFAULT_HOST,
+        # Display only. Every stored timestamp stays UTC; this decides the
+        # zone the GUI renders them in. "auto" = the local operator's own
+        # system clock; "UTC" or an IANA name (e.g. "Asia/Kolkata")
+        # overrides it — NOC teams often standardise on UTC to correlate
+        # against device syslog.
+        ATLAS_DISPLAY_TIMEZONE=os.environ.get("ATLAS_DISPLAY_TIMEZONE", AUTO),
     )
     app.secret_key = "atlas-local-alpha"  # only used for flash messages, local-only
 

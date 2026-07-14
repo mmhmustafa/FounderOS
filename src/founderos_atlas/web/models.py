@@ -21,6 +21,8 @@ NAV_ITEMS = (
     ("profiles", "Profiles", "/profiles"),
     ("credentials", "Credentials", "/credentials"),
     ("topology", "Topology", "/topology"),
+    # PR-044 (MEMORY): Configuration Memory — what existed yesterday.
+    ("configuration", "Configuration", "/configuration"),
     ("predict", "Predict", "/predict"),
     ("paths", "Paths", "/paths"),
     ("compass", "Compass", "/compass"),

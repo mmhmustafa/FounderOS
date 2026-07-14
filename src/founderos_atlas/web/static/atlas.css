@@ -247,3 +247,21 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 .flash-success { background: #dcfce7; color: #166534; }
 .flash-error { background: #fee2e2; color: #b91c1c; }
 .log pre { background: #0f172a; color: #e2e8f0; padding: 12px; border-radius: 8px; overflow-x: auto; font-size: 12px; }
+
+/* PR-044 (MEMORY): configuration version comparison. Colour carries the
+   change kind; the row is still readable without it (text + line numbers). */
+.config-diff code { font-size: 12px; white-space: pre-wrap; word-break: break-all; }
+.config-diff td { vertical-align: top; }
+.diff-added { background: #ecfdf5; }
+.diff-removed { background: #fef2f2; }
+.diff-equal { background: transparent; }
+.row-selected { outline: 2px solid #2563eb; outline-offset: -2px; }
+
+/* The configuration viewer is a long monospace listing; keep it scrollable
+   inside its own card rather than stretching the page. Line numbers are
+   fixed-width so the text column aligns like a real config listing. */
+.config-view-scroll { max-height: 640px; overflow: auto; border: 1px solid var(--line); border-radius: 6px; }
+.config-view-scroll .grid { margin: 0; }
+.config-view code { font-size: 12px; }
+.config-view td:first-child { width: 48px; text-align: right; user-select: none; }
+.config-view .line-masked { background: #fffbeb; }

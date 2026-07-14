@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Configuration{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Configuration Memory{% if scope_label %} — {{ scope_label }}{% endif %}</h1>
+</div>
+<p class="muted">Discovery tells Atlas what exists today; Configuration Memory tells Atlas what existed yesterday. Every collected configuration is remembered as a versioned, content-addressed observation — identical configuration is re-observed, never stored twice.</p>
+
+{% if devices %}
+<div class="tiles">
+  <div class="tile"><strong>Devices remembered</strong><span>{{ totals.devices }}</span></div>
+  <div class="tile"><strong>Versions</strong><span>{{ totals.versions }}</span></div>
+  <div class="tile"><strong>Observations</strong><span>{{ totals.observations }}</span></div>
+  <div class="tile"><strong>Unique configurations</strong><span>{{ totals.unique_configurations }}</span></div>
+  <div class="tile"><strong>Stored without duplication</strong><span>{{ totals.deduplicated_observations }} <span class="muted">(information)</span></span></div>
+  <div class="tile"><strong>Changes recorded</strong><span>{{ change_count }}</span></div>
+</div>
+
+<section class="card">
+  <h2>Change Timeline</h2>
+  <p class="muted">Every real configuration change Atlas remembers, newest first. A first sighting is a baseline, not a change.</p>
+  {% if timeline %}
+    {% for day in timeline %}
+    <h3>{{ day.day }} <span class="muted">— {{ day.change_count }} change(s)</span></h3>
+    <table class="grid">
+      <thead><tr><th>Time</th><th>Device</th><th>Network</th><th>Change</th><th>Severity</th><th></th></tr></thead>
+      <tbody>
+        {% for event in day.events %}
+        <tr>
+          <td>{{ event.occurred_at[11:16] }}</td>
+          <td>{{ event.hostname }}</td>
+          <td>{{ event.network }}</td>
+          <td>{{ event.summary }}</td>
+          <td><span class="badge hop-badge hop-badge-{{ 'failed' if event.highest_severity == 'high' else ('warning' if event.highest_severity == 'medium' else 'pass') }}">{{ event.highest_severity | title }}</span></td>
+          <td class="row-actions">
+            <a class="btn btn-sm" href="/configuration/{{ event.device_id | urlencode }}?current={{ event.version }}&previous={{ event.previous_version or 1 }}">Compare</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endfor %}
+  {% else %}
+  <p class="muted">No configuration changes remembered yet. Once a device's configuration changes between discoveries, the change appears here.</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Remembered Devices</h2>
+  <table class="grid">
+    <thead><tr><th>Device</th><th>Network</th><th>Platform</th><th>Versions</th><th>Observations</th><th>Last seen</th><th></th></tr></thead>
+    <tbody>
+      {% for device in devices %}
+      <tr>
+        <td>{{ device.hostname }}</td>
+        <td>{{ device.network }}</td>
+        <td>{{ device.platform }}</td>
+        <td>{{ device.version_count }}</td>
+        <td>{{ device.observations }}</td>
+        <td>{{ device.last_seen }}</td>
+        <td class="row-actions">
+          <a class="btn btn-sm btn-primary" href="/configuration/{{ device.device_id | urlencode }}">History</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% else %}
+<section class="card">
+  <h2>Nothing remembered yet</h2>
+  <p class="muted">Atlas remembers configuration from every authenticated discovery whose profile enables collection. Enable <strong>Collect configuration</strong> on a discovery profile and run a discovery — the first collection becomes each device's baseline (v1).</p>
+  <a class="btn btn-primary" href="/profiles">Open Profiles</a>
+</section>
+{% endif %}
+<p class="muted">Configuration text is stored locally and treated as sensitive. Diffs and semantic changes shown in Atlas are masked — a password, key, or community string never reaches a report or this page.</p>
+{% endblock %}

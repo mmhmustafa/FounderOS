@@ -47,6 +47,11 @@ class ResolvedDiscoveryInputs:
     credential_sets: tuple[str, ...] = ()
     site_hint: str | None = None
     credential_ref: str = ""
+    # PR-044 (MEMORY): the profile's configuration collection policy. None
+    # means "use the legacy collect_configuration boolean".
+    collection_policy: str | None = None
+    collection_schedule_hours: int = 24
+    last_discovery: str | None = None
 
 
 class ProfileService:
@@ -175,11 +180,17 @@ class ProfileService:
         credential_sets: tuple[str, ...] | None = None,
         site_hint: str | None = None,
         domain_hint: str | None = None,
+        collection_policy: str | None = None,
+        collection_schedule_hours: int | None = None,
     ) -> DiscoveryProfile:
         """Update a profile in place; ``new_name`` renames it.
 
         A rename keeps the stable ``profile_id`` (and therefore the stored
         credential and every piece of scoped discovery history).
+
+        Every field not passed is PRESERVED — including ``archived`` and the
+        PR-044 collection policy. An edit must never silently un-archive a
+        profile or reset how it collects configuration.
         """
 
         existing = self._repository.get(name)
@@ -213,6 +224,18 @@ class ProfileService:
             ),
             site_hint=site_hint if site_hint is not None else existing.site_hint,
             domain_hint=domain_hint if domain_hint is not None else existing.domain_hint,
+            # Preserved unless explicitly changed (see the docstring).
+            archived=existing.archived,
+            collection_policy=(
+                collection_policy
+                if collection_policy is not None
+                else existing.collection_policy
+            ),
+            collection_schedule_hours=(
+                collection_schedule_hours
+                if collection_schedule_hours is not None
+                else existing.collection_schedule_hours
+            ),
         )
         if password:
             self._ensure_credential_store()
@@ -315,6 +338,9 @@ class ProfileService:
             credential_sets=profile.credential_sets,
             site_hint=profile.site_hint or profile.site,
             credential_ref=profile.credential_ref,
+            collection_policy=profile.collection_policy,
+            collection_schedule_hours=profile.collection_schedule_hours,
+            last_discovery=profile.last_discovery,
         )
 
     def record_discovery(self, name: str, when: datetime | str | None = None) -> DiscoveryProfile:

@@ -33,4 +33,19 @@
   <p class="muted">This is a local single-user alpha GUI. It binds to 127.0.0.1 and has
     no authentication — it is not a production or multi-user web deployment.</p>
 </section>
+
+<section class="card">
+  <h2>Time</h2>
+  <ul class="kv">
+    <li><span>Stored as</span><span>UTC (always)</span></li>
+    <li><span>Displayed in</span><span>{{ display_timezone_label }}{% if display_timezone_is_auto %} — your system timezone{% endif %}</span></li>
+    <li><span>Setting</span><span><code>ATLAS_DISPLAY_TIMEZONE={{ display_timezone_setting }}</code></span></li>
+  </ul>
+  <p class="muted">Atlas records every timestamp in UTC so that history stays ordered and
+    unambiguous across sites and daylight-saving changes. This setting only affects how
+    those instants are shown to you. Set <code>ATLAS_DISPLAY_TIMEZONE</code> to
+    <code>auto</code> (your system clock), <code>UTC</code>, or an IANA zone such as
+    <code>Asia/Kolkata</code> — NOC teams often choose UTC to line Atlas up with device
+    syslog. An unrecognised zone falls back to your system clock.</p>
+</section>
 {% endblock %}

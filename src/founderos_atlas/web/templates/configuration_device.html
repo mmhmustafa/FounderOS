@@ -1,0 +1,220 @@
+{% extends "base.html" %}
+{% block title %}Configuration — {{ history.hostname }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Configuration — {{ history.hostname }}</h1>
+  <span class="actions"><a class="btn" href="/configuration">All Configuration</a></span>
+</div>
+<p class="muted">{{ history.network }} · {{ history.version_count }} version(s) · {{ history.total_observations }} observation(s) remembered</p>
+
+<section class="card">
+  <h2>Version History</h2>
+  <p class="muted">Each version is a distinct configuration. A version re-observed unchanged grows its observation count without being stored again.</p>
+  <table class="grid">
+    <thead><tr><th>Version</th><th>First seen</th><th>Last seen</th><th>Observations</th><th>Discovery</th><th>Hash</th><th></th></tr></thead>
+    <tbody>
+      {% for version in versions %}
+      <tr{% if version.version == current.version %} class="row-selected"{% endif %}>
+        <td><strong>{{ version.label }}</strong>{% if version.version == history.version_count %} <span class="badge">latest</span>{% endif %}</td>
+        <td>{{ version.first_seen }}</td>
+        <td>{{ version.last_seen }}</td>
+        <td>{{ version.observation_count }}</td>
+        <td>{{ version.snapshot.discovery_session }}</td>
+        <td><code>{{ version.config_sha256[:12] }}</code></td>
+        <td class="row-actions">
+          {% if version.version != current.version %}
+          <a class="btn btn-sm" href="/configuration/{{ history.device_id | urlencode }}?current={{ version.version }}">View</a>
+          {% endif %}
+          {% if version.version > 1 %}
+          <a class="btn btn-sm" href="/configuration/{{ history.device_id | urlencode }}?current={{ version.version }}&previous={{ version.version - 1 }}">Compare to v{{ version.version - 1 }}</a>
+          {% endif %}
+          <a class="btn btn-sm" href="/configuration/{{ history.device_id | urlencode }}/export/{{ version.version }}">Export</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+{% if facts %}
+<section class="card">
+  <h2>Configuration Knowledge — {{ current.label }}</h2>
+  <p class="muted">Structured facts extracted from the configuration. Atlas reasons over these, not raw text. Secrets are never extracted — a service records that it exists, never its credential.</p>
+  <div class="tiles">
+    <div class="tile"><strong>Hostname</strong><span>{{ facts.hostname or '—' }}</span></div>
+    <div class="tile"><strong>Router ID</strong><span>{{ facts.router_id or '—' }}</span></div>
+    <div class="tile"><strong>BGP AS</strong><span>{{ facts.bgp_as or '—' }}</span></div>
+    <div class="tile"><strong>BGP neighbors</strong><span>{{ facts.bgp_neighbor_count }}</span></div>
+    <div class="tile"><strong>OSPF areas</strong><span>{{ facts.ospf_area_count }}</span></div>
+    <div class="tile"><strong>Interfaces</strong><span>{{ facts.interface_count }}</span></div>
+    <div class="tile"><strong>VLANs</strong><span>{{ facts.vlan_count }}</span></div>
+    <div class="tile"><strong>VRFs</strong><span>{{ facts.vrf_count }}</span></div>
+    <div class="tile"><strong>ACLs</strong><span>{{ facts.acl_count }}</span></div>
+    <div class="tile"><strong>Route maps</strong><span>{{ facts.route_map_count }}</span></div>
+    <div class="tile"><strong>SNMP</strong><span>{{ 'configured' if facts.snmp_configured else 'no' }}</span></div>
+    <div class="tile"><strong>AAA</strong><span>{{ 'configured' if facts.aaa_configured else 'no' }}</span></div>
+  </div>
+
+  {% if facts.warnings %}
+  <h3>Extraction warnings</h3>
+  <p class="muted">Atlas could not fully normalize part of this configuration. The facts above are what it could read with confidence — the text below is complete regardless.</p>
+  <ul class="kv">
+    {% for warning in facts.warnings %}
+    <li><span class="warn">{{ warning }}</span></li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+
+  {% if facts.interfaces %}
+  <h3>Interfaces</h3>
+  <table class="grid">
+    <thead><tr><th>Interface</th><th>Address</th><th>Description</th><th>VRF</th><th>State</th></tr></thead>
+    <tbody>
+      {% for iface in facts.interfaces %}
+      <tr>
+        <td><code>{{ iface.name }}</code></td>
+        <td>{% if iface.ip_address %}<code>{{ iface.ip_address }}</code>{% else %}<span class="muted">no address</span>{% endif %}</td>
+        <td>{{ iface.description or '—' }}</td>
+        <td>{{ iface.vrf or '—' }}</td>
+        <td>{% if iface.shutdown %}<span class="badge hop-badge hop-badge-failed">shutdown</span>{% else %}<span class="badge hop-badge hop-badge-pass">no shutdown</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="muted">Configured state, as written in the configuration — not observed link state.</p>
+  {% endif %}
+
+  {% if facts.bgp_neighbors %}
+  <h3>BGP neighbors</h3>
+  <table class="grid">
+    <thead><tr><th>Neighbor</th><th>Remote AS</th><th>Relationship</th><th>Description</th></tr></thead>
+    <tbody>
+      {% for peer in facts.bgp_neighbors %}
+      <tr>
+        <td><code>{{ peer.neighbor }}</code></td>
+        <td>{{ peer.remote_as or '—' }}</td>
+        <td>{% if peer.remote_as and facts.bgp_as and peer.remote_as == facts.bgp_as %}iBGP{% elif peer.remote_as and facts.bgp_as %}eBGP{% else %}<span class="muted">unknown</span>{% endif %}</td>
+        <td>{{ peer.description or '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  {% if facts.hsrp_groups %}
+  <h3>HSRP groups</h3>
+  <table class="grid">
+    <thead><tr><th>Interface</th><th>Group</th><th>Priority</th></tr></thead>
+    <tbody>
+      {% for group in facts.hsrp_groups %}
+      <tr><td><code>{{ group.interface }}</code></td><td>{{ group.group }}</td><td>{{ group.priority or '—' }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  {% set lists = [
+    ('OSPF areas', facts.ospf_areas),
+    ('OSPF processes', facts.ospf_process_ids),
+    ('VLANs', facts.vlans),
+    ('VRFs', facts.vrfs),
+    ('ACLs', facts.acls),
+    ('Route maps', facts.route_maps),
+    ('Static routes', facts.static_routes),
+    ('NTP servers', facts.ntp_servers),
+    ('Logging hosts', facts.logging_hosts),
+  ] %}
+  {% if lists | selectattr(1) | list %}
+  <h3>Also configured</h3>
+  <ul class="kv">
+    {% for label, values in lists %}
+    {% if values %}
+    <li><span>{{ label }}</span><span>{% for value in values %}<code>{{ value }}</code>{% if not loop.last %}, {% endif %}{% endfor %}</span></li>
+    {% endif %}
+    {% endfor %}
+  </ul>
+  {% endif %}
+</section>
+{% endif %}
+
+{% if previous and comparison %}
+<section class="card">
+  <h2>Semantic Changes — {{ previous.label }} → {{ current.label }}</h2>
+  <p class="muted">What the change <em>means</em>, derived from normalized facts — not merely which lines moved.</p>
+  {% if semantic %}
+  <table class="grid">
+    <thead><tr><th>Change</th><th>Subject</th><th>Category</th><th>Severity</th><th>From</th><th>To</th></tr></thead>
+    <tbody>
+      {% for event in semantic %}
+      <tr>
+        <td>{{ event.summary }}</td>
+        <td>{{ event.subject }}</td>
+        <td>{{ event.category }}</td>
+        <td><span class="badge hop-badge hop-badge-{{ 'failed' if event.severity == 'high' else ('warning' if event.severity == 'medium' else 'pass') }}">{{ event.severity | title }}</span></td>
+        <td>{{ event.previous_value or '—' }}</td>
+        <td>{{ event.current_value or '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">The text changed but no semantic change was detected — the difference is formatting or a construct Atlas does not yet model. The text comparison below shows exactly what moved.</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Text Comparison — {{ previous.label }} → {{ current.label }}</h2>
+  <p class="muted">{{ comparison.added }} line(s) added · {{ comparison.removed }} line(s) removed. Lines containing secrets are masked.</p>
+  <table class="grid config-diff">
+    <thead><tr><th>#</th><th>{{ previous.label }}</th><th>#</th><th>{{ current.label }}</th></tr></thead>
+    <tbody>
+      {% for line in comparison.lines %}
+      <tr class="diff-{{ line.kind }}">
+        <td class="muted">{{ line.previous_number or '' }}</td>
+        <td><code>{{ line.previous_text or '' }}</code></td>
+        <td class="muted">{{ line.current_number or '' }}</td>
+        <td><code>{{ line.current_text or '' }}</code></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% elif history.version_count == 1 %}
+<section class="card">
+  <h2>Baseline</h2>
+  <p class="muted">This is {{ history.hostname }}'s first remembered configuration — there is nothing to compare it against yet. When the configuration changes, Atlas records v2 and shows the difference here.</p>
+</section>
+{% endif %}
+
+{% if viewer %}
+<section class="card">
+  <h2>Configuration — {{ current.label }}</h2>
+  <p class="muted">
+    {{ viewer.line_count }} line(s) as remembered on this device.
+    {% if viewer.masked_count %}{{ viewer.masked_count }} line(s) containing a secret are masked — use Export if you need the raw text.{% else %}No line in this configuration contains a secret.{% endif %}
+  </p>
+  <div class="config-view-scroll">
+    <table class="grid config-diff config-view">
+      <tbody>
+        {% for line in viewer.lines %}
+        <tr{% if line.masked %} class="line-masked"{% endif %}>
+          <td class="muted">{{ line.number }}</td>
+          <td><code>{{ line.text }}</code></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+<section class="card">
+  <h2>Timeline</h2>
+  <ul class="kv">
+    {% for event in timeline %}
+    <li><span>{{ event.occurred_at }} — {{ event.version and 'v' ~ event.version }}</span><span>{{ event.summary }}</span></li>
+    {% endfor %}
+  </ul>
+</section>
+<p class="muted">Configuration text is stored locally and treated as sensitive. Export serves the raw configuration to you, the local operator, only.</p>
+{% endblock %}

@@ -76,6 +76,12 @@ class DiscoveryProfile:
     # it from active discovery and enterprise aggregation without deleting
     # it or the Network/Enterprise Knowledge it contributed to.
     archived: bool = False
+    # PR-044 (MEMORY): configuration collection is policy driven —
+    # always | scheduled | manual | discovery-only | disabled. None keeps
+    # backward compatibility: the legacy ``collect_configuration`` boolean
+    # decides (True -> always, False -> disabled).
+    collection_policy: str | None = None
+    collection_schedule_hours: int = 24
 
     def __post_init__(self) -> None:
         for field_name in ("profile_id", "name", "username", "credential_ref"):
@@ -100,6 +106,24 @@ class DiscoveryProfile:
             raise InvalidProfileError("collect_configuration must be a boolean")
         if not isinstance(self.archived, bool):
             raise InvalidProfileError("archived must be a boolean")
+        if self.collection_policy is not None:
+            from founderos_atlas.config_memory.policy import COLLECTION_POLICIES
+
+            policy = str(self.collection_policy).strip().casefold()
+            if policy not in COLLECTION_POLICIES:
+                raise InvalidProfileError(
+                    "collection_policy must be one of: "
+                    + ", ".join(COLLECTION_POLICIES)
+                )
+            object.__setattr__(self, "collection_policy", policy)
+        if (
+            not isinstance(self.collection_schedule_hours, int)
+            or isinstance(self.collection_schedule_hours, bool)
+            or self.collection_schedule_hours < 1
+        ):
+            raise InvalidProfileError(
+                "collection_schedule_hours must be a positive integer"
+            )
         object.__setattr__(self, "name", " ".join(self.name.strip().split()))
         object.__setattr__(self, "site", (self.site.strip() or None) if isinstance(self.site, str) else None)
         normalized_seeds: list[str] = []
@@ -158,6 +182,8 @@ class DiscoveryProfile:
             "site_hint": self.site_hint,
             "domain_hint": self.domain_hint,
             "archived": self.archived,
+            "collection_policy": self.collection_policy,
+            "collection_schedule_hours": self.collection_schedule_hours,
         }
 
     @classmethod
@@ -191,6 +217,10 @@ class DiscoveryProfile:
                 site_hint=value.get("site_hint"),
                 domain_hint=value.get("domain_hint"),
                 archived=bool(value.get("archived", False)),
+                collection_policy=value.get("collection_policy"),
+                collection_schedule_hours=int(
+                    value.get("collection_schedule_hours", 24)
+                ),
             )
         except KeyError as error:
             raise InvalidProfileError(f"profile is missing field {error}") from error

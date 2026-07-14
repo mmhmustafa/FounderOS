@@ -21,6 +21,11 @@ from founderos_atlas.config import (
     safe_artifact_name,
     write_configuration_artifacts,
 )
+from founderos_atlas.config_memory import (
+    ConfigMemoryStore,
+    RecordOutcome,
+    decide_collection,
+)
 from founderos_atlas.config_intelligence import (
     compare_configurations,
     render_config_report_json,
@@ -255,6 +260,11 @@ def atlas_discover_command(
     active_profile_id: str | None = None
     active_service: ProfileService | None = None
     collect_override: bool | None = None
+    # PR-044 (MEMORY): the profile's collection policy and its schedule
+    # context; None keeps the legacy boolean/interactive behaviour.
+    collection_policy: str | None = None
+    collection_schedule_hours = 24
+    last_collected_at: str | None = None
     if profile is not None:
         active_service = _profile_service(profile_service)
         try:
@@ -266,6 +276,9 @@ def atlas_discover_command(
         host, username, password = inputs.management_ip, inputs.username, inputs.password
         max_depth, max_devices = inputs.max_depth, inputs.max_devices
         collect_override = inputs.collect_configuration
+        collection_policy = inputs.collection_policy
+        collection_schedule_hours = inputs.collection_schedule_hours
+        last_collected_at = inputs.last_discovery
         # Every profile discovers into its own isolated scope: its own
         # current artifacts, configs, and history. Comparison baselines can
         # therefore only ever come from the same profile's previous run.
@@ -411,19 +424,48 @@ def atlas_discover_command(
         f"ok ({len(report.connected)} device(s), {len(report.failed)} failed)",
     )
 
-    config_collections = _collect_configurations_if_requested(
+    # PR-044 (MEMORY): collection is policy driven, and every collected
+    # configuration is remembered in the scope's content-addressed memory.
+    discovery_session = started_at.strftime("%Y-%m-%d_%H-%M-%S")
+    config_memory_root = Path(config_output_dir).parent / "config-memory"
+    collection_decision = decide_collection(
+        collection_policy if collection_policy is not None else collect_override,
+        now=started_at.isoformat(timespec="seconds"),
+        last_collected_at=last_collected_at,
+        schedule_hours=collection_schedule_hours,
+        is_discovery_run=True,
+    ) if (collection_policy is not None or collect_override is not None) else None
+    config_collections, memory_outcomes = _collect_configurations_if_requested(
         read_input,
         build_transport,
         credentials,
         report,
         config_output_dir,
-        collect_override=collect_override,
+        collect_override=(
+            collection_decision.collect if collection_decision is not None else None
+        ),
         host_factory=credential_factory,
+        memory_root=config_memory_root,
+        network=active_profile or "local workspace",
+        profile_id=active_profile_id or "local",
+        discovery_session=discovery_session,
+        collected_at=started_at.isoformat(timespec="seconds"),
     )
     if config_collections is None:
-        step(3, "Collecting configurations", "skipped (not requested)")
+        reason = (
+            collection_decision.reason
+            if collection_decision is not None
+            else "not requested"
+        )
+        step(3, "Collecting configurations", f"skipped ({reason})")
     else:
-        step(3, "Collecting configurations", f"ok ({len(config_collections)} device(s))")
+        remembered = sum(1 for item in memory_outcomes if item.changed)
+        step(
+            3,
+            "Collecting configurations",
+            f"ok ({len(config_collections)} device(s); "
+            f"{remembered} configuration change(s) remembered)",
+        )
     completed_at = read_clock()
 
     baseline = load_previous_baseline(history_root)
@@ -1540,14 +1582,24 @@ def _collect_configurations_if_requested(
     *,
     collect_override: bool | None = None,
     host_factory=None,
-) -> tuple[tuple[str, str, str], ...] | None:
-    """Collect read-only configuration per discovered device.
+    memory_root: str | Path | None = None,
+    network: str = "unknown",
+    profile_id: str = "unknown",
+    discovery_session: str = "unrecorded",
+    collected_at: str | None = None,
+):
+    """Collect read-only configuration per discovered device, and remember it.
 
-    ``collect_override`` (from a saved profile) skips the interactive prompt.
-    ``host_factory`` (multi-credential runs) builds the per-host transport
-    with the same safe credential resolution discovery used. Returns None
-    when declined, else (hostname, status, detail) entries where detail is
-    the artifact directory or a clean failure message.
+    ``collect_override`` (from a saved profile's collection policy) skips the
+    interactive prompt. ``host_factory`` (multi-credential runs) builds the
+    per-host transport with the same safe credential resolution discovery
+    used.
+
+    PR-044 (MEMORY): every successfully collected configuration is also
+    recorded into the scope's content-addressed Configuration Memory, so an
+    unchanged device costs one observation rather than a duplicate copy.
+    Returns ``(collections, memory_outcomes)``; ``collections`` is None when
+    collection was declined.
     """
 
     if collect_override is not None:
@@ -1559,8 +1611,10 @@ def _collect_configurations_if_requested(
             answer = ""
         collect = answer in ("y", "yes")
     if not collect:
-        return None
+        return None, ()
+    store = ConfigMemoryStore(memory_root) if memory_root is not None else None
     collections: list[tuple[str, str, str]] = []
+    outcomes: list[RecordOutcome] = []
     for visit, result in zip(report.connected, report.results):
         hostname = result.device.hostname
         try:
@@ -1574,9 +1628,26 @@ def _collect_configurations_if_requested(
                 Path(config_output_dir) / safe_artifact_name(hostname),
             )
             collections.append((hostname, artifact.status, str(paths.directory)))
+            if store is not None:
+                outcomes.append(
+                    store.record(
+                        artifact.running_config,
+                        device_id=result.device.device_id,
+                        hostname=hostname,
+                        network=network,
+                        profile_id=profile_id,
+                        discovery_session=discovery_session,
+                        collected_at=collected_at or artifact.collected_at,
+                        platform=result.device.platform,
+                        vendor=result.device.vendor,
+                        os_name=result.device.os_name,
+                        os_version=result.device.os_version,
+                        management_ip=result.device.management_ip,
+                    )
+                )
         except (AtlasConfigurationError, AtlasTransportError, OSError) as error:
             collections.append((hostname, "failed", str(error)))
-    return tuple(collections)
+    return tuple(collections), tuple(outcomes)
 
 
 def atlas_compare_command(
