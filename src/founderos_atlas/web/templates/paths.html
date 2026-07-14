@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_device_actions.html" import device_actions %}
 {% block title %}Path Intelligence{% endblock %}
 {% block content %}
 <h1>Path Intelligence — {{ active_scope_label }}</h1>
@@ -98,6 +99,7 @@
         </summary>
         <p>{{ hop.explanation }}</p>
         <p class="muted">Ingress: {{ hop.ingress_interface or '—' }} · Egress: {{ hop.egress_interface or '—' }} · Link: {{ hop.link_state }} · Management: {{ hop.management_state }}</p>
+        <p class="row-actions">{{ device_actions(device_target(hostname=hop.device), compact=True) }}</p>
         {% if hop.evidence %}
         <ul>{% for item in hop.evidence %}<li class="muted">Evidence: {{ item }}</li>{% endfor %}</ul>
         {% endif %}

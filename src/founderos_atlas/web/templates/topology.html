@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_device_actions.html" import device_actions %}
 {% block title %}Topology{% endblock %}
 {% block content %}
 {% if global_view %}
@@ -69,9 +70,9 @@
   <table class="grid">
     <thead>
       {% if enterprise %}
-      <tr><th>Device</th><th>Management IPs</th><th>Platform</th><th>Site</th><th>Observed by</th><th>Observations</th><th>Identity confidence</th><th>Provenance</th></tr>
+      <tr><th>Device</th><th>Management IPs</th><th>Platform</th><th>Site</th><th>Observed by</th><th>Observations</th><th>Identity confidence</th><th>Provenance</th><th>Actions</th></tr>
       {% else %}
-      <tr><th>Network</th><th>Device</th><th>Management IP</th><th>Platform</th><th>OS Version</th></tr>
+      <tr><th>Network</th><th>Device</th><th>Management IP</th><th>Platform</th><th>OS Version</th><th>Actions</th></tr>
       {% endif %}
     </thead>
     <tbody>
@@ -97,6 +98,7 @@
             </ul>
           </details>
         </td>
+        <td class="row-actions">{% set _t = device_target(hostname=device.hostname) %}{{ device_actions(_t, compact=True, web=web_access(hostname=device.hostname)) }}</td>
       </tr>
       {% else %}
       <tr>
@@ -105,6 +107,7 @@
         <td>{{ device.management_ip }}</td>
         <td>{{ device.platform }}</td>
         <td>{{ device.os_version }}</td>
+        <td class="row-actions">{{ device_actions(device_target(hostname=device.hostname), compact=True) }}</td>
       </tr>
       {% endif %}
       {% endfor %}

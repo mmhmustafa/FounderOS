@@ -1,9 +1,10 @@
 {% extends "base.html" %}
+{% from "_device_actions.html" import device_actions %}
 {% block title %}Configuration — {{ history.hostname }}{% endblock %}
 {% block content %}
 <div class="page-head">
   <h1>Configuration — {{ history.hostname }}</h1>
-  <span class="actions"><a class="btn" href="/configuration">All Configuration</a></span>
+  <span class="actions">{{ device_actions(device_target(device_id=history.device_id), compact=True, web=web_access(device_id=history.device_id)) }}<a class="btn" href="/configuration">All Configuration</a></span>
 </div>
 <p class="muted">{{ history.network }} · {{ history.version_count }} version(s) · {{ history.total_observations }} observation(s) remembered</p>
 

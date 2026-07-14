@@ -1,9 +1,19 @@
 """The Atlas device stencil set: role icons for the topology viewer.
 
-Original geometric SVG glyphs — no vendor artwork. The ICON encodes the
-device role; COLOR and BORDER encode operational state (never shape
-alone), so the set stays readable in grayscale. Each stencil is a
-self-contained SVG rendered as a Cytoscape node background image.
+Original, filled device icons — no vendor artwork. Each icon is drawn to
+read as network gear at a glance (a router puck, a switch, a server, a
+monitor), the way a Packet-Tracer diagram does, while remaining Atlas's own
+art so it is safe to ship and works offline.
+
+Two channels carry meaning, deliberately kept separate so the set survives
+grayscale and colour-blindness:
+
+- **SHAPE** encodes the device *role* — a router is always a disc, a switch
+  always a box, whatever the colour.
+- **COLOUR** here is a role accent (so the diagram is legible and pleasant);
+  operational *state* — new / changed / removed / selected — is carried by
+  the node border ring in the viewer, never by the icon. So the icon says
+  "what", the ring says "how it's doing".
 """
 
 from __future__ import annotations
@@ -25,88 +35,196 @@ from founderos_atlas.platforms.classify import (
 )
 
 
-_STROKE = "#334155"
-_HEAD = (
-    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" '
-    f'fill="none" stroke="{_STROKE}" stroke-width="2.4" '
-    'stroke-linecap="round" stroke-linejoin="round">'
-)
-
-
-def _svg(body: str, *, dashed: bool = False) -> str:
-    head = _HEAD
-    if dashed:
-        head = head.replace('stroke-width="2.4"', 'stroke-width="2.4" stroke-dasharray="4 3"')
-    return head + body + "</svg>"
-
-
-# Role glyphs. Router: circle with four arrows. Switch: rectangle with
-# opposing traffic arrows (L3 adds a routed corner arrow). Firewall:
-# brick wall. AP: radiating arcs. Server: rack slots. Linux host:
-# terminal prompt. Load balancer: one-to-many fanout. Cloud: cloud
-# outline. Unknown: hexagon with a question mark. Unresolved peer:
-# dashed circle with a question mark.
-STENCILS: dict[str, str] = {
-    ROLE_ROUTER: _svg(
-        '<circle cx="24" cy="24" r="17"/>'
-        '<path d="M15 20h11m0 0-4-4m4 4-4 4"/>'
-        '<path d="M33 28H22m0 0 4-4m-4 4 4 4"/>'
-    ),
-    ROLE_L2_SWITCH: _svg(
-        '<rect x="7" y="15" width="34" height="18" rx="3"/>'
-        '<path d="M13 21h12m0 0-3.5-3.5M25 21l-3.5 3.5"/>'
-        '<path d="M35 27H23m0 0 3.5-3.5M23 27l3.5 3.5"/>'
-    ),
-    ROLE_L3_SWITCH: _svg(
-        '<rect x="7" y="17" width="34" height="16" rx="3"/>'
-        '<path d="M13 23h11m0 0-3-3m3 3-3 3"/>'
-        '<path d="M35 29H24m0 0 3-3m-3 3 3 3"/>'
-        '<path d="M24 17V9m0 0-4 4m4-4 4 4"/>'
-    ),
-    ROLE_FIREWALL: _svg(
-        '<rect x="8" y="13" width="32" height="22" rx="2"/>'
-        '<path d="M8 20.3h32M8 27.6h32"/>'
-        '<path d="M18 13v7.3M30 13v7.3M12 20.3v7.3M24 20.3v7.3M36 20.3v7.3M18 27.6V35M30 27.6V35"/>'
-    ),
-    ROLE_ACCESS_POINT: _svg(
-        '<circle cx="24" cy="30" r="3.2" fill="#334155"/>'
-        '<path d="M15 22a12.8 12.8 0 0 1 18 0"/>'
-        '<path d="M10.5 16.5a19 19 0 0 1 27 0"/>'
-    ),
-    ROLE_SERVER: _svg(
-        '<rect x="11" y="9" width="26" height="30" rx="2.5"/>'
-        '<path d="M11 19h26M11 29h26"/>'
-        '<circle cx="16.5" cy="14" r="1.4" fill="#334155"/>'
-        '<circle cx="16.5" cy="24" r="1.4" fill="#334155"/>'
-        '<circle cx="16.5" cy="34" r="1.4" fill="#334155"/>'
-    ),
-    ROLE_LINUX_HOST: _svg(
-        '<rect x="8" y="11" width="32" height="22" rx="2.5"/>'
-        '<path d="M14 18l5 4-5 4M22 27h8"/>'
-        '<path d="M18 39h12M24 33v6"/>'
-    ),
-    ROLE_LOAD_BALANCER: _svg(
-        '<circle cx="13" cy="24" r="4.5"/>'
-        '<path d="M17.5 24h6M23.5 24l9-9m-9 9 9 0m-9 0 9 9"/>'
-        '<circle cx="36.5" cy="12.5" r="3.4"/>'
-        '<circle cx="36.5" cy="24" r="3.4"/>'
-        '<circle cx="36.5" cy="35.5" r="3.4"/>'
-    ),
-    ROLE_CLOUD: _svg(
-        '<path d="M14.5 33a7 7 0 0 1-.9-13.9 9.5 9.5 0 0 1 18.5-2.4A7.5 7.5 0 0 1 33.5 33z"/>'
-    ),
-    ROLE_UNKNOWN: _svg(
-        '<path d="M24 6l15 9v18l-15 9-15-9V15z"/>'
-        '<path d="M20.5 19.5a3.8 3.8 0 1 1 5.4 3.6c-1.3.7-1.9 1.4-1.9 3"/>'
-        '<circle cx="24" cy="31" r="1.5" fill="#334155"/>'
-    ),
-    ROLE_UNRESOLVED: _svg(
-        '<circle cx="24" cy="24" r="16"/>'
-        '<path d="M20.8 19.5a3.6 3.6 0 1 1 5.1 3.4c-1.2.6-1.9 1.3-1.9 2.8"/>'
-        '<circle cx="24" cy="30.5" r="1.5" fill="#334155"/>',
-        dashed=True,
-    ),
+# Role accent palette. Main = face, dark = shaded side/base, light = top
+# highlight, line = white detail. Chosen to be distinct and calm.
+_PALETTE = {
+    ROLE_ROUTER: ("#3b82f6", "#1d4ed8", "#93c5fd"),
+    ROLE_L2_SWITCH: ("#14b8a6", "#0f766e", "#5eead4"),
+    ROLE_L3_SWITCH: ("#0ea5e9", "#0369a1", "#7dd3fc"),
+    ROLE_FIREWALL: ("#ef4444", "#b91c1c", "#fca5a5"),
+    ROLE_SERVER: ("#64748b", "#334155", "#cbd5e1"),
+    ROLE_LINUX_HOST: ("#6366f1", "#4338ca", "#c7d2fe"),
+    ROLE_ACCESS_POINT: ("#8b5cf6", "#6d28d9", "#ddd6fe"),
+    ROLE_LOAD_BALANCER: ("#f59e0b", "#b45309", "#fcd34d"),
+    ROLE_CLOUD: ("#38bdf8", "#0284c7", "#e0f2fe"),
+    ROLE_UNKNOWN: ("#94a3b8", "#475569", "#e2e8f0"),
+    ROLE_UNRESOLVED: ("#cbd5e1", "#94a3b8", "#f1f5f9"),
 }
+
+_LINE = "#ffffff"
+
+
+# The viewer rasterizes each icon to a bitmap texture. A large intrinsic
+# size (viewBox stays 64, but the SVG declares 512×512) means that bitmap is
+# rendered at 8× — so the icon stays crisp at node size and when zoomed in,
+# instead of the soft, upscaled look a bare viewBox gives.
+def _svg(body: str) -> str:
+    # A soft grounding shadow under the device (drawn first, so it sits
+    # behind) makes each icon read as a physical thing resting on the canvas
+    # rather than a flat sticker.
+    shadow = '<ellipse cx="32" cy="57" rx="17" ry="3.2" fill="#0f172a" opacity="0.14"/>'
+    return (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" '
+        'viewBox="0 0 64 64" '
+        'fill="none" stroke-linecap="round" stroke-linejoin="round">'
+        + shadow
+        + body
+        + "</svg>"
+    )
+
+
+def _router(main: str, dark: str, light: str) -> str:
+    # A short cylinder (puck) seen slightly from above, with the classic
+    # four bidirectional routing arrows on its top face.
+    return _svg(
+        f'<ellipse cx="32" cy="44" rx="23" ry="8" fill="{dark}"/>'
+        f'<rect x="9" y="24" width="46" height="20" fill="{main}"/>'
+        f'<ellipse cx="32" cy="24" rx="23" ry="9" fill="{light}"/>'
+        f'<g stroke="{main}" stroke-width="2.6" fill="none">'
+        f'<path d="M18 24h12m-3-3 3 3-3 3"/>'
+        f'<path d="M46 24H34m3-3-3 3 3 3"/>'
+        f'<path d="M27 20l5-4 5 4"/>'
+        f'<path d="M27 28l5 4 5-4"/>'
+        f"</g>"
+    )
+
+
+def _switch_box(main: str, dark: str, light: str, *, routed: bool) -> str:
+    # A flat 3-D box with opposing traffic arrows on its face. L3 adds an
+    # upward routed arrow.
+    routed_arrow = (
+        f'<path d="M32 33V21m-4 4 4-4 4 4" stroke="{light}" stroke-width="2.6"/>'
+        if routed
+        else ""
+    )
+    return _svg(
+        f'<polygon points="12,22 52,22 58,16 18,16" fill="{light}"/>'
+        f'<polygon points="52,22 58,16 58,40 52,46" fill="{dark}"/>'
+        f'<rect x="12" y="22" width="40" height="24" rx="2" fill="{main}"/>'
+        f'<g stroke="{_LINE}" stroke-width="2.4" fill="none">'
+        f'<path d="M19 31h13m-4-4 4 4-4 4"/>'
+        f'<path d="M45 39H32m4-4-4 4 4 4"/>'
+        f"</g>"
+        + routed_arrow
+    )
+
+
+def _server(main: str, dark: str, light: str) -> str:
+    # A rack/tower with drive slots and status LEDs.
+    return _svg(
+        f'<rect x="18" y="8" width="28" height="48" rx="3" fill="{main}"/>'
+        f'<rect x="18" y="8" width="6" height="48" rx="3" fill="{dark}"/>'
+        f'<g stroke="{light}" stroke-width="2.2">'
+        f'<path d="M28 18h14M28 30h14M28 42h14"/>'
+        f"</g>"
+        f'<circle cx="21" cy="16" r="1.7" fill="#4ade80"/>'
+        f'<circle cx="21" cy="28" r="1.7" fill="{light}"/>'
+        f'<circle cx="21" cy="40" r="1.7" fill="{light}"/>'
+    )
+
+
+def _host(main: str, dark: str, light: str) -> str:
+    # A desktop monitor — the everyday "a machine lives here" glyph.
+    return _svg(
+        f'<rect x="8" y="12" width="48" height="30" rx="3" fill="{dark}"/>'
+        f'<rect x="11" y="15" width="42" height="24" rx="2" fill="{main}"/>'
+        f'<path d="M18 22l6 5-6 5" stroke="{light}" stroke-width="2.4" fill="none"/>'
+        f'<path d="M28 33h10" stroke="{light}" stroke-width="2.4"/>'
+        f'<path d="M26 42h12l2 8H24z" fill="{dark}"/>'
+        f'<rect x="20" y="50" width="24" height="4" rx="2" fill="{main}"/>'
+    )
+
+
+def _firewall(main: str, dark: str, light: str) -> str:
+    # A brick wall.
+    rows = "".join(
+        f'<path d="M8 {y}h48" stroke="{light}" stroke-width="2"/>' for y in (24, 33, 42)
+    )
+    verts = (
+        f'<path d="M24 15v9M40 15v9M18 24v9M32 24v9M46 24v9'
+        f'M24 33v9M40 33v9M18 42v9M32 42v9M46 42v9" '
+        f'stroke="{light}" stroke-width="2"/>'
+    )
+    return _svg(
+        f'<rect x="8" y="15" width="48" height="36" rx="2.5" fill="{main}"/>'
+        + rows
+        + verts
+    )
+
+
+def _access_point(main: str, dark: str, light: str) -> str:
+    return _svg(
+        f'<rect x="14" y="34" width="36" height="14" rx="7" fill="{main}"/>'
+        f'<circle cx="24" cy="41" r="2.4" fill="{light}"/>'
+        f'<circle cx="40" cy="41" r="2.4" fill="{dark}"/>'
+        f'<g stroke="{main}" stroke-width="2.6" fill="none">'
+        f'<path d="M20 26a17 17 0 0 1 24 0"/>'
+        f'<path d="M14 20a25 25 0 0 1 36 0"/>'
+        f"</g>"
+    )
+
+
+def _load_balancer(main: str, dark: str, light: str) -> str:
+    return _svg(
+        f'<circle cx="16" cy="32" r="9" fill="{main}"/>'
+        f'<path d="M22 22l6 4-6 4" fill="none" stroke="{light}" stroke-width="2.6"/>'
+        f'<g stroke="{main}" stroke-width="2.6" fill="none">'
+        f'<path d="M25 32h9M34 32l8-9M34 32l8 9"/>'
+        f"</g>"
+        f'<circle cx="46" cy="16" r="6" fill="{dark}"/>'
+        f'<circle cx="48" cy="32" r="6" fill="{main}"/>'
+        f'<circle cx="46" cy="48" r="6" fill="{dark}"/>'
+    )
+
+
+def _cloud(main: str, dark: str, light: str) -> str:
+    return _svg(
+        f'<path d="M20 46a10 10 0 0 1-1.3-19.9 13 13 0 0 1 25-3.3A10 10 0 0 1 46 46z" '
+        f'fill="{main}"/>'
+        f'<path d="M20 46a10 10 0 0 1-1.3-19.9 13 13 0 0 1 6-6" fill="{light}" '
+        f'opacity="0.4"/>'
+    )
+
+
+def _unknown(main: str, dark: str, light: str) -> str:
+    return _svg(
+        f'<path d="M32 8l21 12v24L32 56 11 44V20z" fill="{main}"/>'
+        f'<path d="M32 8l21 12-21 12-21-12z" fill="{light}"/>'
+        f'<path d="M27 27a5 5 0 1 1 7 4.6c-1.7.9-2.5 1.9-2.5 4" '
+        f'stroke="{_LINE}" stroke-width="2.6" fill="none"/>'
+        f'<circle cx="32" cy="43" r="2" fill="{_LINE}"/>'
+    )
+
+
+def _unresolved(main: str, dark: str, light: str) -> str:
+    # A dashed, hollow disc with a question mark: observed, not identified.
+    return _svg(
+        f'<circle cx="32" cy="32" r="20" fill="{main}" fill-opacity="0.25" '
+        f'stroke="{dark}" stroke-width="2.6" stroke-dasharray="5 4"/>'
+        f'<path d="M27 27a5 5 0 1 1 7 4.6c-1.7.9-2.5 1.9-2.5 4" '
+        f'stroke="{dark}" stroke-width="2.6" fill="none"/>'
+        f'<circle cx="32" cy="43" r="2" fill="{dark}"/>'
+    )
+
+
+def _build() -> dict[str, str]:
+    p = _PALETTE
+    return {
+        ROLE_ROUTER: _router(*p[ROLE_ROUTER]),
+        ROLE_L2_SWITCH: _switch_box(*p[ROLE_L2_SWITCH], routed=False),
+        ROLE_L3_SWITCH: _switch_box(*p[ROLE_L3_SWITCH], routed=True),
+        ROLE_FIREWALL: _firewall(*p[ROLE_FIREWALL]),
+        ROLE_SERVER: _server(*p[ROLE_SERVER]),
+        ROLE_LINUX_HOST: _host(*p[ROLE_LINUX_HOST]),
+        ROLE_ACCESS_POINT: _access_point(*p[ROLE_ACCESS_POINT]),
+        ROLE_LOAD_BALANCER: _load_balancer(*p[ROLE_LOAD_BALANCER]),
+        ROLE_CLOUD: _cloud(*p[ROLE_CLOUD]),
+        ROLE_UNKNOWN: _unknown(*p[ROLE_UNKNOWN]),
+        ROLE_UNRESOLVED: _unresolved(*p[ROLE_UNRESOLVED]),
+    }
+
+
+STENCILS: dict[str, str] = _build()
 
 
 def stencil_svg(role: str) -> str:
@@ -119,3 +237,9 @@ def stencil_data_uri(role: str) -> str:
     """The stencil as a Cytoscape-ready background-image data URI."""
 
     return "data:image/svg+xml;utf8," + quote(stencil_svg(role))
+
+
+def role_accent(role: str) -> str:
+    """The role's accent colour, for legends and chips."""
+
+    return _PALETTE.get(role, _PALETTE[ROLE_UNKNOWN])[0]

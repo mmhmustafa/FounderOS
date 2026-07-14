@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% from "_device_actions.html" import device_actions %}
+{% block title %}Atlas — Console{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Console</h1>
+</div>
+<p class="muted">
+  Open an interactive SSH session to any device Atlas has a <strong>verified management
+  endpoint</strong> for — an address Atlas authenticated to during discovery. A router ID,
+  BGP peer, next hop, loopback or unresolved peer is a protocol fact, not a way in, and is
+  never offered here.
+</p>
+
+<div class="tiles">
+  <div class="tile"><strong>Devices you can open</strong><span>{{ eligible_count }}</span></div>
+  <div class="tile"><strong>Devices in scope</strong><span>{{ targets | length }}</span></div>
+  <div class="tile"><strong>Live sessions</strong><span>{{ sessions | length }}</span></div>
+  <div class="tile"><strong>Operator</strong><span>{{ operator.name }}</span></div>
+</div>
+
+{% if not operator.authenticated %}
+<section class="card card-warn">
+  <h2>Who Atlas thinks you are</h2>
+  <p class="muted">
+    Atlas has no login yet, so it cannot verify who is asking: <strong>anyone with access to
+    this computer is treated as the operator</strong> and can open a session to any device
+    below using the stored credentials. Sessions are refused unless they come from the Atlas
+    interface itself, which stops other websites from reaching this endpoint — but it does
+    not stop someone at this keyboard.
+  </p>
+</section>
+{% endif %}
+
+{% if sessions %}
+<section class="card">
+  <h2>Live Sessions</h2>
+  <table class="grid">
+    <thead><tr><th>Device</th><th>Endpoint</th><th>User</th><th>Opened</th><th>Operator</th><th></th></tr></thead>
+    <tbody>
+      {% for item in sessions %}
+      <tr>
+        <td><strong>{{ item.hostname }}</strong></td>
+        <td><code>{{ item.management_ip }}:{{ item.port }}</code></td>
+        <td>{{ item.username }}</td>
+        <td>{{ item.opened_at }}</td>
+        <td>{{ item.operator }}</td>
+        <td class="row-actions">
+          <a class="btn btn-sm" href="/console/{{ item.device_id | urlencode }}">Open</a>
+          <button class="btn btn-sm js-disconnect" data-session="{{ item.session_id }}">Disconnect</button>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+<section class="card">
+  <h2>Devices</h2>
+  {% if targets %}
+  <table class="grid">
+    <thead><tr><th>Device</th><th>Network</th><th>Platform</th><th>Management endpoint</th><th>Credential</th><th></th></tr></thead>
+    <tbody>
+      {% for target in targets %}
+      <tr>
+        <td><strong>{{ target.hostname }}</strong></td>
+        <td>{{ target.network }}</td>
+        <td>{{ target.platform or '—' }}</td>
+        <td>
+          {% if target.management_ip %}<code>{{ target.management_ip }}:{{ target.port }}</code>
+          {% else %}<span class="muted">not verified</span>{% endif %}
+        </td>
+        <td>
+          {% if target.credential_name %}{{ target.credential_name }}
+          {% else %}<span class="muted">none</span>{% endif %}
+        </td>
+        <td class="row-actions">{{ device_actions(target, compact=True) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No devices in this scope yet. Run a discovery first — Atlas can only open a
+    session to a device it has authenticated to.</p>
+  {% endif %}
+</section>
+
+<p class="muted">
+  Atlas never opens a session on its own and never runs a command on your behalf. What you type
+  is yours: it is not filtered, and it is not recorded. Atlas records only that a session
+  happened — operator, device, endpoint, credential reference, and times.
+</p>
+{% endblock %}

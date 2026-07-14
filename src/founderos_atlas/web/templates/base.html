@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Atlas — {% block title %}Enterprise Network Intelligence{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='atlas.css') }}">
+  {% block head %}{% endblock %}
 </head>
 <body>
   <a class="skip-link" href="#atlas-main">Skip to content</a>
@@ -77,5 +78,6 @@
   </div>
 
   <script src="{{ url_for('static', filename='atlas.js') }}"></script>
+  <script src="{{ url_for('static', filename='atlas-device-actions.js') }}"></script>
 </body>
 </html>

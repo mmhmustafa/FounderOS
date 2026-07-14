@@ -19,6 +19,7 @@ from founderos_atlas.platforms.classify import (
 )
 from founderos_atlas.topology import TopologySnapshot
 
+from .stencils import role_accent as _role_accent
 from .stencils import stencil_data_uri
 
 
@@ -107,10 +108,17 @@ class TopologyRenderer:
             hostname_key = str(device["hostname"]).casefold()
             depth = (device.get("metadata") or {}).get("discovery_depth")
             role, role_evidence = classify_role(device)
+            hostname = str(device["hostname"])
+            mgmt = str(device["management_ip"] or "").strip()
             node_data = {
                 "id": device_id,
-                "label": str(device["hostname"]),
-                "hostname": str(device["hostname"]),
+                "label": hostname,
+                # Two-line caption under the icon: name, then the endpoint an
+                # engineer would actually reach it at.
+                "display_label": f"{hostname}\n{mgmt}" if mgmt else hostname,
+                "role_label": _role_label(role),
+                "accent": _role_accent(role),
+                "hostname": hostname,
                 "aliases": list(_device_aliases(device)),
                 "management_ip": str(device["management_ip"]),
                 "vendor": vendor,
@@ -341,6 +349,14 @@ class TopologyRenderer:
 
         edges: list[dict[str, Any]] = []
         for edge_data in logical_edges.values():
+            # Replace the raw evidence kind ("interface-ownership") that used
+            # to be plastered on every line with a human tag; the interface
+            # pair is carried for the hover tooltip and detail panel.
+            edge_data["link_tag"] = _link_tag(
+                edge_data.get("fused_type"),
+                str(edge_data.get("relationship") or ""),
+                str(edge_data.get("protocol") or ""),
+            )
             digest = sha256(
                 json.dumps(
                     {key: value for key, value in edge_data.items() if key != "observations"},
@@ -466,6 +482,59 @@ def _device_aliases(device: Any) -> tuple[str, ...]:
 def _vendor_color(vendor: str) -> str:
     normalized = vendor.casefold()
     return _VENDOR_COLORS.get(normalized, _VENDOR_COLORS["unknown"])
+
+
+# Friendly role captions for the node card and legend. Keyed by the actual
+# classify_role constants (layer2_switch, wireless_access_point, …).
+_ROLE_LABELS = {
+    "router": "Router",
+    "layer2_switch": "Switch",
+    "layer3_switch": "L3 Switch",
+    "firewall": "Firewall",
+    "server": "Server",
+    "linux_host": "Host",
+    "wireless_access_point": "Access Point",
+    "load_balancer": "Load Balancer",
+    "cloud": "Cloud",
+    "unknown": "Unknown device",
+    "unresolved_peer": "Unresolved peer",
+}
+
+
+def _role_label(role: str) -> str:
+    if role in _ROLE_LABELS:
+        return _ROLE_LABELS[role]
+    return role.replace("_", " ").replace("-", " ").title() if role else "Device"
+
+
+# A short, human tag for a link — what an engineer calls it, not the internal
+# evidence kind. This is what replaced "interface-ownership" plastered on
+# every edge: the line style already shows physical-vs-routed, so the tag only
+# names a routing protocol when that is the actual relationship.
+_LINK_TAGS = {
+    "verified-physical": "",
+    "verified-routed": "routed",
+    "physical": "",
+    "layer-2": "",
+    "layer-3": "L3",
+    "ospf": "OSPF",
+    "routing-adjacency": "OSPF",
+    "bgp": "BGP",
+    "protocol-peer": "BGP",
+    "static": "static",
+    "inferred": "inferred",
+}
+
+
+def _link_tag(fused_type: str | None, relationship: str, protocol: str) -> str:
+    for key in (fused_type, relationship, protocol):
+        if key and str(key).casefold() in _LINK_TAGS:
+            return _LINK_TAGS[str(key).casefold()]
+    # An observed protocol we did not map (cdp/lldp) reads fine upper-cased.
+    proto = str(protocol or "").strip()
+    if proto and proto not in ("interface-ownership", "evidence", "unknown"):
+        return proto.upper() if len(proto) <= 5 else proto
+    return ""
 
 
 def _script_json(value: Any) -> str:

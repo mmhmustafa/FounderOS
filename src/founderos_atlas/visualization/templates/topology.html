@@ -13,12 +13,30 @@
     header h1 { margin: 0; font-size: 18px; white-space: nowrap; }
     #search { flex: 1; max-width: 440px; border: 0; border-radius: 6px; padding: 9px 11px; }
     button { border: 1px solid #94a3b8; border-radius: 6px; padding: 8px 12px; background: white; cursor: pointer; }
+    .layout-label { color: #cbd5e1; font-size: 12px; display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+    .layout-label select { border: 0; border-radius: 6px; padding: 7px 9px; background: white; color: #172033; cursor: pointer; }
     main { display: grid; grid-template-columns: minmax(0, 1fr) 300px; height: calc(100vh - 62px); }
-    #cy { min-height: 520px; background: white; }
+    .graph-wrap { position: relative; min-width: 0; }
+    #cy { width: 100%; height: 100%; min-height: 520px; background: white; }
+    #legend { position: absolute; left: 14px; bottom: 14px; z-index: 5; background: rgba(255,255,255,0.94);
+      border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px 12px; font-size: 11px; color: #475569;
+      box-shadow: 0 1px 3px rgba(15,23,42,0.08); max-width: 210px; }
+    #legend h3 { margin: 0 0 7px; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: #94a3b8; }
+    #legend .row { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
+    #legend .swatch { width: 26px; flex: 0 0 26px; }
+    #legend .line { display: inline-block; width: 26px; height: 0; border-top-width: 2.5px; }
+    #legend .dot { width: 13px; height: 13px; border-radius: 3px; flex: 0 0 13px; }
+    #legend .divider { height: 1px; background: #eef2f7; margin: 8px 0; }
     aside { overflow: auto; padding: 18px; border-left: 1px solid #dbe2ea; background: #f8fafc; }
     aside h2 { margin-top: 0; font-size: 17px; }
     .field { margin-bottom: 12px; }
     .field strong { display: block; color: #475569; font-size: 12px; text-transform: uppercase; }
+    /* PR-044A (CONSOLE): device actions on a managed node. */
+    .node-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 16px; padding-top: 14px; border-top: 1px solid #e2e8f0; }
+    .node-action { display: inline-block; padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; color: #0f172a; font-size: 12px; text-decoration: none; }
+    .node-action:hover { border-color: #94a3b8; background: #f8fafc; }
+    .node-action-primary { background: #2563eb; border-color: #2563eb; color: #fff; }
+    .node-action-primary:hover { background: #1d4ed8; border-color: #1d4ed8; }
     #tooltip { position: fixed; display: none; z-index: 10; pointer-events: none; padding: 7px 9px; border-radius: 5px; background: #111827; color: white; font-size: 12px; }
     .summary { margin-left: auto; color: #cbd5e1; font-size: 12px; }
     @media (max-width: 760px) { main { grid-template-columns: 1fr; } aside { display: none; } .summary { display: none; } }
@@ -28,11 +46,37 @@
   <header>
     <h1>Atlas Topology Viewer</h1>
     <input id="search" type="search" placeholder="Search hostname, IP, vendor, or platform" aria-label="Search topology">
+    <label class="layout-label">Layout
+      <select id="layout" aria-label="Graph layout">
+        <option value="tiered" selected>Tiered</option>
+        <option value="concentric">Concentric</option>
+        <option value="force">Force</option>
+        <option value="circle">Circle</option>
+        <option value="grid">Grid</option>
+      </select>
+    </label>
     <button id="fit" type="button">Fit graph</button>
     <span class="summary" id="summary"></span>
   </header>
   <main>
-    <div id="cy" aria-label="Interactive topology graph"></div>
+    <div class="graph-wrap">
+      <div id="cy" aria-label="Interactive topology graph"></div>
+      <div id="legend" aria-label="Legend">
+        <h3>Links</h3>
+        <div class="row"><span class="swatch"><span class="line" style="border-top-style:solid;border-top-color:#64748b"></span></span> Physical</div>
+        <div class="row"><span class="swatch"><span class="line" style="border-top-style:dashed;border-top-color:#60a5fa"></span></span> Verified routed</div>
+        <div class="row"><span class="swatch"><span class="line" style="border-top-style:dashed;border-top-color:#cbd5e1"></span></span> Routing adjacency</div>
+        <div class="row"><span class="swatch"><span class="line" style="border-top-style:dotted;border-top-color:#c4b5fd"></span></span> BGP peering</div>
+        <div class="divider"></div>
+        <h3>Devices</h3>
+        <div class="row"><span class="dot" style="background:#3b82f6"></span> Router</div>
+        <div class="row"><span class="dot" style="background:#0ea5e9"></span> Switch</div>
+        <div class="row"><span class="dot" style="background:#64748b"></span> Server</div>
+        <div class="row"><span class="dot" style="background:#6366f1"></span> Host</div>
+        <div class="row"><span class="dot" style="background:#ef4444"></span> Firewall</div>
+        <div class="row"><span class="dot" style="background:#cbd5e1;border:1px dashed #94a3b8"></span> Unresolved peer</div>
+      </div>
+    </div>
     <aside id="details">
       <h2>Details</h2>
       <p>Click a node to inspect its normalized information, or a connection to see why Atlas created it, which evidence supports it, and what confidence it has.</p>
@@ -42,75 +86,148 @@
   <script>
     const topologyElements = __TOPOLOGY_ELEMENTS__;
     const snapshotSummary = __SNAPSHOT_SUMMARY__;
-    const summaryParts = [`${snapshotSummary.device_count} discovered devices`];
-    summaryParts.push(`${snapshotSummary.physical_links ?? 0} physical links`);
-    if (snapshotSummary.verified_routed) summaryParts.push(`${snapshotSummary.verified_routed} verified routed links`);
-    if (snapshotSummary.routing_adjacencies) summaryParts.push(`${snapshotSummary.routing_adjacencies} routing adjacencies`);
-    if (snapshotSummary.protocol_peers) summaryParts.push(`${snapshotSummary.protocol_peers} BGP peerings`);
+    // Lead with the device count and TOTAL links, then break down only the
+    // link kinds that are actually present — so a routed-only fabric never
+    // opens with a scary "0 physical links".
+    const linkKinds = [];
+    if (snapshotSummary.physical_links) linkKinds.push(`${snapshotSummary.physical_links} physical`);
+    if (snapshotSummary.verified_routed) linkKinds.push(`${snapshotSummary.verified_routed} verified routed`);
+    if (snapshotSummary.routing_adjacencies) linkKinds.push(`${snapshotSummary.routing_adjacencies} routing adjacency`);
+    if (snapshotSummary.protocol_peers) linkKinds.push(`${snapshotSummary.protocol_peers} BGP`);
+    // The count of links actually DRAWN (fused, logical), not the raw
+    // directional observations in the snapshot — so it matches the canvas.
+    const totalLinks = topologyElements.edges.length;
+    const summaryParts = [`${snapshotSummary.device_count} devices`];
+    summaryParts.push(`${totalLinks} link${totalLinks === 1 ? '' : 's'}${linkKinds.length ? ` (${linkKinds.join(', ')})` : ''}`);
     if (snapshotSummary.unresolved_peers) summaryParts.push(`${snapshotSummary.unresolved_peers} unresolved peer identities`);
     document.getElementById('summary').textContent = summaryParts.join(' · ');
 
     // The ICON is the device role; COLOR/BORDER is operational state —
     // never shape alone (PR-043.1 stencil framework).
+    // Layouts an operator can switch between. Force reads well for a routed
+    // fabric; circle and grid help when a mesh gets busy.
+    const LAYOUTS = {
+      // Concentric reads a routed fabric as a hierarchy: the most-connected
+      // devices (core) sit in the centre, edge and access ripple outward.
+      concentric: { name: 'concentric', animate: false, fit: true, padding: 30,
+                    minNodeSpacing: 75, concentric: n => n.degree(),
+                    levelWidth: () => 1.4 },
+      // Tiered: core at the top, distribution/edge/access flowing downward —
+      // the way a network diagram is usually drawn.
+      tiered: { name: 'breadthfirst', animate: false, fit: true, padding: 30,
+                directed: false, circle: false, grid: true, spacingFactor: 1.4 },
+      force: { name: 'cose', animate: false, fit: true, padding: 40,
+               idealEdgeLength: 150, nodeRepulsion: 14000, nodeOverlap: 28,
+               gravity: 0.2, componentSpacing: 160 },
+      circle: { name: 'circle', animate: false, fit: true, padding: 40 },
+      grid: { name: 'grid', animate: false, fit: true, padding: 40 }
+    };
+
     const cy = cytoscape({
       container: document.getElementById('cy'),
       elements: [...topologyElements.nodes, ...topologyElements.edges],
-      layout: { name: 'cose', animate: false, fit: true, padding: 40 },
-      minZoom: 0.25,
+      layout: LAYOUTS.tiered,
+      minZoom: 0.2,
       maxZoom: 3,
+      // Render the canvas at (at least) 3× resolution so labels, interface
+      // names and icons stay crisp even on a standard-DPI monitor, where
+      // Cytoscape would otherwise draw everything at 1×. Never render below
+      // the display's own ratio.
+      pixelRatio: Math.max(3, window.devicePixelRatio || 1),
+      textureOnViewport: false,
+      motionBlur: false,
       style: [
+        // Just the icon — no plate, no border. The node body is invisible;
+        // the device picture IS the node. A coloured ring appears only when
+        // there is operational state to show (new / changed / selected).
         { selector: 'node', style: {
           'shape': 'round-rectangle',
-          'background-color': '#ffffff',
+          'background-opacity': 0,
           'background-image': 'data(stencil)',
           'background-fit': 'contain',
-          'background-clip': 'node',
-          'label': 'data(label)', 'color': '#172033',
-          'font-size': 11, 'text-valign': 'bottom', 'text-margin-y': 7,
-          'width': 46, 'height': 46, 'border-width': 2.5, 'border-color': '#94a3b8'
+          'background-clip': 'none',
+          // Icon sits in the upper part of the node; the nameplate below
+          // overlaps its base so the name reads as a label ON the device,
+          // not floating away from it.
+          'background-width': '92%', 'background-height': '92%',
+          'background-position-y': '-8px',
+          'label': 'data(display_label)', 'color': '#0f172a',
+          'font-size': 11, 'font-weight': 600,
+          'text-valign': 'bottom', 'text-halign': 'center', 'text-margin-y': -14,
+          'text-wrap': 'wrap', 'line-height': 1.3,
+          'text-background-color': '#ffffff', 'text-background-opacity': 0.9,
+          'text-background-shape': 'round-rectangle', 'text-background-padding': 3,
+          'text-border-color': '#e2e8f0', 'text-border-width': 1, 'text-border-opacity': 1,
+          'width': 66, 'height': 74,
+          'border-width': 0
         }},
-        { selector: 'node[kind = "observed"]', style: { 'border-style': 'dashed', 'border-color': '#94a3b8', 'opacity': 0.9 }},
-        { selector: 'node[change = "new"]', style: { 'border-color': '#16a34a', 'border-width': 5 }},
-        { selector: 'node[change = "changed"]', style: { 'border-color': '#f59e0b', 'border-width': 5 }},
-        { selector: 'node[change = "removed"]', style: { 'border-color': '#dc2626', 'border-width': 5, 'border-style': 'dashed', 'opacity': 0.75 }},
-        { selector: 'node:selected', style: { 'border-color': '#2563eb', 'border-width': 5 }},
+        { selector: 'node[kind = "observed"]', style: { 'opacity': 0.85 }},
+        // State ring: a rounded halo around the icon, only when it means
+        // something. `background-opacity` stays 0 so the ring frames the
+        // picture rather than boxing it.
+        { selector: 'node[change = "new"]', style: { 'border-color': '#16a34a', 'border-width': 3, 'border-opacity': 0.9 }},
+        { selector: 'node[change = "changed"]', style: { 'border-color': '#f59e0b', 'border-width': 3, 'border-opacity': 0.9 }},
+        { selector: 'node[change = "removed"]', style: { 'border-color': '#dc2626', 'border-width': 3, 'border-style': 'dashed', 'opacity': 0.7 }},
+        { selector: 'node:selected', style: { 'border-color': '#2563eb', 'border-width': 3, 'border-opacity': 1 }},
+
+        // Base edge: a soft, rounded line. The STYLE carries the
+        // relationship (solid = physical, dashed = routed, dotted =
+        // observed-only); the interface names live in the hover tooltip and
+        // on the selected edge — never plastered on every line.
+        // Thin, straight links keep the devices the focus. Style carries the
+        // relationship: solid = physical, dashed = routed, dotted = observed.
         { selector: 'edge', style: {
-          'width': 2, 'line-color': '#94a3b8', 'curve-style': 'bezier'
+          'width': 1.6, 'line-color': '#cbd5e1', 'curve-style': 'straight',
+          'target-arrow-shape': 'none'
         }},
-        { selector: 'edge[relationship = "physical"]', style: { 'line-style': 'solid' }},
-        { selector: 'edge[relationship = "routing-adjacency"]', style: {
-          'line-style': 'dashed', 'line-color': '#64748b',
-          'label': 'data(protocol)', 'font-size': 9, 'color': '#64748b',
-          'text-background-color': '#ffffff', 'text-background-opacity': 0.8
+        { selector: 'edge[relationship = "physical"]', style: { 'line-style': 'solid', 'line-color': '#64748b', 'width': 2 }},
+        { selector: 'edge[relationship = "verified-routed"]', style: { 'line-style': 'dashed', 'line-color': '#60a5fa', 'width': 1.8 }},
+        { selector: 'edge[relationship = "routing-adjacency"]', style: { 'line-style': 'dashed', 'line-color': '#cbd5e1' }},
+        { selector: 'edge[relationship = "protocol-peer"]', style: { 'line-style': 'dotted', 'line-color': '#c4b5fd', 'width': 1.8 }},
+        { selector: 'edge[relationship = "layer-3"]', style: { 'line-style': 'dashed', 'line-color': '#7dd3fc' }},
+        { selector: 'edge[relationship = "inferred"]', style: { 'line-style': 'dotted', 'line-color': '#e2e8f0' }},
+        { selector: 'edge[relationship = "unknown"]', style: { 'line-style': 'dotted', 'line-color': '#eef2f7' }},
+
+        // Hover lift (#5): the focused device grows and its links brighten;
+        // everything else fades so the neighbourhood stands out.
+        { selector: 'node.node-lift', style: { 'width': 84, 'height': 92, 'z-index': 999 }},
+        { selector: 'edge.edge-hi', style: { 'line-color': '#f59e0b', 'width': 2.6, 'z-index': 998 }},
+        { selector: '.faded', style: { 'opacity': 0.18 }},
+
+        // Hover and selection reveal the interface names at each end —
+        // Packet-Tracer style, but only when you ask for them.
+        { selector: 'edge.hover, edge:selected', style: {
+          'line-color': '#f59e0b', 'width': 3.4,
+          'source-label': 'data(source_interface)', 'target-label': 'data(target_interface)',
+          'source-text-offset': 26, 'target-text-offset': 26,
+          'font-size': 10, 'color': '#0f172a',
+          'text-background-color': '#fff7ed', 'text-background-opacity': 1,
+          'text-background-shape': 'round-rectangle', 'text-background-padding': 2,
+          'text-border-color': '#fcd34d', 'text-border-width': 1, 'text-border-opacity': 1
         }},
-        { selector: 'edge[relationship = "protocol-peer"]', style: {
-          'line-style': 'dotted', 'line-color': '#94a3b8',
-          'label': 'data(protocol)', 'font-size': 9, 'color': '#94a3b8',
-          'text-background-color': '#ffffff', 'text-background-opacity': 0.8
-        }},
-        { selector: 'edge[relationship = "verified-routed"]', style: {
-          'line-style': 'dashed', 'line-color': '#2563eb', 'width': 2.5,
-          'label': 'data(protocol)', 'font-size': 9, 'color': '#2563eb',
-          'text-background-color': '#ffffff', 'text-background-opacity': 0.8
-        }},
-        { selector: 'edge[relationship = "layer-3"]', style: {
-          'line-style': 'dashed', 'line-color': '#0ea5e9'
-        }},
-        { selector: 'edge[relationship = "inferred"]', style: {
-          'line-style': 'dotted', 'line-color': '#cbd5e1'
-        }},
-        { selector: 'edge[relationship = "unknown"]', style: {
-          'line-style': 'dotted', 'line-color': '#e2e8f0'
-        }},
-        { selector: 'edge:selected', style: { 'line-color': '#f59e0b', 'width': 3.5 }},
-        { selector: '.search-muted', style: { 'opacity': 0.18 }},
-        { selector: '.search-match', style: { 'border-color': '#f59e0b', 'border-width': 5, 'opacity': 1 }}
+        { selector: '.search-muted', style: { 'opacity': 0.15 }},
+        { selector: '.search-match', style: { 'border-color': '#f59e0b', 'border-width': 4, 'opacity': 1 }}
       ]
     });
+
+    // Layout switcher.
+    const layoutSelect = document.getElementById('layout');
+    if (layoutSelect) {
+      layoutSelect.addEventListener('change', () => {
+        const chosen = LAYOUTS[layoutSelect.value] || LAYOUTS.force;
+        cy.layout(chosen).run();
+      });
+    }
 
     const details = document.getElementById('details');
     const tooltip = document.getElementById('tooltip');
     const escapeHtml = value => String(value).replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+    // This viewer is both an embedded pane inside Atlas and a standalone
+    // artifact file. Device actions link back into Atlas, so they are
+    // offered only when Atlas is actually around them.
+    const embeddedInAtlas = (() => {
+      try { return window.parent !== window; } catch (error) { return false; }
+    })();
     const nodeDetails = data => {
       const unresolved = data.kind === 'observed';
       const heading = unresolved && (data.observation === 'routing-adjacency' || data.observation === 'protocol-peer')
@@ -145,7 +262,31 @@
       <div class="field"><strong>Last discovered</strong>${escapeHtml(data.last_discovered ?? 'unrecorded')}</div>
       <div class="field"><strong>Configuration collected</strong>${escapeHtml(data.config_collected ?? 'No')}</div>
       <div class="field"><strong>Last configuration change</strong>${escapeHtml(data.last_config_change ?? 'None recorded')}</div>`;
+      html += nodeActions(data);
       return html;
+    };
+
+    // PR-044A (CONSOLE): a managed node offers the universal device action.
+    //
+    // Only when this viewer is embedded in Atlas: the artifact is also a
+    // standalone file, and a standalone file must not carry links to an
+    // application that is not there. Unresolved peers never reach here —
+    // nodeDetails returns before this for kind === 'observed' — so an
+    // observed peer can never be offered a session. The console route
+    // re-resolves the device from evidence regardless, so a stale link is
+    // refused by the server, not merely hidden by the viewer.
+    const nodeActions = data => {
+      if (!embeddedInAtlas || !data.id) { return ''; }
+      const id = encodeURIComponent(data.id);
+      const name = encodeURIComponent(data.label || '');
+      return `
+      <div class="node-actions">
+        <a class="node-action node-action-primary" target="_top" href="/console/${id}">Open SSH Console</a>
+        <a class="node-action" target="_top" href="/device/${id}">Device Details</a>
+        <a class="node-action" target="_top" href="/configuration/${id}">Configuration History</a>
+        <a class="node-action" target="_top" href="/paths?device=${name}">Investigate</a>
+        <a class="node-action" target="_top" href="/predict?device=${name}">Predict Change</a>
+      </div>`;
     };
 
     // PR-043.7 (FUSION): clicking any relationship explains WHY Atlas
@@ -191,7 +332,29 @@
     cy.on('mouseover', 'node', event => {
       tooltip.textContent = `${event.target.data('label')} · ${event.target.data('management_ip')}`;
       tooltip.style.display = 'block';
+      // Hover lift (#5): grow the focused device, brighten its links, and
+      // fade everything else so its neighbourhood stands out.
+      const node = event.target;
+      const hood = node.closedNeighborhood();
+      cy.elements().difference(hood).addClass('faded');
+      node.addClass('node-lift');
+      hood.edges().addClass('edge-hi');
     });
+    cy.on('mouseout', 'node', () => {
+      cy.elements().removeClass('faded node-lift edge-hi');
+    });
+    // Hovering a link reveals its interface names (Packet-Tracer style, on
+    // demand) and names the connection in plain terms — never the internal
+    // evidence kind.
+    const linkLabel = id => { const n = cy.getElementById(id); return n.length ? n.data('label') : id; };
+    cy.on('mouseover', 'edge', event => {
+      const d = event.target.data();
+      event.target.addClass('hover');
+      const tag = d.link_tag ? ` · ${d.link_tag}` : '';
+      tooltip.textContent = `${linkLabel(d.source)} ${d.source_interface || '?'} ↔ ${linkLabel(d.target)} ${d.target_interface || '?'}${tag}`;
+      tooltip.style.display = 'block';
+    });
+    cy.on('mouseout', 'edge', event => { event.target.removeClass('hover'); tooltip.style.display = 'none'; });
     cy.on('mousemove', event => {
       if (event.originalEvent) {
         tooltip.style.left = `${event.originalEvent.clientX + 12}px`;

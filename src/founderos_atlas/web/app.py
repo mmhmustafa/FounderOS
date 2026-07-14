@@ -12,6 +12,14 @@ from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
+from founderos_atlas.console import (
+    ConsoleAuditLog,
+    ConsoleSessionManager,
+    ConsoleTokenStore,
+    DEFAULT_IDLE_TIMEOUT_SECONDS,
+    DEFAULT_MAX_CONCURRENT,
+    DEFAULT_MAX_DURATION_SECONDS,
+)
 from founderos_atlas.transport import DeviceTransport
 from founderos_atlas.workspace import (
     ProfileService,
@@ -95,6 +103,41 @@ def create_app(
         # overrides it — NOC teams often standardise on UTC to correlate
         # against device syslog.
         ATLAS_DISPLAY_TIMEZONE=os.environ.get("ATLAS_DISPLAY_TIMEZONE", AUTO),
+    )
+
+    # PR-044A (CONSOLE). Interactive SSH is the one place the GUI stops being
+    # read-only, so its limits are explicit and its origin rule is strict.
+    app.config.update(
+        ATLAS_CONSOLE_TOKENS=ConsoleTokenStore(clock=clock),
+        ATLAS_CONSOLE_SESSIONS=ConsoleSessionManager(
+            audit=ConsoleAuditLog(resolved_output / ".atlas" / "console-audit.jsonl"),
+            idle_timeout_seconds=int(
+                os.environ.get(
+                    "ATLAS_CONSOLE_IDLE_TIMEOUT", DEFAULT_IDLE_TIMEOUT_SECONDS
+                )
+            ),
+            max_duration_seconds=int(
+                os.environ.get(
+                    "ATLAS_CONSOLE_MAX_DURATION", DEFAULT_MAX_DURATION_SECONDS
+                )
+            ),
+            max_concurrent=int(
+                os.environ.get("ATLAS_CONSOLE_MAX_SESSIONS", DEFAULT_MAX_CONCURRENT)
+            ),
+            clock=clock,
+        ),
+        ATLAS_CONSOLE_CONNECT_TIMEOUT=float(
+            os.environ.get("ATLAS_CONSOLE_CONNECT_TIMEOUT", 10.0)
+        ),
+        # Extra Origins the console WebSocket will accept. The GUI's own
+        # address is always allowed; this exists for a reverse proxy, and
+        # should stay empty otherwise. Never set it to "*" — a WebSocket has
+        # no CORS to fall back on.
+        ATLAS_CONSOLE_ALLOWED_ORIGINS=tuple(
+            item.strip()
+            for item in os.environ.get("ATLAS_CONSOLE_ALLOWED_ORIGINS", "").split(",")
+            if item.strip()
+        ),
     )
     app.secret_key = "atlas-local-alpha"  # only used for flash messages, local-only
 

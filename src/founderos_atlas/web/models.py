@@ -23,6 +23,8 @@ NAV_ITEMS = (
     ("topology", "Topology", "/topology"),
     # PR-044 (MEMORY): Configuration Memory — what existed yesterday.
     ("configuration", "Configuration", "/configuration"),
+    ("console", "Console", "/console"),
+    ("management", "Management", "/management"),
     ("predict", "Predict", "/predict"),
     ("paths", "Paths", "/paths"),
     ("compass", "Compass", "/compass"),

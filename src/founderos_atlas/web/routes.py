@@ -15,6 +15,7 @@ comparing one network against another.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from pathlib import Path
 
 from founderos_atlas.credentials import (
@@ -78,6 +79,7 @@ def register_routes(app) -> None:
     from flask import (
         abort,
         flash,
+        g,
         jsonify,
         redirect,
         render_template,
@@ -2012,6 +2014,491 @@ def register_routes(app) -> None:
             "atlas_version": "FounderOS v0.3 Alpha",
         }
         return render_template("settings.html", **context, **base_context("settings"))
+
+    # -- Console (PR-044A) --------------------------------------------------
+
+    def console_scopes(scopes, scope_id):
+        """The scopes a console view covers: one network, or all of them."""
+
+        if scope_id == GLOBAL_SCOPE_ID:
+            return aggregation_scopes(scopes)
+        return (scopes[scope_id],)
+
+    def _scope_devices(scope):
+        """Canonical devices in one scope, from its topology snapshot.
+
+        A device is here only because Atlas opened an authenticated session
+        to its management_ip and collected its identity. Unresolved peers
+        are observations, not devices, and never appear.
+        """
+
+        import json
+
+        path = scope.snapshot_path
+        if not path.is_file():
+            return ()
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return ()
+        devices = data.get("devices")
+        return tuple(devices) if isinstance(devices, list) else ()
+
+    def _scope_login(scope):
+        """(username, credential_ref, credential_name) for a scope."""
+
+        profile = profile_for_scope(scope.scope_id)
+        if profile is None:
+            return None, None, None
+        return profile.username, profile.credential_ref, profile.name
+
+    def console_targets(scopes, scope_id):
+        """Every canonical device in the active scope, resolved for SSH."""
+
+        from founderos_atlas.console import resolve_targets
+
+        found = []
+        for scope in console_scopes(scopes, scope_id):
+            username, credential_ref, credential_name = _scope_login(scope)
+            found.extend(
+                resolve_targets(
+                    _scope_devices(scope),
+                    network=scope.label,
+                    scope_id=scope.scope_id,
+                    username=username,
+                    credential_ref=credential_ref,
+                    credential_name=credential_name,
+                )
+            )
+        return tuple(found)
+
+    def console_target(scopes, scope_id, device_id: str):
+        """One canonical device resolved for SSH, or None if there is no
+        such canonical device in this scope (which is what an unresolved
+        peer is)."""
+
+        from founderos_atlas.console import find_target
+
+        for scope in console_scopes(scopes, scope_id):
+            username, credential_ref, credential_name = _scope_login(scope)
+            target = find_target(
+                _scope_devices(scope),
+                device_id,
+                network=scope.label,
+                scope_id=scope.scope_id,
+                username=username,
+                credential_ref=credential_ref,
+                credential_name=credential_name,
+            )
+            if target is not None:
+                return target
+        return None
+
+    def console_credential_choices(scopes, scope_id):
+        """Credential sets the operator may pick from, by reference.
+
+        References only. The secrets they name stay in the credential store.
+        """
+
+        choices = []
+        seen = set()
+        for profile in profile_service().list_profiles(include_archived=True):
+            if not profile.credential_ref or profile.credential_ref in seen:
+                continue
+            seen.add(profile.credential_ref)
+            choices.append(
+                {
+                    "credential_ref": profile.credential_ref,
+                    "name": profile.name,
+                    "username": profile.username,
+                }
+            )
+        return choices
+
+    def console_credential_for(scopes, scope_id, credential_ref: str):
+        """(username, password) for a credential reference.
+
+        The one place the console reads a secret. It is handed straight to
+        paramiko and never returned to a route, a template, or a socket.
+        """
+
+        for profile in profile_service().list_profiles(include_archived=True):
+            if profile.credential_ref == credential_ref:
+                password = profile_service().credential_provider.get(
+                    credential_ref
+                )
+                return profile.username, password
+        raise KeyError("unknown credential reference")
+
+    def console_host_key_store():
+        from founderos_atlas.console import HostKeyStore
+
+        return HostKeyStore(Path(cfg("ATLAS_WORKSPACE_ROOT")) / "known_hosts.json")
+
+    def console_audit():
+        from founderos_atlas.console import ConsoleAuditLog
+
+        return ConsoleAuditLog(output_dir() / ".atlas" / "console-audit.jsonl")
+
+    def console_probe_host_key(host: str, port: int):
+        from founderos_atlas.console import probe_host_key
+
+        return probe_host_key(host, port, console_host_key_store())
+
+    # -- Management / web access (PR-044B, PORTAL) -------------------------
+
+    def management_store(scope):
+        from founderos_atlas.management import ManagementServiceStore
+
+        return ManagementServiceStore(scope.output_dir / "management-services.json")
+
+    def _device_for(scopes, scope_id, device_id: str):
+        """The raw canonical device record + owning scope, or (None, None)."""
+
+        for scope in console_scopes(scopes, scope_id):
+            for device in _scope_devices(scope):
+                if str(device.get("device_id") or "").strip() == str(device_id).strip():
+                    return device, scope
+        return None, None
+
+    def web_access_for(scopes, scope_id, device_id: str):
+        """Resolve one canonical device's web-management actions."""
+
+        from founderos_atlas.management import resolve_web_access
+
+        device, scope = _device_for(scopes, scope_id, device_id)
+        if device is None:
+            return None
+        services = management_store(scope).services_for(device_id)
+        return resolve_web_access(
+            device, network=scope.label, scope_id=scope.scope_id, services=services
+        )
+
+    def management_audit():
+        # Web opens share the console's connection audit — one honest record
+        # of who reached which device, how, and with what outcome.
+        return console_audit()
+
+    # What the console surface needs from the GUI, without an import cycle.
+    console_deps = SimpleNamespace(
+        scoped_context=scoped_context,
+        console_target=console_target,
+        credential_choices=console_credential_choices,
+        credential_for=console_credential_for,
+        host_key_store=console_host_key_store,
+        probe_host_key=console_probe_host_key,
+        audit=console_audit,
+        token_store=lambda: app.config["ATLAS_CONSOLE_TOKENS"],
+        session_manager=lambda: app.config["ATLAS_CONSOLE_SESSIONS"],
+    )
+
+    @app.context_processor
+    def _console_action_context():
+        """Make the universal device action available to EVERY template.
+
+        This is what stops eleven pages each growing their own idea of when
+        SSH is allowed. A template asks for a target by device id or
+        hostname; the answer always comes from console/resolve.py, from
+        evidence, for the scope the operator is actually looking at.
+
+        Resolution is cached per request: a topology page with 60 nodes
+        reads the snapshot once, not sixty times.
+        """
+
+        def _targets_for_request():
+            cache = getattr(g, "_console_targets", None)
+            if cache is None:
+                try:
+                    _ctx, scopes, scope_id = scoped_context("topology")
+                    cache = console_targets(scopes, scope_id)
+                except Exception:  # noqa: BLE001 - a widget must not 500 a page
+                    cache = ()
+                g._console_targets = cache
+            return cache
+
+        def device_target(device_id=None, hostname=None):
+            if not device_id and not hostname:
+                return None
+            cache = _targets_for_request()
+            if device_id:
+                wanted = str(device_id).strip()
+                for target in cache:
+                    if target.device_id == wanted:
+                        return target.to_dict()
+            if hostname:
+                wanted = str(hostname).strip().casefold()
+                for target in cache:
+                    if target.hostname.casefold() == wanted:
+                        return target.to_dict()
+            # Not a canonical device in this scope — an unresolved peer, or a
+            # name from another network. No target, therefore no SSH action.
+            return None
+
+        def devices_mentioned(*texts):
+            """Canonical devices named in some text, resolved for SSH.
+
+            Deterministic: an exact, word-boundary match of a canonical
+            hostname against text Atlas itself produced. It cannot invent a
+            device, and it cannot offer a session to something that is not a
+            canonical device with a verified endpoint.
+
+            This is how Advisor *suggests* a console. It never opens one —
+            the engineer clicks, or nothing happens.
+            """
+
+            import re
+
+            cache = _targets_for_request()
+            haystack = " ".join(str(item or "") for item in texts)
+            if not haystack.strip():
+                return []
+            found = []
+            for target in cache:
+                if not target.eligible:
+                    continue
+                pattern = r"\b" + re.escape(target.hostname) + r"\b"
+                if re.search(pattern, haystack, re.IGNORECASE):
+                    found.append(target.to_dict())
+            return found
+
+        def _web_access_for_request():
+            cache = getattr(g, "_web_access", None)
+            if cache is None:
+                try:
+                    _ctx, scopes, scope_id = scoped_context("topology")
+                    cache = {}
+                    for scope in console_scopes(scopes, scope_id):
+                        store = management_store(scope)
+                        for device in _scope_devices(scope):
+                            did = str(device.get("device_id") or "").strip()
+                            if not did:
+                                continue
+                            from founderos_atlas.management import resolve_web_access
+
+                            cache[did] = resolve_web_access(
+                                device,
+                                network=scope.label,
+                                scope_id=scope.scope_id,
+                                services=store.services_for(did),
+                            )
+                except Exception:  # noqa: BLE001 - a widget must not 500 a page
+                    cache = {}
+                g._web_access = cache
+            return cache
+
+        def web_access(device_id=None, hostname=None):
+            """Web-management actions for a device, for the action macro.
+
+            Same rule as ``device_target``: resolved from evidence, for the
+            active scope, cached per request. An unresolved peer or unknown
+            name yields nothing.
+            """
+
+            cache = _web_access_for_request()
+            if device_id:
+                found = cache.get(str(device_id).strip())
+                if found is not None:
+                    return found.to_dict()
+            if hostname:
+                wanted = str(hostname).strip().casefold()
+                for access in cache.values():
+                    if access.hostname.casefold() == wanted:
+                        return access.to_dict()
+            return None
+
+        return {
+            "device_target": device_target,
+            "devices_mentioned": devices_mentioned,
+            "web_access": web_access,
+        }
+
+    @app.route("/console")
+    def console_index():
+        """Every device an engineer can open a session to, in one place."""
+
+        context, scopes, scope_id = scoped_context("console")
+        targets = console_targets(scopes, scope_id)
+        manager = app.config["ATLAS_CONSOLE_SESSIONS"]
+        manager.expire_due()
+        return render_template(
+            "console_index.html",
+            targets=[item.to_dict() for item in targets],
+            eligible_count=sum(1 for item in targets if item.eligible),
+            sessions=[item.to_dict() for item in manager.sessions()],
+            operator=_console_operator().to_dict(),
+            **context,
+        )
+
+    def _console_operator():
+        from founderos_atlas.console import require_operator
+
+        return require_operator()
+
+    from .console_routes import register_console_routes
+
+    register_console_routes(app, console_deps)
+
+    # -- Management / web-access routes (PR-044B, PORTAL) ------------------
+
+    def _guard_console_origin():
+        """Same origin gate the console POSTs use (see console.security)."""
+
+        from founderos_atlas.console import origin_allowed
+
+        allowed = app.config.get("ATLAS_CONSOLE_ALLOWED_ORIGINS") or ()
+        if not origin_allowed(
+            request.headers.get("Origin"),
+            host_header=request.headers.get("Host"),
+            allowed_hosts=tuple(str(item) for item in allowed),
+        ):
+            return False
+        return True
+
+    @app.route("/management")
+    def management_index():
+        """Every device's web-management state, in one place."""
+
+        context, scopes, scope_id = scoped_context("management")
+        rows = []
+        for scope in console_scopes(scopes, scope_id):
+            store = management_store(scope)
+            for device in _scope_devices(scope):
+                did = str(device.get("device_id") or "").strip()
+                if not did:
+                    continue
+                from founderos_atlas.management import resolve_web_access
+
+                access = resolve_web_access(
+                    device, network=scope.label, scope_id=scope.scope_id,
+                    services=store.services_for(did),
+                )
+                rows.append(access.to_dict())
+        return render_template(
+            "management_index.html",
+            devices=rows,
+            web_count=sum(1 for row in rows if row["any_web"]),
+            https_count=sum(1 for row in rows if row["has_https"]),
+            **context,
+        )
+
+    @app.route("/management/<path:device_id>/verify", methods=["POST"])
+    def management_verify(device_id: str):
+        """Probe a device's management address for a web interface, now."""
+
+        if not _guard_console_origin():
+            return jsonify({"error": "This request did not come from Atlas."}), 403
+        _context, scopes, scope_id = scoped_context("management")
+        device, scope = _device_for(scopes, scope_id, device_id)
+        if device is None:
+            return jsonify({"error": "No such device in this scope."}), 404
+
+        from founderos_atlas.console import resolve_target
+        from founderos_atlas.management import (
+            WebServiceVerifier,
+            detect_certificate_change,
+            resolve_web_access,
+        )
+
+        target = resolve_target(device, network=scope.label, scope_id=scope.scope_id)
+        if not target.eligible or not target.management_ip:
+            return jsonify({"error": target.reason, "state": target.state}), 409
+
+        store = management_store(scope)
+        known = store.known_index(device_id)
+        verifier = WebServiceVerifier()
+        try:
+            services = verifier.verify(device_id, target.management_ip, known=known)
+        except Exception:  # noqa: BLE001 - never leak a trace
+            return jsonify(
+                {"error": "Atlas could not complete web-service verification."}
+            ), 502
+
+        # Certificate-change detection against the previously stored HTTPS.
+        cert_changed = False
+        previous_fp = None
+        for service in services:
+            prev = known.get((service.protocol, service.port))
+            changed, oldfp = detect_certificate_change(prev, service)
+            if changed:
+                cert_changed = True
+                previous_fp = oldfp
+        store.record_services(device_id, services)
+        access = resolve_web_access(
+            device, network=scope.label, scope_id=scope.scope_id,
+            services=store.services_for(device_id),
+            certificate_changed=cert_changed, previous_fingerprint=previous_fp,
+        )
+        management_audit().record(
+            "web-service-verified", session_id="-",
+            operator=_console_operator().name, device_id=device_id,
+            hostname=target.hostname, management_ip=target.management_ip,
+            port=0, credential_ref=None, result=access.state,
+            detail=f"{len(services)} service(s)",
+        )
+        return jsonify(access.to_dict())
+
+    @app.route("/management/<path:device_id>/define", methods=["POST"])
+    def management_define(device_id: str):
+        """Record an operator-stated management URL."""
+
+        if not _guard_console_origin():
+            return jsonify({"error": "This request did not come from Atlas."}), 403
+        _context, scopes, scope_id = scoped_context("management")
+        device, scope = _device_for(scopes, scope_id, device_id)
+        if device is None:
+            return jsonify({"error": "No such device in this scope."}), 404
+
+        from urllib.parse import urlsplit
+
+        from founderos_atlas.management import PROTOCOL_HTTP, PROTOCOL_HTTPS
+
+        payload = request.json if request.is_json else {}
+        url = str((payload or {}).get("url") or "").strip()
+        reason = str((payload or {}).get("reason") or "").strip() or None
+        parts = urlsplit(url)
+        if parts.scheme not in (PROTOCOL_HTTPS, PROTOCOL_HTTP) or not parts.hostname:
+            return jsonify(
+                {"error": "Enter a full http(s):// management URL."}
+            ), 400
+        port = parts.port or (443 if parts.scheme == PROTOCOL_HTTPS else 80)
+        service = management_store(scope).define_endpoint(
+            device_id, url=url, protocol=parts.scheme, address=parts.hostname,
+            port=port, user=_console_operator().name, reason=reason,
+        )
+        management_audit().record(
+            "web-endpoint-defined", session_id="-",
+            operator=_console_operator().name, device_id=device_id,
+            hostname=str(device.get("hostname") or device_id),
+            management_ip=parts.hostname, port=port, credential_ref=None,
+            result="operator-defined", detail=url,
+        )
+        return jsonify(service.to_dict())
+
+    @app.route("/management/<path:device_id>/opened", methods=["POST"])
+    def management_opened(device_id: str):
+        """Audit that the operator opened a device's web UI.
+
+        The browser reports it after opening the tab. Records the URL and
+        outcome — never a password, cookie, or anything the operator then
+        typed into the device.
+        """
+
+        if not _guard_console_origin():
+            return jsonify({"error": "This request did not come from Atlas."}), 403
+        payload = request.json if request.is_json else {}
+        url = str((payload or {}).get("url") or "").strip()
+        protocol = str((payload or {}).get("protocol") or "").strip()
+        _context, scopes, scope_id = scoped_context("management")
+        device, _scope = _device_for(scopes, scope_id, device_id)
+        hostname = str((device or {}).get("hostname") or device_id)
+        management_audit().record(
+            "web-management-opened", session_id="-",
+            operator=_console_operator().name, device_id=device_id,
+            hostname=hostname, management_ip="", port=0, credential_ref=None,
+            result=("insecure-http" if protocol == "http" else "opened"),
+            detail=url,
+        )
+        return jsonify({"recorded": True})
 
     # -- Artifact serving ---------------------------------------------------
 

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_device_actions.html" import device_actions %}
 {% block title %}Configuration{% endblock %}
 {% block content %}
 <div class="page-head">
@@ -60,6 +61,7 @@
         <td>{{ device.last_seen }}</td>
         <td class="row-actions">
           <a class="btn btn-sm btn-primary" href="/configuration/{{ device.device_id | urlencode }}">History</a>
+          {{ device_actions(device_target(device_id=device.device_id), compact=True, show_label=False) }}
         </td>
       </tr>
       {% endfor %}

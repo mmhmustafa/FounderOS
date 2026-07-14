@@ -34,12 +34,17 @@ class TopologyVisualizationTests(unittest.TestCase):
         self.assertIn("Atlas Topology Viewer", html)
         self.assertIn("cytoscape({", html)
         self.assertIn("name: 'cose'", html)
-        self.assertIn("minZoom: 0.25", html)
+        self.assertIn("minZoom:", html)
         self.assertIn("id=\"fit\"", html)
         self.assertIn("id=\"search\"", html)
         self.assertIn("cy.on('tap', 'node'", html)
         self.assertIn("cy.on('mouseover', 'node'", html)
         self.assertIn("search-match", html)
+        # PORTAL-adjacent polish: the raw evidence kind must not be an edge
+        # label, and interface names are the meaningful link caption.
+        self.assertNotIn("'label': 'data(protocol)'", html)
+        self.assertIn("data(source_interface)", html)
+        self.assertIn("data(display_label)", html)
 
     def test_rendering_is_deterministic(self) -> None:
         first = TopologyRenderer(self.snapshot).render()

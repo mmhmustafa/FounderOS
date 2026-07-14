@@ -265,3 +265,28 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 .config-view code { font-size: 12px; }
 .config-view td:first-child { width: 48px; text-align: right; user-select: none; }
 .config-view .line-masked { background: #fffbeb; }
+
+/* PR-044A (CONSOLE): interactive SSH. The terminal owns a dark surface
+   regardless of the page around it — an engineer reads a CLI, not a page. */
+.console-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 12px; }
+.console-identity { display: flex; flex-direction: column; gap: 2px; }
+.console-meta { display: flex; align-items: center; gap: 12px; }
+.console-facts { margin-bottom: 16px; }
+.console-card { background: #0f172a; border-color: #1e293b; }
+.console-card h2 { color: #e2e8f0; }
+.console-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.console-cred { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.console-cred .muted { color: #94a3b8; }
+.console-terminal { height: 520px; width: 100%; }
+.device-actions { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.device-actions-compact { gap: 4px; }
+.btn-console { background: var(--accent); color: #fff; border-color: var(--accent); }
+.badge-muted { background: #e2e8f0; color: var(--muted); }
+.card-warn { border-left: 4px solid var(--amber); }
+/* PR-044B (PORTAL): web-management actions. */
+.btn-web { background: #0f766e; color: #fff; border-color: #0f766e; }
+.btn-web:hover { background: #0d655e; }
+.btn-web-insecure { background: #fff7ed; color: #9a3412; border-color: #fdba74; }
+.btn-web-insecure:hover { background: #ffedd5; }
+.cert-flag { color: #b45309; font-weight: 700; }
+.tls-warn { color: var(--amber); }

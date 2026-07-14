@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_device_actions.html" import device_actions %}
 {% block title %}Advisor{% endblock %}
 {% block content %}
 <h1>Atlas Advisor</h1>
@@ -57,6 +58,23 @@
   <div class="actions">
     <a class="btn btn-primary" href="{{ response.next_action.href }}">{{ response.next_action.label }}</a>
   </div>
+
+  {# The question counts: an engineer who asks about core1 is telling Atlas
+     which device they care about. Matching is still an exact hostname match
+     against canonical devices, so a typo or an unknown name offers nothing. #}
+  {% set mentioned = devices_mentioned(response.question, response.summary, response.evidence | map(attribute='label') | join(' '), response.evidence | map(attribute='detail') | join(' ')) %}
+  {% if mentioned %}
+  <h2>Devices in this answer</h2>
+  <p class="muted">Atlas can open an interactive SSH session or a verified web interface for these. It will not do so on its own — nothing connects or opens until you click.</p>
+  <ul class="kv">
+    {% for target in mentioned %}
+    <li>
+      <span><strong>{{ target.hostname }}</strong> <span class="muted">{{ target.management_ip }}</span></span>
+      <span>{{ device_actions(target, compact=True, web=web_access(device_id=target.device_id)) }}</span>
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
 
   {% if response.followups %}
   <h2>Follow-up</h2>
