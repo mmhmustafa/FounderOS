@@ -498,6 +498,74 @@ class CredentialSetOnlyProfileTests(unittest.TestCase):
             # DELETE — nothing of its own to forget.
             service.delete_profile("Set Only Copy")
 
+    def test_a_set_only_profile_reaches_the_network_with_the_sets_credential(self) -> None:
+        """The assertion that actually matters: does it CONNECT?
+
+        Everything else here checks that a set-only profile can be stored and
+        read. This checks the only thing an operator cares about — that the
+        credential from the set arrives at the transport. Two regressions got
+        past "it saves fine": `credential_ref must be a non-empty string`, then
+        `username is required`, each one layer further down the same path. So
+        this walks the whole way to the socket.
+        """
+
+        from founderos_atlas.credentials import CredentialSetRepository
+        from founderos_atlas.credentials.models import CredentialEntry, CredentialSet
+        from founderos_runtime.cli.commands import CliError, atlas_discover_command
+
+        with tempfile.TemporaryDirectory() as tmp:
+            workdir = Path(tmp)
+            service = make_service(workdir)
+            CredentialSetRepository(service.repository.root).save(
+                CredentialSet(
+                    set_id="lab-admin",
+                    name="Lab Admin",
+                    entries=(
+                        CredentialEntry(
+                            entry_id="e1", label="lab", username="atlas",
+                            credential_ref="ref-lab", priority=10,
+                        ),
+                    ),
+                )
+            )
+            service.credential_provider.save("ref-lab", "labpass")
+            service.add_profile(
+                name="Set Only", management_ip="10.0.0.1",
+                username="", password="", credential_sets=("lab-admin",),
+            )
+
+            seen: dict[str, str] = {}
+
+            def factory(credentials):
+                seen.setdefault("username", credentials.username)
+                seen.setdefault("password", credentials.password)
+                raise OSError("no network in tests")
+
+            with self.assertRaises(CliError):
+                atlas_discover_command(
+                    profile="Set Only",
+                    profile_service=service,
+                    transport_factory=factory,
+                    topology_output=workdir / "t.html",
+                    snapshot_output=workdir / "s.json",
+                    brief_output=workdir / "b.md",
+                    config_output_dir=workdir / "configs",
+                    dashboard_output=workdir / "d.html",
+                    history_root=workdir / ".atlas" / "history",
+                    change_report_json_output=workdir / "c.json",
+                    change_report_markdown_output=workdir / "c.md",
+                    config_change_json_output=workdir / "cc.json",
+                    config_change_markdown_output=workdir / "cc.md",
+                    state_change_json_output=workdir / "sc.json",
+                    state_change_markdown_output=workdir / "sc.md",
+                    browser_opener=lambda url: None,
+                    progress=lambda line: None,
+                )
+            # The SET's credential reached the transport — resolved per device,
+            # with no credential of the profile's own anywhere in the path.
+            self.assertEqual("atlas", seen.get("username"))
+            self.assertEqual("labpass", seen.get("password"))
+
     def test_giving_a_set_only_profile_a_password_later_mints_a_reference(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             service = make_service(Path(tmp))

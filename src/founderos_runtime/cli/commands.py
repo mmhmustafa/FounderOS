@@ -411,10 +411,27 @@ def atlas_discover_command(
 
     try:
         config = MultiHopConfig(max_depth=max_depth, max_devices=max_devices)
-        credentials = DeviceCredentials(host=host, username=username, password=password)
+        # A profile may authenticate purely from credential sets, and then has
+        # no credential of its own to seed from. Every connection in that case
+        # comes from the per-device resolver below (`credential_factory`), so
+        # nothing needs a DeviceCredentials — and building one out of empty
+        # strings only trips its own "username is required" validation. It is
+        # constructed when there is something real to put in it, and not before.
+        credentials = (
+            DeviceCredentials(host=host, username=username, password=password)
+            if (username and password)
+            else None
+        )
         build_transport = transport_factory or SSHDeviceTransport
 
         def host_transport(next_host: str) -> DeviceTransport:
+            # Only ever the traversal factory when there is no profile, and a
+            # profile-less run cannot reach here without a credential.
+            if credentials is None:  # pragma: no cover - defensive
+                raise CliError(
+                    "No credential to connect with: a profile that authenticates "
+                    "from credential sets resolves them per device."
+                )
             return build_transport(replace(credentials, host=next_host))
 
         # Profile runs resolve credentials per device: the profile's own
@@ -468,7 +485,7 @@ def atlas_discover_command(
         )
         report, graph, snapshot = run_multihop_discovery(
             traversal_factory,
-            credentials.host,
+            host,  # the seed address; `credentials` may not exist (set-only)
             config=config,
             policy=active_boundary,
             extra_seeds=active_seeds or (),
@@ -1729,7 +1746,10 @@ def _regenerate_dashboard(
 def _collect_configurations_if_requested(
     read_input: PromptReader,
     build_transport: TransportFactory,
-    credentials: DeviceCredentials,
+    # None when the profile authenticates purely from credential sets; then
+    # `host_factory` (the per-device resolver) supplies every transport and
+    # this is never consulted.
+    credentials: DeviceCredentials | None,
     report,
     config_output_dir: str | Path,
     *,
