@@ -2582,20 +2582,57 @@ def register_routes(app) -> None:
 
     @app.route("/console")
     def console_index():
-        """Every device an engineer can open a session to, in one place."""
+        """Device Access — every way Atlas can reach a device, in one place.
+
+        SSH and the web interface are two ways into the same device, resolved
+        from the same evidence and the same verified management endpoint. They
+        were two pages; a device is one thing, so this is one page. Verifying a
+        web interface and defining an operator URL are actions *on a device*,
+        and live here beside the actions they enable.
+        """
 
         context, scopes, scope_id = scoped_context("console")
         targets = console_targets(scopes, scope_id)
         manager = app.config["ATLAS_CONSOLE_SESSIONS"]
         manager.expire_due()
+        rows = [item.to_dict() for item in targets]
+        # Web state per device, keyed by device id, so the table can show what
+        # Atlas found without re-resolving per cell.
+        web_by_device = {
+            device_id: access
+            for device_id, access in _web_access_map(scopes, scope_id).items()
+        }
         return render_template(
             "console_index.html",
-            targets=[item.to_dict() for item in targets],
+            targets=rows,
+            web_by_device=web_by_device,
             eligible_count=sum(1 for item in targets if item.eligible),
+            web_count=sum(1 for a in web_by_device.values() if a["any_web"]),
+            https_count=sum(1 for a in web_by_device.values() if a["has_https"]),
             sessions=[item.to_dict() for item in manager.sessions()],
             operator=_console_operator().to_dict(),
             **context,
         )
+
+    def _web_access_map(scopes, scope_id) -> dict:
+        """Every device's resolved web-management state for the active scope."""
+
+        from founderos_atlas.management import resolve_web_access
+
+        found: dict = {}
+        for scope in console_scopes(scopes, scope_id):
+            store = management_store(scope)
+            for device in _scope_devices(scope):
+                device_id = str(device.get("device_id") or "").strip()
+                if not device_id:
+                    continue
+                found[device_id] = resolve_web_access(
+                    device,
+                    network=scope.label,
+                    scope_id=scope.scope_id,
+                    services=store.services_for(device_id),
+                ).to_dict()
+        return found
 
     def _console_operator():
         from founderos_atlas.console import require_operator
@@ -2624,30 +2661,16 @@ def register_routes(app) -> None:
 
     @app.route("/management")
     def management_index():
-        """Every device's web-management state, in one place."""
+        """Web management is not a place — it is one of the ways into a device.
 
-        context, scopes, scope_id = scoped_context("management")
-        rows = []
-        for scope in console_scopes(scopes, scope_id):
-            store = management_store(scope)
-            for device in _scope_devices(scope):
-                did = str(device.get("device_id") or "").strip()
-                if not did:
-                    continue
-                from founderos_atlas.management import resolve_web_access
+        This page listed the same devices as Device Access, resolved from the
+        same evidence, and offered the same actions. It is gone; the URL is not,
+        so an existing link or bookmark still lands somewhere true. The verify /
+        define / opened endpoints below remain — they are the write side of web
+        access, and Device Access calls them.
+        """
 
-                access = resolve_web_access(
-                    device, network=scope.label, scope_id=scope.scope_id,
-                    services=store.services_for(did),
-                )
-                rows.append(access.to_dict())
-        return render_template(
-            "management_index.html",
-            devices=rows,
-            web_count=sum(1 for row in rows if row["any_web"]),
-            https_count=sum(1 for row in rows if row["has_https"]),
-            **context,
-        )
+        return redirect(url_for("console_index"), code=302)
 
     @app.route("/management/<path:device_id>/verify", methods=["POST"])
     def management_verify(device_id: str):

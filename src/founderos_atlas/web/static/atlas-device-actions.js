@@ -170,4 +170,75 @@
       button.disabled = false;
     });
   });
+
+  /*
+   * Verify / Define — the write side of web access (PR-044B, PORTAL).
+   *
+   * These lived in an inline <script> on the Web Management page. That page is
+   * gone: web access is one of the ways into a device, not a place of its own,
+   * so the actions moved to Device Access — and their behaviour moved here,
+   * beside every other device action, rather than staying inline on one page.
+   */
+  document.addEventListener('click', function (event) {
+    if (!event.target.closest) { return; }
+
+    var verify = event.target.closest('.js-verify-web');
+    if (verify) {
+      event.preventDefault();
+      var id = verify.getAttribute('data-device-id');
+      verify.disabled = true;
+      verify.textContent = 'Verifying…';
+      fetch('/management/' + encodeURIComponent(id) + '/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: '{}'
+      }).then(function (response) {
+        return response.json().then(function (data) {
+          return { ok: response.ok, data: data };
+        });
+      }).then(function (result) {
+        if (!result.ok) {
+          window.alert(result.data.error || 'Verification failed.');
+          verify.disabled = false;
+          verify.textContent = 'Verify';
+          return;
+        }
+        window.location.reload();
+      }, function () {
+        verify.disabled = false;
+        verify.textContent = 'Verify';
+      });
+      return;
+    }
+
+    var define = event.target.closest('.js-define-web');
+    if (define) {
+      event.preventDefault();
+      var deviceId = define.getAttribute('data-device-id');
+      var hostname = define.getAttribute('data-hostname');
+      var url = window.prompt(
+        'Management URL for ' + hostname + ' (e.g. https://10.1.1.1:8443):',
+        'https://'
+      );
+      if (!url) { return; }
+      var reason = window.prompt('Why? (optional note)', '') || '';
+      fetch('/management/' + encodeURIComponent(deviceId) + '/define', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ url: url, reason: reason })
+      }).then(function (response) {
+        return response.json().then(function (data) {
+          return { ok: response.ok, data: data };
+        });
+      }).then(function (result) {
+        if (!result.ok) {
+          window.alert(result.data.error || 'Could not save the URL.');
+          return;
+        }
+        window.location.reload();
+      });
+    }
+  });
 }());

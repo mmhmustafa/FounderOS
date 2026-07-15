@@ -374,15 +374,25 @@ class ManagementGuiTests(unittest.TestCase):
         assert match, "no device rendered"
         return unquote(match.group(1))
 
-    def test_management_page_lists_devices_honestly(self) -> None:
+    def test_device_access_page_lists_devices_honestly(self) -> None:
+        # PR-047A: web management is not a place — it is one of the ways into a
+        # device. The page moved to Device Access (/console); /management now
+        # redirects there so existing links still land somewhere true.
         with tempfile.TemporaryDirectory() as tmp:
             client = self._app(Path(tmp)).test_client()
-            page = client.get("/management").get_data(as_text=True)
-            self.assertEqual(200, client.get("/management").status_code)
+            page = client.get("/console").get_data(as_text=True)
+            self.assertEqual(200, client.get("/console").status_code)
             self.assertIn("R1", page)
             # No web service was verified, so the page says so — no dead button.
             self.assertIn("No verified HTTPS service", page)
             self.assertNotIn("Open HTTPS", page)
+
+    def test_the_old_management_url_still_lands_somewhere_true(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            client = self._app(Path(tmp)).test_client()
+            response = client.get("/management")
+            self.assertEqual(302, response.status_code)
+            self.assertIn("/console", response.headers["Location"])
 
     def test_verified_service_renders_the_https_action(self) -> None:
         import json as _json
@@ -405,7 +415,7 @@ class ManagementGuiTests(unittest.TestCase):
                 device_id,
                 (_verified(device_id, device["management_ip"], PROTOCOL_HTTPS, 8443),),
             )
-            page = client.get("/management").get_data(as_text=True)
+            page = client.get("/console").get_data(as_text=True)
             self.assertIn("Open HTTPS", page)
             self.assertIn(":8443", page)
 
@@ -455,7 +465,7 @@ class ManagementGuiTests(unittest.TestCase):
     def test_no_page_ever_contains_a_password(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             client = self._app(Path(tmp)).test_client()
-            for url in ("/management", "/topology", "/topology?scope=all"):
+            for url in ("/console", "/topology", "/topology?scope=all"):
                 self.assertNotIn(SECRET, client.get(url).get_data(as_text=True))
 
     def test_advisor_suggests_web_but_never_opens(self) -> None:

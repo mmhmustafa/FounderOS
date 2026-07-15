@@ -78,11 +78,13 @@ class NavigationStructureTests(unittest.TestCase):
         keys = {item.key for group in NAV_GROUPS for item in group.items}
         self.assertNotIn("console", keys)
         self.assertNotIn("management", keys)
-        # ...but the pages are still there. Reorganised, not removed.
         with tempfile.TemporaryDirectory() as tmp:
             client = _client(Path(tmp))
+            # Device Access is the one page: SSH and web are two ways into the
+            # same device, so they are not two pages.
             self.assertEqual(200, client.get("/console").status_code)
-            self.assertEqual(200, client.get("/management").status_code)
+            # The old Web Management URL still lands somewhere true.
+            self.assertEqual(302, client.get("/management").status_code)
 
     def test_compass_is_frozen_not_removed(self) -> None:
         keys = {i.key for g in NAV_GROUPS for i in g.items}
@@ -93,11 +95,21 @@ class NavigationStructureTests(unittest.TestCase):
         self.assertEqual("console", nav_group_for("console"))
 
     def test_nothing_was_removed_every_legacy_route_still_resolves(self) -> None:
+        """Every pre-FOCUS destination still lands somewhere true. A 302 counts:
+        /management redirects to Device Access, which absorbed it — the URL was
+        kept alive deliberately so an old link never 404s."""
+
         with tempfile.TemporaryDirectory() as tmp:
             client = _client(Path(tmp))
             for route in LEGACY_ROUTES:
+                self.assertIn(
+                    client.get(route).status_code, (200, 302), f"{route} regressed"
+                )
+                # ...and a redirect must actually arrive.
                 self.assertEqual(
-                    200, client.get(route).status_code, f"{route} regressed"
+                    200,
+                    client.get(route, follow_redirects=True).status_code,
+                    f"{route} redirects nowhere",
                 )
 
     def test_sidebar_groups_every_view_under_its_workflow(self) -> None:
@@ -359,7 +371,10 @@ class ConsistencyTests(unittest.TestCase):
         console = Path(
             "src/founderos_atlas/web/templates/console_index.html"
         ).read_text(encoding="utf-8")
-        self.assertIn("web=web_access(", console)
+        self.assertIn("web=web", console)
+        # ...and the write side lives beside the action it enables.
+        self.assertIn("js-verify-web", console)
+        self.assertIn("js-define-web", console)
 
         macro = Path(
             "src/founderos_atlas/web/templates/_device_actions.html"
