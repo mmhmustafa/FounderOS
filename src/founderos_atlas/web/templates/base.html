@@ -36,10 +36,38 @@
     </form>
   </header>
   <div class="layout">
-    <nav class="sidebar">
+    {#
+      Six workflows, not eighteen destinations (PR-047A FOCUS).
+
+      The views are grouped under the question they answer, not the package that
+      answers it — but every view stays visible and ONE click away. Mission is
+      the front door, never a replacement for expert navigation: an engineer who
+      lives in Predict should not have to open a menu to reach it.
+
+      A group with a single view is its own link (a "Network" label above a lone
+      "Topology" link is just noise). See NAV_GROUPS in web/models.py.
+    #}
+    <nav class="sidebar" aria-label="Workflows">
       <ul>
-        {% for key, label, href in nav_items %}
-        <li><a class="{{ 'active' if active == key else '' }}"{% if active == key %} aria-current="page"{% endif %} href="{{ href }}">{{ label }}</a></li>
+        {% for group in nav_groups %}
+        <li class="nav-group{{ ' nav-group-current' if group.key == active_group else '' }}">
+          {% if group.has_views %}
+          <div class="nav-group-label">{{ group.label }}</div>
+          <ul class="subnav">
+            {% for item in group.items %}
+            <li>
+              <a class="{{ 'active' if active == item.key else '' }}"
+                 {% if active == item.key %}aria-current="page"{% endif %}
+                 href="{{ item.href }}">{{ item.label }}</a>
+            </li>
+            {% endfor %}
+          </ul>
+          {% else %}
+          <a class="nav-group-link{{ ' active' if group.key == active_group else '' }}"
+             {% if group.key == active_group %}aria-current="page"{% endif %}
+             href="{{ group.href }}">{{ group.label }}</a>
+          {% endif %}
+        </li>
         {% endfor %}
       </ul>
       <div class="sidebar-note">Local alpha GUI · 127.0.0.1</div>

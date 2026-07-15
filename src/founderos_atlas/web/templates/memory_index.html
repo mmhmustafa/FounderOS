@@ -1,13 +1,14 @@
 {% extends "base.html" %}
-{% block title %}Atlas — Enterprise Memory{% endblock %}
+{% block title %}Evidence{% endblock %}
 {% block content %}
 <div class="page-head">
-  <h1>Enterprise Memory</h1>
+  <h1>Evidence</h1>
+  <span class="actions"><a class="btn" href="/timeline">Timeline</a></span>
 </div>
 <p class="muted">
   Atlas remembers every discovery: the session, the exact bytes each device returned, and every
-  configuration snapshot — stored once, content-addressed, immutable. This is the foundation
-  history that future modules reason over without rediscovering devices.
+  configuration snapshot — stored once, content-addressed, immutable. This is the raw evidence
+  behind every conclusion Atlas reaches, kept so it can be re-read without rediscovering a device.
 </p>
 
 <div class="tiles">
@@ -20,7 +21,7 @@
 </div>
 
 <section class="card">
-  <h2>Discovery History</h2>
+  <h2>Discovery Sessions</h2>
   {% if sessions %}
   <table class="grid">
     <thead><tr><th>Session</th><th>Network</th><th>Started</th><th>Duration</th><th>Devices</th><th>Auth</th><th>Configs</th><th>Evidence</th><th>Status</th></tr></thead>

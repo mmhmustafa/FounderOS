@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### EPIC-002 / PR-047A - Product Review Actions (FOCUS)
+
+- **Eighteen top-level navigation items became six workflows** — Mission, Network, Timeline, Policy, Analyze, Setup — named for the question an operator asks, not the package that answers it. **Nothing was deleted:** every route that existed before still resolves, pinned by a test.
+- **Changes, Configuration, Discoveries and Evidence were four pages answering one question** ("what changed?"). They are now one **Timeline** workflow with a new front door at `/timeline`: a single chronology merging configuration changes and discovery runs, each linking to its evidence, with all four detailed views one click away.
+- **SSH and HTTPS left the menu and became what they are — actions on a device.** `/console` and `/management` still work and still list every device; they are simply no longer presented as capabilities beside Topology and Policy. The universal action was added to the Evidence device page and Timeline device rows.
+- **Fixed a dead 404 on every device surface:** the universal action's "Investigate" button pointed at `/investigate`, a route that has never existed. It now points at `/paths`, and action labels match the navigation.
+- **Confidence is shown only when it changes the decision.** Every policy row previously read `confidence: high (85%)` — 108 of 108 identical, which is noise, not information. Now: very-high/high say nothing; medium/low/**unknown** (no percentage — the 5% floor is not a measurement) and **conflicting evidence** are surfaced. Measured on the live lab: 108 rows, **0 badges**. The full score/band/factors breakdown is unchanged and still in each result's expanded detail. One decision, made once, in `web/confidence.py`.
+- **Consistency:** three templates rendered "Atlas — Atlas — …" (base.html already prefixes it) — fixed. Page titles now match their nav labels: **Discoveries** (was "Discovery History"), **Evidence** (was "Enterprise Memory" — the *page* is named for the operator's question; the *layer* keeps its architectural name), **Investigate** (was "Path Intelligence").
+- **Prepared for Change → Impact without building it** (per mandate): Timeline is its natural home, and every activity entry now carries the `discovery_session` that links a configuration change back to the discovery that observed it — the seam a future impact analysis follows.
+- **Compass frozen** (present, unchanged, unexpanded). **Search preserved** — reviewed and left as the global Ctrl+K overlay it already was, correctly integrated rather than a top-level application.
+- **Tests:** new `tests/test_product_focus.py` (25), including a sweep that matches **every literal `href` in every template against the real URL map** — so the `/investigate` class of dead button cannot return unnoticed. Both guards were mutation-proven: reintroducing the `high (85%)` badge and typo-ing a link each made the suite fail. **Full suite 1376 passed, 1 skipped, 105 subtests — no regression.** A first pass that collapsed the sidebar to only the active group was caught by `test_expert_tools_stay_in_the_sidebar` and reverted: grouping was the goal, hiding was not.
+- **No architecture changed** — Enterprise Memory, Enterprise Knowledge, CORTEX, the Policy Engine and Discovery are untouched. Not committed, per mandate.
+
 ### EPIC-002 / PR-047 - Enterprise Policy Engine (SENTINEL)
 
 - **Atlas's first application built on CORTEX**, and the proof the framework works. PR-046 designed the reasoning layer; this PR implements the **minimal kernel** (`founderos_atlas/reasoning/`) and builds a **greenfield Policy engine** (`founderos_atlas/policy/`) entirely on top of it — the Phase-5 acceptance gate. It passes: the new module reasons through the shared engine with **zero scoring code of its own**.

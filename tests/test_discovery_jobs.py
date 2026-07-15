@@ -366,7 +366,9 @@ class DiscoveryJobIsolationTests(unittest.TestCase):
             manager.wait(job_id, timeout=30)
             # Same browser session, no scope parameter: Lab B is in focus.
             page = client.get("/history").data
-            self.assertIn(b"Discovery History \xe2\x80\x94 Lab B", page)
+            # PR-047A: the page title matches its navigation label (Timeline >
+            # Discoveries). The scope is still what the assertion is about.
+            self.assertIn(b"Discoveries \xe2\x80\x94 Lab B", page)
 
     def test_dashboard_reflects_results_without_restart(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

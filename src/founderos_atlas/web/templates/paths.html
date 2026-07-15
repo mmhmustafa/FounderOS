@@ -1,8 +1,11 @@
 {% extends "base.html" %}
 {% from "_device_actions.html" import device_actions %}
-{% block title %}Path Intelligence{% endblock %}
+{% block title %}Investigate{% endblock %}
 {% block content %}
-<h1>Path Intelligence — {{ active_scope_label }}</h1>
+{# PR-047A: named for the question the operator is asking ("why can't A reach
+   B?"), matching its navigation label. Path Intelligence remains the engine
+   behind it. #}
+<h1>Investigate — {{ active_scope_label }}</h1>
 
 {% if needs_scope %}
 <p class="muted">Pick a scope in the Scope selector above — path investigations run against that scope's evidence.</p>

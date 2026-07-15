@@ -6,10 +6,10 @@
   <span class="actions muted">{{ report.pack.name }} v{{ report.pack.version }} · {{ report.pack.policy_count }} policies</span>
 </div>
 <p class="muted">
-  Atlas does not hard-code compliance — it evaluates policies. Every verdict below is reached by the
-  same CORTEX reasoning engine: evidence is drawn from Enterprise Memory, a rule declares what
-  compliant looks like, and the engine scores confidence and explains itself. A device whose
-  configuration Atlas has not collected is reported <strong>Unknown</strong>, never guessed.
+  Atlas does not hard-code compliance — it evaluates policies. Every verdict below is reached the
+  same way: evidence is drawn from what Atlas actually collected, a rule declares what compliant
+  looks like, and the engine scores confidence and explains itself. A device whose configuration
+  Atlas has not collected is reported <strong>Unknown</strong>, never guessed.
 </p>
 
 <div class="tiles">
@@ -33,6 +33,9 @@
   <div class="path-timeline">
     {% for e in report.evaluations %}
     {% set status_class = 'pass' if e.status == 'pass' else ('failed' if e.status == 'fail' else ('warning' if e.status == 'warning' else 'unknown')) %}
+    {# Confidence is shown only when it should change what the reader does.
+       A confident, deterministic verdict speaks for itself. #}
+    {% set conf = confidence_display(e.result.confidence, conflicting=e.result.evidence_conflicting|length > 0) %}
     <details>
       <summary>
         <span class="badge hop-badge hop-badge-{{ status_class }}">{{ e.status_label }}</span>
@@ -40,9 +43,10 @@
         <span class="muted">· {{ e.hostname }}</span>
         <span class="muted">· {{ e.policy.category | title }}</span>
         <span class="muted">· severity {{ e.policy.severity }}</span>
-        <span class="muted" style="margin-left:auto;">
-          confidence: {{ e.result.confidence.band }} ({{ e.result.confidence.percent }}%)
-        </span>
+        {% if conf %}
+        <span class="hop-badge hop-badge-{{ conf.tone }}" style="margin-left:auto;"
+              title="{{ conf.why }}">{{ conf.label }}{% if conf.percent %} ({{ conf.percent }}%){% endif %}</span>
+        {% endif %}
       </summary>
       <div style="padding:8px 4px 14px 4px;">
         <p><strong>Conclusion.</strong> {{ e.result.conclusion }}</p>
@@ -101,7 +105,8 @@
         </ul>
         {% endif %}
 
-        <p class="muted" style="margin-bottom:4px;"><strong>Confidence</strong> — {{ e.result.confidence.band }} ({{ e.result.confidence.percent }}%){% if e.result.confidence.basis %}: {{ e.result.confidence.basis }}{% endif %}</p>
+        {# Opened detail = the reader asked for the reasoning. Full disclosure here. #}
+        <p class="muted" style="margin-bottom:4px;"><strong>Confidence</strong> — {{ confidence_detail(e.result.confidence) }}</p>
         {% if e.result.confidence.factors %}
         <ul>
           {% for f in e.result.confidence.factors %}
@@ -120,9 +125,9 @@
   </div>
   {% else %}
   <p class="muted">
-    No devices in memory to evaluate for this scope. Run a discovery with configuration collection
-    enabled — Atlas records each device's configuration automatically, and policy evaluation reads it
-    from Enterprise Memory.
+    Nothing to evaluate in this scope yet. Run a discovery with configuration collection enabled —
+    Atlas records each device's configuration automatically, and policy evaluation reads it from the
+    <a href="/memory">Evidence</a> it collected.
   </p>
   {% endif %}
 </section>

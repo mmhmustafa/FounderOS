@@ -1,12 +1,19 @@
 {#
-  The universal device action (PR-044A CONSOLE, PR-044B PORTAL).
+  The universal device action (PR-044A CONSOLE, PR-044B PORTAL, PR-044A FOCUS).
 
-  ONE implementation, rendered from Topology, Inventory, Search, Mission,
-  Advisor, Investigation, Prediction, Compass, Changes, History and the
-  Enterprise view. No page implements its own SSH or web-access logic, and no
-  page decides for itself whether an action is allowed — `target.eligible`
-  (SSH) and `web` (HTTPS/HTTP) are resolved once, from evidence, in
-  console/resolve.py and management/resolve.py.
+  ONE implementation, rendered wherever a device appears: Topology, Device
+  Details, Timeline, Evidence, Configuration, Advisor and Investigation. No page
+  implements its own SSH or web-access logic, and no page decides for itself
+  whether an action is allowed — `target.eligible` (SSH) and `web` (HTTPS/HTTP)
+  are resolved once, from evidence, in console/resolve.py and
+  management/resolve.py.
+
+  PR-047A (decision 3): SSH and HTTPS are **actions on a device**, not product
+  capabilities of their own. They were removed from the main navigation and live
+  only here. /console and /management still work and still list every device —
+  they are simply no longer presented as things Atlas *does* alongside Topology
+  and Policy. Search results reach these actions via the device page they link
+  to.
 
   Usage (SSH only, or with web actions):
     from "_device_actions.html" import device_actions
@@ -63,9 +70,12 @@
   {% endif %}
 
   {% if not compact %}
-  <a class="btn btn-sm" href="/configuration/{{ target.device_id | urlencode }}">Configuration History</a>
-  <a class="btn btn-sm" href="/investigate?device={{ target.hostname | urlencode }}">Investigate</a>
-  <a class="btn btn-sm" href="/predict?device={{ target.hostname | urlencode }}">Predict Change</a>
+  {# Labels match the navigation exactly (PR-047A): the Timeline > Configuration
+     view, and the Analyze > Investigate / Predict views. An action should name
+     the place it takes you to. #}
+  <a class="btn btn-sm" href="/configuration/{{ target.device_id | urlencode }}">Configuration</a>
+  <a class="btn btn-sm" href="/paths?device={{ target.hostname | urlencode }}">Investigate</a>
+  <a class="btn btn-sm" href="/predict?device={{ target.hostname | urlencode }}">Predict</a>
   {% endif %}
 </span>
 {% endif %}

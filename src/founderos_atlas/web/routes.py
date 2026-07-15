@@ -64,14 +64,16 @@ from founderos_atlas.workspace import (
 )
 
 from .models import (
-    NAV_ITEMS,
+    NAV_GROUPS,
     change_summaries,
     credential_set_rows,
     device_inventory,
     history_rows,
     load_json,
+    nav_group_for,
     prediction_targets,
     profile_row,
+    timeline_activity,
 )
 
 
@@ -99,7 +101,14 @@ def register_routes(app) -> None:
         return cfg("ATLAS_PROFILE_SERVICE")
 
     def base_context(active: str) -> dict:
-        return {"nav_items": NAV_ITEMS, "active": active, "product": "Atlas"}
+        # ``active`` is the view key a route already passed; the sidebar derives
+        # which workflow to open from it, so no route had to change.
+        return {
+            "nav_groups": NAV_GROUPS,
+            "active": active,
+            "active_group": nav_group_for(active),
+            "product": "Atlas",
+        }
 
     # -- Scopes ---------------------------------------------------------------
 
@@ -1224,6 +1233,66 @@ def register_routes(app) -> None:
             report=report.to_dict(),
             packs=[p.to_dict() for p in list_packs()],
             generated_at=format_timestamp(report.generated_at, tz=display_timezone()),
+            **context,
+        )
+
+    # -- Timeline (PR-047A FOCUS) ------------------------------------------
+
+    @app.route("/timeline")
+    def timeline_page():
+        """Timeline — one front door for "what changed?".
+
+        Changes, Configuration, Discoveries and Evidence each answered a slice
+        of the same question from its own page. This is the workflow they belong
+        to: one chronology across configuration changes and discovery runs, with
+        each detailed view one click away. Nothing was removed — this is the
+        entry point those four views were always missing.
+        """
+
+        from founderos_atlas.config_memory import enterprise_timeline
+
+        from .timefmt import format_with_relative
+
+        tz = display_timezone()
+        context, scopes, scope_id = scoped_context("timeline")
+
+        config_events: list = []
+        totals = {
+            "devices": 0, "versions": 0, "unique_configurations": 0,
+            "deduplicated_observations": 0,
+        }
+        for scope in config_memory_scopes(scopes, scope_id):
+            store = config_memory_store(scope)
+            histories = store.histories()
+            config_events.extend(
+                enterprise_timeline(histories, config_text=store.config_text)
+            )
+            for key, value in store.statistics().items():
+                if key in totals:
+                    totals[key] += value
+
+        discovery_rows: list[dict] = []
+        for scope in aggregation_scopes(scopes) if scope_id == GLOBAL_SCOPE_ID else (scopes[scope_id],):
+            index = HistoryRepository(scope.history_root).load()
+            discovery_rows.extend(history_rows(index, scope_label=scope.label))
+
+        evidence_totals = {"sessions": 0, "evidence_records": 0}
+        for scope in memory_scopes(scopes, scope_id):
+            for key, value in memory_store(scope).statistics().items():
+                if key in evidence_totals:
+                    evidence_totals[key] += value
+
+        activity = timeline_activity(config_events, discovery_rows)
+        for entry in activity:
+            entry["occurred_at"] = format_with_relative(entry["occurred_at"], tz=tz)
+
+        return render_template(
+            "timeline.html",
+            activity=activity,
+            change_count=len(config_events),
+            discovery_count=len(discovery_rows),
+            totals=totals,
+            evidence_totals=evidence_totals,
             **context,
         )
 
@@ -2498,10 +2567,17 @@ def register_routes(app) -> None:
                         return access.to_dict()
             return None
 
+        # PR-047A: confidence presentation is a product decision, made once,
+        # here — so no page invents its own idea of when a score is worth the
+        # reader's attention. See web/confidence.py.
+        from .confidence import confidence_detail, confidence_display
+
         return {
             "device_target": device_target,
             "devices_mentioned": devices_mentioned,
             "web_access": web_access,
+            "confidence_display": confidence_display,
+            "confidence_detail": confidence_detail,
         }
 
     @app.route("/console")

@@ -3,7 +3,7 @@
 {% block content %}
 <div class="page-head">
   <h1>Raw Evidence</h1>
-  <span class="actions"><a class="btn" href="/memory/device/{{ device_id | urlencode }}">Device memory</a></span>
+  <span class="actions"><a class="btn" href="/memory/device/{{ device_id | urlencode }}">Device Evidence</a></span>
 </div>
 <p class="muted"><code>{{ record.command }}</code> · {{ record.hostname }} · collected {{ record.collected_at }} · parser {{ record.parser_version }}</p>
 

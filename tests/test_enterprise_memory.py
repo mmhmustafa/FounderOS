@@ -630,8 +630,12 @@ class MemoryGuiTests(unittest.TestCase):
     def test_discovery_history_lists_the_session(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             page = self._client(Path(tmp)).get("/memory").get_data(as_text=True)
-            self.assertIn("Enterprise Memory", page)
-            self.assertIn("Discovery History", page)
+            # PR-047A: the page is named for what the operator came for
+            # (Evidence), not for the platform layer behind it (Enterprise
+            # Memory). The sessions section is "Discovery Sessions" so it no
+            # longer collides with the Discoveries page.
+            self.assertIn("Evidence", page)
+            self.assertIn("Discovery Sessions", page)
             self.assertIn("Completed", page)
 
     def test_device_memory_page_shows_evidence(self) -> None:

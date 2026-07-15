@@ -27,6 +27,17 @@ code { background: #eef2f7; padding: 1px 5px; border-radius: 4px; font-size: 12p
 .sidebar a:hover { background: #1e293b; text-decoration: none; }
 .sidebar a.active { background: #1e293b; color: #fff; border-left: 3px solid var(--accent); }
 .sidebar-note { padding: 12px 20px; font-size: 11px; color: #64748b; }
+/* Workflow navigation (PR-047A): views grouped under the question they answer.
+   The group label orients; the views stay visible and one click away. */
+.sidebar .nav-group { margin-bottom: 10px; }
+.sidebar .nav-group-label {
+  padding: 6px 20px 4px; font-size: 10px; font-weight: 700; letter-spacing: .8px;
+  text-transform: uppercase; color: #64748b;
+}
+.sidebar .nav-group-link { font-weight: 600; }
+.sidebar .subnav { list-style: none; margin: 0; padding: 0; flex: none; }
+.sidebar .subnav a { padding: 7px 20px 7px 24px; font-size: 13px; border-left: 3px solid transparent; }
+.sidebar .subnav a.active { border-left: 3px solid var(--accent); }
 
 .content { padding: 22px 26px; max-width: 1080px; }
 h1 { margin: 0 0 18px; font-size: 24px; }

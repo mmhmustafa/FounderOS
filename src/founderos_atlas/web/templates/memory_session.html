@@ -1,9 +1,10 @@
 {% extends "base.html" %}
-{% block title %}Discovery {{ session.session_id }}{% endblock %}
+{% from "_device_actions.html" import device_actions %}
+{% block title %}Discovery Session{% endblock %}
 {% block content %}
 <div class="page-head">
   <h1>Discovery Session</h1>
-  <span class="actions"><a class="btn" href="/memory">All Discoveries</a></span>
+  <span class="actions"><a class="btn" href="/memory">All Evidence</a></span>
 </div>
 <p class="muted"><code>{{ session.session_id }}</code> · {{ session.network }}</p>
 
@@ -36,10 +37,15 @@
     <tbody>
       {% for d in devices %}
       <tr>
-        <td><strong>{{ d.hostname }}</strong> <span class="muted">{{ d.device_id }}</span></td>
+        <td>
+          <strong>{{ d.hostname }}</strong> <span class="muted">{{ d.device_id }}</span>
+          {# Any device list offers the same device actions (PR-047A decision 3). #}
+          {% set target = device_target(device_id=d.device_id) %}
+          {% if target %}<div>{{ device_actions(target, compact=True, show_label=False) }}</div>{% endif %}
+        </td>
         <td>{{ d.evidence_count }}</td>
         <td>{% if d.configuration %}<code>{{ d.configuration.config_sha256[:12] }}</code>{% else %}<span class="muted">none collected</span>{% endif %}</td>
-        <td class="row-actions"><a class="btn btn-sm" href="/memory/device/{{ d.device_id | urlencode }}">Device memory</a></td>
+        <td class="row-actions"><a class="btn btn-sm" href="/memory/device/{{ d.device_id | urlencode }}">Evidence</a></td>
       </tr>
       {% endfor %}
     </tbody>

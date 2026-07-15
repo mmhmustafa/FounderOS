@@ -1,10 +1,16 @@
 {% extends "base.html" %}
-{% block title %}Device Memory — {{ memory.hostname }}{% endblock %}
+{% from "_device_actions.html" import device_actions %}
+{% block title %}Evidence — {{ memory.hostname }}{% endblock %}
 {% block content %}
 <div class="page-head">
-  <h1>Device Memory — {{ memory.hostname }}</h1>
-  <span class="actions"><a class="btn" href="/memory">All Discoveries</a></span>
+  <h1>Evidence — {{ memory.hostname }}</h1>
+  <span class="actions"><a class="btn" href="/memory">All Evidence</a></span>
 </div>
+{# A device page is a device page: the same actions available everywhere else. #}
+{% set target = device_target(device_id=memory.device_id) %}
+{% if target %}
+<p>{{ device_actions(target, web=web_access(device_id=memory.device_id)) }}</p>
+{% endif %}
 <p class="muted">
   {{ memory.network }} · {{ memory.device_id }} · {{ memory.discovery_sessions | length }} discovery
   session(s) · {{ memory.configuration_versions }} configuration version(s)
