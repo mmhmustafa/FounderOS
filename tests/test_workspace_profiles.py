@@ -752,3 +752,68 @@ class WizardAcceptsACredentialSetTests(unittest.TestCase):
         self.assertIn("js-credential-set", wizard)
         # The placeholder must not masquerade as a filled-in value.
         self.assertNotIn('placeholder="atlas"', wizard)
+
+
+class ProfileRemembersTheRangeItWasGivenTests(unittest.TestCase):
+    """"I am choosing CIDR and giving 172.20.20.0/24, but it shows seed IP as
+    172.20.20.1."
+
+    It did. A CIDR is expanded into candidate addresses at creation, and the
+    range itself was never stored — so the profile could not tell a /24 sweep
+    from someone who typed 254 addresses by hand, and every screen showed the
+    only address it had: the first one. The plan knew
+    (`attributes['cidr']`); the profile was simply never told.
+    """
+
+    def test_a_cidr_profile_shows_the_range_not_its_first_address(self) -> None:
+        from founderos_atlas.discovery import resolve_plan
+        from founderos_atlas.web.models import profile_row
+
+        with tempfile.TemporaryDirectory() as tmp:
+            service = make_service(Path(tmp))
+            plan = resolve_plan(
+                "management-network", cidr="172.20.20.0/24", policy="balanced"
+            )
+            seeds = plan.seed_addresses
+            profile = service.add_profile(
+                name="labdab", management_ip=seeds[0], username="atlas",
+                password="pw", seeds=seeds[1:],
+                seed_cidr=plan.attributes.get("cidr"),
+            )
+            self.assertEqual("172.20.20.0/24", profile.seed_cidr)
+            # The entry point still IS the first candidate — traversal is
+            # untouched; only what the operator is shown changed.
+            self.assertEqual("172.20.20.1", profile.management_ip)
+            self.assertEqual("172.20.20.0/24", profile_row(profile)["seed_label"])
+
+    def test_a_seed_profile_still_shows_its_address(self) -> None:
+        from founderos_atlas.web.models import profile_row
+
+        with tempfile.TemporaryDirectory() as tmp:
+            service = make_service(Path(tmp))
+            profile = service.add_profile(
+                name="single", management_ip="10.0.0.9",
+                username="atlas", password="pw",
+            )
+            self.assertIsNone(profile.seed_cidr)
+            self.assertEqual("10.0.0.9", profile_row(profile)["seed_label"])
+
+    def test_the_range_survives_a_round_trip_and_a_duplicate(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            service = make_service(Path(tmp))
+            service.add_profile(
+                name="labdab", management_ip="172.20.20.1", username="atlas",
+                password="pw", seed_cidr="172.20.20.0/24",
+            )
+            # Re-read from disk: it is persisted, not just held in memory.
+            self.assertEqual("172.20.20.0/24", service.get_profile("labdab").seed_cidr)
+            clone = service.duplicate_profile("labdab", new_name="labdab copy")
+            self.assertEqual("172.20.20.0/24", clone.seed_cidr)
+
+    def test_a_profile_written_before_this_existed_still_loads(self) -> None:
+        # Backward compatibility: no seed_cidr key at all.
+        profile = DiscoveryProfile.from_dict({
+            "profile_id": "p", "name": "old", "management_ip": "10.0.0.1",
+            "username": "atlas", "credential_ref": "ref",
+        })
+        self.assertIsNone(profile.seed_cidr)

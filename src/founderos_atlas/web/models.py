@@ -143,6 +143,13 @@ def profile_row(profile) -> dict[str, Any]:
         "name": profile.name,
         "site": profile.site or "-",
         "management_ip": profile.management_ip,
+        "seed_cidr": getattr(profile, "seed_cidr", None),
+        # What the operator actually asked for. A CIDR is expanded into
+        # candidate addresses at creation, so a /24 sweep used to render as its
+        # first address — "172.20.20.1" for a profile the operator created by
+        # typing "172.20.20.0/24". Every screen shows this instead, so none of
+        # them can disagree about what a profile's entry point is.
+        "seed_label": getattr(profile, "seed_cidr", None) or profile.management_ip,
         "username": profile.username,
         "max_depth": profile.max_depth,
         "max_devices": profile.max_devices,

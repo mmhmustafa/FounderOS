@@ -393,7 +393,7 @@ class DiscoverPageTests(unittest.TestCase):
             manager.wait(job_id, timeout=30)
             page = client.get("/discovery").data
             for expected in (b"Lab A", b"Lab B", b"10.0.0.1", b"10.0.1.1",
-                             b"Seed IP", b"Last Discovery", b"completed"):
+                             b"Seed", b"Last Discovery", b"completed"):
                 self.assertIn(expected, page)
             self.assertNotIn(PASSWORD.encode(), page)
 

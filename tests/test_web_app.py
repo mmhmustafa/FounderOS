@@ -322,3 +322,75 @@ class OneServerPerPortTests(unittest.TestCase):
 
         # Nothing is bound here; the probe must not claim otherwise.
         self.assertFalse(port_is_serving("127.0.0.1", 8798, timeout=0.2))
+
+
+class SeedRangeIsVisibleWhereTheSeedIsShownTests(unittest.TestCase):
+    """A profile created from a CIDR must not present itself as a single IP.
+
+    The wizard expands "172.20.20.0/24" into candidate addresses and seeds from
+    the first one, so every screen that showed a profile's seed showed
+    "172.20.20.1" — an address the operator never typed and cannot recognise.
+    These pin the operator's own path (the rendered pages), not just the model:
+    the range was recorded correctly well before any of these screens showed it.
+    """
+
+    def add_cidr_profile(self, service):
+        return add_profile(
+            service, name="labdab", site="Lab", management_ip="172.20.20.1",
+            seeds=["172.20.20.2", "172.20.20.3"], seed_cidr="172.20.20.0/24",
+        )
+
+    def test_discover_page_shows_the_range_in_the_table_and_the_dropdown(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            service = make_service(Path(tmp))
+            self.add_cidr_profile(service)
+            _, client = build_client(Path(tmp), service)
+            page = client.get("/discovery").data
+            # Both the Networks table and the profile <option> label.
+            self.assertEqual(2, page.count(b"172.20.20.0/24"))
+            self.assertNotIn(b"172.20.20.1", page)
+            # The column header no longer promises an IP it cannot deliver.
+            self.assertIn(b"<th>Seed</th>", page)
+
+    def test_profiles_page_shows_the_range(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            service = make_service(Path(tmp))
+            self.add_cidr_profile(service)
+            _, client = build_client(Path(tmp), service)
+            page = client.get("/profiles").data
+            self.assertIn(b"172.20.20.0/24", page)
+
+    def test_edit_form_explains_where_its_seed_address_came_from(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            service = make_service(Path(tmp))
+            self.add_cidr_profile(service)
+            _, client = build_client(Path(tmp), service)
+            form = client.get("/profiles/labdab/edit").data
+            # The field must keep the real address — it is what Atlas connects
+            # to — but say why it is not what was typed.
+            self.assertIn(b'value="172.20.20.1"', form)
+            self.assertIn(b"172.20.20.0/24", form)
+
+    def test_a_seed_profile_still_shows_its_address_everywhere(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            service = make_service(Path(tmp))
+            add_profile(service)  # no seed_cidr
+            _, client = build_client(Path(tmp), service)
+            self.assertIn(b"10.0.0.1", client.get("/discovery").data)
+            self.assertIn(b"10.0.0.1", client.get("/profiles").data)
+
+    def test_saving_an_edit_does_not_erase_the_range(self) -> None:
+        # The edit form has no seed_cidr input, so an ordinary save posts
+        # without it. That must not be read as "clear it".
+        with tempfile.TemporaryDirectory() as tmp:
+            service = make_service(Path(tmp))
+            self.add_cidr_profile(service)
+            _, client = build_client(Path(tmp), service)
+            response = client.post("/profiles/labdab", data={
+                "name": "labdab", "site": "Lab", "management_ip": "172.20.20.1",
+                "username": "atlas", "password": "", "max_depth": "1",
+                "max_devices": "10",
+            })
+            self.assertIn(response.status_code, (200, 302))
+            self.assertEqual("172.20.20.0/24", service.get_profile("labdab").seed_cidr)
+            self.assertIn(b"172.20.20.0/24", client.get("/profiles").data)

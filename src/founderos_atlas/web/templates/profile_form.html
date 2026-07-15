@@ -22,6 +22,12 @@
     <input name="management_ip" value="{{ profile.management_ip if profile else '' }}"
            placeholder="192.168.1.12" {{ 'required' if mode != 'edit' else '' }}>
   </label>
+  {% if profile and profile.seed_cidr %}
+  {# Without this the field reads as an address the operator never typed: the
+     wizard expanded their range and this is merely its first candidate. #}
+  <p class="muted">Created from the range <strong>{{ profile.seed_cidr }}</strong> — Atlas seeds from
+    the first address in it and follows what it finds. Editing this changes only where it starts.</p>
+  {% endif %}
   {# A profile needs a way in: its own credential, or a credential set (named
      under Advanced). Naming a set makes these optional — it carries its own. #}
   <label>Username

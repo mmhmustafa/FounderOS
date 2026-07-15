@@ -68,6 +68,14 @@ class DiscoveryProfile:
     # PR-033 entry-point semantics; all optional and backward compatible.
     description: str | None = None
     seeds: tuple[str, ...] = ()  # additional seeds; management_ip is seed #1
+    # The address range this profile was created to sweep, when it was created
+    # from one ("172.20.20.0/24"). A CIDR is expanded into candidate addresses
+    # at creation, so without this the profile cannot tell a /24 sweep from
+    # someone who typed 254 addresses by hand — and every screen showed the
+    # first address as if the operator had named it. This records what they
+    # actually asked for. It is a LABEL, not a boundary: BoundaryPolicy
+    # decides what discovery may follow; this only remembers what was typed.
+    seed_cidr: str | None = None
     boundary: BoundaryPolicy | None = None
     credential_sets: tuple[str, ...] = ()
     site_hint: str | None = None
@@ -195,6 +203,7 @@ class DiscoveryProfile:
             "last_discovery": self.last_discovery,
             "description": self.description,
             "seeds": list(self.seeds),
+            "seed_cidr": self.seed_cidr,
             "boundary": self.boundary.to_dict() if self.boundary is not None else None,
             "credential_sets": list(self.credential_sets),
             "site_hint": self.site_hint,
@@ -224,6 +233,9 @@ class DiscoveryProfile:
                 last_discovery=value.get("last_discovery"),
                 description=value.get("description"),
                 seeds=tuple(str(item) for item in (value.get("seeds") or ())),
+                # Absent on every profile written before this existed; they
+                # were created from a seed or a list, and None says so.
+                seed_cidr=value.get("seed_cidr"),
                 boundary=(
                     BoundaryPolicy.from_dict(value["boundary"])
                     if value.get("boundary")

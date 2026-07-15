@@ -907,6 +907,9 @@ def register_routes(app) -> None:
                     username=username,
                     password=password,
                     seeds=seeds[1:],
+                    # Remember the range that was typed, not just the
+                    # addresses it expanded into (PR-047A).
+                    seed_cidr=plan.attributes.get("cidr"),
                     max_depth=plan.effective_depth,
                     max_devices=plan.max_devices,
                     collect_configuration=plan.collect_configuration,
@@ -920,6 +923,7 @@ def register_routes(app) -> None:
                     username=username,
                     password=password,
                     seeds=seeds[1:],
+                    seed_cidr=plan.attributes.get("cidr"),
                     max_depth=plan.effective_depth,
                     max_devices=plan.max_devices,
                     collect_configuration=plan.collect_configuration,

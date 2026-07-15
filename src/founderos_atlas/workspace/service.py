@@ -114,6 +114,7 @@ class ProfileService:
         collect_configuration: bool = False,
         description: str | None = None,
         seeds: tuple[str, ...] = (),
+        seed_cidr: str | None = None,
         boundary=None,
         credential_sets: tuple[str, ...] = (),
         site_hint: str | None = None,
@@ -157,6 +158,7 @@ class ProfileService:
             last_discovery=None,
             description=description,
             seeds=tuple(seeds),
+            seed_cidr=seed_cidr,
             boundary=boundary,
             credential_sets=tuple(credential_sets),
             site_hint=site_hint,
@@ -193,6 +195,7 @@ class ProfileService:
         collect_configuration: bool | None = None,
         description: str | None = None,
         seeds: tuple[str, ...] | None = None,
+        seed_cidr: str | None = None,
         boundary=None,
         clear_boundary: bool = False,
         credential_sets: tuple[str, ...] | None = None,
@@ -236,6 +239,7 @@ class ProfileService:
             last_discovery=existing.last_discovery,
             description=description if description is not None else existing.description,
             seeds=tuple(seeds) if seeds is not None else existing.seeds,
+            seed_cidr=seed_cidr if seed_cidr is not None else existing.seed_cidr,
             boundary=(
                 None if clear_boundary
                 else (boundary if boundary is not None else existing.boundary)
