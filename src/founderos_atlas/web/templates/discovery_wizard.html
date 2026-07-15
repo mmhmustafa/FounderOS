@@ -122,22 +122,36 @@
     {% set chosen_sets = (form.getlist('credential_sets') if form else []) %}
     {% for sid in chosen_sets %}<input type="hidden" name="credential_sets" value="{{ sid }}">{% endfor %}
     <label>Save as network profile<input name="name" placeholder="Hyderabad Lab" required></label>
-    {# Whether a credential is needed here is known server-side: a chosen set
-       already carries one, so it is not re-demanded. #}
+
+    {# This step exists to re-enter a password Atlas never echoes back into a
+       page. A chosen credential set already carries one, so there is nothing
+       to re-enter — and empty credential boxes above "Start Discovery" read as
+       a demand no matter what the text beneath them says. When a set is
+       chosen the fields are put away behind an explicit opt-in; the only
+       reason to open it is to try a different credential first. #}
+    {% if chosen_sets %}
+    <p class="muted">
+      Authenticating with <strong>{{ chosen_sets | join(', ') }}</strong> — nothing to re-enter.
+    </p>
+    <details class="credential-override">
+      <summary>Try a different credential first (optional)</summary>
+      <div class="form-row">
+        <label>Username<input name="username" value="{{ form.get('username', '') if form else '' }}"></label>
+        <label>Password<input name="password" type="password"></label>
+      </div>
+      <p class="muted">Tried before the credential set; the set remains the fallback.</p>
+    </details>
+    {% else %}
     <div class="form-row">
-      <label>Username<input name="username" value="{{ form.get('username', '') if form else '' }}"
-                            {{ '' if chosen_sets else 'required' }}></label>
-      <label>Confirm password<input name="password" type="password"
-                                    {{ '' if chosen_sets else 'required' }}></label>
+      <label>Username<input name="username" value="{{ form.get('username', '') if form else '' }}" required></label>
+      <label>Confirm password<input name="password" type="password" required></label>
     </div>
+    <p class="muted">Re-enter the password to start (Atlas never echoes passwords into a page).</p>
+    {% endif %}
+
     <div class="form-actions">
       <button class="btn btn-primary" type="submit">Start Discovery</button>
     </div>
-    {% if chosen_sets %}
-    <p class="muted">Discovery will authenticate with the credential set(s) you chose — nothing to re-enter. Add a username and password above only if you want that credential tried first.</p>
-    {% else %}
-    <p class="muted">Re-enter the password to start (Atlas never echoes passwords into a page).</p>
-    {% endif %}
     <p class="muted">This saves a reusable profile whose entry points are the candidate addresses above, then launches discovery — Enterprise Graph, Prediction, Paths, Mission, and Advisor consume the result unchanged.</p>
   </form>
 </section>

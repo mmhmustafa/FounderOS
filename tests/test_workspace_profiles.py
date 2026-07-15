@@ -587,6 +587,47 @@ class WizardAcceptsACredentialSetTests(unittest.TestCase):
                 "discovery started with no way to authenticate",
             )
 
+    def test_the_review_step_does_not_ask_again_for_a_chosen_set(self) -> None:
+        """Empty credential boxes above "Start Discovery" read as a demand.
+
+        Making them merely optional was not enough: the review step still
+        showed two blank fields with "nothing to re-enter" printed underneath
+        them, which is a contradiction. The step exists to re-enter a password
+        Atlas never echoes — a chosen set carries one, so there is nothing to
+        re-enter and the fields are put away behind an explicit opt-in.
+        """
+
+        import re
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = self._client(Path(tmp))
+            page = client.post(
+                "/discovery/wizard/preview",
+                data={
+                    "mode": "seed", "policy": "balanced", "seed": "10.0.0.1",
+                    "credential_sets": "lab-admin",
+                },
+            ).get_data(as_text=True)
+            review = page[page.find("wizard/start"):]
+            self.assertIn("nothing to re-enter", review)
+            self.assertIn("lab-admin", review)          # names what will be used
+            self.assertIn("credential-override", review)  # tucked away, not gone
+            # No bare required credential field is put in the operator's way.
+            self.assertIsNone(re.search(r'name="password"[^>]*required', review))
+
+    def test_the_review_step_still_confirms_a_password_without_a_set(self) -> None:
+        import re
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = self._client(Path(tmp))
+            page = client.post(
+                "/discovery/wizard/preview",
+                data={"mode": "seed", "policy": "balanced", "seed": "10.0.0.1"},
+            ).get_data(as_text=True)
+            review = page[page.find("wizard/start"):]
+            self.assertIsNotNone(re.search(r'name="password"[^>]*required', review))
+            self.assertIn("Re-enter the password", review)
+
     def test_the_wizard_does_not_hard_require_the_fields(self) -> None:
         """Ticking a set relaxes them client-side too (js-credential-optional)."""
 
