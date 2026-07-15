@@ -41,7 +41,8 @@
           <strong>{{ d.hostname }}</strong> <span class="muted">{{ d.device_id }}</span>
           {# Any device list offers the same device actions (PR-047A decision 3). #}
           {% set target = device_target(device_id=d.device_id) %}
-          {% if target %}<div>{{ device_actions(target, compact=True, show_label=False) }}</div>{% endif %}
+          {% if target %}<div>{{ device_actions(target, compact=True, show_label=False,
+                                               web=web_access(device_id=d.device_id)) }}</div>{% endif %}
         </td>
         <td>{{ d.evidence_count }}</td>
         <td>{% if d.configuration %}<code>{{ d.configuration.config_sha256[:12] }}</code>{% else %}<span class="muted">none collected</span>{% endif %}</td>

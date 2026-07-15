@@ -352,12 +352,40 @@ class ConsistencyTests(unittest.TestCase):
             "topology.html", "device.html", "timeline.html",
             "memory_device.html", "memory_session.html",
             "configuration.html", "paths.html", "advisor.html",
+            "console_index.html",
         ):
             self.assertIn(
                 "device_actions(",
                 (templates / filename).read_text(encoding="utf-8"),
                 f"{filename} shows devices but offers no device actions",
             )
+
+    def test_every_device_action_answers_the_web_question(self) -> None:
+        """If a surface shows a device's actions, it answers BOTH questions.
+
+        Passing `web=` is what makes the macro answer at all — without it the
+        row silently offers SSH only, which is how the Configuration page ended
+        up listing nine devices with no web action while the resolver sat right
+        there. Omission is invisible in review, so it is asserted here instead:
+        every call must ask, and the macro greys the answer when there is no
+        verified endpoint.
+        """
+
+        import re
+
+        templates = Path("src/founderos_atlas/web/templates")
+        missing: list[str] = []
+        for path in templates.glob("*.html"):
+            if path.name == "_device_actions.html":
+                continue  # the macro's own definition and docs
+            text = path.read_text(encoding="utf-8")
+            # Each call, across line breaks, up to its closing paren.
+            for call in re.findall(r"device_actions\((?:[^()]|\([^()]*\))*\)", text):
+                if "web=" not in call:
+                    missing.append(f"{path.name}: {' '.join(call.split())[:70]}")
+        self.assertEqual(
+            [], missing, "device actions rendered without asking about web access"
+        )
 
     def test_console_offers_web_access_and_greys_it_when_unavailable(self) -> None:
         """The device-access page answers both questions for every device.

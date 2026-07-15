@@ -46,7 +46,8 @@
           {{ entry.hostname }}
           {# Any device list offers the same device actions (PR-047A decision 3). #}
           {% set target = device_target(device_id=entry.device_id) %}
-          {% if target %}<div>{{ device_actions(target, compact=True, show_label=False) }}</div>{% endif %}
+          {% if target %}<div>{{ device_actions(target, compact=True, show_label=False,
+                                               web=web_access(device_id=entry.device_id)) }}</div>{% endif %}
           {% else %}<span class="muted">—</span>{% endif %}
         </td>
         <td class="row-actions"><a class="btn btn-sm" href="{{ entry.href }}">View</a></td>

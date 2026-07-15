@@ -61,7 +61,8 @@
         <td>{{ device.last_seen }}</td>
         <td class="row-actions">
           <a class="btn btn-sm btn-primary" href="/configuration/{{ device.device_id | urlencode }}">History</a>
-          {{ device_actions(device_target(device_id=device.device_id), compact=True, show_label=False) }}
+          {{ device_actions(device_target(device_id=device.device_id), compact=True, show_label=False,
+                            web=web_access(device_id=device.device_id)) }}
         </td>
       </tr>
       {% endfor %}

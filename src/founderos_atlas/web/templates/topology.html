@@ -107,7 +107,8 @@
         <td>{{ device.management_ip }}</td>
         <td>{{ device.platform }}</td>
         <td>{{ device.os_version }}</td>
-        <td class="row-actions">{{ device_actions(device_target(hostname=device.hostname), compact=True) }}</td>
+        <td class="row-actions">{{ device_actions(device_target(hostname=device.hostname), compact=True,
+                                                 web=web_access(hostname=device.hostname)) }}</td>
       </tr>
       {% endif %}
       {% endfor %}
