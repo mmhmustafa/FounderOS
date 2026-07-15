@@ -2965,6 +2965,26 @@ def _boundary_from_form(form) -> BoundaryPolicy | None:
     )
 
 
+def _platform_label(family: str) -> str:
+    """The name an operator recognises for a driver family.
+
+    A snapshot records the driver's id (``frr``); every other Atlas surface
+    shows its display name (``FRRouting``). The drivers already carry both, so
+    the label comes from them rather than from a hand-kept lookup that would
+    drift the first time a driver is added.
+    """
+
+    try:
+        from founderos_atlas.platforms import default_registry
+
+        for driver in default_registry().drivers():
+            if driver.platform_id == family:
+                return driver.display_name
+    except Exception:  # noqa: BLE001 - a label must never break a page
+        pass
+    return family
+
+
 def make_pipeline_runner(app):
     """The shared discovery service adapter for GUI jobs.
 
@@ -3038,6 +3058,15 @@ def make_pipeline_runner(app):
         # PR-043.1: honest relationship categories — physical links vs
         # routing adjacencies vs protocol peers vs unresolved peers.
         relations = metadata.get("relationships") or {}
+        # The run's own statistics already separate the two things a
+        # non-connecting address can mean, and have since PR-043.10. Reading
+        # them here is what stops the GUI announcing "245 verified management
+        # endpoint(s) could not be reached" about 245 addresses that simply
+        # have no device on them — while this very snapshot recorded
+        # discovery_completeness_percent: 100 and authentication_failures: 0.
+        # Legacy snapshots carry no statistics; then both counts stay None and
+        # the job says nothing rather than guessing.
+        stats = metadata.get("discovery_statistics") or {}
         return {
             "devices": record.device_count,
             "relationships": record.relationship_count,
@@ -3045,8 +3074,15 @@ def make_pipeline_runner(app):
             "duration_seconds": record.duration_seconds,
             "network_status": record.network_status,
             "failed_devices": len(record.failures),
+            "auth_failed_devices": stats.get("authentication_failures"),
+            "addresses_without_device": stats.get("unused_addresses"),
+            "addresses_scanned": stats.get("addresses_scanned"),
+            "discovery_completeness_percent": stats.get(
+                "discovery_completeness_percent"
+            ),
             "platforms": ", ".join(
-                f"{name}: {count}" for name, count in sorted(platforms.items())
+                f"{_platform_label(name)}: {count}"
+                for name, count in sorted(platforms.items())
             ),
             "physical_links": relations.get("physical_links"),
             "routing_adjacencies": relations.get("routing_adjacencies"),

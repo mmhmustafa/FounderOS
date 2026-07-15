@@ -61,7 +61,9 @@
       setText("summary-adjacencies", job.summary.routing_adjacencies ?? "—");
       setText("summary-peers", job.summary.protocol_peers ?? "—");
       setText("summary-unresolved", job.summary.unresolved_peers ?? "—");
-      setText("summary-duration", job.summary.duration_seconds + " seconds");
+      // "73s", to match the elapsed counter above it — not "72.366208 seconds".
+      var secs = job.summary.duration_seconds;
+      setText("summary-duration", secs == null ? "—" : Math.round(secs) + "s");
       show("job-warning", Boolean(job.warning));
       if (job.warning) setText("job-warning", job.warning);
       var topology = byId("action-topology");
@@ -79,6 +81,26 @@
     }
   }
 
+  // The Networks table is server-rendered at page load, so a run finishing
+  // beside it leaves it claiming "running" / "never". Re-fetch the page and
+  // swap in that table's fresh body — a full reload would be simpler but would
+  // throw away the results panel, which only exists because renderJob drew it.
+  function refreshNetworksTable() {
+    var body = byId("networks-body");
+    if (!body || !window.fetch || !window.DOMParser) return;
+    fetch(window.location.pathname + window.location.search, {
+      credentials: "same-origin"
+    })
+      .then(function (response) { return response.text(); })
+      .then(function (html) {
+        var fresh = new DOMParser()
+          .parseFromString(html, "text/html")
+          .getElementById("networks-body");
+        if (fresh) body.innerHTML = fresh.innerHTML;
+      })
+      .catch(function () { /* the stale table is not worth an error */ });
+  }
+
   function poll(jobId) {
     fetch("/api/discovery/jobs/" + encodeURIComponent(jobId))
       .then(function (response) { return response.json(); })
@@ -87,6 +109,9 @@
         renderJob(payload.job);
         if (payload.job.status === "queued" || payload.job.status === "running") {
           window.setTimeout(function () { poll(jobId); }, POLL_MS);
+        } else {
+          // Terminal: the run just finished under this page.
+          refreshNetworksTable();
         }
       })
       .catch(function () {

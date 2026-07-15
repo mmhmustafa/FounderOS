@@ -23,7 +23,12 @@ designed so a future AI layer can consume summary, evidence, risk,
 confidence, and recommendations without any recomputation.
 """
 
-from .engine import IntelligenceEvidence, build_intelligence, load_evidence
+from .engine import (
+    IntelligenceEvidence,
+    build_intelligence,
+    is_auth_failure,
+    load_evidence,
+)
 from .health import score_health
 from .models import (
     CONFIDENCE_HIGH,
@@ -58,6 +63,7 @@ __all__ = [
     "HealthScore",
     "IntelligenceEvidence",
     "Recommendation",
+    "is_auth_failure",
     "ScoreFactor",
     "TREND_DECLINING",
     "TREND_IMPROVING",

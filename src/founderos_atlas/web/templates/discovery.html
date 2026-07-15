@@ -13,11 +13,16 @@
 {% if profiles %}
 <section class="card">
   <h2>Networks</h2>
+  {# This table is server-rendered at page load, so while a discovery runs
+     beside it, it goes stale — showing "running" and "never" next to a panel
+     reporting the run as complete. atlas.js refreshes THIS BODY when a run
+     finishes, rather than reloading the page (which would discard the
+     JS-rendered results panel). #}
   <table class="grid">
     <thead>
       <tr><th>Network</th><th>Site</th><th>Seed IP</th><th>Last Discovery</th><th>Status</th></tr>
     </thead>
-    <tbody>
+    <tbody id="networks-body">
       {% for p in profiles %}
       <tr>
         <td>{{ p.name }}</td>
