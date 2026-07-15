@@ -233,6 +233,9 @@ class WebCliCommandTests(unittest.TestCase):
                 ["atlas", "web"],
                 atlas_browser_opener=opened.append,
                 atlas_web_server_runner=runner,
+                # This test binds nothing, so it must not care whether this
+                # machine happens to have a server on 8765 (PR-047A).
+                atlas_web_port_probe=lambda host, port: False,
             )
         self.assertEqual(0, code)
         self.assertIn("http://127.0.0.1:8765", stdout.getvalue())
@@ -250,3 +253,72 @@ class WebCliCommandTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OneServerPerPortTests(unittest.TestCase):
+    """Atlas must refuse to become the second server on a port.
+
+    On Linux, binding a listening port fails with EADDRINUSE. On Windows,
+    SO_REUSEADDR — which the dev server sets by default to dodge TIME_WAIT on
+    Unix — means "steal the port" instead, so a second `atlas web` does not
+    fail. It quietly becomes a second server, and the GUI answers from
+    whichever process wins: possibly one started hours ago, running older code.
+
+    That is not a mistake an operator can avoid by being careful. Nothing
+    warns them, both servers look fine, and the symptom is a GUI that ignores
+    the change they just made. Refusing to start is the only honest option.
+    """
+
+    def _start(self, *, port=8765, probe=None, runner=None):
+        from founderos_runtime.cli.commands import atlas_web_command
+
+        return atlas_web_command(
+            host="127.0.0.1",
+            port=port,
+            port_probe=probe,
+            server_runner=runner or (lambda **kwargs: None),
+            browser_opener=lambda url: None,
+        )
+
+    def test_refuses_to_start_when_the_port_is_already_serving(self) -> None:
+        from founderos_runtime.cli.commands import CliError
+
+        with self.assertRaises(CliError) as caught:
+            self._start(probe=lambda host, port: True)
+        message = str(caught.exception)
+        self.assertIn("already serving", message)
+        # The refusal must say what to do about it, and offer a real way out.
+        self.assertIn("--port", message)
+
+    def test_starts_normally_when_the_port_is_free(self) -> None:
+        started: dict = {}
+        code, _ = self._start(
+            port=8799,
+            probe=lambda host, port: False,
+            runner=lambda **kwargs: started.update(kwargs),
+        )
+        self.assertEqual(0, code)
+        self.assertEqual({"host": "127.0.0.1", "port": 8799}, started)
+
+    def test_the_escape_hatch_the_message_offers_actually_exists(self) -> None:
+        """The refusal recommends `atlas web --port N`; that must dispatch."""
+
+        from founderos_runtime.cli.main import _parse_port_flag
+
+        self.assertEqual((8766, []), _parse_port_flag(["--port", "8766"]))
+        self.assertEqual((8766, []), _parse_port_flag(["--port=8766"]))
+        self.assertEqual((None, []), _parse_port_flag([]))
+
+    def test_a_bad_port_is_refused_rather_than_guessed(self) -> None:
+        from founderos_runtime.cli.commands import CliError
+        from founderos_runtime.cli.main import _parse_port_flag
+
+        for tokens in (["--port", "abc"], ["--port", "0"], ["--port", "99999"]):
+            with self.assertRaises(CliError):
+                _parse_port_flag(tokens)
+
+    def test_the_probe_reports_a_free_port_as_free(self) -> None:
+        from founderos_runtime.cli.commands import port_is_serving
+
+        # Nothing is bound here; the probe must not claim otherwise.
+        self.assertFalse(port_is_serving("127.0.0.1", 8798, timeout=0.2))

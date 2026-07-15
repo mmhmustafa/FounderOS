@@ -1360,6 +1360,34 @@ def atlas_investigate_command(
     )
 
 
+def port_is_serving(host: str, port: int, *, timeout: float = 0.4) -> bool:
+    """Is something already answering on this address?
+
+    The check exists because of a Windows-specific trap. On Linux, binding a
+    port that is already listening fails with EADDRINUSE. On Windows,
+    ``SO_REUSEADDR`` — which the dev server sets by default to dodge TIME_WAIT
+    on Unix — means "steal the port" instead. So a second ``atlas web`` does
+    **not** fail there. It quietly becomes a second server on the same port,
+    and requests go to whichever one wins.
+
+    That is not a mistake an operator can avoid by being careful: nothing warns
+    them, both servers look fine, and the GUI starts answering from whichever
+    process happened to win — including one started hours ago, running code
+    from before their last change. Refusing to start is the only honest option.
+    """
+
+    import socket
+
+    probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    probe.settimeout(timeout)
+    try:
+        return probe.connect_ex((host, port)) == 0
+    except OSError:
+        return False
+    finally:
+        probe.close()
+
+
 def atlas_web_command(
     *,
     host: str = "127.0.0.1",
@@ -1368,8 +1396,24 @@ def atlas_web_command(
     history_root: str | Path | None = None,
     browser_opener: BrowserOpener | None = None,
     server_runner: Callable[..., None] | None = None,
+    port_probe: Callable[[str, int], bool] | None = None,
 ) -> tuple[int, str]:
     """Start the local Atlas web GUI (binds to 127.0.0.1 only)."""
+
+    # Refuse to become the second server on this port (see port_is_serving).
+    # Checked before anything is built, so the message is the first thing the
+    # operator sees rather than a GUI that looks started and is not theirs.
+    probe = port_probe or port_is_serving
+    if probe(host, port):
+        raise CliError(
+            f"Something is already serving http://{host}:{port} — "
+            f"most likely another 'atlas web'.\n"
+            f"Atlas will not start a second server on the same port: on "
+            f"Windows both would bind, and the GUI would answer from "
+            f"whichever won — possibly one running older code.\n"
+            f"Stop the running server, or start this one elsewhere: "
+            f"atlas web --port {port + 1}"
+        )
 
     try:
         from founderos_atlas.web import create_app
