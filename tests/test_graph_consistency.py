@@ -60,6 +60,53 @@ class DiscoveryStatisticsTests(unittest.TestCase):
         self.assertEqual(100, stats.discovery_completeness_percent)
         self.assertEqual(4, stats.address_utilization_percent)  # 9/254
 
+    def test_addresses_atlas_declined_to_touch_are_not_scanned(self) -> None:
+        """A skipped address was never scanned — it was a decision not to.
+
+        `skipped` counts BGP/OSPF peers that are "not a verified management
+        endpoint", devices already discovered under another address, and the
+        max-device cap. Counting them as scanned inflated the total past the
+        size of the range itself: a /24 sweep reported 270 addresses scanned
+        when a /24 holds 254, and the panel's own numbers stopped adding up
+        (9 reachable + 245 unused = 254, not 270). The 16 difference was
+        exactly the 16 protocol peers the same run reported observing —
+        routing facts counted as address space.
+
+        Every other test here passes skipped=0, which is why it survived.
+        """
+
+        stats = classify_discovery_visits(
+            connected=9,
+            failed_details=tuple(
+                "did not answer a reachability probe on any management port"
+                for _ in range(245)
+            ),
+            skipped=16,  # protocol peers Atlas deliberately never attempted
+            managed_devices=9,
+        )
+        # 254, the size of the range — not 270.
+        self.assertEqual(254, stats.addresses_scanned)
+        # ...and the numbers add up on their own.
+        self.assertEqual(
+            stats.addresses_scanned, stats.reachable + stats.unused_addresses
+        )
+        self.assertEqual(9, stats.reachable)
+        self.assertEqual(245, stats.unused_addresses)
+
+    def test_skipping_more_peers_never_grows_the_address_space(self) -> None:
+        """The scanned range does not depend on how much routing Atlas saw."""
+
+        def scanned(skipped: int) -> int:
+            return classify_discovery_visits(
+                connected=9,
+                failed_details=tuple("no answer" for _ in range(245)),
+                skipped=skipped,
+                managed_devices=9,
+            ).addresses_scanned
+
+        self.assertEqual(scanned(0), scanned(16))
+        self.assertEqual(scanned(0), scanned(500))
+
     def test_authentication_failure_reduces_completeness(self) -> None:
         stats = classify_discovery_visits(
             connected=7,
