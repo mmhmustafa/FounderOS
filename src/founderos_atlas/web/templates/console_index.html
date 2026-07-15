@@ -6,10 +6,11 @@
   <h1>Console</h1>
 </div>
 <p class="muted">
-  Open an interactive SSH session to any device Atlas has a <strong>verified management
-  endpoint</strong> for — an address Atlas authenticated to during discovery. A router ID,
-  BGP peer, next hop, loopback or unresolved peer is a protocol fact, not a way in, and is
-  never offered here.
+  Reach any device Atlas has a <strong>verified management endpoint</strong> for — an address
+  Atlas authenticated to during discovery — over SSH, or over its web interface where one has
+  been verified. A router ID, BGP peer, next hop, loopback or unresolved peer is a protocol
+  fact, not a way in, and is never offered here. Where a device has no verified web interface
+  the action is greyed out, with the reason on hover: Atlas checked, and tells you what it found.
 </p>
 
 <div class="tiles">
@@ -75,7 +76,10 @@
           {% if target.credential_name %}{{ target.credential_name }}
           {% else %}<span class="muted">none</span>{% endif %}
         </td>
-        <td class="row-actions">{{ device_actions(target, compact=True) }}</td>
+        {# The device-access page answers both questions for every device: SSH,
+           and web. Where there is no verified web endpoint the action is greyed
+           rather than absent — Atlas checked, and says so. #}
+        <td class="row-actions">{{ device_actions(target, compact=True, web=web_access(device_id=target.device_id)) }}</td>
       </tr>
       {% endfor %}
     </tbody>

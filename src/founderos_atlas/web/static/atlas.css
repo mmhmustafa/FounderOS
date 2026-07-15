@@ -48,6 +48,10 @@ h3 { margin: 0 0 8px; font-size: 14px; }
 
 .btn { display: inline-block; padding: 9px 15px; border-radius: 8px; background: #e2e8f0; color: #172033; border: 0; cursor: pointer; font-size: 14px; }
 .btn:hover { background: #cbd5e1; text-decoration: none; }
+/* An action Atlas checked and cannot offer: visibly present, plainly not
+   clickable, reason on hover. Never a button that looks live and does nothing. */
+.btn[disabled] { opacity: .45; cursor: not-allowed; }
+.btn[disabled]:hover { background: #e2e8f0; }
 .btn-primary { background: var(--accent); color: #fff; }
 .btn-primary:hover { background: var(--accent-dark); }
 .btn-danger { background: #fee2e2; color: #b91c1c; }

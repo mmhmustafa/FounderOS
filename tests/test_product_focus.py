@@ -347,6 +347,31 @@ class ConsistencyTests(unittest.TestCase):
                 f"{filename} shows devices but offers no device actions",
             )
 
+    def test_console_offers_web_access_and_greys_it_when_unavailable(self) -> None:
+        """The device-access page answers both questions for every device.
+
+        It previously asked only about SSH — it listed every device and never
+        mentioned web access at all, even though the resolver was right there.
+        Where no web endpoint is verified the action is greyed rather than
+        absent: an empty cell reads as "Atlas didn't check".
+        """
+
+        console = Path(
+            "src/founderos_atlas/web/templates/console_index.html"
+        ).read_text(encoding="utf-8")
+        self.assertIn("web=web_access(", console)
+
+        macro = Path(
+            "src/founderos_atlas/web/templates/_device_actions.html"
+        ).read_text(encoding="utf-8")
+        # Asking about web is answered either way: a live button or a greyed one.
+        self.assertIn("disabled", macro)
+        # ...and the greyed one always carries its reason.
+        self.assertIn('title="{{ web.reason }}"', macro)
+
+        css = Path("src/founderos_atlas/web/static/atlas.css").read_text(encoding="utf-8")
+        self.assertIn(".btn[disabled]", css)
+
     def test_the_ui_does_not_name_internal_layers_at_the_operator(self) -> None:
         """The page is Evidence; the layer behind it is Enterprise Memory. The
         operator is shown the former and never sent looking for the latter."""

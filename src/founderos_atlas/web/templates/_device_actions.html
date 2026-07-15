@@ -65,8 +65,12 @@
   </button>
   <button class="btn btn-sm js-copy-url" type="button" data-url="{{ web.http_url }}"
           title="Copy {{ web.http_url }}">Copy HTTP URL</button>
-  {% elif web and not compact %}
-  <span class="badge badge-muted" title="{{ web.reason }}">Web unavailable</span>
+  {% elif web %}
+  {# Asking about web access is answered either way: a live button, or this —
+     greyed, never clickable, and carrying the reason. An empty cell would read
+     as "Atlas didn't check"; this reads as "Atlas checked, and here is why not". #}
+  <button class="btn btn-sm" type="button" disabled
+          title="{{ web.reason }}">{% if compact %}Web{% else %}Web unavailable{% endif %}</button>
   {% endif %}
 
   {% if not compact %}
