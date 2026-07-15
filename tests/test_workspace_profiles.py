@@ -465,6 +465,52 @@ class CredentialSetOnlyProfileTests(unittest.TestCase):
             # reference to one — not an empty reference to a missing secret.
             self.assertEqual("", profile.credential_ref)
 
+    def test_a_set_only_profile_survives_its_whole_lifecycle(self) -> None:
+        """Creating it was never the hard part — using it was.
+
+        The first version of this change fixed the model and the forms and
+        left every path that READS a profile asking the credential store for
+        the secret behind an empty reference. Discovery died on stage 1 with
+        "credential_ref must be a non-empty string" — the profile saved fine
+        and could not run. Duplicate and delete had the same hole.
+
+        So: every step, not just the one that was reported.
+        """
+
+        with tempfile.TemporaryDirectory() as tmp:
+            service = make_service(Path(tmp))
+            service.add_profile(
+                name="Set Only", management_ip="10.0.0.1",
+                username="", password="", credential_sets=("lab-admin",),
+            )
+
+            # RUN — the one that broke: no own credential, nothing to look up.
+            inputs = service.resolve_discovery_inputs("Set Only")
+            self.assertEqual("", inputs.password)
+            self.assertEqual(("lab-admin",), inputs.credential_sets)
+
+            # DUPLICATE — a clone of a set-only profile has no secret to copy,
+            # and must not hold a reference to one that was never stored.
+            clone = service.duplicate_profile("Set Only", new_name="Set Only Copy")
+            self.assertEqual("", clone.credential_ref)
+            self.assertEqual(("lab-admin",), clone.credential_sets)
+
+            # DELETE — nothing of its own to forget.
+            service.delete_profile("Set Only Copy")
+
+    def test_giving_a_set_only_profile_a_password_later_mints_a_reference(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            service = make_service(Path(tmp))
+            service.add_profile(
+                name="Set Only", management_ip="10.0.0.1",
+                username="", password="", credential_sets=("lab-admin",),
+            )
+            updated = service.update_profile("Set Only", username="atlas", password="later")
+            # It had no reference to reuse; one is created rather than saving
+            # the secret under an empty key.
+            self.assertTrue(updated.credential_ref)
+            self.assertEqual("later", service.credential_provider.get(updated.credential_ref))
+
     def test_a_profile_with_no_way_in_at_all_is_refused(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             service = make_service(Path(tmp))

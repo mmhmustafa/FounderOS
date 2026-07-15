@@ -217,7 +217,12 @@ class ProfileService:
             name=new_name if new_name and new_name.strip() else existing.name,
             management_ip=management_ip if management_ip is not None else existing.management_ip,
             username=username if username is not None else existing.username,
-            credential_ref=existing.credential_ref,
+            # Giving a password to a set-only profile mints its first
+            # reference; it had none, so there was none to reuse.
+            credential_ref=(
+                existing.credential_ref
+                or (credential_ref_for(existing.profile_id) if password else "")
+            ),
             site=None if clear_site else (site if site is not None else existing.site),
             max_depth=max_depth if max_depth is not None else existing.max_depth,
             max_devices=max_devices if max_devices is not None else existing.max_devices,
@@ -257,7 +262,9 @@ class ProfileService:
         )
         if password:
             self._ensure_credential_store()
-            self._credentials.save(existing.credential_ref, password)
+            # `updated` carries the reference — freshly minted when a set-only
+            # profile is given its first password of its own.
+            self._credentials.save(updated.credential_ref, password)
         self._repository.replace(existing.name, updated)
         return updated
 
@@ -295,7 +302,10 @@ class ProfileService:
                 f"A profile named {target_name!r} already exists."
             )
         profile_id = self._unique_profile_id(target_name)
-        credential_ref = credential_ref_for(profile_id)
+        # A set-only source has no secret of its own, so the clone gets no
+        # reference to one either — a reference to a secret that was never
+        # stored is worse than no reference at all.
+        credential_ref = credential_ref_for(profile_id) if source.credential_ref else ""
         now = self._now()
         clone = replace(
             source,
@@ -308,11 +318,14 @@ class ProfileService:
             archived=False,
         )
         # Copy the secret to the clone's own reference; the clone is
-        # independent, so deleting either never affects the other.
-        try:
-            password = self._credentials.get(source.credential_ref)
-        except AtlasWorkspaceError:
-            password = None
+        # independent, so deleting either never affects the other. A set-only
+        # source has no secret to copy.
+        password = None
+        if source.credential_ref:
+            try:
+                password = self._credentials.get(source.credential_ref)
+            except AtlasWorkspaceError:
+                password = None
         if password:
             self._ensure_credential_store()
             self._credentials.save(credential_ref, password)
@@ -334,14 +347,28 @@ class ProfileService:
         survives this deletion (PR-043.9, Part 4)."""
 
         removed = self._repository.delete(name)
-        self._credentials.delete(removed.credential_ref)
+        # A set-only profile stored no secret of its own; there is nothing to
+        # delete, and asking the store to forget an empty reference is a bug,
+        # not a no-op. The credential SET is untouched either way — it belongs
+        # to the operator, not to this profile.
+        if removed.credential_ref:
+            self._credentials.delete(removed.credential_ref)
         return removed
 
     # -- discovery integration ---------------------------------------------
 
     def resolve_discovery_inputs(self, name: str) -> ResolvedDiscoveryInputs:
         profile = self._repository.get(name)
-        password = self._credentials.get(profile.credential_ref)
+        # A profile may authenticate purely from credential sets. Then it has
+        # no credential of its own and no reference to one — asking the store
+        # for the secret behind an empty reference is not a lookup, it is a
+        # bug. The resolver takes it from here: `profile_default` is optional,
+        # and the sets carry their own usernames and passwords.
+        password = (
+            self._credentials.get(profile.credential_ref)
+            if profile.credential_ref
+            else ""
+        )
         return ResolvedDiscoveryInputs(
             profile_name=profile.name,
             management_ip=profile.management_ip,
