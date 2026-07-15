@@ -22,15 +22,21 @@
     <input name="management_ip" value="{{ profile.management_ip if profile else '' }}"
            placeholder="192.168.1.12" {{ 'required' if mode != 'edit' else '' }}>
   </label>
+  {# A profile needs a way in: its own credential, or a credential set (named
+     under Advanced). Naming a set makes these optional — it carries its own. #}
   <label>Username
     <input name="username" value="{{ profile.username if profile else '' }}"
-           placeholder="atlas" {{ 'required' if mode != 'edit' else '' }}>
+           placeholder="e.g. atlas" class="js-credential-optional"
+           {{ 'required' if mode != 'edit' else '' }}>
   </label>
   <label>Password
     <input type="password" name="password" autocomplete="new-password"
            placeholder="{{ 'leave blank to keep current' if mode == 'edit' else '' }}"
+           class="js-credential-optional"
            {{ 'required' if mode != 'edit' else '' }}>
   </label>
+  <p class="muted">Or authenticate from a saved credential set — name one under
+    <strong>Advanced</strong> below and these become optional.</p>
   <div class="form-row">
     <label>Max depth
       <input type="number" name="max_depth" min="0" value="{{ profile.max_depth if profile else 1 }}">
@@ -62,8 +68,9 @@
     <label>Do not follow hostnames (globs, optional)
       <input name="deny_hostnames" value="{{ profile.deny_hostnames_text if profile else '' }}" placeholder="isp-*, provider-*">
     </label>
-    <label>Credential sets (comma separated set ids, optional)
-      <input name="credential_sets" value="{{ profile.credential_sets_text if profile else '' }}" placeholder="enterprise-network-access">
+    <label>Credential sets (comma separated set ids)
+      <input name="credential_sets" value="{{ profile.credential_sets_text if profile else '' }}"
+             placeholder="enterprise-network-access" class="js-credential-set">
     </label>
     <div class="form-row">
       <label>Site hint (optional)

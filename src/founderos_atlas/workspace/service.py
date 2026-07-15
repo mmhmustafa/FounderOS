@@ -123,11 +123,24 @@ class ProfileService:
             raise InvalidProfileError("A profile name is required.")
         if self._repository.exists(name):
             raise DuplicateProfileError(f"A profile named {name.strip()!r} already exists.")
-        if not password:
+        # A profile needs a way in — its own credential, or a credential set.
+        # Sets alone are sufficient: their entries carry their own usernames and
+        # passwords, and the resolver has always accepted them without a
+        # profile default. Demanding a password anyway made an operator retype
+        # a credential they had already saved.
+        own_credential = bool(username.strip()) and bool(password)
+        if not own_credential and not credential_sets:
+            raise InvalidProfileError(
+                "A profile needs a way to authenticate: a username and password, "
+                "or at least one credential set."
+            )
+        if own_credential and not password:
             raise InvalidProfileError("A password is required to save a profile.")
-        self._ensure_credential_store()
         profile_id = self._unique_profile_id(name)
-        credential_ref = credential_ref_for(profile_id)
+        # No own credential -> no secret to store, and no reference to one.
+        credential_ref = credential_ref_for(profile_id) if own_credential else ""
+        if own_credential:
+            self._ensure_credential_store()
         now = self._now()
         profile = DiscoveryProfile(
             profile_id=profile_id,
@@ -149,6 +162,11 @@ class ProfileService:
             site_hint=site_hint,
             domain_hint=domain_hint,
         )
+        if not own_credential:
+            # Credential-set-only: there is no secret of this profile's own to
+            # store, and nothing to roll back if the write fails.
+            self._repository.add(profile)
+            return profile
         # Store the secret first; if it fails, no dangling metadata is left.
         self._credentials.save(credential_ref, password)
         try:

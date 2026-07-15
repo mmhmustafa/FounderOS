@@ -160,6 +160,45 @@
     if (button) button.disabled = true;
   });
 
+  /*
+   * A profile needs a way in — its own credential, or a credential set.
+   *
+   * Ticking a set makes the username/password optional: the set already
+   * carries one, and the resolver has always accepted sets without a profile
+   * default. Previously both fields stayed `required`, so choosing a saved
+   * credential set still blocked the form on "Please fill out this field" —
+   * for a credential the operator had already saved. The server enforces the
+   * same rule; this only stops the browser refusing first.
+   */
+  (function () {
+    var sets = document.querySelectorAll(".js-credential-set");
+    var fields = document.querySelectorAll(".js-credential-optional");
+    if (!sets.length || !fields.length) return;
+
+    // A set is "chosen" whether it is ticked (the wizard's checkboxes) or
+    // typed (the profile form's comma-separated ids). Same rule, both shapes.
+    function anySetChosen() {
+      return Array.prototype.some.call(sets, function (input) {
+        return input.type === "checkbox" ? input.checked : Boolean(input.value.trim());
+      });
+    }
+    function sync() {
+      var optional = anySetChosen();
+      Array.prototype.forEach.call(fields, function (field) {
+        field.required = !optional;
+        // The browser keeps a stale validity message until the value changes.
+        if (optional && field.setCustomValidity) field.setCustomValidity("");
+      });
+      var hint = document.querySelector(".js-credential-hint");
+      if (hint) hint.classList.toggle("credential-optional", optional);
+    }
+    Array.prototype.forEach.call(sets, function (input) {
+      input.addEventListener("change", sync);
+      input.addEventListener("input", sync);  // typed set ids
+    });
+    sync();  // a set may already be chosen on a re-render or an edit
+  }());
+
   // Re-attach to an in-flight job after refresh or navigation.
   var panel = byId("job-panel");
   if (panel && panel.dataset.jobId) {

@@ -34,16 +34,27 @@
 
   <section class="card">
     <h2>Step 2 — Credentials</h2>
+    {# A profile needs a way in: its own credential, or a credential set. Ticking
+       a set makes these optional (js-credential-optional), because the set
+       already carries a username and password — Atlas should never make you
+       retype a credential you have already saved. #}
     <div class="form-row">
-      <label>Username<input name="username" placeholder="atlas" required></label>
-      <label>Password<input name="password" type="password" required></label>
+      <label>Username<input name="username" placeholder="e.g. atlas" required
+                            class="js-credential-optional"></label>
+      <label>Password<input name="password" type="password" required
+                            class="js-credential-optional"></label>
     </div>
     {% if credential_sets %}
-    <label>Credential sets for rotation (optional — tried in order until one authenticates)</label>
+    <label>Credential sets (tried in order until one authenticates)</label>
     {% for cs in credential_sets %}
-    <label class="checkbox"><input type="checkbox" name="credential_sets" value="{{ cs.set_id }}"> {{ cs.name }} ({{ cs.entries | length }} entr{{ 'y' if cs.entries | length == 1 else 'ies' }})</label>
+    <label class="checkbox"><input type="checkbox" name="credential_sets" value="{{ cs.set_id }}" class="js-credential-set"> {{ cs.name }} ({{ cs.entries | length }} entr{{ 'y' if cs.entries | length == 1 else 'ies' }})</label>
     {% endfor %}
-    <p class="muted">Passwords are never stored in plaintext or shown; only credential references are kept.</p>
+    <p class="muted js-credential-hint">
+      Tick a credential set and the username and password above become optional —
+      the set carries its own. Fill them in as well to try that credential first.
+      Passwords are never stored in plaintext or shown; only credential
+      references are kept.
+    </p>
     {% else %}
     <p class="muted">No credential sets defined. The username and password above are used. Add sets on the <a href="/credentials">Credentials</a> page for rotation.</p>
     {% endif %}
@@ -108,16 +119,26 @@
     {% for key in ['mode','policy','seed','cidr','seeds','csv_text','exclusions','max_depth','max_devices','concurrency','timeout_seconds','allow_large_scan'] %}
     <input type="hidden" name="{{ key }}" value="{{ form.get(key, '') if form else '' }}">
     {% endfor %}
-    {% for sid in (form.getlist('credential_sets') if form else []) %}<input type="hidden" name="credential_sets" value="{{ sid }}">{% endfor %}
+    {% set chosen_sets = (form.getlist('credential_sets') if form else []) %}
+    {% for sid in chosen_sets %}<input type="hidden" name="credential_sets" value="{{ sid }}">{% endfor %}
     <label>Save as network profile<input name="name" placeholder="Hyderabad Lab" required></label>
+    {# Whether a credential is needed here is known server-side: a chosen set
+       already carries one, so it is not re-demanded. #}
     <div class="form-row">
-      <label>Username<input name="username" value="{{ form.get('username', '') if form else '' }}" required></label>
-      <label>Confirm password<input name="password" type="password" required></label>
+      <label>Username<input name="username" value="{{ form.get('username', '') if form else '' }}"
+                            {{ '' if chosen_sets else 'required' }}></label>
+      <label>Confirm password<input name="password" type="password"
+                                    {{ '' if chosen_sets else 'required' }}></label>
     </div>
     <div class="form-actions">
       <button class="btn btn-primary" type="submit">Start Discovery</button>
     </div>
-    <p class="muted">Re-enter the password to start (Atlas never echoes passwords into a page). This saves a reusable profile whose entry points are the candidate addresses above, then launches discovery — Enterprise Graph, Prediction, Paths, Mission, and Advisor consume the result unchanged.</p>
+    {% if chosen_sets %}
+    <p class="muted">Discovery will authenticate with the credential set(s) you chose — nothing to re-enter. Add a username and password above only if you want that credential tried first.</p>
+    {% else %}
+    <p class="muted">Re-enter the password to start (Atlas never echoes passwords into a page).</p>
+    {% endif %}
+    <p class="muted">This saves a reusable profile whose entry points are the candidate addresses above, then launches discovery — Enterprise Graph, Prediction, Paths, Mission, and Advisor consume the result unchanged.</p>
   </form>
 </section>
 {% endif %}

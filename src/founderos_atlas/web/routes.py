@@ -882,17 +882,24 @@ def register_routes(app) -> None:
         name = request.form.get("name", "").strip()
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
-        if not name or not username or not password:
+        credential_sets = tuple(request.form.getlist("credential_sets"))
+        # A profile needs a way in — its own credential, or a credential set.
+        # Sets alone are sufficient: their entries carry their own usernames and
+        # passwords. Demanding a username and password anyway made an operator
+        # who had picked a saved set retype a credential Atlas never needed.
+        if not name:
+            flash("A profile name is required to run discovery.", "error")
+            return redirect(url_for("discovery_wizard"))
+        if not (username and password) and not credential_sets:
             flash(
-                "A profile name, username, and password are required to run "
-                "discovery.",
+                "Discovery needs a way to authenticate: a username and "
+                "password, or a credential set.",
                 "error",
             )
             return redirect(url_for("discovery_wizard"))
         seeds = plan.seed_addresses
         try:
             service = profile_service()
-            credential_sets = tuple(request.form.getlist("credential_sets"))
             if service.repository.exists(name):
                 service.update_profile(
                     name,

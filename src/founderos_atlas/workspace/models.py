@@ -84,10 +84,28 @@ class DiscoveryProfile:
     collection_schedule_hours: int = 24
 
     def __post_init__(self) -> None:
-        for field_name in ("profile_id", "name", "username", "credential_ref"):
+        for field_name in ("profile_id", "name"):
             value = getattr(self, field_name)
             if not isinstance(value, str) or not value.strip():
                 raise InvalidProfileError(f"{field_name} must be a non-empty string")
+        for field_name in ("username", "credential_ref"):
+            value = getattr(self, field_name)
+            if not isinstance(value, str):
+                raise InvalidProfileError(f"{field_name} must be a string")
+        # The real rule is not "a profile has a username" — it is **a profile
+        # must have a way in**. Its own credential is one way; a credential set
+        # is another, and the resolver has always accepted sets alone
+        # (`profile_default` is optional at every layer). Requiring both meant
+        # an operator with a saved credential set was made to retype a username
+        # and password the engine never needed.
+        has_own_credential = bool(self.username.strip()) and bool(
+            self.credential_ref.strip()
+        )
+        if not has_own_credential and not self.credential_sets:
+            raise InvalidProfileError(
+                "a profile needs a way to authenticate: a username and password, "
+                "or at least one credential set"
+            )
         try:
             object.__setattr__(self, "management_ip", str(ip_address(str(self.management_ip).strip())))
         except ValueError as error:

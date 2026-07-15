@@ -436,3 +436,164 @@ class DiscoverWithProfileTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CredentialSetOnlyProfileTests(unittest.TestCase):
+    """A profile needs a way IN — not necessarily a username of its own.
+
+    Atlas made an operator who had already saved a credential set retype a
+    username and password anyway: the wizard blocked on "Please fill out this
+    field" for a credential that was sitting in the set they had just ticked.
+    The engine never needed it — `profile_default` is optional at every layer
+    of the resolver, and a set's entries carry their own usernames and
+    passwords. The form was imposing a restriction the engine does not have.
+    """
+
+    def test_a_credential_set_is_enough(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            service = make_service(Path(tmp))
+            profile = service.add_profile(
+                name="Set Only",
+                management_ip="10.0.0.1",
+                username="",
+                password="",
+                credential_sets=("lab-admin",),
+            )
+            self.assertEqual(("lab-admin",), profile.credential_sets)
+            self.assertEqual("", profile.username)
+            # No credential of its own means no secret to store, and no
+            # reference to one — not an empty reference to a missing secret.
+            self.assertEqual("", profile.credential_ref)
+
+    def test_a_profile_with_no_way_in_at_all_is_refused(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            service = make_service(Path(tmp))
+            with self.assertRaises(InvalidProfileError) as caught:
+                service.add_profile(
+                    name="No Way In",
+                    management_ip="10.0.0.2",
+                    username="",
+                    password="",
+                    credential_sets=(),
+                )
+            self.assertIn("way to authenticate", str(caught.exception))
+
+    def test_its_own_credential_still_works_exactly_as_before(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            service = make_service(Path(tmp))
+            profile = service.add_profile(
+                name="Own Cred",
+                management_ip="10.0.0.3",
+                username="atlas",
+                password="secret",
+            )
+            self.assertEqual("atlas", profile.username)
+            self.assertTrue(profile.credential_ref)
+            self.assertEqual("secret", service.credential_provider.get(profile.credential_ref))
+
+    def test_the_model_states_the_real_rule(self) -> None:
+        # Either its own credential, or a set — the model, not just the form.
+        with self.assertRaises(InvalidProfileError):
+            DiscoveryProfile(
+                profile_id="p", name="n", management_ip="10.0.0.4",
+                username="", credential_ref="",
+            )
+        # A set alone satisfies it.
+        profile = DiscoveryProfile(
+            profile_id="p", name="n", management_ip="10.0.0.4",
+            username="", credential_ref="", credential_sets=("lab-admin",),
+        )
+        self.assertEqual(("lab-admin",), profile.credential_sets)
+
+
+class WizardAcceptsACredentialSetTests(unittest.TestCase):
+    """The GUI must not demand a credential the engine does not need.
+
+    Reported from the wizard: "I have selected the lab admin for credentials,
+    still it asks to fill the credentials." It did — both fields were
+    unconditionally `required`, in the browser AND on the server.
+    """
+
+    def _app(self, tmp: Path):
+        from founderos_atlas.web import create_app
+
+        from tests.test_profile_isolation import make_service
+
+        def unreachable(_credentials):
+            # Accepting a credential set STARTS a real discovery. These tests
+            # are about the credential rule, not the network, so every host
+            # fails instantly — otherwise the job thread outlives the temp
+            # directory and teardown races it.
+            raise OSError("no network in tests")
+
+        app = create_app(
+            profile_service=make_service(tmp),
+            output_dir=tmp,
+            history_root=tmp / ".atlas" / "history",
+            transport_factory=unreachable,
+        )
+        app.config.update(TESTING=True)
+        return app
+
+    def _client(self, tmp: Path):
+        return self._app(tmp).test_client()
+
+    @staticmethod
+    def _settle(app) -> None:
+        """Let any started discovery finish before the temp directory goes."""
+
+        manager = app.config.get("ATLAS_JOB_MANAGER")
+        if manager is None:
+            return
+        for job in manager.list_recent():
+            manager.wait(job["job_id"], timeout=30)
+
+    @staticmethod
+    def _flashes(client) -> list[str]:
+        with client.session_transaction() as session:
+            return [message for _category, message in session.get("_flashes", [])]
+
+    def test_a_credential_set_alone_starts_discovery(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            app = self._app(Path(tmp))
+            client = app.test_client()
+            client.post(
+                "/discovery/wizard/start",
+                data={
+                    "mode": "seed", "policy": "fast", "seed": "10.0.0.1",
+                    "name": "Set Only", "username": "", "password": "",
+                    "credential_sets": "lab-admin",
+                },
+            )
+            messages = self._flashes(client)
+            self.assertFalse(
+                any("authenticate" in message for message in messages),
+                f"a chosen credential set was refused: {messages}",
+            )
+            self._settle(app)
+
+    def test_no_credential_at_all_is_still_refused(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            client = self._client(Path(tmp))
+            client.post(
+                "/discovery/wizard/start",
+                data={
+                    "mode": "seed", "policy": "fast", "seed": "10.0.0.1",
+                    "name": "No Way In", "username": "", "password": "",
+                },
+            )
+            self.assertTrue(
+                any("authenticate" in m for m in self._flashes(client)),
+                "discovery started with no way to authenticate",
+            )
+
+    def test_the_wizard_does_not_hard_require_the_fields(self) -> None:
+        """Ticking a set relaxes them client-side too (js-credential-optional)."""
+
+        wizard = Path(
+            "src/founderos_atlas/web/templates/discovery_wizard.html"
+        ).read_text(encoding="utf-8")
+        self.assertIn("js-credential-optional", wizard)
+        self.assertIn("js-credential-set", wizard)
+        # The placeholder must not masquerade as a filled-in value.
+        self.assertNotIn('placeholder="atlas"', wizard)

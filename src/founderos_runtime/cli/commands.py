@@ -438,12 +438,20 @@ def atlas_discover_command(
                 set_ids=inputs.credential_sets,
                 profile_id=active_profile_id,
                 site_hint=inputs.site_hint,
-                profile_default=CredentialCandidate(
-                    credential_ref=inputs.credential_ref,
-                    username=username,
-                    label="profile credential",
-                    priority=0,
-                    source="profile-default",
+                # A profile may authenticate purely from credential sets. Then
+                # it has no credential of its own, and offering an empty one as
+                # the first candidate would waste an attempt on every host.
+                # `profile_default` is optional at every layer for this reason.
+                profile_default=(
+                    CredentialCandidate(
+                        credential_ref=inputs.credential_ref,
+                        username=username,
+                        label="profile credential",
+                        priority=0,
+                        source="profile-default",
+                    )
+                    if (username and inputs.credential_ref)
+                    else None
                 ),
                 seed_hosts=(host, *(inputs.seeds or ())),
             )
