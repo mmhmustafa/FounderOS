@@ -23,6 +23,9 @@ NAV_ITEMS = (
     ("topology", "Topology", "/topology"),
     # PR-044 (MEMORY): Configuration Memory — what existed yesterday.
     ("configuration", "Configuration", "/configuration"),
+    ("memory", "Memory", "/memory"),
+    # PR-047 (SENTINEL): Enterprise Policy — reasoning through CORTEX.
+    ("policy", "Policy", "/policy"),
     ("console", "Console", "/console"),
     ("management", "Management", "/management"),
     ("predict", "Predict", "/predict"),

@@ -48,5 +48,9 @@ deliverables/*
 # Atlas discovery history (local network memory; contains configs)
 /.atlas/
 
+# Enterprise Memory store written to CWD when discovery runs outside a profile
+# dir. Content-addressed blobs of raw evidence + device configs — never commit.
+/enterprise-memory/
+
 # Collected device configurations are sensitive material; never commit them.
 /configs/

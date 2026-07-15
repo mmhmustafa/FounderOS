@@ -26,6 +26,14 @@ from founderos_atlas.config_memory import (
     RecordOutcome,
     decide_collection,
 )
+from founderos_atlas.enterprise_memory import (
+    DiscoverySession,
+    EnterpriseMemoryStore,
+    EvidenceSink,
+    MODE_SEED,
+    SESSION_COMPLETED,
+    SESSION_RUNNING,
+)
 from founderos_atlas.config_intelligence import (
     compare_configurations,
     render_config_report_json,
@@ -354,6 +362,53 @@ def atlas_discover_command(
     started_at = read_clock()
     emit("")
     emit("Atlas Discovery Pipeline")
+
+    # PR-045 (Enterprise Memory): every discovery persists a session, the raw
+    # evidence each device returned, and configuration snapshots — captured
+    # during the discovery that already runs, reusing its authenticated
+    # sessions. Memory is a side effect: its setup is guarded so a failure
+    # here never breaks discovery.
+    memory_session_id = started_at.strftime("%Y-%m-%d_%H-%M-%S")
+    memory_store: EnterpriseMemoryStore | None = None
+    memory_sink: EvidenceSink | None = None
+    memory_capture = None
+    try:
+        memory_store = EnterpriseMemoryStore(
+            Path(config_output_dir).parent / "enterprise-memory"
+        )
+        memory_store.begin_session(
+            DiscoverySession(
+                session_id=memory_session_id,
+                network=active_profile or "local workspace",
+                profile_id=active_profile_id or "local",
+                profile_name=active_profile or "local workspace",
+                started_at=started_at.isoformat(timespec="seconds"),
+                user="local-operator",
+                credential_ref=(inputs.credential_ref if profile is not None else None),
+                mode=MODE_SEED,
+                seeds=(host, *((inputs.seeds if profile is not None else ()) or ())),
+                status=SESSION_RUNNING,
+            )
+        )
+        memory_sink = EvidenceSink(memory_store, discovery_session=memory_session_id)
+
+        def memory_capture(result, raw_outputs):
+            device = result.device
+            driver_meta = (device.metadata or {}).get("platform_driver") or {}
+            memory_sink.capture(
+                device_id=device.device_id,
+                hostname=device.hostname,
+                raw_outputs=raw_outputs,
+                platform=device.platform,
+                software_version=device.os_version,
+                platform_driver=driver_meta.get("driver") if isinstance(driver_meta, dict) else None,
+                credential_ref=(inputs.credential_ref if profile is not None else None),
+            )
+    except Exception:  # noqa: BLE001 - memory must never break discovery
+        memory_store = None
+        memory_sink = None
+        memory_capture = None
+
     try:
         config = MultiHopConfig(max_depth=max_depth, max_devices=max_devices)
         credentials = DeviceCredentials(host=host, username=username, password=password)
@@ -412,6 +467,7 @@ def atlas_discover_command(
             on_neighbor=on_neighbor,
             reachability=reachability,
             workers=resolved_workers,
+            evidence_sink=memory_capture,
         )
     except AtlasTransportError as error:
         raise CliError(str(error)) from error
@@ -450,6 +506,11 @@ def atlas_discover_command(
         profile_id=active_profile_id or "local",
         discovery_session=discovery_session,
         collected_at=started_at.isoformat(timespec="seconds"),
+        enterprise_store=memory_store,
+        enterprise_credential_ref=(inputs.credential_ref if profile is not None else None),
+        enterprise_discovery_policy=(
+            collection_policy if collection_policy is not None else None
+        ),
     )
     if config_collections is None:
         reason = (
@@ -467,6 +528,46 @@ def atlas_discover_command(
             f"{remembered} configuration change(s) remembered)",
         )
     completed_at = read_clock()
+
+    # PR-045: finalize the discovery session with what was actually captured.
+    if memory_store is not None:
+        try:
+            duration = (completed_at - started_at).total_seconds()
+            # Count from the store (authoritative): configuration snapshots
+            # land during the config-collection pass, after the discovery
+            # sink has run, so the sink's own counters undercount them.
+            session_evidence = len(
+                memory_store.evidence_records(discovery_session=memory_session_id)
+            )
+            session_configs = len({
+                snap.config_sha256
+                for snap in memory_store.configuration_snapshots()
+                if snap.discovery_session == memory_session_id
+            })
+            memory_store.complete_session(
+                DiscoverySession(
+                    session_id=memory_session_id,
+                    network=active_profile or "local workspace",
+                    profile_id=active_profile_id or "local",
+                    profile_name=active_profile or "local workspace",
+                    started_at=started_at.isoformat(timespec="seconds"),
+                    completed_at=completed_at.isoformat(timespec="seconds"),
+                    duration_seconds=round(duration, 3),
+                    user="local-operator",
+                    credential_ref=(inputs.credential_ref if profile is not None else None),
+                    mode=MODE_SEED,
+                    seeds=(host, *((inputs.seeds if profile is not None else ()) or ())),
+                    device_count=snapshot.device_count,
+                    authenticated_count=len(report.connected),
+                    configuration_count=session_configs,
+                    evidence_count=session_evidence,
+                    error_count=len(report.failed),
+                    warning_count=len(snapshot.warnings),
+                    status=SESSION_COMPLETED,
+                )
+            )
+        except Exception:  # noqa: BLE001 - memory never breaks the pipeline
+            pass
 
     baseline = load_previous_baseline(history_root)
     if baseline.available:
@@ -1587,6 +1688,9 @@ def _collect_configurations_if_requested(
     profile_id: str = "unknown",
     discovery_session: str = "unrecorded",
     collected_at: str | None = None,
+    enterprise_store=None,
+    enterprise_credential_ref: str | None = None,
+    enterprise_discovery_policy: str | None = None,
 ):
     """Collect read-only configuration per discovered device, and remember it.
 
@@ -1645,6 +1749,37 @@ def _collect_configurations_if_requested(
                         management_ip=result.device.management_ip,
                     )
                 )
+            # PR-045: the running-config just collected is also a
+            # configuration snapshot (and running-config raw evidence) in
+            # Enterprise Memory — sharing one content-addressed blob, so no
+            # duplicate storage. Guarded: memory never breaks collection.
+            if enterprise_store is not None and (artifact.running_config or "").strip():
+                driver_meta = (result.device.metadata or {}).get("platform_driver") or {}
+                driver_name = (
+                    driver_meta.get("driver") if isinstance(driver_meta, dict) else None
+                )
+                try:
+                    enterprise_store.store_evidence(
+                        device_id=result.device.device_id, hostname=hostname,
+                        command="show running-config",
+                        output=artifact.running_config,
+                        discovery_session=discovery_session,
+                        platform=result.device.platform,
+                        software_version=result.device.os_version,
+                        platform_driver=driver_name,
+                    )
+                    enterprise_store.store_configuration(
+                        device_id=result.device.device_id, hostname=hostname,
+                        discovery_session=discovery_session,
+                        running_config=artifact.running_config,
+                        platform=result.device.platform,
+                        software_version=result.device.os_version,
+                        platform_driver=driver_name,
+                        credential_ref=enterprise_credential_ref,
+                        discovery_policy=enterprise_discovery_policy,
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
         except (AtlasConfigurationError, AtlasTransportError, OSError) as error:
             collections.append((hostname, "failed", str(error)))
     return tuple(collections), tuple(outcomes)

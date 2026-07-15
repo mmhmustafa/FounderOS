@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Discovery {{ session.session_id }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Discovery Session</h1>
+  <span class="actions"><a class="btn" href="/memory">All Discoveries</a></span>
+</div>
+<p class="muted"><code>{{ session.session_id }}</code> · {{ session.network }}</p>
+
+<section class="card">
+  <h2>Session</h2>
+  <ul class="kv">
+    <li><span>Network</span><span>{{ session.network }}</span></li>
+    <li><span>Profile</span><span>{{ session.profile_name }}</span></li>
+    <li><span>Started</span><span>{{ session.started_at }}</span></li>
+    <li><span>Completed</span><span>{{ session.completed_at or '—' }}</span></li>
+    <li><span>Duration</span><span>{% if session.duration_seconds is not none %}{{ '%.1f' % session.duration_seconds }}s{% else %}—{% endif %}</span></li>
+    <li><span>User</span><span>{{ session.user }}</span></li>
+    <li><span>Mode</span><span>{{ session.mode }}</span></li>
+    <li><span>Seeds</span><span>{{ session.seeds | join(', ') or '—' }}</span></li>
+    <li><span>Devices</span><span>{{ session.device_count }}</span></li>
+    <li><span>Authenticated</span><span>{{ session.authenticated_count }}</span></li>
+    <li><span>Configurations</span><span>{{ session.configuration_count }}</span></li>
+    <li><span>Evidence records</span><span>{{ session.evidence_count }}</span></li>
+    <li><span>Errors</span><span>{{ session.error_count }}</span></li>
+    <li><span>Warnings</span><span>{{ session.warning_count }}</span></li>
+    <li><span>Status</span><span>{{ session.status | title }}</span></li>
+  </ul>
+</section>
+
+<section class="card">
+  <h2>Devices in this Discovery</h2>
+  {% if devices %}
+  <table class="grid">
+    <thead><tr><th>Device</th><th>Evidence records</th><th>Configuration</th><th></th></tr></thead>
+    <tbody>
+      {% for d in devices %}
+      <tr>
+        <td><strong>{{ d.hostname }}</strong> <span class="muted">{{ d.device_id }}</span></td>
+        <td>{{ d.evidence_count }}</td>
+        <td>{% if d.configuration %}<code>{{ d.configuration.config_sha256[:12] }}</code>{% else %}<span class="muted">none collected</span>{% endif %}</td>
+        <td class="row-actions"><a class="btn btn-sm" href="/memory/device/{{ d.device_id | urlencode }}">Device memory</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No device evidence recorded for this session.</p>
+  {% endif %}
+</section>
+{% endblock %}

@@ -75,6 +75,7 @@ def run_multihop_discovery(
     on_neighbor=None,
     reachability=None,
     workers: int = 1,
+    evidence_sink=None,
 ) -> tuple[MultiHopDiscoveryReport, TopologyGraph, TopologySnapshot]:
     """Discover the seed(s) and reachable neighbors, then reconcile.
 
@@ -97,6 +98,7 @@ def run_multihop_discovery(
         on_neighbor=on_neighbor,
         reachability=reachability,
         workers=workers,
+        evidence_sink=evidence_sink,
     )
     resolution = IdentityResolver().resolve(report.results)
     canonical_results = resolution.canonicalize(report.results)

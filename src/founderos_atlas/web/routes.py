@@ -1035,6 +1035,198 @@ def register_routes(app) -> None:
             return aggregation_scopes(scopes)
         return (scopes[scope_id],)
 
+    # -- Enterprise Memory (PR-045) ----------------------------------------
+
+    def memory_store(scope):
+        from founderos_atlas.enterprise_memory import EnterpriseMemoryStore
+
+        return EnterpriseMemoryStore(scope.output_dir / "enterprise-memory")
+
+    def memory_service(scope):
+        from founderos_atlas.enterprise_memory import EnterpriseMemory
+
+        return EnterpriseMemory(memory_store(scope))
+
+    def memory_scopes(scopes, scope_id):
+        if scope_id == GLOBAL_SCOPE_ID:
+            return aggregation_scopes(scopes)
+        return (scopes[scope_id],)
+
+    def _find_memory(scopes, scope_id, *, session_id=None, device_id=None):
+        """(service, scope) for the scope that holds a given session/device."""
+
+        for scope in memory_scopes(scopes, scope_id):
+            service = memory_service(scope)
+            if session_id is not None and service.get_discovery_session(session_id):
+                return service, scope
+            if device_id is not None and service.get_device_memory(device_id):
+                return service, scope
+        return None, None
+
+    @app.route("/memory")
+    def memory_page():
+        """Discovery History — every discovery Atlas remembers."""
+
+        context, scopes, scope_id = scoped_context("memory")
+        sessions: list[dict] = []
+        totals = {"sessions": 0, "devices": 0, "evidence_records": 0,
+                  "configuration_snapshots": 0, "unique_blobs": 0,
+                  "deduplicated": 0, "stored_bytes": 0}
+        for scope in memory_scopes(scopes, scope_id):
+            store = memory_store(scope)
+            for session in store.list_sessions():
+                row = session.to_dict()
+                row["scope_id"] = scope.scope_id
+                sessions.append(row)
+            for key, value in store.statistics().items():
+                if key in totals:
+                    totals[key] += value
+        sessions.sort(key=lambda s: s["started_at"], reverse=True)
+        return render_template(
+            "memory_index.html", sessions=sessions, totals=totals, **context
+        )
+
+    @app.route("/memory/session/<path:session_id>")
+    def memory_session_page(session_id: str):
+        """Discovery Session Details — the devices and evidence it captured."""
+
+        context, scopes, scope_id = scoped_context("memory")
+        service, _scope = _find_memory(scopes, scope_id, session_id=session_id)
+        if service is None:
+            flash("Atlas has no memory of that discovery session in this scope.",
+                  "error")
+            return redirect(url_for("memory_page"))
+        session = service.get_discovery_session(session_id)
+        return render_template(
+            "memory_session.html",
+            session=session.to_dict(),
+            devices=service.session_devices(session_id),
+            **context,
+        )
+
+    @app.route("/memory/device/<path:device_id>")
+    def memory_device_page(device_id: str):
+        """Device memory — its discovery sessions, configs, and raw evidence."""
+
+        context, scopes, scope_id = scoped_context("memory")
+        service, _scope = _find_memory(scopes, scope_id, device_id=device_id)
+        if service is None:
+            flash("Atlas has no memory of that device in this scope.", "error")
+            return redirect(url_for("memory_page"))
+        memory = service.get_device_memory(device_id)
+        return render_template(
+            "memory_device.html",
+            memory=memory.to_dict(),
+            evidence=[r.to_dict() for r in service.get_raw_evidence(device_id)],
+            configurations=[s.to_dict() for s in service.get_configuration_history(device_id)],
+            **context,
+        )
+
+    @app.route("/memory/device/<path:device_id>/evidence/<sha>")
+    def memory_evidence_view(device_id: str, sha: str):
+        """View one raw evidence blob — masked (secrets never rendered)."""
+
+        _context, scopes, scope_id = scoped_context("memory")
+        service, _scope = _find_memory(scopes, scope_id, device_id=device_id)
+        if service is None:
+            abort(404)
+        record = next(
+            (r for r in service.get_raw_evidence(device_id) if r.content_sha256 == sha),
+            None,
+        )
+        if record is None:
+            abort(404)
+        view = service.view_evidence(record)
+        context, _s, _sid = scoped_context("memory")
+        return render_template(
+            "memory_evidence.html",
+            record=record.to_dict(),
+            text=view.text,
+            masked_line_count=view.masked_line_count,
+            device_id=device_id,
+            **context,
+        )
+
+    @app.route("/memory/device/<path:device_id>/evidence/<sha>/download")
+    def memory_evidence_download(device_id: str, sha: str):
+        """Download one raw evidence blob — the exact bytes, for the operator.
+
+        Raw and unmasked: an export is the one place the raw text is the
+        point, served only over the loopback GUI (as configuration export
+        already is)."""
+
+        from flask import Response
+
+        _context, scopes, scope_id = scoped_context("memory")
+        service, _scope = _find_memory(scopes, scope_id, device_id=device_id)
+        if service is None:
+            abort(404)
+        text = service.download_evidence(sha)
+        if text is None:
+            abort(404)
+        record = next(
+            (r for r in service.get_raw_evidence(device_id) if r.content_sha256 == sha),
+            None,
+        )
+        name = (record.command if record else "evidence").replace(" ", "_")
+        return Response(
+            text,
+            content_type="text/plain; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{name}-{sha[:10]}.txt"'},
+        )
+
+    @app.route("/memory/device/<path:device_id>/config/<sha>/download")
+    def memory_config_download(device_id: str, sha: str):
+        """Download one configuration snapshot — raw, for the local operator."""
+
+        from flask import Response
+
+        _context, scopes, scope_id = scoped_context("memory")
+        service, _scope = _find_memory(scopes, scope_id, device_id=device_id)
+        if service is None:
+            abort(404)
+        text = service.download_configuration(sha)
+        if text is None:
+            abort(404)
+        return Response(
+            text,
+            content_type="text/plain; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="config-{sha[:10]}.txt"'},
+        )
+
+    # -- Enterprise Policy (PR-047, SENTINEL) ------------------------------
+
+    @app.route("/policy")
+    def policy_page():
+        """Enterprise Policy — evaluate the installed policy pack against every
+        device Atlas remembers, entirely through the CORTEX reasoning engine.
+
+        Compliance is one policy pack; the engine is the reusable reasoning
+        framework (PR-046). Every verdict is evidence-based, confidence-scored,
+        and explained — a device with no configuration in memory is reported
+        Unknown, never guessed."""
+
+        from founderos_atlas.policy import PolicyEngine, list_packs
+
+        from .timefmt import format_timestamp
+
+        context, scopes, scope_id = scoped_context("policy")
+        engine = PolicyEngine()
+        memories = [
+            (scope.label, memory_service(scope))
+            for scope in memory_scopes(scopes, scope_id)
+        ]
+        report = engine.evaluate_scopes(
+            memories, scope_label=context["active_scope_label"]
+        )
+        return render_template(
+            "policy.html",
+            report=report.to_dict(),
+            packs=[p.to_dict() for p in list_packs()],
+            generated_at=format_timestamp(report.generated_at, tz=display_timezone()),
+            **context,
+        )
+
     @app.route("/configuration")
     def configuration_page():
         """Browse remembered configuration: devices, versions, timeline."""
