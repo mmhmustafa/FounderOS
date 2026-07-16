@@ -297,6 +297,17 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 .device-actions-compact { gap: 4px; }
 .btn-console { background: var(--accent); color: #fff; border-color: var(--accent); }
 .badge-muted { background: #e2e8f0; color: var(--muted); }
+/* PR-047B (PROOF): a collection outcome, toned by what it means to an
+   operator. `info` is deliberately not a warning colour -- an empty
+   response is an answer, not a fault, and the colour must not argue with
+   the sentence next to it. */
+.badge-ok { background: var(--green); color: #fff; }
+.badge-info { background: #e2e8f0; color: var(--muted); }
+.badge-warn { background: var(--amber); color: #fff; }
+.badge-bad { background: var(--red); color: #fff; }
+.log-output { background: #0f172a; color: #e2e8f0; padding: 12px; border-radius: 8px;
+  overflow-x: auto; max-height: 620px; overflow-y: auto; font-size: 12px;
+  white-space: pre; tab-size: 4; }
 .card-warn { border-left: 4px solid var(--amber); }
 /* PR-044B (PORTAL): web-management actions. */
 .btn-web { background: #0f766e; color: #fff; border-color: #0f766e; }

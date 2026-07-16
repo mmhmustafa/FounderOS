@@ -77,12 +77,17 @@ NAV_GROUPS: tuple[NavGroup, ...] = (
     # workflow now, entered through the Timeline overview. Nothing was removed;
     # every view is intact beneath it. This is also the natural home for the
     # future Change → Impact capability.
+    # PR-047B ordered these the way the work actually happens: a discovery runs,
+    # it changes things, the configurations are what changed, and the evidence
+    # is what proves all of it. Evidence sits last deliberately — it is where
+    # the other views lead when an operator asks "why do you say that?", not a
+    # place to start.
     NavGroup("timeline", "Timeline", "/timeline", (
         NavItem("timeline", "Overview", "/timeline"),
+        NavItem("history", "Discoveries", "/history"),
         NavItem("changes", "Changes", "/changes"),
         NavItem("configuration", "Configuration", "/configuration"),
-        NavItem("history", "Discoveries", "/history"),
-        NavItem("memory", "Evidence", "/memory"),
+        NavItem("memory", "Evidence", "/evidence"),
     )),
     NavGroup("policy", "Policy", "/policy", (
         NavItem("policy", "Compliance", "/policy"),

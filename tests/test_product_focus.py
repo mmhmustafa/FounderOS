@@ -131,7 +131,7 @@ class NavigationStructureTests(unittest.TestCase):
             page = _client(Path(tmp)).get("/").get_data(as_text=True)
             for href in (
                 "/predict", "/paths", "/topology", "/history", "/compass",
-                "/changes", "/configuration", "/memory", "/timeline", "/policy",
+                "/changes", "/configuration", "/evidence", "/timeline", "/policy",
                 "/advisor", "/incidents", "/discovery", "/settings",
             ):
                 self.assertIn(f'href="{href}"', page, f"{href} not in sidebar")
@@ -142,7 +142,7 @@ class TimelineWorkflowTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             page = _client(Path(tmp)).get("/timeline").get_data(as_text=True)
             self.assertIn("Recent Activity", page)
-            for href in ("/changes", "/configuration", "/history", "/memory"):
+            for href in ("/changes", "/configuration", "/history", "/evidence"):
                 self.assertIn(href, page)
 
     def test_activity_merges_configuration_changes_and_discoveries(self) -> None:
@@ -350,7 +350,7 @@ class ConsistencyTests(unittest.TestCase):
         templates = Path("src/founderos_atlas/web/templates")
         for filename in (
             "topology.html", "device.html", "timeline.html",
-            "memory_device.html", "memory_session.html",
+            "evidence_index.html", "evidence_device.html",
             "configuration.html", "paths.html", "advisor.html",
             "console_index.html",
         ):
@@ -417,22 +417,33 @@ class ConsistencyTests(unittest.TestCase):
 
     def test_the_ui_does_not_name_internal_layers_at_the_operator(self) -> None:
         """The page is Evidence; the layer behind it is Enterprise Memory. The
-        operator is shown the former and never sent looking for the latter."""
+        operator is shown the former and never sent looking for the latter.
+
+        PR-047B refined this rather than reversed it. The storage internals are
+        kept for administrators in one collapsed "Enterprise Memory — System
+        Details" section, and naming the layer *there* is the point: that
+        section is where someone who wants the storage engine should look. The
+        rule is now about placement, not the phrase — the operator's page must
+        not name it; the administrator's drawer may.
+        """
 
         templates = Path("src/founderos_atlas/web/templates")
-        offenders = [
-            path.name
-            for path in templates.glob("*.html")
-            if "Enterprise Memory" in path.read_text(encoding="utf-8")
-            or "Device memory" in path.read_text(encoding="utf-8")
-        ]
+        offenders = []
+        for path in templates.glob("*.html"):
+            for number, line in enumerate(
+                path.read_text(encoding="utf-8").splitlines(), start=1
+            ):
+                if "Device memory" in line:
+                    offenders.append(f"{path.name}:{number}")
+                if "Enterprise Memory" in line and "System Details" not in line:
+                    offenders.append(f"{path.name}:{number}")
         self.assertEqual([], offenders)
 
     def test_titles_match_their_navigation_labels(self) -> None:
         templates = Path("src/founderos_atlas/web/templates")
         for filename, expected in (
             ("history.html", "Discoveries"),
-            ("memory_index.html", "Evidence"),
+            ("evidence_index.html", "Evidence"),
             ("paths.html", "Investigate"),
             ("timeline.html", "Timeline"),
         ):

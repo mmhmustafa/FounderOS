@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+{% from "_device_actions.html" import device_actions %}
+{% block title %}Evidence — {{ device.hostname }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>{{ device.hostname }}</h1>
+  <span class="actions">
+    <a class="btn" href="/evidence{% if session_id %}?session={{ session_id | urlencode }}{% endif %}">All Evidence</a>
+    <a class="btn" href="/evidence/device/{{ device.device_id | urlencode }}/bundle{% if session_id %}?session={{ session_id | urlencode }}{% endif %}"
+       title="Download this device's evidence as a zip — outputs are masked">
+      Download Device Bundle
+    </a>
+  </span>
+</div>
+<p class="muted"><code>{{ device.device_id }}</code>
+  {% if device.platform %}· {{ device.platform }}{% endif %}
+  {% if device.software_version %} {{ device.software_version }}{% endif %}</p>
+
+{% set target = device_target(device_id=device.device_id) %}
+{% if target %}
+{# Part 9: reuse, never reimplement. Same actions, same eligibility rules,
+   same one place they are decided. #}
+<section class="card">
+  {{ device_actions(target, web=web_access(device_id=device.device_id)) }}
+</section>
+{% endif %}
+
+<section class="card">
+  <h2>Collection</h2>
+  <ul class="kv">
+    <li><span>Commands attempted</span><span>{{ device.commands_attempted }}</span></li>
+    <li><span>Collected successfully</span><span>{{ device.commands_collected }}</span></li>
+    <li><span>Empty responses</span><span>{{ device.empty_responses }}</span></li>
+    <li><span>Unsupported commands</span><span>{{ device.unsupported_commands }}</span></li>
+    <li><span>Failed collections</span><span>{{ device.failed_collections }}</span></li>
+    <li><span>Configuration</span><span>{{ device.configuration_status }}</span></li>
+    <li><span>Completeness</span><span>
+      {% if device.completeness_percent is none %}Unknown{% else %}{{ device.completeness_percent }}%{% endif %}
+    </span></li>
+    <li><span>Last collected</span><span>{{ device.last_collected_at or '—' }}</span></li>
+  </ul>
+</section>
+
+<section class="card">
+  <h2>Collected Commands</h2>
+
+  <form class="form" method="get" action="/evidence/device/{{ device.device_id | urlencode }}">
+    {% if session_id %}<input type="hidden" name="session" value="{{ session_id }}">{% endif %}
+    <div class="form-row">
+      <label>Search
+        <input type="search" name="q" value="{{ filters.q }}" placeholder="command, platform…">
+      </label>
+      <label>Discovery session
+        <select name="session">
+          <option value="">Every session</option>
+          {% for s in sessions %}
+          <option value="{{ s.session_id }}" {{ 'selected' if session_id == s.session_id else '' }}>
+            {{ s.started_at }}
+          </option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+    <div class="form-actions">
+      <button class="btn" type="submit">Filter</button>
+      <a class="btn" href="/evidence/device/{{ device.device_id | urlencode }}">Clear</a>
+    </div>
+  </form>
+
+  {% if rows %}
+  {# Part 11: this table is built from the records index alone. No blob is read
+     to render it, so a device with a 40MB configuration in its history costs
+     the same to open as one without. Output loads only when an operator opens
+     an item. #}
+  <table class="grid">
+    <thead>
+      <tr><th>Command</th><th>Status</th><th>Collected</th><th>Output</th>
+          <th>Transport</th><th>Source</th><th>Parser</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td><strong>{{ r.command }}</strong></td>
+        <td><span class="badge badge-{{ r.status_tone }}" title="{{ r.status_meaning }}">{{ r.status_label }}</span></td>
+        <td>{{ r.collected_at }}</td>
+        <td>{{ r.output_size }}</td>
+        <td>{{ r.transport or '—' }}</td>
+        <td>{{ r.source or '—' }}</td>
+        <td>{{ r.parser_version or '—' }}</td>
+        <td class="row-actions">
+          {% if r.has_output %}
+          <a class="btn btn-sm" href="/evidence/device/{{ device.device_id | urlencode }}/record/{{ r.content_sha256 }}">View</a>
+          {% else %}
+          {# Part 10: a command that returned nothing still has provenance worth
+             reading — it just has no output to open. #}
+          <span class="muted" title="{{ r.status_meaning }}">no output</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {% if total_pages > 1 %}
+  <div class="actions">
+    {% if page > 1 %}
+    <a class="btn btn-sm" href="?{% if session_id %}session={{ session_id | urlencode }}&{% endif %}page={{ page - 1 }}">Previous</a>
+    {% endif %}
+    <span class="muted">Page {{ page }} of {{ total_pages }} — {{ visible_count }} records</span>
+    {% if page < total_pages %}
+    <a class="btn btn-sm" href="?{% if session_id %}session={{ session_id | urlencode }}&{% endif %}page={{ page + 1 }}">Next</a>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% elif record_count %}
+  <p class="muted">No evidence matches these filters.
+    <a href="/evidence/device/{{ device.device_id | urlencode }}">Clear them</a>.</p>
+  {% else %}
+  {# Part 10: the exact wording for a device Atlas saw but never collected from. #}
+  <p class="muted">Atlas discovered this device but did not collect command evidence.</p>
+  {% endif %}
+</section>
+
+{% if configurations %}
+<section class="card">
+  <h2>Configuration Snapshots</h2>
+  <table class="grid">
+    <thead><tr><th>Captured</th><th>Session</th><th>Size</th><th></th></tr></thead>
+    <tbody>
+      {% for c in configurations %}
+      <tr>
+        <td>{{ c.captured_at }}</td>
+        <td><a href="/evidence?session={{ c.discovery_session | urlencode }}"><code>{{ c.discovery_session }}</code></a></td>
+        <td>{{ c.byte_size }} bytes</td>
+        <td class="row-actions">
+          <a class="btn btn-sm" href="/configuration/{{ device.device_id | urlencode }}">History</a>
+          <a class="btn btn-sm" href="/evidence/device/{{ device.device_id | urlencode }}/config/{{ c.config_sha256 }}/download">Download</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+{% endblock %}

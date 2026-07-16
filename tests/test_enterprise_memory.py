@@ -629,7 +629,7 @@ class MemoryGuiTests(unittest.TestCase):
 
     def test_discovery_history_lists_the_session(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            page = self._client(Path(tmp)).get("/memory").get_data(as_text=True)
+            page = self._client(Path(tmp)).get("/evidence").get_data(as_text=True)
             # PR-047A: the page is named for what the operator came for
             # (Evidence), not for the platform layer behind it (Enterprise
             # Memory). The sessions section is "Discovery Sessions" so it no
@@ -641,9 +641,13 @@ class MemoryGuiTests(unittest.TestCase):
     def test_device_memory_page_shows_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             client = self._client(Path(tmp))
-            page = client.get("/memory/device/cisco-ios:r1").get_data(as_text=True)
-            self.assertEqual(200, client.get("/memory/device/cisco-ios:r1").status_code)
-            self.assertIn("Raw Evidence", page)
+            page = client.get("/evidence/device/cisco-ios:r1").get_data(as_text=True)
+            self.assertEqual(
+                200, client.get("/evidence/device/cisco-ios:r1").status_code
+            )
+            # PR-047B renamed the section for what it holds: the commands Atlas
+            # ran. "Raw Evidence" described the storage; this describes the work.
+            self.assertIn("Collected Commands", page)
             self.assertIn("show running-config", page)
 
     def test_evidence_view_masks_secrets_but_download_is_raw(self) -> None:
@@ -651,29 +655,39 @@ class MemoryGuiTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             client = self._client(Path(tmp))
-            page = client.get("/memory/device/cisco-ios:r1").get_data(as_text=True)
+            page = client.get("/evidence/device/cisco-ios:r1").get_data(as_text=True)
             # The running-config evidence link (its row contains the command).
             m = re.search(
-                r"show running-config.*?/evidence/([0-9a-f]{32,})", page, re.DOTALL
+                r"show running-config.*?/record/([0-9a-f]{32,})", page, re.DOTALL
             )
             assert m, "no running-config evidence link rendered"
             sha = m.group(1)
             view = client.get(
-                f"/memory/device/cisco-ios:r1/evidence/{sha}"
+                f"/evidence/device/cisco-ios:r1/record/{sha}"
             ).get_data(as_text=True)
             self.assertNotIn("SUPERSECRET", view)
             self.assertNotIn("HUNTER2", view)
             raw = client.get(
-                f"/memory/device/cisco-ios:r1/evidence/{sha}/download"
+                f"/evidence/device/cisco-ios:r1/record/{sha}/download"
             ).get_data(as_text=True)
             self.assertIn("SUPERSECRET", raw)   # download is the raw path
 
     def test_no_memory_page_leaks_a_password(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             client = self._client(Path(tmp))
-            for url in ("/memory", "/memory/device/cisco-ios:r1"):
-                self.assertNotIn("SUPERSECRET", client.get(url).get_data(as_text=True))
-                self.assertNotIn("HUNTER2", client.get(url).get_data(as_text=True))
+            # follow_redirects matters: /memory is now a 302 to /evidence, and a
+            # redirect's empty body would satisfy this assertion without ever
+            # rendering the page it is supposed to be checking. Asserting
+            # against a body that was never built is how a security test passes
+            # for the wrong reason.
+            for url in (
+                "/memory", "/memory/device/cisco-ios:r1",
+                "/evidence", "/evidence/device/cisco-ios:r1",
+            ):
+                body = client.get(url, follow_redirects=True).get_data(as_text=True)
+                self.assertIn("Atlas", body, f"{url} rendered no page to check")
+                self.assertNotIn("SUPERSECRET", body)
+                self.assertNotIn("HUNTER2", body)
 
 
 if __name__ == "__main__":

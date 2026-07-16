@@ -1083,71 +1083,226 @@ def register_routes(app) -> None:
                 return service, scope
         return None, None
 
-    @app.route("/memory")
-    def memory_page():
-        """Discovery History — every discovery Atlas remembers."""
+    # -- Evidence Explorer (PR-047B, PROOF) --------------------------------
+    #
+    # The page these routes replaced reported on the storage engine: unique
+    # blobs, deduplicated observations, stored bytes. The drill-down beneath it
+    # was good and complete, and nothing outside it ever pointed in, so an
+    # operator asking "why does Atlas believe this?" landed on a wall of
+    # counters. These routes answer the operator's four questions instead —
+    # what was collected, from where, what failed, and what depends on it —
+    # over exactly the same records. Enterprise Memory, CORTEX and the blob
+    # store are untouched; every derivation lives in web/evidence_view.py.
 
-        context, scopes, scope_id = scoped_context("memory")
-        sessions: list[dict] = []
+    EVIDENCE_PAGE_SIZE = 50
+
+    # A configuration can be tens of thousands of lines. Rendering all of it
+    # into a <pre> is how a page stops responding, so the view is capped and
+    # says so — the whole thing is always one Download click away, and the cap
+    # is on *rendering*, never on what Atlas stored.
+    EVIDENCE_MAX_VIEW_LINES = 2000
+
+    def _page_arg(name: str = "page", default: int = 1) -> int:
+        """A page number from the query string, or the default.
+
+        A hand-edited "?page=banana" is an operator typo, not an error worth a
+        500 — it means "the first page".
+        """
+
+        try:
+            return int(request.args.get(name) or default)
+        except (TypeError, ValueError):
+            return default
+
+    def _evidence_sessions(scopes, scope_id):
+        rows: list[dict] = []
+        for scope in memory_scopes(scopes, scope_id):
+            for session in memory_store(scope).list_sessions():
+                row = session.to_dict()
+                row["scope_id"] = scope.scope_id
+                rows.append(row)
+        rows.sort(key=lambda s: s["started_at"], reverse=True)
+        return rows
+
+    def _evidence_storage_totals(scopes, scope_id):
+        """The storage internals — kept, but demoted to System Details."""
+
         totals = {"sessions": 0, "devices": 0, "evidence_records": 0,
                   "configuration_snapshots": 0, "unique_blobs": 0,
                   "deduplicated": 0, "stored_bytes": 0}
         for scope in memory_scopes(scopes, scope_id):
-            store = memory_store(scope)
-            for session in store.list_sessions():
-                row = session.to_dict()
-                row["scope_id"] = scope.scope_id
-                sessions.append(row)
-            for key, value in store.statistics().items():
+            for key, value in memory_store(scope).statistics().items():
                 if key in totals:
                     totals[key] += value
-        sessions.sort(key=lambda s: s["started_at"], reverse=True)
-        return render_template(
-            "memory_index.html", sessions=sessions, totals=totals, **context
-        )
+        return totals
 
-    @app.route("/memory/session/<path:session_id>")
-    def memory_session_page(session_id: str):
-        """Discovery Session Details — the devices and evidence it captured."""
+    def _session_scope(scopes, scope_id, session_id):
+        for scope in memory_scopes(scopes, scope_id):
+            if memory_store(scope).get_session(session_id):
+                return scope
+        return None
+
+    def _matches_filters(row, filters):
+        """Server-side filtering (Part 7) — no new search engine, just the
+        fields the operator can see, matched against what they typed."""
+
+        if filters["device"] and row.get("device_id") != filters["device"]:
+            return False
+        if filters["platform"] and (row.get("platform") or "") != filters["platform"]:
+            return False
+        if filters["command"] and (row.get("command") or "") != filters["command"]:
+            return False
+        if filters["status"] and (row.get("collection_status") or "") != filters["status"]:
+            return False
+        if filters["source"] and (row.get("source") or "") != filters["source"]:
+            return False
+        if filters["q"]:
+            needle = filters["q"].casefold()
+            haystack = " ".join(str(row.get(key) or "") for key in (
+                "hostname", "device_id", "command", "platform", "source",
+                "software_version",
+            )).casefold()
+            if needle not in haystack:
+                return False
+        return True
+
+    def _evidence_filters():
+        return {
+            "device": (request.args.get("device") or "").strip(),
+            "platform": (request.args.get("platform") or "").strip(),
+            "command": (request.args.get("command") or "").strip(),
+            "status": (request.args.get("status") or "").strip(),
+            "source": (request.args.get("source") or "").strip(),
+            "q": (request.args.get("q") or "").strip(),
+        }
+
+    @app.route("/evidence")
+    def evidence_page():
+        """Evidence — what Atlas collected, from where, and whether it worked."""
+
+        from .evidence_view import collection_summary, device_rows
 
         context, scopes, scope_id = scoped_context("memory")
-        service, _scope = _find_memory(scopes, scope_id, session_id=session_id)
-        if service is None:
-            flash("Atlas has no memory of that discovery session in this scope.",
-                  "error")
-            return redirect(url_for("memory_page"))
-        session = service.get_discovery_session(session_id)
+        sessions = _evidence_sessions(scopes, scope_id)
+        if not sessions:
+            return render_template(
+                "evidence_index.html", sessions=(), session=None, summary=None,
+                devices=(), filters=_evidence_filters(), options={},
+                totals=_evidence_storage_totals(scopes, scope_id), **context,
+            )
+
+        requested = (request.args.get("session") or "").strip()
+        session = next(
+            (s for s in sessions if s["session_id"] == requested), sessions[0]
+        )
+        scope = _session_scope(scopes, scope_id, session["session_id"])
+        store = memory_store(scope)
+        records = [
+            r.to_dict()
+            for r in store.evidence_records(discovery_session=session["session_id"])
+        ]
+        snapshots = [
+            s.to_dict() for s in store.configuration_snapshots()
+            if s.discovery_session == session["session_id"]
+        ]
+
+        # The summary describes the SESSION, not the filter. A filtered view
+        # that also re-scored completeness would let an operator narrow to one
+        # device and read its number as the network's.
+        summary = collection_summary(session, records, snapshots).to_dict()
+
+        filters = _evidence_filters()
+        visible = [r for r in records if _matches_filters(r, filters)]
+        # Snapshots must be filtered alongside the records they came from. A
+        # configuration IS one of these records (the same bytes under another
+        # view), so a snapshot surviving a filter that excluded every one of
+        # its device's records would put the device back in the table and make
+        # "no evidence matches these filters" unreachable.
+        seen = {r.get("device_id") for r in visible}
+        devices = device_rows(
+            visible, [s for s in snapshots if s.get("device_id") in seen]
+        )
+
+        options = {
+            "platforms": sorted({r.get("platform") for r in records if r.get("platform")}),
+            "commands": sorted({r.get("command") for r in records if r.get("command")}),
+            "statuses": sorted({
+                r.get("collection_status") for r in records if r.get("collection_status")
+            }),
+            "sources": sorted({r.get("source") for r in records if r.get("source")}),
+        }
         return render_template(
-            "memory_session.html",
-            session=session.to_dict(),
-            devices=service.session_devices(session_id),
+            "evidence_index.html",
+            sessions=sessions, session=session, summary=summary,
+            devices=devices, filters=filters, options=options,
+            filtered=any(filters.values()),
+            record_count=len(records), visible_count=len(visible),
+            totals=_evidence_storage_totals(scopes, scope_id),
             **context,
         )
 
-    @app.route("/memory/device/<path:device_id>")
-    def memory_device_page(device_id: str):
-        """Device memory — its discovery sessions, configs, and raw evidence."""
+    @app.route("/evidence/device/<path:device_id>")
+    def evidence_device_page(device_id: str):
+        """One device's collected commands — provenance only, never output.
+
+        No blob is read here (Part 11): the listing is built entirely from the
+        records index, so opening a device with a 40MB configuration in its
+        history costs the same as opening one without.
+        """
+
+        from .evidence_view import command_row, device_rows
 
         context, scopes, scope_id = scoped_context("memory")
         service, _scope = _find_memory(scopes, scope_id, device_id=device_id)
         if service is None:
             flash("Atlas has no memory of that device in this scope.", "error")
-            return redirect(url_for("memory_page"))
+            return redirect(url_for("evidence_page"))
+
         memory = service.get_device_memory(device_id)
+        session_id = (request.args.get("session") or "").strip()
+        records = [r.to_dict() for r in service.get_raw_evidence(device_id)]
+        if session_id:
+            records = [r for r in records if r.get("discovery_session") == session_id]
+
+        filters = _evidence_filters()
+        visible = [r for r in records if _matches_filters(r, filters)]
+        visible.sort(key=lambda r: (r.get("collected_at") or "", r.get("command") or ""),
+                     reverse=True)
+
+        page = max(1, _page_arg())
+        total_pages = max(1, -(-len(visible) // EVIDENCE_PAGE_SIZE))
+        page = min(page, total_pages)
+        start = (page - 1) * EVIDENCE_PAGE_SIZE
+        rows = [command_row(r) for r in visible[start:start + EVIDENCE_PAGE_SIZE]]
+
+        snapshots = [s.to_dict() for s in service.get_configuration_history(device_id)]
+        device = next(
+            iter(device_rows(records, snapshots)),
+            {"device_id": device_id, "hostname": memory.hostname if memory else device_id},
+        )
         return render_template(
-            "memory_device.html",
-            memory=memory.to_dict(),
-            evidence=[r.to_dict() for r in service.get_raw_evidence(device_id)],
-            configurations=[s.to_dict() for s in service.get_configuration_history(device_id)],
+            "evidence_device.html",
+            device=device, memory=memory.to_dict() if memory else None,
+            rows=rows, filters=filters, session_id=session_id,
+            sessions=_evidence_sessions(scopes, scope_id),
+            page=page, total_pages=total_pages,
+            visible_count=len(visible), record_count=len(records),
+            configurations=snapshots,
             **context,
         )
 
-    @app.route("/memory/device/<path:device_id>/evidence/<sha>")
-    def memory_evidence_view(device_id: str, sha: str):
-        """View one raw evidence blob — masked (secrets never rendered)."""
+    @app.route("/evidence/device/<path:device_id>/record/<sha>")
+    def evidence_record_page(device_id: str, sha: str):
+        """One command's evidence: masked output, the facts Atlas already has,
+        and the conclusions that rest on it.
 
-        _context, scopes, scope_id = scoped_context("memory")
-        service, _scope = _find_memory(scopes, scope_id, device_id=device_id)
+        This is the page every "why does Atlas believe this?" should end at.
+        """
+
+        from .evidence_view import command_row, normalized_facts
+
+        context, scopes, scope_id = scoped_context("memory")
+        service, scope = _find_memory(scopes, scope_id, device_id=device_id)
         if service is None:
             abort(404)
         record = next(
@@ -1156,20 +1311,71 @@ def register_routes(app) -> None:
         )
         if record is None:
             abort(404)
+
         view = service.view_evidence(record)
-        context, _s, _sid = scoped_context("memory")
+        text = view.text
+        truncated = False
+        total_lines = 0
+        if text:
+            lines = text.splitlines()
+            total_lines = len(lines)
+            if total_lines > EVIDENCE_MAX_VIEW_LINES:
+                text = "\n".join(lines[:EVIDENCE_MAX_VIEW_LINES])
+                truncated = True
+
+        data = record.to_dict()
+        snapshot = next(
+            (s.to_dict() for s in service.get_configuration_history(device_id)
+             if s.config_sha256 == record.content_sha256),
+            None,
+        )
         return render_template(
-            "memory_evidence.html",
-            record=record.to_dict(),
-            text=view.text,
-            masked_line_count=view.masked_line_count,
-            device_id=device_id,
+            "evidence_record.html",
+            device_id=device_id, row=command_row(data), record=data,
+            text=text, masked_line_count=view.masked_line_count,
+            truncated=truncated, total_lines=total_lines,
+            shown_lines=EVIDENCE_MAX_VIEW_LINES,
+            facts=normalized_facts(data, snapshot=snapshot),
+            usage=_evidence_usage(service, scope, data).to_dict(),
             **context,
         )
 
-    @app.route("/memory/device/<path:device_id>/evidence/<sha>/download")
-    def memory_evidence_download(device_id: str, sha: str):
-        """Download one raw evidence blob — the exact bytes, for the operator.
+    def _evidence_usage(service, scope, record):
+        """Which conclusions used this evidence (Part 6).
+
+        Policies are evaluated only for evidence Atlas can actually trace — the
+        running configuration — and only for this one device. Evaluating the
+        whole pack across every device to render one page would make the page
+        cost grow with the network.
+        """
+
+        from .evidence_view import UsedBy, is_traceable, used_by
+
+        if not is_traceable(record):
+            return used_by(record)
+        try:
+            from founderos_atlas.policy import PolicyEngine, default_pack
+
+            engine = PolicyEngine()
+            evaluations = [
+                engine.evaluate_device(
+                    service, record["device_id"], policy,
+                    scope_label=getattr(scope, "label", ""),
+                ).to_dict()
+                for policy in default_pack().policies
+            ]
+        except Exception:  # noqa: BLE001
+            # Usage is context, never the point of the page. If policy
+            # evaluation is unavailable the evidence must still render — and
+            # say honestly that usage could not be determined, not claim none.
+            return UsedBy(findings=(), tracked=False, message=(
+                "Atlas could not determine which conclusions use this evidence."
+            ))
+        return used_by(record, policy_evaluations=evaluations)
+
+    @app.route("/evidence/device/<path:device_id>/record/<sha>/download")
+    def evidence_record_download(device_id: str, sha: str):
+        """Download one command's exact bytes — raw, for the local operator.
 
         Raw and unmasked: an export is the one place the raw text is the
         point, served only over the loopback GUI (as configuration export
@@ -1188,15 +1394,118 @@ def register_routes(app) -> None:
             (r for r in service.get_raw_evidence(device_id) if r.content_sha256 == sha),
             None,
         )
-        name = (record.command if record else "evidence").replace(" ", "_")
+        from .evidence_bundle import safe_name
+
+        name = safe_name(record.command if record else "evidence",
+                         fallback="evidence")
+        _audit_raw_export(kind="command", subject=f"{device_id}:{sha[:10]}")
         return Response(
             text,
             content_type="text/plain; charset=utf-8",
             headers={"Content-Disposition": f'attachment; filename="{name}-{sha[:10]}.txt"'},
         )
 
-    @app.route("/memory/device/<path:device_id>/config/<sha>/download")
-    def memory_config_download(device_id: str, sha: str):
+    @app.route("/evidence/device/<path:device_id>/bundle")
+    def evidence_device_bundle(device_id: str):
+        """This device's evidence as a zip — masked unless raw is asked for."""
+
+        from flask import Response
+
+        from .evidence_bundle import build_device_bundle, safe_name
+
+        _context, scopes, scope_id = scoped_context("memory")
+        service, _scope = _find_memory(scopes, scope_id, device_id=device_id)
+        if service is None:
+            abort(404)
+        raw = request.args.get("raw") == "1"
+        session_id = (request.args.get("session") or "").strip() or None
+        data = build_device_bundle(service, device_id, raw=raw, session_id=session_id)
+        if data is None:
+            abort(404)
+        if raw:
+            _audit_raw_export(kind="device-bundle", subject=device_id)
+        stem = safe_name(device_id, fallback="device")
+        suffix = "-raw" if raw else ""
+        return Response(
+            data,
+            content_type="application/zip",
+            headers={
+                "Content-Disposition":
+                    f'attachment; filename="evidence-device-{stem}{suffix}.zip"'
+            },
+        )
+
+    @app.route("/evidence/session/<path:session_id>/bundle")
+    def evidence_session_bundle(session_id: str):
+        """A whole discovery session's evidence as a zip, one folder per device."""
+
+        from flask import Response
+
+        from .evidence_bundle import build_session_bundle, safe_name
+
+        _context, scopes, scope_id = scoped_context("memory")
+        service, _scope = _find_memory(scopes, scope_id, session_id=session_id)
+        if service is None:
+            abort(404)
+        raw = request.args.get("raw") == "1"
+        data = build_session_bundle(service, session_id, raw=raw)
+        if data is None:
+            abort(404)
+        if raw:
+            _audit_raw_export(kind="session-bundle", subject=session_id)
+        stem = safe_name(session_id, fallback="session")
+        suffix = "-raw" if raw else ""
+        return Response(
+            data,
+            content_type="application/zip",
+            headers={
+                "Content-Disposition":
+                    f'attachment; filename="evidence-session-{stem}{suffix}.zip"'
+            },
+        )
+
+    def _audit_raw_export(*, kind: str, subject: str) -> None:
+        """Record that unmasked evidence left Atlas.
+
+        A raw export is the one action here that can put a secret in a file the
+        operator then forwards. It is allowed — the local operator owns these
+        devices — but it is never silent.
+        """
+
+        app.logger.info("atlas.evidence.raw_export kind=%s subject=%s", kind, subject)
+
+    # -- compatibility: /memory is where Evidence used to live --------------
+    #
+    # Renaming a route is not worth breaking a bookmark, a saved link, or the
+    # two pages that already point here. Every old path resolves to its new
+    # equivalent (PR-047A made the same promise for /management).
+
+    @app.route("/memory")
+    def memory_page():
+        return redirect(url_for("evidence_page", **request.args.to_dict()), code=302)
+
+    @app.route("/memory/session/<path:session_id>")
+    def memory_session_page(session_id: str):
+        return redirect(url_for("evidence_page", session=session_id), code=302)
+
+    @app.route("/memory/device/<path:device_id>")
+    def memory_device_page(device_id: str):
+        return redirect(url_for("evidence_device_page", device_id=device_id), code=302)
+
+    @app.route("/memory/device/<path:device_id>/evidence/<sha>")
+    def memory_evidence_view(device_id: str, sha: str):
+        return redirect(
+            url_for("evidence_record_page", device_id=device_id, sha=sha), code=302
+        )
+
+    @app.route("/memory/device/<path:device_id>/evidence/<sha>/download")
+    def memory_evidence_download(device_id: str, sha: str):
+        return redirect(
+            url_for("evidence_record_download", device_id=device_id, sha=sha), code=302
+        )
+
+    @app.route("/evidence/device/<path:device_id>/config/<sha>/download")
+    def evidence_config_download(device_id: str, sha: str):
         """Download one configuration snapshot — raw, for the local operator."""
 
         from flask import Response
@@ -1208,10 +1517,17 @@ def register_routes(app) -> None:
         text = service.download_configuration(sha)
         if text is None:
             abort(404)
+        _audit_raw_export(kind="configuration", subject=f"{device_id}:{sha[:10]}")
         return Response(
             text,
             content_type="text/plain; charset=utf-8",
             headers={"Content-Disposition": f'attachment; filename="config-{sha[:10]}.txt"'},
+        )
+
+    @app.route("/memory/device/<path:device_id>/config/<sha>/download")
+    def memory_config_download(device_id: str, sha: str):
+        return redirect(
+            url_for("evidence_config_download", device_id=device_id, sha=sha), code=302
         )
 
     # -- Enterprise Policy (PR-047, SENTINEL) ------------------------------

@@ -241,4 +241,32 @@
       });
     }
   });
+
+  /* Copy one command's masked output (PR-047B). Same plumbing as Copy SSH and
+     Copy URL -- one copy implementation, three buttons -- and the same refusal
+     to report a failure as success. What is copied is what is on screen: the
+     MASKED text. The raw bytes are a download, never a clipboard accident. */
+  document.addEventListener('click', function (event) {
+    var button = event.target.closest ? event.target.closest('.js-copy-output') : null;
+    if (!button) { return; }
+    event.preventDefault();
+
+    var output = document.getElementById('evidence-output');
+    var text = output ? output.textContent : '';
+    var restore = button.getAttribute('data-restore-label') || button.textContent;
+    button.setAttribute('data-restore-label', restore);
+
+    if (!text) { flash(button, 'Nothing to copy', restore); return; }
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(
+        function () { flash(button, 'Copied', restore); },
+        function () {
+          flash(button, copyViaTextarea(text) ? 'Copied' : 'Press Ctrl+C', restore);
+        }
+      );
+      return;
+    }
+    flash(button, copyViaTextarea(text) ? 'Copied' : 'Press Ctrl+C', restore);
+  });
 }());
