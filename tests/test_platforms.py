@@ -146,8 +146,17 @@ class DetectionAndRegistryTests(unittest.TestCase):
 
     def test_detection_order_is_registration_order(self) -> None:
         registry = default_registry()
+        # PR-048 added the two AtlasLab platforms. They are registered last so
+        # a lab platform could never shadow a production one, and they answer
+        # the same probe — detection still costs exactly one command.
         self.assertEqual(
-            ("Cisco IOS / IOS-XE", "FRRouting"), registry.supported_platforms()
+            (
+                "Cisco IOS / IOS-XE",
+                "FRRouting",
+                "AtlasLab firewall",
+                "AtlasLab switch",
+            ),
+            registry.supported_platforms(),
         )
         self.assertEqual(("show version",), registry.probe_commands())
 

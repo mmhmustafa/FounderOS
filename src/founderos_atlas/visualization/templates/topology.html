@@ -152,12 +152,16 @@
           'background-width': '92%', 'background-height': '92%',
           'background-position-y': '-8px',
           'label': 'data(display_label)', 'color': '#0f172a',
-          'font-size': 11, 'font-weight': 600,
+          // Labels are the point of the map: a topology whose names cannot be
+          // read is a picture, not a tool. Larger type on a SOLID nameplate —
+          // a translucent one let edge lines bleed through the letters, which
+          // is most of why the text read as blurry at fit-zoom.
+          'font-size': 14, 'font-weight': 600,
           'text-valign': 'bottom', 'text-halign': 'center', 'text-margin-y': -14,
-          'text-wrap': 'wrap', 'line-height': 1.3,
-          'text-background-color': '#ffffff', 'text-background-opacity': 0.9,
-          'text-background-shape': 'round-rectangle', 'text-background-padding': 3,
-          'text-border-color': '#e2e8f0', 'text-border-width': 1, 'text-border-opacity': 1,
+          'text-wrap': 'wrap', 'line-height': 1.35,
+          'text-background-color': '#ffffff', 'text-background-opacity': 1,
+          'text-background-shape': 'round-rectangle', 'text-background-padding': 4,
+          'text-border-color': '#cbd5e1', 'text-border-width': 1, 'text-border-opacity': 1,
           'width': 66, 'height': 74,
           'border-width': 0
         }},

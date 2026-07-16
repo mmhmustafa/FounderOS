@@ -80,6 +80,28 @@ def classify_role(device: Mapping) -> tuple[str, str]:
     ]
     routed_svis = [item for item in svis if item.get("ip_address")]
 
+    # PR-048: role from what the device DOES, before any name pattern. A
+    # collected, enforced filter chain is firewall evidence no matter what the
+    # platform is called; a layer-2 forwarding plane the device itself declared
+    # is switching evidence. Without these, the AtlasLab platforms fell through
+    # every model regex to the generic "linux" check and rendered as Linux
+    # hosts — the terminal icon on a firewall.
+    if metadata.get("firewall"):
+        chain = metadata.get("firewall") or {}
+        policy = str(chain.get("default_policy", "") if isinstance(chain, Mapping) else "")
+        return ROLE_FIREWALL, (
+            f"enforced filter chain collected"
+            + (f" (default policy {policy})" if policy else "")
+        )
+    if str(metadata.get("forwarding_plane") or "") == "layer-2-bridge":
+        return ROLE_L2_SWITCH, "device declares a layer-2 bridge forwarding plane"
+    # Platform self-description fallback, for snapshots that carry the
+    # platform string but not the evidence metadata.
+    if re.search(r"atlaslab firewall", platform, re.IGNORECASE):
+        return ROLE_FIREWALL, f"firewall platform '{platform}'"
+    if re.search(r"atlaslab switch", platform, re.IGNORECASE):
+        return ROLE_L2_SWITCH, f"switch platform '{platform}'"
+
     if _SWITCH_MODEL.search(platform):
         if routed_svis:
             return ROLE_L3_SWITCH, (

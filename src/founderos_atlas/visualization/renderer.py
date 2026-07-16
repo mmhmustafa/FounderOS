@@ -148,6 +148,9 @@ class TopologyRenderer:
                     "data": {
                         "id": ghost_id,
                         "label": hostname,
+                        # Same display rule as every node: no display_label,
+                        # no nameplate.
+                        "display_label": f"{hostname}\nno longer discovered",
                         "hostname": hostname,
                         "aliases": [],
                         "management_ip": "unknown",
@@ -237,6 +240,14 @@ class TopologyRenderer:
                         "data": {
                             "id": target_id,
                             "label": remote_hostname,
+                            # The stylesheet renders display_label; without it
+                            # an unresolved peer drew as a bare "?" with no
+                            # name — indistinguishable from every other one.
+                            # Say what was observed and how.
+                            "display_label": (
+                                f"{remote_hostname}\n"
+                                f"{str(edge['protocol']).upper()} peer — unresolved"
+                            ),
                             "hostname": remote_hostname,
                             "aliases": [],
                             "management_ip": edge["remote_management_ip"]

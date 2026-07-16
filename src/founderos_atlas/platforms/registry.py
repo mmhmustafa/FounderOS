@@ -81,10 +81,19 @@ class PlatformRegistry:
 def default_registry() -> PlatformRegistry:
     """The standard registry: every built-in driver, detection order fixed."""
 
+    from .drivers.atlaslab_firewall import AtlasLabFirewallDriver
+    from .drivers.atlaslab_switch import AtlasLabSwitchDriver
     from .drivers.ios import CiscoIOSDriver
     from .drivers.frr import FRRoutingDriver
 
     registry = PlatformRegistry()
     registry.register(CiscoIOSDriver)
     registry.register(FRRoutingDriver)
+    # PR-048: the AtlasLab platforms answer the same probe. Their matchers are
+    # disjoint from the two above (a device says "AtlasLab firewall" or
+    # "FRRouting", never both), so registration order is not load-bearing --
+    # but they are registered last so a future overlap could never shadow a
+    # production platform with a lab one.
+    registry.register(AtlasLabFirewallDriver)
+    registry.register(AtlasLabSwitchDriver)
     return registry

@@ -58,6 +58,10 @@ _INTERFACE_HEAD = re.compile(
 # observations — the correlation engine needs them for point-to-point
 # subnet matching and secondary-address ownership. Normalization records
 # them; it never infers relationships from them.
+# "  HWaddr: aa:c1:ab:f5:49:b4"
+_HWADDR_PATTERN = re.compile(
+    r"(?mi)^\s*HWaddr:\s*(?P<mac>[0-9a-f]{2}(?::[0-9a-f]{2}){5})\s*$"
+)
 _INET_PATTERN = re.compile(
     r"(?m)^\s*inet\s+(?P<address>\d+\.\d+\.\d+\.\d+)"
     r"(?:/(?P<prefix>\d+))?(?P<secondary>\s+secondary)?"
@@ -166,6 +170,15 @@ class FRRoutingAdapter(DiscoveryAdapter):
                 metadata["prefix_length"] = int(primary.group("prefix"))
             if secondaries:
                 metadata["secondary_ips"] = tuple(secondaries)
+            # PR-048: the interface's hardware address, recorded exactly as
+            # vtysh reports it. A layer-2 switch learns MACs, not identities,
+            # so this is the only thing that can turn "something is on port
+            # eth1" into "delhi-core:eth2 is on port eth1". Recorded here as a
+            # plain observation; the correlation that uses it lives in the
+            # enterprise layer, which can see more than one device at a time.
+            hwaddr = _HWADDR_PATTERN.search(block)
+            if hwaddr:
+                metadata["hardware_address"] = hwaddr.group("mac").casefold()
             interfaces.append(
                 NetworkInterface(
                     name=match.group("name"),
