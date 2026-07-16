@@ -34,6 +34,22 @@
     /* PR-044A (CONSOLE): device actions on a managed node. */
     .node-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 16px; padding-top: 14px; border-top: 1px solid #e2e8f0; }
     .node-action { display: inline-block; padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; color: #0f172a; font-size: 12px; text-decoration: none; }
+    /* An unavailable action is greyed and carries its reason in the title —
+       "Atlas checked, and here is why not" — never a dead link, never absent. */
+    .node-action-disabled { color: #94a3b8; background: #f1f5f9; border-style: dashed; cursor: not-allowed; }
+    .node-action-insecure { border-color: #f59e0b; color: #b45309; }
+    /* Right-click menu: the universal device action, where the pointer is. */
+    #context-menu { position: absolute; display: none; z-index: 20; min-width: 210px;
+      background: #ffffff; border: 1px solid #cbd5e1; border-radius: 8px;
+      box-shadow: 0 8px 24px rgba(15,23,42,.18); padding: 5px; }
+    #context-menu .menu-head { padding: 7px 10px 5px; font-size: 12px; font-weight: 700;
+      color: #334155; border-bottom: 1px solid #e2e8f0; margin-bottom: 4px; }
+    #context-menu .menu-item { display: block; padding: 7px 10px; border-radius: 5px;
+      font-size: 13px; color: #0f172a; text-decoration: none; }
+    #context-menu .menu-item:hover { background: #eff6ff; }
+    #context-menu .menu-item-disabled { color: #94a3b8; cursor: not-allowed; }
+    #context-menu .menu-item-disabled:hover { background: transparent; }
+    #context-menu .menu-item-insecure { color: #b45309; }
     .node-action:hover { border-color: #94a3b8; background: #f8fafc; }
     .node-action-primary { background: #2563eb; border-color: #2563eb; color: #fff; }
     .node-action-primary:hover { background: #1d4ed8; border-color: #1d4ed8; }
@@ -61,6 +77,7 @@
   <main>
     <div class="graph-wrap">
       <div id="cy" aria-label="Interactive topology graph"></div>
+      <div id="context-menu" role="menu" aria-label="Device actions"></div>
       <div id="legend" aria-label="Legend">
         <h3>Links</h3>
         <div class="row"><span class="swatch"><span class="line" style="border-top-style:solid;border-top-color:#64748b"></span></span> Physical</div>
@@ -114,8 +131,11 @@
                     levelWidth: () => 1.4 },
       // Tiered: core at the top, distribution/edge/access flowing downward —
       // the way a network diagram is usually drawn.
-      tiered: { name: 'breadthfirst', animate: false, fit: true, padding: 30,
-                directed: false, circle: false, grid: true, spacingFactor: 1.4 },
+      // spacingFactor 1.4 spread 40+ devices into rows so wide that fitting
+      // them shrank every label below legibility. Tighter tiers raise the
+      // fit zoom — more pixels for the same icons and names.
+      tiered: { name: 'breadthfirst', animate: false, fit: true, padding: 24,
+                directed: false, circle: false, grid: true, spacingFactor: 1.12 },
       force: { name: 'cose', animate: false, fit: true, padding: 40,
                idealEdgeLength: 150, nodeRepulsion: 14000, nodeOverlap: 28,
                gravity: 0.2, componentSpacing: 160 },
@@ -186,7 +206,9 @@
         }},
         { selector: 'edge[relationship = "physical"]', style: { 'line-style': 'solid', 'line-color': '#64748b', 'width': 2 }},
         { selector: 'edge[relationship = "verified-routed"]', style: { 'line-style': 'dashed', 'line-color': '#60a5fa', 'width': 1.8 }},
-        { selector: 'edge[relationship = "routing-adjacency"]', style: { 'line-style': 'dashed', 'line-color': '#cbd5e1' }},
+        // Deliberately the quietest link kind — but #cbd5e1 vanished into the
+        // page at fit zoom, reading as smudge rather than structure.
+        { selector: 'edge[relationship = "routing-adjacency"]', style: { 'line-style': 'dashed', 'line-color': '#a8b6c8' }},
         { selector: 'edge[relationship = "protocol-peer"]', style: { 'line-style': 'dotted', 'line-color': '#c4b5fd', 'width': 1.8 }},
         { selector: 'edge[relationship = "layer-3"]', style: { 'line-style': 'dashed', 'line-color': '#7dd3fc' }},
         { selector: 'edge[relationship = "inferred"]', style: { 'line-style': 'dotted', 'line-color': '#e2e8f0' }},
@@ -226,12 +248,14 @@
     const details = document.getElementById('details');
     const tooltip = document.getElementById('tooltip');
     const escapeHtml = value => String(value).replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
-    // This viewer is both an embedded pane inside Atlas and a standalone
-    // artifact file. Device actions link back into Atlas, so they are
-    // offered only when Atlas is actually around them.
-    const embeddedInAtlas = (() => {
-      try { return window.parent !== window; } catch (error) { return false; }
-    })();
+    // This viewer is both a pane inside Atlas and a standalone artifact
+    // file. Device actions link back into Atlas, so the question is not
+    // "am I in an iframe?" but "is Atlas serving me?" — the old iframe test
+    // silently dropped every action the moment the operator clicked "Open
+    // in new tab", even though the very same server was still on the other
+    // end of the URL. Served over http(s), Atlas is there; opened from
+    // disk (file://), it is not.
+    const servedByAtlas = /^https?:$/.test(window.location.protocol);
     const nodeDetails = data => {
       const unresolved = data.kind === 'observed';
       const heading = unresolved && (data.observation === 'routing-adjacency' || data.observation === 'protocol-peer')
@@ -272,25 +296,85 @@
 
     // PR-044A (CONSOLE): a managed node offers the universal device action.
     //
-    // Only when this viewer is embedded in Atlas: the artifact is also a
-    // standalone file, and a standalone file must not carry links to an
-    // application that is not there. Unresolved peers never reach here —
-    // nodeDetails returns before this for kind === 'observed' — so an
-    // observed peer can never be offered a session. The console route
-    // re-resolves the device from evidence regardless, so a stale link is
-    // refused by the server, not merely hidden by the viewer.
+    // Only when Atlas is serving this viewer: a standalone file must not
+    // carry links to an application that is not there. Unresolved peers
+    // never reach here — nodeDetails returns before this for kind ===
+    // 'observed' — so an observed peer can never be offered a session. The
+    // console route re-resolves the device from evidence regardless, so a
+    // stale link is refused by the server, not merely hidden by the viewer.
+    //
+    // SSH eligibility and web endpoints are resolved from evidence at the
+    // moment of asking (/api/device/<id>/actions), never baked into this
+    // artifact — the artifact outlives the discovery that produced it, and
+    // a verification run can change the answer.
+    const actionsCache = new Map();
+    const fetchActions = async (id, hostname) => {
+      if (!servedByAtlas || !id) { return null; }
+      if (actionsCache.has(id)) { return actionsCache.get(id); }
+      let actions = null;
+      try {
+        // The hostname rides along because this artifact's node ids are not
+        // always the scope-level canonical ids: the federated enterprise
+        // graph mints its own ("ent:access1:172.20.20.23"), which the
+        // console resolver has never heard of. The server falls back to the
+        // hostname -- the identity both graphs agree on.
+        const q = hostname ? `?hostname=${encodeURIComponent(hostname)}` : '';
+        const response = await fetch(`/api/device/${encodeURIComponent(id)}/actions${q}`,
+                                     { credentials: 'same-origin' });
+        if (response.ok) { actions = await response.json(); }
+      } catch (error) { /* Atlas unreachable: links stay generic */ }
+      actionsCache.set(id, actions);
+      return actions;
+    };
+
+    // The SSH and web buttons for one device, from the fetched resolution.
+    // Same rules as the in-app macro: HTTPS preferred, HTTP only as an
+    // explicitly-labelled insecure alternative, and an unavailable action is
+    // a greyed reason — "Atlas checked, and here is why not" — never a dead
+    // button and never silence.
+    const accessButtons = actions => {
+      if (!actions) { return ''; }
+      let html = '';
+      const ssh = actions.ssh;
+      if (ssh && ssh.eligible) {
+        html += `<a class="node-action node-action-primary" target="_top" href="/console/${encodeURIComponent(ssh.device_id || actions.device_id)}">Open SSH Console</a>`;
+      } else if (ssh) {
+        html += `<span class="node-action node-action-disabled" title="${escapeHtml(ssh.reason || 'SSH unavailable')}">SSH unavailable</span>`;
+      }
+      const web = actions.web;
+      if (web && web.has_https) {
+        html += `<a class="node-action" target="_blank" rel="noopener noreferrer" href="${escapeHtml(web.https_url)}">Open HTTPS${(web.certificate_warnings || []).length ? ' ⚠' : ''}</a>`;
+      } else if (web && web.http_only) {
+        html += `<a class="node-action node-action-insecure" target="_blank" rel="noopener noreferrer" href="${escapeHtml(web.http_url)}" title="HTTP is insecure; anything you type travels in the clear">Open HTTP — Insecure</a>`;
+      } else if (web) {
+        html += `<span class="node-action node-action-disabled" title="${escapeHtml(web.reason || 'no verified web service')}">Web unavailable</span>`;
+      }
+      return html;
+    };
+
     const nodeActions = data => {
-      if (!embeddedInAtlas || !data.id) { return ''; }
+      if (!servedByAtlas || !data.id) { return ''; }
       const id = encodeURIComponent(data.id);
       const name = encodeURIComponent(data.label || '');
+      // Access buttons arrive async; the placeholder keeps layout stable.
       return `
       <div class="node-actions">
-        <a class="node-action node-action-primary" target="_top" href="/console/${id}">Open SSH Console</a>
+        <span id="access-actions" data-device="${escapeHtml(data.id)}" data-hostname="${escapeHtml(data.hostname || data.label || '')}"></span>
         <a class="node-action" target="_top" href="/device/${id}">Device Details</a>
         <a class="node-action" target="_top" href="/configuration/${id}">Configuration History</a>
         <a class="node-action" target="_top" href="/paths?device=${name}">Investigate</a>
         <a class="node-action" target="_top" href="/predict?device=${name}">Predict Change</a>
       </div>`;
+    };
+
+    const hydrateAccessActions = async () => {
+      const slot = document.getElementById('access-actions');
+      if (!slot) { return; }
+      const actions = await fetchActions(slot.getAttribute('data-device'),
+                                         slot.getAttribute('data-hostname'));
+      // The node may have been deselected while the fetch was in flight.
+      const current = document.getElementById('access-actions');
+      if (current === slot && actions) { slot.innerHTML = accessButtons(actions); }
     };
 
     // PR-043.7 (FUSION): clicking any relationship explains WHY Atlas
@@ -331,8 +415,122 @@
       return html;
     };
 
-    cy.on('tap', 'node', event => { details.innerHTML = nodeDetails(event.target.data()); });
+    cy.on('tap', 'node', event => {
+      details.innerHTML = nodeDetails(event.target.data());
+      hydrateAccessActions();
+    });
     cy.on('tap', 'edge', event => { details.innerHTML = edgeDetails(event.target.data()); });
+
+    // Right-click a device: the same universal actions, where the pointer
+    // already is (PR-048A). The menu is built from the SAME resolution the
+    // sidebar uses — one decision, rendered twice — and an unavailable
+    // action shows greyed with its reason rather than disappearing. On a
+    // standalone file (no Atlas behind it) the browser's own menu is left
+    // alone.
+    const contextMenu = document.getElementById('context-menu');
+    const hideContextMenu = () => { contextMenu.style.display = 'none'; };
+    document.addEventListener('click', hideContextMenu);
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape') { hideContextMenu(); }
+    });
+    cy.on('tap pan zoom', hideContextMenu);
+
+    const contextItem = (label, href, options = {}) => {
+      if (options.disabled) {
+        return `<span class="menu-item menu-item-disabled" title="${escapeHtml(options.reason || '')}">${escapeHtml(label)}</span>`;
+      }
+      const external = options.external
+        ? ' target="_blank" rel="noopener noreferrer"' : ' target="_top"';
+      const cls = options.insecure ? ' menu-item-insecure' : '';
+      const title = options.reason ? ` title="${escapeHtml(options.reason)}"` : '';
+      return `<a class="menu-item${cls}"${external}${title} href="${escapeHtml(href)}">${escapeHtml(label)}</a>`;
+    };
+
+    cy.on('cxttap', 'node', async event => {
+      if (!servedByAtlas) { return; }
+      const data = event.target.data();
+      if (data.kind === 'observed') { return; }   // nothing to open on a peer
+      const id = encodeURIComponent(data.id);
+      const pos = event.renderedPosition ||
+                  (event.originalEvent && { x: event.originalEvent.offsetX, y: event.originalEvent.offsetY }) ||
+                  { x: 20, y: 20 };
+
+      let items = `<div class="menu-head">${escapeHtml(data.label || data.id)}</div>`;
+      const actions = await fetchActions(data.id, data.hostname || data.label);
+      const ssh = actions && actions.ssh;
+      if (ssh && ssh.eligible) {
+        items += contextItem('Open SSH Console',
+                             `/console/${encodeURIComponent(ssh.device_id || data.id)}`);
+      } else {
+        items += contextItem('Open SSH Console', '', {
+          disabled: true, reason: (ssh && ssh.reason) || 'SSH could not be resolved'
+        });
+      }
+      const web = actions && actions.web;
+      if (web && web.has_https) {
+        items += contextItem(
+          `Open HTTPS${(web.certificate_warnings || []).length ? ' ⚠' : ''}`,
+          web.https_url, { external: true });
+      } else if (web && web.http_only) {
+        items += contextItem('Open HTTP — Insecure', web.http_url, {
+          external: true, insecure: true,
+          reason: 'HTTP is insecure; anything you type travels in the clear'
+        });
+      } else {
+        items += contextItem('Open Web Interface', '', {
+          disabled: true, reason: (web && web.reason) || 'no verified web service'
+        });
+      }
+      items += contextItem('Device Details', `/device/${id}`);
+      items += contextItem('Configuration History', `/configuration/${id}`);
+
+      contextMenu.innerHTML = items;
+      contextMenu.style.display = 'block';
+      // Keep the menu on-canvas: flip left/up when the click is near an edge.
+      const wrap = document.getElementById('cy').getBoundingClientRect();
+      const menuW = contextMenu.offsetWidth, menuH = contextMenu.offsetHeight;
+      const x = Math.min(pos.x, wrap.width - menuW - 8);
+      const y = Math.min(pos.y, wrap.height - menuH - 8);
+      contextMenu.style.left = `${Math.max(8, x)}px`;
+      contextMenu.style.top = `${Math.max(8, y)}px`;
+    });
+
+    // The browser's own context menu would cover ours on the canvas.
+    document.getElementById('cy').addEventListener('contextmenu', event => {
+      if (servedByAtlas) { event.preventDefault(); }
+    });
+
+    // Labels stay readable at every zoom (PR-048A). Cytoscape scales text
+    // with the canvas, so fitting 40+ devices used to shrink 14px labels to
+    // ~6 effective pixels — the map became a picture. Compensate: as the
+    // operator zooms out, the model-space font grows so the on-screen size
+    // never drops below ~11px; zooming in returns to the designed 14px.
+    // The cap is a judgment call: full compensation at a 76-node fit would
+    // draw 50px model-space labels that collide into mush. 44 keeps an
+    // enterprise-wide fit at ~9 effective px — small but legible — and any
+    // zoom-in quickly reaches the designed 14.
+    const LABEL_PX = 14, LABEL_MIN_EFFECTIVE = 11, LABEL_MODEL_CAP = 44;
+    let labelSyncQueued = false;
+    const syncLabelsToZoom = () => {
+      if (labelSyncQueued) { return; }
+      labelSyncQueued = true;
+      // setTimeout, not requestAnimationFrame: rAF never fires in a hidden
+      // or non-painting tab, which would leave labels stuck at the size of
+      // whatever zoom the tab was at when it lost focus.
+      setTimeout(() => {
+        labelSyncQueued = false;
+        const zoom = cy.zoom() || 1;
+        const size = Math.min(LABEL_MODEL_CAP,
+                              Math.max(LABEL_PX, LABEL_MIN_EFFECTIVE / zoom));
+        cy.nodes().style('font-size', size);
+      }, 50);
+    };
+    cy.on('zoom', syncLabelsToZoom);
+    cy.ready(syncLabelsToZoom);
+    syncLabelsToZoom();
+
+    // Reachable from the console for debugging and driveable UI tests.
+    window.cy = cy;
     cy.on('mouseover', 'node', event => {
       tooltip.textContent = `${event.target.data('label')} · ${event.target.data('management_ip')}`;
       tooltip.style.display = 'block';

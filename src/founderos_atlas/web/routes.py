@@ -2767,6 +2767,46 @@ def register_routes(app) -> None:
         # of who reached which device, how, and with what outcome.
         return console_audit()
 
+    @app.route("/api/device/<path:device_id>/actions")
+    def device_actions_api(device_id: str):
+        """The universal device action, as JSON (PR-048A).
+
+        The topology viewer is a generated artifact: it exists as a file on
+        disk and cannot know at render time whether a device is SSH-eligible
+        or has a verified web endpoint â€” both can change after any discovery
+        or verification. When Atlas serves the artifact, the viewer asks here
+        and gets the same answer every template gets: resolved from evidence,
+        for the active scope, by console/resolve and management/resolve. One
+        decision, one place, one more consumer.
+        """
+
+        _ctx, scopes, scope_id = scoped_context("topology")
+        wanted = str(device_id).strip()
+        hostname = (request.args.get("hostname") or "").strip().casefold()
+        targets = console_targets(scopes, scope_id)
+        target = next((t for t in targets if t.device_id == wanted), None)
+        if target is None and hostname:
+            # The enterprise topology mints its own node ids
+            # ("ent:access1:172.20.20.23") that the console resolver has
+            # never heard of. The hostname is the identity both graphs agree
+            # on â€” the same fallback the template helpers already offer.
+            target = next(
+                (t for t in targets if t.hostname.casefold() == hostname), None
+            )
+        # Web access is keyed by canonical device id; follow the ssh
+        # resolution to it when the caller's id was a federated one.
+        canonical_id = target.device_id if target is not None else wanted
+        web = web_access_for(scopes, scope_id, canonical_id)
+        if target is None and web is None:
+            # Not a canonical device in this scope â€” an unresolved peer, or a
+            # stale id. No actions, said plainly.
+            return jsonify(error="not a canonical device in this scope"), 404
+        return jsonify(
+            device_id=canonical_id,
+            ssh=target.to_dict() if target is not None else None,
+            web=web.to_dict() if web is not None else None,
+        )
+
     # What the console surface needs from the GUI, without an import cycle.
     console_deps = SimpleNamespace(
         scoped_context=scoped_context,

@@ -822,12 +822,24 @@ class TopologyViewerActionTests(unittest.TestCase):
 
     def test_the_standalone_artifact_carries_no_links_into_an_absent_app(self) -> None:
         """The viewer is also a file on disk. Opened directly, there is no
-        Atlas around it, so it must not render links to one."""
+        Atlas around it, so it must not render links to one.
+
+        PR-048A refined the test the viewer applies. The old check was "am I
+        in an iframe?" â€” which also stripped every action the moment the
+        operator clicked "Open in new tab", even though the same Atlas was
+        still serving the page. The right question is "is Atlas serving me?":
+        http(s) means yes, file:// means no. The principle this test protects
+        is unchanged â€” a disk file gets no links â€” the detection just stopped
+        conflating "own tab" with "no application".
+        """
 
         source = self._viewer_source()
-        self.assertIn("embeddedInAtlas", source)
-        self.assertIn("window.parent !== window", source)
-        self.assertIn("if (!embeddedInAtlas", source)
+        self.assertIn("servedByAtlas", source)
+        self.assertIn("window.location.protocol", source)
+        self.assertIn("if (!servedByAtlas", source)
+        # The old iframe test must not creep back â€” it is how "open in new
+        # tab" lost its actions in the first place.
+        self.assertNotIn("window.parent !== window", source)
 
 
 class ConsoleGuiTests(unittest.TestCase):
