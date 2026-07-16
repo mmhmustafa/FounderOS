@@ -525,6 +525,7 @@ class TopologyRenderer:
                 "count": len(members),
                 "roles": dict(sorted(roles.items())),
                 "stencil": stencil_data_uri("site"),
+                "hub_stencil": stencil_data_uri("site-hub"),
                 "kind": "site",
                 "evidence": (
                     "membership from the Site Catalog via multi-signal "

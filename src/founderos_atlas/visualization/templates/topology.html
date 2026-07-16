@@ -50,10 +50,22 @@
     #context-menu .menu-item-disabled { color: #94a3b8; cursor: not-allowed; }
     #context-menu .menu-item-disabled:hover { background: transparent; }
     #context-menu .menu-item-insecure { color: #b45309; }
+    /* PR-050A: the way back down. Chips for every open site. */
+    #open-sites { position: absolute; top: 12px; left: 14px; z-index: 6;
+      display: flex; gap: 8px; flex-wrap: wrap; }
+    .site-chip { display: inline-flex; align-items: center; gap: 7px;
+      background: #eef2ff; border: 1px solid #c7d2fe; border-radius: 999px;
+      padding: 5px 8px 5px 12px; font-size: 12px; font-weight: 600;
+      color: #3730a3; }
+    .site-chip button { border: 0; background: #c7d2fe; color: #312e81;
+      border-radius: 999px; width: 18px; height: 18px; line-height: 1;
+      padding: 0; font-size: 12px; cursor: pointer; }
+    .site-chip button:hover { background: #a5b4fc; }
+    .site-chip-all { background: #fff; border-color: #cbd5e1; color: #334155; }
     .node-action:hover { border-color: #94a3b8; background: #f8fafc; }
     .node-action-primary { background: #2563eb; border-color: #2563eb; color: #fff; }
     .node-action-primary:hover { background: #1d4ed8; border-color: #1d4ed8; }
-    #tooltip { position: fixed; display: none; z-index: 10; pointer-events: none; padding: 7px 9px; border-radius: 5px; background: #111827; color: white; font-size: 12px; }
+    #tooltip { position: fixed; left: 0; top: 0; display: none; z-index: 10; pointer-events: none; padding: 7px 10px; border-radius: 6px; background: rgba(17,24,39,0.92); color: white; font-size: 12px; box-shadow: 0 4px 12px rgba(15,23,42,0.25); will-change: transform; max-width: 320px; }
     .summary { margin-left: auto; color: #cbd5e1; font-size: 12px; }
     @media (max-width: 760px) { main { grid-template-columns: 1fr; } aside { display: none; } .summary { display: none; } }
   </style>
@@ -70,7 +82,8 @@
     </label>
     <label class="layout-label">Layout
       <select id="layout" aria-label="Graph layout">
-        <option value="tiered" selected>Tiered</option>
+        <option value="logical" selected>Logical (sites & tiers)</option>
+        <option value="tiered">Tiered</option>
         <option value="concentric">Concentric</option>
         <option value="force">Force</option>
         <option value="circle">Circle</option>
@@ -84,6 +97,7 @@
     <div class="graph-wrap">
       <div id="cy" aria-label="Interactive topology graph"></div>
       <div id="context-menu" role="menu" aria-label="Device actions"></div>
+      <div id="open-sites" aria-label="Open sites"></div>
       <div id="legend" aria-label="Legend">
         <h3>Links</h3>
         <div class="row"><span class="swatch"><span class="line" style="border-top-style:solid;border-top-color:#64748b"></span></span> Physical</div>
@@ -199,22 +213,41 @@
           'text-background-shape': 'round-rectangle', 'text-background-padding': 4,
           'text-border-color': '#cbd5e1', 'text-border-width': 1, 'text-border-opacity': 1,
           'width': 66, 'height': 74,
-          'border-width': 0
+          'border-width': 0,
+          // The nameplate is part of the node for pointer purposes -- moving
+          // the cursor from icon to label must not fire a mouseout.
+          'text-events': 'yes',
+          // Emphasis eases in and out; nothing snaps.
+          'transition-property': 'opacity, underlay-opacity',
+          'transition-duration': '0.15s',
+          'transition-timing-function': 'ease-out'
         }},
         { selector: 'node[kind = "observed"]', style: { 'opacity': 0.85 }},
         // PR-050 (SKYLINE): a site is a PLACE on the diagram -- larger
         // glyph, bolder nameplate. Aggregated links always carry their
         // count; the constituent links are one double-click away.
         { selector: 'node[kind = "site"]', style: {
-          'width': 190, 'height': 132, 'font-weight': 700,
+          'width': 165, 'height': 165, 'font-weight': 800,
           'background-image': 'data(stencil)',
           // fit alone decides the size: mixing fit with %-sizing made
-          // cytoscape fall back to the image's intrinsic pixels, and a
-          // 640x512 SVG in a 190x132 node showed one corner of a cloud.
+          // cytoscape fall back to the image's intrinsic pixels and clip.
           'background-fit': 'contain',
           'background-clip': 'none',
-          'text-valign': 'bottom', 'text-halign': 'center',
-          'text-margin-y': 2
+          // The name rides in a solid blue pill above the badge -- the
+          // circular badge itself stays clean.
+          'text-valign': 'top', 'text-halign': 'center',
+          'text-margin-y': -12,
+          'color': '#ffffff',
+          'text-background-color': '#2563eb', 'text-background-opacity': 1,
+          'text-background-shape': 'round-rectangle',
+          'text-background-padding': 6,
+          'text-border-color': '#1d4ed8', 'text-border-width': 1,
+          'text-border-opacity': 1
+        }},
+        // The centre of the estate wears the globe.
+        { selector: 'node.site-hub', style: {
+          'background-image': 'data(hub_stencil)',
+          'width': 185, 'height': 185
         }},
         // State ring: a rounded halo around the icon, only when it means
         // something. `background-opacity` stays 0 so the ring frames the
@@ -232,7 +265,10 @@
         // relationship: solid = physical, dashed = routed, dotted = observed.
         { selector: 'edge', style: {
           'width': 1.6, 'line-color': '#cbd5e1', 'curve-style': 'straight',
-          'target-arrow-shape': 'none'
+          'target-arrow-shape': 'none',
+          'transition-property': 'opacity, line-color, underlay-opacity',
+          'transition-duration': '0.15s',
+          'transition-timing-function': 'ease-out'
         }},
         { selector: 'edge[relationship = "physical"]', style: { 'line-style': 'solid', 'line-color': '#64748b', 'width': 2 }},
         { selector: 'edge[relationship = "verified-routed"]', style: { 'line-style': 'dashed', 'line-color': '#60a5fa', 'width': 1.8 }},
@@ -251,27 +287,44 @@
           'color': '#1e293b', 'text-background-color': '#ffffff',
           'text-background-opacity': 1, 'text-background-padding': 5,
           'text-background-shape': 'round-rectangle',
-          'text-border-color': '#c7d2fe', 'text-border-width': 1,
+          'text-border-color': '#bfdbfe', 'text-border-width': 1,
           'text-border-opacity': 1,
+          // The reference look: dashed blue runs with a dot where the link
+          // meets each badge.
           'curve-style': 'bezier', 'control-point-step-size': 60,
-          'width': 3, 'line-color': '#818cf8', 'line-style': 'solid',
-          'target-arrow-shape': 'none'
+          'width': 2.5, 'line-color': '#2563eb', 'line-style': 'dashed',
+          'line-dash-pattern': [7, 6],
+          'source-arrow-shape': 'circle', 'target-arrow-shape': 'circle',
+          'source-arrow-color': '#2563eb', 'target-arrow-color': '#2563eb',
+          'arrow-scale': 0.75
         }},
         { selector: 'edge[kind = "aggregate"][relationship = "physical"]',
-          style: { 'line-color': '#4f46e5', 'width': 3.6 }},
+          style: { 'line-style': 'solid', 'width': 3.2 }},
         { selector: 'edge[kind = "aggregate"][relationship = "unknown"]',
-          style: { 'line-color': '#c7d2fe', 'line-style': 'dashed', 'width': 2.4 }},
+          style: { 'line-color': '#93c5fd',
+                   'source-arrow-color': '#93c5fd',
+                   'target-arrow-color': '#93c5fd', 'width': 2 }},
 
         // Hover lift (#5): the focused device grows and its links brighten;
         // everything else fades so the neighbourhood stands out.
-        { selector: 'node.node-lift', style: { 'width': 84, 'height': 92, 'z-index': 999 }},
-        { selector: 'edge.edge-hi', style: { 'line-color': '#f59e0b', 'width': 2.6, 'z-index': 998 }},
-        { selector: '.faded', style: { 'opacity': 0.18 }},
+        { selector: 'node.node-lift', style: {
+          'underlay-color': '#2563eb', 'underlay-opacity': 0.14,
+          'underlay-padding': 12, 'underlay-shape': 'ellipse',
+          'z-index': 999
+        }},
+        { selector: 'edge.edge-hi', style: {
+          'line-color': '#f59e0b', 'z-index': 998,
+          'underlay-color': '#f59e0b', 'underlay-opacity': 0.12,
+          'underlay-padding': 5
+        }},
+        { selector: '.faded', style: { 'opacity': 0.22 }},
 
         // Hover and selection reveal the interface names at each end —
         // Packet-Tracer style, but only when you ask for them.
         { selector: 'edge.hover, edge:selected', style: {
-          'line-color': '#f59e0b', 'width': 3.4,
+          'line-color': '#f59e0b',
+          'underlay-color': '#f59e0b', 'underlay-opacity': 0.12,
+          'underlay-padding': 5,
           'source-label': 'data(source_interface)', 'target-label': 'data(target_interface)',
           'source-text-offset': 26, 'target-text-offset': 26,
           'font-size': 10, 'color': '#0f172a',
@@ -288,6 +341,11 @@
     const layoutSelect = document.getElementById('layout');
     if (layoutSelect) {
       layoutSelect.addEventListener('change', () => {
+        if (typeof rebuildView === 'function' &&
+            (sitesEnabled || layoutSelect.value === 'logical')) {
+          rebuildView();
+          return;
+        }
         const chosen = LAYOUTS[layoutSelect.value] || LAYOUTS.force;
         cy.layout(chosen).run();
       });
@@ -317,6 +375,7 @@
       <div class="node-actions">
         <button class="node-action node-action-primary" type="button"
                 onclick="toggleSite('${escapeHtml(data.site_id)}')">${isOpen ? 'Collapse site' : 'Open site'}</button>
+        <span style="font-size:12px;color:#64748b;align-self:center">Tip: double-click any device inside an open site to fold it back.</span>
       </div>`;
       }
       const unresolved = data.kind === 'observed';
@@ -626,6 +685,176 @@
     syncLabelsToZoom();
 
 
+
+    // ---- PR-050A: the LOGICAL layout -----------------------------------
+    //
+    // Arrange the way an engineer draws it: one vertical band per site,
+    // tiers top-to-bottom inside each band. The top of a band is not a
+    // guess -- it is the devices that hold the links LEAVING the site
+    // (cross-site links, BGP sessions to unresolved WAN peers). Every other
+    // device sits at its hop distance below that edge, so edge -> firewall
+    // -> core -> switches -> access/servers falls out of the graph itself.
+    const TIER_DY = 165, NODE_DX = 175, BAND_GAP = 130;
+
+    function logicalPositions(visibleNodes, visibleEdges) {
+      const member = id => (sitesEnabled && siteView.membership[id]) || '__all__';
+      const isSiteNode = n => n.data.kind === 'site';
+
+      // Tiering is a CABLING concept: only physical and verified-routed
+      // links shape it. BGP and OSPF overlays criss-cross sites (an iBGP
+      // mesh would make every router an "edge") and are ignored both for
+      // choosing roots and for measuring depth.
+      const TIER_KINDS = new Set(['physical', 'verified-routed', 'layer-3']);
+      const adj = new Map();
+      const touch = (a, b) => {
+        if (!adj.has(a)) { adj.set(a, new Set()); }
+        adj.get(a).add(b);
+      };
+      const overlay = new Map();   // kept only to place unresolved WAN peers
+      const touchOverlay = (a, b) => {
+        if (!overlay.has(a)) { overlay.set(a, new Set()); }
+        overlay.get(a).add(b);
+      };
+      for (const e of visibleEdges) {
+        const kind = e.data.kind === 'aggregate'
+          ? e.data.relationship : e.data.relationship;
+        if (TIER_KINDS.has(kind) || e.data.kind === 'aggregate') {
+          touch(e.data.source, e.data.target);
+          touch(e.data.target, e.data.source);
+        } else {
+          touchOverlay(e.data.source, e.data.target);
+          touchOverlay(e.data.target, e.data.source);
+        }
+      }
+
+      // Group into bands. Closed site clouds form their own one-node band.
+      const bands = new Map();
+      for (const n of visibleNodes) {
+        const key = isSiteNode(n) ? n.data.id : member(n.data.id);
+        if (!bands.has(key)) { bands.set(key, []); }
+        bands.get(key).push(n);
+      }
+
+      // The roots of a band: devices with an edge that LEAVES the band, or
+      // a BGP session to an unresolved peer (the WAN speaking to us). If a
+      // band is entirely internal, its highest-degree device anchors it.
+      const observedIds = new Set(
+        visibleNodes.filter(n => n.data.kind === 'observed').map(n => n.data.id));
+      const positions = {};
+      // Deterministic band order, the shared estate in the middle.
+      const keys = [...bands.keys()].sort();
+      const noneAt = keys.indexOf('__none__');
+      if (noneAt > 0) {
+        keys.splice(noneAt, 1);
+        keys.splice(Math.floor(keys.length / 2), 0, '__none__');
+      }
+
+      let bandX = 0;
+      for (const key of keys) {
+        const nodes = bands.get(key);
+        const ids = new Set(nodes.map(n => n.data.id));
+        const roots = new Set();
+        for (const n of nodes) {
+          if (isSiteNode(n)) { roots.add(n.data.id); continue; }
+          for (const peer of (adj.get(n.data.id) || [])) {
+            if (!ids.has(peer) || observedIds.has(peer)) {
+              roots.add(n.data.id);
+              break;
+            }
+          }
+          // A BGP session to an UNRESOLVED peer is WAN evidence too -- the
+          // only overlay signal that marks an edge device.
+          if (!roots.has(n.data.id)) {
+            for (const peer of (overlay.get(n.data.id) || [])) {
+              if (observedIds.has(peer)) { roots.add(n.data.id); break; }
+            }
+          }
+        }
+        if (roots.size === 0 && nodes.length) {
+          let best = nodes[0].data.id, bestDeg = -1;
+          for (const n of nodes) {
+            const deg = (adj.get(n.data.id) || new Set()).size;
+            if (deg > bestDeg) { bestDeg = deg; best = n.data.id; }
+          }
+          roots.add(best);
+        }
+        // BFS depth inside the band = the tier. Unreached devices (isolated)
+        // sit one tier below the deepest reached one.
+        const tier = new Map();
+        let frontier = [...roots].sort();
+        frontier.forEach(id => tier.set(id, 0));
+        let depth = 0;
+        while (frontier.length) {
+          const next = [];
+          for (const id of frontier) {
+            for (const peer of (adj.get(id) || [])) {
+              if (ids.has(peer) && !tier.has(peer) && !observedIds.has(peer)) {
+                tier.set(peer, depth + 1);
+                next.push(peer);
+              }
+            }
+          }
+          frontier = next.sort();
+          depth += 1;
+        }
+        let deepest = 0;
+        tier.forEach(v => { deepest = Math.max(deepest, v); });
+        for (const n of nodes) {
+          if (!tier.has(n.data.id)) {
+            // Unresolved peers hang one tier ABOVE the edge that observed
+            // them (they are the WAN); anything else lands at the bottom.
+            tier.set(n.data.id,
+                     observedIds.has(n.data.id) ? -1 : deepest + 1);
+          }
+        }
+        // Servers never sit above the gear that serves them: connectivity
+        // decides everything else, but a server wired straight into a core
+        // still reads wrong above the access tier.
+        let floor = 0;
+        tier.forEach(v => { floor = Math.max(floor, v); });
+        for (const n of nodes) {
+          if ((n.data.role === 'server' || n.data.role === 'linux_host') &&
+              !observedIds.has(n.data.id)) {
+            tier.set(n.data.id, floor);
+          }
+        }
+        // Rows: stable order inside a tier by label.
+        const rows = new Map();
+        for (const n of nodes) {
+          const t = tier.get(n.data.id);
+          if (!rows.has(t)) { rows.set(t, []); }
+          rows.get(t).push(n);
+        }
+        let bandWidth = NODE_DX;
+        for (const row of rows.values()) {
+          bandWidth = Math.max(bandWidth, row.length * NODE_DX);
+        }
+        for (const [t, row] of rows) {
+          row.sort((a, b) => (a.data.label || '').localeCompare(b.data.label || ''));
+          const rowWidth = row.length * NODE_DX;
+          row.forEach((n, i) => {
+            positions[n.data.id] = {
+              x: bandX + (bandWidth - rowWidth) / 2 + i * NODE_DX + NODE_DX / 2,
+              y: (t + 1) * TIER_DY,
+            };
+          });
+        }
+        bandX += bandWidth + BAND_GAP;
+      }
+      return positions;
+    }
+
+    function runLogicalLayout() {
+      const nodes = cy.nodes().map(n => ({ data: n.data() }));
+      const edges = cy.edges().map(e => ({ data: e.data() }));
+      const positions = logicalPositions(nodes, edges);
+      cy.nodes().forEach(n => {
+        const p = positions[n.id()];
+        if (p) { n.position(p); }
+      });
+      cy.fit(undefined, 40);
+    }
+
     // ---- PR-050 (SKYLINE): the site level ------------------------------
     //
     // Membership and aggregation were computed by the renderer from the
@@ -646,7 +875,10 @@
       const els = visible.map(n => ({ data: { ...n.data } }));
       for (const site of siteView.sites) {
         if (!expandedSites.has(site.site_id)) {
-          els.push({ data: { ...site, accent: '#4f46e5', role_label: 'Site' } });
+          els.push({ data: { ...site, accent: '#2563eb', role_label: 'Site',
+                             display_label:
+                               site.label.toUpperCase() + '\n' +
+                               site.count + ' devices' } });
         }
       }
       const stubs = new Map();   // member<->closed-site links, deduplicated
@@ -687,7 +919,15 @@
       // the mesh visible between them. Once a site is opened, an organic
       // force layout keeps its devices clustered beside the closed clouds.
       let chosen;
+      const wantLogical =
+        ((layoutSelect && layoutSelect.value) || 'logical') === 'logical';
       if (full) {
+        if (wantLogical) {
+          cy.layout({ name: 'preset', animate: false, fit: false }).run();
+          runLogicalLayout();
+          finishRebuild(false);
+          return;
+        }
         chosen = LAYOUTS[(layoutSelect && layoutSelect.value) || 'tiered']
           || LAYOUTS.tiered;
       } else if (expandedSites.size === 0) {
@@ -708,19 +948,33 @@
           ? 'site:__none__'
           : (atMost.length === 1 ? atMost[0] : null);
         chosen = { name: 'concentric', animate: false, fit: true, padding: 90,
-                   minNodeSpacing: 110, startAngle: Math.PI / 2,
+                   minNodeSpacing: 130, startAngle: Math.PI / 2,
                    concentric: n => (centre && n.id() === centre) ? 2 : 1,
                    levelWidth: () => 1 };
+        cy.nodes('[kind = "site"]').removeClass('site-hub');
+        if (centre) { cy.getElementById(centre).addClass('site-hub'); }
+      } else if (wantLogical) {
+        // Open sites keep the same discipline: tier bands per open site,
+        // closed clouds as their own bands.
+        cy.layout({ name: 'preset', animate: false, fit: false }).run();
+        runLogicalLayout();
+        finishRebuild(false);
+        return;
       } else {
         chosen = { name: 'cose', animate: false, fit: true, padding: 60,
                    idealEdgeLength: 130, nodeRepulsion: 20000,
                    nodeOverlap: 30, gravity: 0.25, componentSpacing: 140 };
       }
       cy.layout(chosen).run();
+      finishRebuild(!full && expandedSites.size === 0);
+    }
+
+    // Every rebuild path ends here -- labels, summary and the open-site
+    // chips must never depend on WHICH layout branch ran.
+    function finishRebuild(isSkyline) {
       syncLabelsToZoom();
-      if (window.syncSummary) {
-        window.syncSummary(!full && expandedSites.size === 0);
-      }
+      if (window.syncSummary) { window.syncSummary(isSkyline); }
+      syncOpenSiteChips();
     }
 
     window.toggleSite = siteId => {
@@ -729,12 +983,44 @@
       rebuildView();
     };
 
+    function syncOpenSiteChips() {
+      const bar = document.getElementById('open-sites');
+      if (!bar) { return; }
+      const full = !sitesEnabled || (viewSelect && viewSelect.value === 'full');
+      if (full || expandedSites.size === 0) { bar.innerHTML = ''; return; }
+      const name = id => {
+        const s = siteView.sites.find(x => x.site_id === id);
+        return s ? s.label : id;
+      };
+      let html = '';
+      for (const id of [...expandedSites].sort()) {
+        html += `<span class="site-chip">${escapeHtml(name(id))}` +
+                `<button type="button" title="Close ${escapeHtml(name(id))}"` +
+                ` onclick="toggleSite('${escapeHtml(id)}')">×</button></span>`;
+      }
+      if (expandedSites.size > 1) {
+        html += `<span class="site-chip site-chip-all">` +
+                `<button type="button" style="width:auto;padding:0 8px;border-radius:6px"` +
+                ` title="Close every open site" onclick="closeAllSites()">Close all</button></span>`;
+      }
+      bar.innerHTML = html;
+    }
+
+    window.closeAllSites = () => { expandedSites.clear(); rebuildView(); };
+
     if (sitesEnabled) {
       document.getElementById('view-label').style.display = '';
       document.getElementById('legend-site').style.display = '';
       viewSelect.addEventListener('change', rebuildView);
       cy.on('dbltap', 'node[kind = "site"]',
             event => window.toggleSite(event.target.data('site_id')));
+      cy.on('dbltap', 'node[kind != "site"]', event => {
+        if (viewSelect.value === 'full') { return; }
+        const siteId = siteView.membership[event.target.id()];
+        if (siteId && expandedSites.has(siteId)) {
+          window.toggleSite(siteId);
+        }
+      });
       // Search must never miss a device just because its site is closed:
       // a match inside a closed site opens that site first.
       const searchBox = document.getElementById('search');
@@ -762,17 +1048,25 @@
       }
       rebuildView();
     }
+    if (!sitesEnabled &&
+        ((layoutSelect && layoutSelect.value) || 'logical') === 'logical') {
+      runLogicalLayout();
+    }
 
     // Reachable from the console for debugging and driveable UI tests.
     window.cy = cy;
+    let hoveredId = null;
     cy.on('mouseover', 'node', event => {
+      if (event.target.id() === hoveredId) { return; }
+      hoveredId = event.target.id();
       const hovered = event.target.data();
       tooltip.textContent = hovered.kind === 'site'
         ? `${hovered.label} · ${hovered.count} devices · double-click to open`
         : `${hovered.label} · ${hovered.management_ip}`;
       tooltip.style.display = 'block';
-      // Hover lift (#5): grow the focused device, brighten its links, and
-      // fade everything else so its neighbourhood stands out.
+      // Hover emphasis: a halo on the focused device, brightened links, and
+      // a fade on everything else. Never a size change -- growing the node
+      // moves its boundary under the cursor and oscillates.
       const node = event.target;
       const hood = node.closedNeighborhood();
       cy.elements().difference(hood).addClass('faded');
@@ -796,8 +1090,7 @@
     cy.on('mouseout', 'edge', event => { event.target.removeClass('hover'); tooltip.style.display = 'none'; });
     cy.on('mousemove', event => {
       if (event.originalEvent) {
-        tooltip.style.left = `${event.originalEvent.clientX + 12}px`;
-        tooltip.style.top = `${event.originalEvent.clientY + 12}px`;
+        tooltip.style.transform = `translate(${event.originalEvent.clientX + 14}px, ${event.originalEvent.clientY + 16}px)`;
       }
     });
     cy.on('mouseout', 'node', () => { tooltip.style.display = 'none'; });
