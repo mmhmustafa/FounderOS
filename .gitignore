@@ -54,3 +54,9 @@ deliverables/*
 
 # Collected device configurations are sensitive material; never commit them.
 /configs/
+
+# Hand-off zips built to share one PR's work. They are a snapshot of the tree,
+# so committing one puts a second, silently ageing copy of the code in history
+# — pr-046-cortex.zip got in this way, via `git add -A`. This rule does not
+# untrack the ones already committed; `git rm --cached` does that.
+*.zip
