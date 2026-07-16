@@ -2632,12 +2632,53 @@ def register_routes(app) -> None:
         devices = data.get("devices")
         return tuple(devices) if isinstance(devices, list) else ()
 
+    def _credential_set_repo():
+        from founderos_atlas.credentials.repository import CredentialSetRepository
+
+        return CredentialSetRepository(Path(cfg("ATLAS_WORKSPACE_ROOT")))
+
+    def _set_entries(set_ids=None):
+        """Enabled credential-set entries, best first (lower priority wins).
+
+        ``set_ids`` limits to a profile's named sets; None means every set.
+        """
+
+        try:
+            sets = _credential_set_repo().load()
+        except Exception:  # noqa: BLE001 - no sets is a state, not an error
+            return []
+        entries = []
+        for set_id, credential_set in sorted(sets.items()):
+            if set_ids is not None and set_id not in set_ids:
+                continue
+            for entry in credential_set.entries:
+                if entry.enabled:
+                    entries.append((credential_set, entry))
+        entries.sort(key=lambda pair: (pair[1].priority, pair[0].set_id))
+        return entries
+
     def _scope_login(scope):
-        """(username, credential_ref, credential_name) for a scope."""
+        """(username, credential_ref, credential_name) for a scope.
+
+        A set-only profile has no username and no credential_ref of its own —
+        its way in is a credential set. Discovery learned this in PR-047A's
+        follow-up ("a set-only profile connects with the set's credential");
+        without the same fallback here, the console resolved such a scope to
+        "<profile> (no user)" and every Connect died with
+        "Choose a credential set" — even though the profile HAS chosen one.
+        """
 
         profile = profile_for_scope(scope.scope_id)
         if profile is None:
             return None, None, None
+        if profile.username and profile.credential_ref:
+            return profile.username, profile.credential_ref, profile.name
+        for credential_set, entry in _set_entries(set(profile.credential_sets)):
+            return (
+                entry.username,
+                entry.credential_ref,
+                f"{credential_set.name} — {entry.label}",
+            )
         return profile.username, profile.credential_ref, profile.name
 
     def console_targets(scopes, scope_id):
@@ -2701,6 +2742,19 @@ def register_routes(app) -> None:
                     "username": profile.username,
                 }
             )
+        # Credential sets are choices too — for a set-only estate they are
+        # the ONLY choices, and this list used to come back empty.
+        for credential_set, entry in _set_entries():
+            if entry.credential_ref in seen:
+                continue
+            seen.add(entry.credential_ref)
+            choices.append(
+                {
+                    "credential_ref": entry.credential_ref,
+                    "name": f"{credential_set.name} — {entry.label}",
+                    "username": entry.username,
+                }
+            )
         return choices
 
     def console_credential_for(scopes, scope_id, credential_ref: str):
@@ -2716,6 +2770,14 @@ def register_routes(app) -> None:
                     credential_ref
                 )
                 return profile.username, password
+        # A set entry's reference resolves the same way: the ref names the
+        # secret in the store, the entry carries the username beside it.
+        for _credential_set, entry in _set_entries():
+            if entry.credential_ref == credential_ref:
+                password = profile_service().credential_provider.get(
+                    credential_ref
+                )
+                return entry.username, password
         raise KeyError("unknown credential reference")
 
     def console_host_key_store():
@@ -2773,7 +2835,7 @@ def register_routes(app) -> None:
 
         The topology viewer is a generated artifact: it exists as a file on
         disk and cannot know at render time whether a device is SSH-eligible
-        or has a verified web endpoint â€” both can change after any discovery
+        or has a verified web endpoint — both can change after any discovery
         or verification. When Atlas serves the artifact, the viewer asks here
         and gets the same answer every template gets: resolved from evidence,
         for the active scope, by console/resolve and management/resolve. One
@@ -2789,7 +2851,7 @@ def register_routes(app) -> None:
             # The enterprise topology mints its own node ids
             # ("ent:access1:172.20.20.23") that the console resolver has
             # never heard of. The hostname is the identity both graphs agree
-            # on â€” the same fallback the template helpers already offer.
+            # on — the same fallback the template helpers already offer.
             target = next(
                 (t for t in targets if t.hostname.casefold() == hostname), None
             )
@@ -2798,7 +2860,7 @@ def register_routes(app) -> None:
         canonical_id = target.device_id if target is not None else wanted
         web = web_access_for(scopes, scope_id, canonical_id)
         if target is None and web is None:
-            # Not a canonical device in this scope â€” an unresolved peer, or a
+            # Not a canonical device in this scope — an unresolved peer, or a
             # stale id. No actions, said plainly.
             return jsonify(error="not a canonical device in this scope"), 404
         return jsonify(

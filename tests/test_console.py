@@ -825,11 +825,11 @@ class TopologyViewerActionTests(unittest.TestCase):
         Atlas around it, so it must not render links to one.
 
         PR-048A refined the test the viewer applies. The old check was "am I
-        in an iframe?" â€” which also stripped every action the moment the
+        in an iframe?" — which also stripped every action the moment the
         operator clicked "Open in new tab", even though the same Atlas was
         still serving the page. The right question is "is Atlas serving me?":
         http(s) means yes, file:// means no. The principle this test protects
-        is unchanged â€” a disk file gets no links â€” the detection just stopped
+        is unchanged — a disk file gets no links — the detection just stopped
         conflating "own tab" with "no application".
         """
 
@@ -837,7 +837,7 @@ class TopologyViewerActionTests(unittest.TestCase):
         self.assertIn("servedByAtlas", source)
         self.assertIn("window.location.protocol", source)
         self.assertIn("if (!servedByAtlas", source)
-        # The old iframe test must not creep back â€” it is how "open in new
+        # The old iframe test must not creep back — it is how "open in new
         # tab" lost its actions in the first place.
         self.assertNotIn("window.parent !== window", source)
 
@@ -1037,3 +1037,79 @@ class ConsoleGuiTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SetOnlyProfileConsoleTests(unittest.TestCase):
+    """"When I click on connect it says cannot connect."
+
+    It did. A set-only profile — no username, no credential of its own, its
+    way in is a credential set — could DISCOVER a network (fixed for the CLI
+    in PR-047A's follow-up) but could not open a console to anything it
+    found: the console's credential layer only knew profile-own credentials,
+    so the target resolved to "<profile> (no user)", the chooser offered
+    nothing, and Connect died with "Choose a credential set to connect."
+    even though the profile HAS chosen one.
+    """
+
+    SET_REF = "atlas-credset:lab-admin:lab-admin"
+
+    def _client(self, workdir: Path):
+        from founderos_atlas.credentials.models import CredentialEntry, CredentialSet
+        from founderos_atlas.credentials.repository import CredentialSetRepository
+        from founderos_atlas.web import create_app
+
+        service = make_service(workdir)
+        # The set carries the way in; the profile only names the set.
+        CredentialSetRepository(workdir / "workspace").save(CredentialSet(
+            set_id="lab-admin",
+            name="lab admin",
+            entries=(CredentialEntry(
+                entry_id="lab-admin", label="Lab Admin", username="atlas",
+                credential_ref=self.SET_REF,
+            ),),
+        ))
+        service.credential_provider.save(self.SET_REF, PASSWORD)
+        add_profile(service, "Lab A", "10.0.0.1",
+                    username="", password="", credential_sets=("lab-admin",))
+        run_discover(workdir, service, _network(), "Lab A", FIXED)
+        app = create_app(
+            profile_service=service,
+            output_dir=workdir,
+            history_root=workdir / ".atlas" / "history",
+            workspace_root=workdir / "workspace",
+        )
+        app.config.update(TESTING=True)
+        return app.test_client()
+
+    def test_the_console_resolves_the_sets_credential(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            page = self._client(Path(tmp)).get(
+                "/console/cisco-ios:r1"
+            ).get_data(as_text=True)
+            # The set's identity, not "(no user)".
+            self.assertIn("lab admin", page)
+            self.assertIn("atlas", page)
+            self.assertNotIn("(no user)", page)
+
+    def test_connect_mints_a_token_with_the_sets_reference(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            client = self._client(Path(tmp))
+            response = client.post(
+                "/console/cisco-ios:r1/token",
+                json={},
+                headers={"Origin": "http://127.0.0.1:8765"},
+                base_url="http://127.0.0.1:8765",
+            )
+            self.assertEqual(200, response.status_code, response.get_data())
+            data = response.get_json()
+            self.assertTrue(data.get("token"))
+            # The exact failure the operator hit: this used to 409 with
+            # "Choose a credential set to connect."
+            self.assertNotIn("error", data)
+
+    def test_the_chooser_offers_the_set_when_defaults_fail(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            page = self._client(Path(tmp)).get(
+                "/console/cisco-ios:r1"
+            ).get_data(as_text=True)
+            self.assertIn(self.SET_REF, page)
