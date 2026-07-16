@@ -62,6 +62,12 @@
   <header>
     <h1>Atlas Topology Viewer</h1>
     <input id="search" type="search" placeholder="Search hostname, IP, vendor, or platform" aria-label="Search topology">
+    <label class="layout-label" id="view-label" style="display:none">View
+      <select id="view-mode" aria-label="Topology view level">
+        <option value="sites" selected>Sites</option>
+        <option value="full">Full topology</option>
+      </select>
+    </label>
     <label class="layout-label">Layout
       <select id="layout" aria-label="Graph layout">
         <option value="tiered" selected>Tiered</option>
@@ -92,6 +98,7 @@
         <div class="row"><span class="dot" style="background:#6366f1"></span> Host</div>
         <div class="row"><span class="dot" style="background:#ef4444"></span> Firewall</div>
         <div class="row"><span class="dot" style="background:#cbd5e1;border:1px dashed #94a3b8"></span> Unresolved peer</div>
+        <div class="row" id="legend-site" style="display:none"><span class="dot" style="background:#4f46e5"></span> Site (double-click to open)</div>
       </div>
     </div>
     <aside id="details">
@@ -117,7 +124,16 @@
     const summaryParts = [`${snapshotSummary.device_count} devices`];
     summaryParts.push(`${totalLinks} link${totalLinks === 1 ? '' : 's'}${linkKinds.length ? ` (${linkKinds.join(', ')})` : ''}`);
     if (snapshotSummary.unresolved_peers) summaryParts.push(`${snapshotSummary.unresolved_peers} unresolved peer identities`);
-    document.getElementById('summary').textContent = summaryParts.join(' · ');
+    const fullSummaryText = summaryParts.join(' · ');
+    document.getElementById('summary').textContent = fullSummaryText;
+    window.syncSummary = isSitesLevel => {
+      const el = document.getElementById('summary');
+      if (isSitesLevel && (typeof siteView !== 'undefined')) {
+        el.textContent = siteView.sites.length + ' sites · ' +
+          siteView.aggregated_edges.length + ' inter-site links · ' +
+          fullSummaryText;
+      } else { el.textContent = fullSummaryText; }
+    };
 
     // The ICON is the device role; COLOR/BORDER is operational state —
     // never shape alone (PR-043.1 stencil framework).
@@ -186,6 +202,20 @@
           'border-width': 0
         }},
         { selector: 'node[kind = "observed"]', style: { 'opacity': 0.85 }},
+        // PR-050 (SKYLINE): a site is a PLACE on the diagram -- larger
+        // glyph, bolder nameplate. Aggregated links always carry their
+        // count; the constituent links are one double-click away.
+        { selector: 'node[kind = "site"]', style: {
+          'width': 190, 'height': 132, 'font-weight': 700,
+          'background-image': 'data(stencil)',
+          // fit alone decides the size: mixing fit with %-sizing made
+          // cytoscape fall back to the image's intrinsic pixels, and a
+          // 640x512 SVG in a 190x132 node showed one corner of a cloud.
+          'background-fit': 'contain',
+          'background-clip': 'none',
+          'text-valign': 'bottom', 'text-halign': 'center',
+          'text-margin-y': 2
+        }},
         // State ring: a rounded halo around the icon, only when it means
         // something. `background-opacity` stays 0 so the ring frames the
         // picture rather than boxing it.
@@ -213,6 +243,24 @@
         { selector: 'edge[relationship = "layer-3"]', style: { 'line-style': 'dashed', 'line-color': '#7dd3fc' }},
         { selector: 'edge[relationship = "inferred"]', style: { 'line-style': 'dotted', 'line-color': '#e2e8f0' }},
         { selector: 'edge[relationship = "unknown"]', style: { 'line-style': 'dotted', 'line-color': '#eef2f7' }},
+
+        // PR-050: aggregate styling comes AFTER the relationship rules on
+        // purpose -- a folded link keeps its own confident look.
+        { selector: 'edge[kind = "aggregate"]', style: {
+          'label': 'data(display_label)', 'font-size': 13, 'font-weight': 600,
+          'color': '#1e293b', 'text-background-color': '#ffffff',
+          'text-background-opacity': 1, 'text-background-padding': 5,
+          'text-background-shape': 'round-rectangle',
+          'text-border-color': '#c7d2fe', 'text-border-width': 1,
+          'text-border-opacity': 1,
+          'curve-style': 'bezier', 'control-point-step-size': 60,
+          'width': 3, 'line-color': '#818cf8', 'line-style': 'solid',
+          'target-arrow-shape': 'none'
+        }},
+        { selector: 'edge[kind = "aggregate"][relationship = "physical"]',
+          style: { 'line-color': '#4f46e5', 'width': 3.6 }},
+        { selector: 'edge[kind = "aggregate"][relationship = "unknown"]',
+          style: { 'line-color': '#c7d2fe', 'line-style': 'dashed', 'width': 2.4 }},
 
         // Hover lift (#5): the focused device grows and its links brighten;
         // everything else fades so the neighbourhood stands out.
@@ -257,6 +305,20 @@
     // disk (file://), it is not.
     const servedByAtlas = /^https?:$/.test(window.location.protocol);
     const nodeDetails = data => {
+      if (data.kind === 'site') {
+        const roles = Object.entries(data.roles || {})
+          .map(([role, count]) => `${escapeHtml(role)}: ${count}`).join(', ');
+        const isOpen = expandedSites.has(data.site_id);
+        return `
+      <h2>${escapeHtml(data.label)}</h2>
+      <div class="field"><strong>Site</strong>${data.count} devices</div>
+      <div class="field"><strong>Roles</strong>${roles || 'none'}</div>
+      <div class="field"><strong>Membership evidence</strong>${escapeHtml(data.evidence || '')}</div>
+      <div class="node-actions">
+        <button class="node-action node-action-primary" type="button"
+                onclick="toggleSite('${escapeHtml(data.site_id)}')">${isOpen ? 'Collapse site' : 'Open site'}</button>
+      </div>`;
+      }
       const unresolved = data.kind === 'observed';
       const heading = unresolved && (data.observation === 'routing-adjacency' || data.observation === 'protocol-peer')
         ? 'Unknown router' : data.label;
@@ -379,6 +441,34 @@
 
     // PR-043.7 (FUSION): clicking any relationship explains WHY Atlas
     // created it, WHICH evidence supports it, and WHAT confidence it has.
+    const aggregateDetails = data => {
+      const siteName = id => {
+        const s = (siteView.sites || []).find(x => x.id === id);
+        return s ? s.label : id.replace(/^site:/, '');
+      };
+      const nodeLabel = id => {
+        const n = topologyElements.nodes.find(x => x.data.id === id);
+        return n ? n.data.label : id;
+      };
+      const rows = (data.members || []).map(mid => {
+        const e = topologyElements.edges.find(x => x.data.id === mid);
+        if (!e) { return ''; }
+        return `<li>${escapeHtml(nodeLabel(e.data.source))} &harr; ` +
+               `${escapeHtml(nodeLabel(e.data.target))} ` +
+               `<span style="color:#64748b">(${escapeHtml(e.data.relationship || 'unknown')})</span></li>`;
+      }).join('');
+      return `
+      <h2>${escapeHtml(siteName(data.source))} &harr; ${escapeHtml(siteName(data.target))}</h2>
+      <div class="field"><strong>Folded links</strong>${data.count}</div>
+      <div class="field"><strong>Strongest relationship</strong>${escapeHtml(data.relationship || 'unknown')}</div>
+      <div class="field"><strong>The links inside</strong>
+        <ul style="margin:6px 0 0;padding-left:18px;font-size:13px;">${rows}</ul>
+      </div>
+      <p style="font-size:13px;color:#475569;">An aggregated link folds every
+      connection between these two sites into one line. Open either site to
+      see the individual links; each keeps its own evidence.</p>`;
+    };
+
     const edgeDetails = data => {
       const label = id => {
         const node = cy.getElementById(id);
@@ -419,7 +509,11 @@
       details.innerHTML = nodeDetails(event.target.data());
       hydrateAccessActions();
     });
-    cy.on('tap', 'edge', event => { details.innerHTML = edgeDetails(event.target.data()); });
+    cy.on('tap', 'edge', event => {
+      const data = event.target.data();
+      details.innerHTML = data.kind === 'aggregate'
+        ? aggregateDetails(data) : edgeDetails(data);
+    });
 
     // Right-click a device: the same universal actions, where the pointer
     // already is (PR-048A). The menu is built from the SAME resolution the
@@ -449,7 +543,7 @@
     cy.on('cxttap', 'node', async event => {
       if (!servedByAtlas) { return; }
       const data = event.target.data();
-      if (data.kind === 'observed') { return; }   // nothing to open on a peer
+      if (data.kind === 'observed' || data.kind === 'site') { return; }
       const id = encodeURIComponent(data.id);
       const pos = event.renderedPosition ||
                   (event.originalEvent && { x: event.originalEvent.offsetX, y: event.originalEvent.offsetY }) ||
@@ -523,16 +617,159 @@
         const size = Math.min(LABEL_MODEL_CAP,
                               Math.max(LABEL_PX, LABEL_MIN_EFFECTIVE / zoom));
         cy.nodes().style('font-size', size);
+        cy.nodes('[kind = "site"]').style('font-size',
+          Math.min(LABEL_MODEL_CAP + 10, size * 1.45));
       }, 50);
     };
     cy.on('zoom', syncLabelsToZoom);
     cy.ready(syncLabelsToZoom);
     syncLabelsToZoom();
 
+
+    // ---- PR-050 (SKYLINE): the site level ------------------------------
+    //
+    // Membership and aggregation were computed by the renderer from the
+    // Site Catalog's inference -- this script only decides what is visible.
+    // Default: every site closed (the skyline). Double-click opens a site in
+    // place while the others stay closed; View -> Full topology is the whole
+    // estate, exactly the pre-SKYLINE map.
+    const siteView = __SITE_VIEW__;
+    const sitesEnabled = (siteView.sites || []).length >= 2;
+    const expandedSites = new Set();
+    const viewSelect = document.getElementById('view-mode');
+
+    function siteElements() {
+      const memberOf = siteView.membership;
+      const visible = topologyElements.nodes.filter(
+        n => expandedSites.has(memberOf[n.data.id]));
+      const visibleIds = new Set(visible.map(n => n.data.id));
+      const els = visible.map(n => ({ data: { ...n.data } }));
+      for (const site of siteView.sites) {
+        if (!expandedSites.has(site.site_id)) {
+          els.push({ data: { ...site, accent: '#4f46e5', role_label: 'Site' } });
+        }
+      }
+      const stubs = new Map();   // member<->closed-site links, deduplicated
+      for (const e of topologyElements.edges) {
+        const a = e.data.source, b = e.data.target;
+        if (visibleIds.has(a) && visibleIds.has(b)) {
+          els.push({ data: { ...e.data } });
+        } else if (visibleIds.has(a) || visibleIds.has(b)) {
+          const inside = visibleIds.has(a) ? a : b;
+          const outside = visibleIds.has(a) ? b : a;
+          const siteId = memberOf[outside];
+          if (!siteId || expandedSites.has(siteId)) { continue; }
+          const key = inside + '~' + siteId;
+          const stub = stubs.get(key) ||
+            { id: 'stub:' + key, source: inside, target: 'site:' + siteId,
+              kind: 'aggregate', relationship: e.data.relationship, count: 0 };
+          stub.count += 1;
+          stub.display_label = stub.count + ' link' + (stub.count === 1 ? '' : 's');
+          stubs.set(key, stub);
+        }
+      }
+      for (const stub of stubs.values()) { els.push({ data: stub }); }
+      for (const agg of siteView.aggregated_edges) {
+        const sa = agg.source.slice(5), sb = agg.target.slice(5);
+        if (!expandedSites.has(sa) && !expandedSites.has(sb)) {
+          els.push({ data: { ...agg, kind: 'aggregate' } });
+        }
+      }
+      return els;
+    }
+
+    function rebuildView() {
+      const full = !sitesEnabled || (viewSelect && viewSelect.value === 'full');
+      cy.elements().remove();
+      cy.add(full ? [...topologyElements.nodes, ...topologyElements.edges]
+                  : siteElements());
+      // The skyline is a WAN diagram, not a hierarchy: clouds on a ring with
+      // the mesh visible between them. Once a site is opened, an organic
+      // force layout keeps its devices clustered beside the closed clouds.
+      let chosen;
+      if (full) {
+        chosen = LAYOUTS[(layoutSelect && layoutSelect.value) || 'tiered']
+          || LAYOUTS.tiered;
+      } else if (expandedSites.size === 0) {
+        const siteIds = (siteView.sites || []).map(s => s.id);
+        const degree = Object.fromEntries(siteIds.map(id => [id, 0]));
+        for (const agg of siteView.aggregated_edges) {
+          if (agg.source in degree) { degree[agg.source] += 1; }
+          if (agg.target in degree) { degree[agg.target] += 1; }
+        }
+        // The centre of a WAN diagram is the shared estate, not a city.
+        // "No site evidence" (core, WAN, unassigned) sits in the middle when
+        // it exists; otherwise the strictly-highest-degree site does. In a
+        // full mesh every city ties on degree -- and a tie centres nobody,
+        // because promoting one city over its equals would be a guess.
+        const most = Math.max(1, ...Object.values(degree));
+        const atMost = Object.keys(degree).filter(id => degree[id] === most);
+        const centre = siteIds.includes('site:__none__')
+          ? 'site:__none__'
+          : (atMost.length === 1 ? atMost[0] : null);
+        chosen = { name: 'concentric', animate: false, fit: true, padding: 90,
+                   minNodeSpacing: 110, startAngle: Math.PI / 2,
+                   concentric: n => (centre && n.id() === centre) ? 2 : 1,
+                   levelWidth: () => 1 };
+      } else {
+        chosen = { name: 'cose', animate: false, fit: true, padding: 60,
+                   idealEdgeLength: 130, nodeRepulsion: 20000,
+                   nodeOverlap: 30, gravity: 0.25, componentSpacing: 140 };
+      }
+      cy.layout(chosen).run();
+      syncLabelsToZoom();
+      if (window.syncSummary) {
+        window.syncSummary(!full && expandedSites.size === 0);
+      }
+    }
+
+    window.toggleSite = siteId => {
+      if (expandedSites.has(siteId)) { expandedSites.delete(siteId); }
+      else { expandedSites.add(siteId); }
+      rebuildView();
+    };
+
+    if (sitesEnabled) {
+      document.getElementById('view-label').style.display = '';
+      document.getElementById('legend-site').style.display = '';
+      viewSelect.addEventListener('change', rebuildView);
+      cy.on('dbltap', 'node[kind = "site"]',
+            event => window.toggleSite(event.target.data('site_id')));
+      // Search must never miss a device just because its site is closed:
+      // a match inside a closed site opens that site first.
+      const searchBox = document.getElementById('search');
+      if (searchBox) {
+        searchBox.addEventListener('input', () => {
+          if (viewSelect.value === 'full') { return; }
+          const query = searchBox.value.trim().toLowerCase();
+          if (query.length < 2) { return; }
+          let opened = false;
+          for (const n of topologyElements.nodes) {
+            const hay = (n.data.label + ' ' + (n.data.management_ip || '') +
+                         ' ' + (n.data.platform || '')).toLowerCase();
+            const siteId = siteView.membership[n.data.id];
+            if (hay.includes(query) && siteId && !expandedSites.has(siteId)) {
+              expandedSites.add(siteId); opened = true;
+            }
+          }
+          if (opened) { rebuildView(); }
+        });
+      }
+      // Deep link: ?site=<id> opens one site on arrival.
+      const wanted = new URLSearchParams(window.location.search).get('site');
+      if (wanted && siteView.sites.some(s => s.site_id === wanted)) {
+        expandedSites.add(wanted);
+      }
+      rebuildView();
+    }
+
     // Reachable from the console for debugging and driveable UI tests.
     window.cy = cy;
     cy.on('mouseover', 'node', event => {
-      tooltip.textContent = `${event.target.data('label')} · ${event.target.data('management_ip')}`;
+      const hovered = event.target.data();
+      tooltip.textContent = hovered.kind === 'site'
+        ? `${hovered.label} · ${hovered.count} devices · double-click to open`
+        : `${hovered.label} · ${hovered.management_ip}`;
       tooltip.style.display = 'block';
       // Hover lift (#5): grow the focused device, brighten its links, and
       // fade everything else so its neighbourhood stands out.

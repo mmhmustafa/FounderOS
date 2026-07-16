@@ -62,6 +62,7 @@ class TopologyRenderer:
         snapshot: TopologySnapshot,
         change_report: Any | None = None,
         viewer_context: Mapping[str, Any] | None = None,
+        site_catalog: Any | None = None,
     ) -> None:
         if not isinstance(snapshot, TopologySnapshot):
             raise TypeError("snapshot must be a TopologySnapshot")
@@ -70,6 +71,9 @@ class TopologyRenderer:
         self._snapshot = snapshot
         self._change = _change_highlights(change_report)
         self._context = dict(viewer_context or {})
+        # Injectable for tests and callers with their own catalog; None means
+        # the operator's workspace catalog.
+        self._site_catalog = site_catalog
 
     def elements(self) -> dict[str, list[dict[str, Any]]]:
         """Return deterministic Cytoscape nodes and edges without rendering HTML.
@@ -442,6 +446,126 @@ class TopologyRenderer:
         )
         return counts
 
+
+    def site_view(self, elements) -> dict:
+        """The site level of the map (PR-050, SKYLINE).
+
+        Membership comes from the site-inference engine over the operator's
+        Site Catalog -- multi-signal, honest about unknown -- never from this
+        module re-parsing hostnames. Devices without site evidence go into an
+        explicit "No site evidence" group; unresolved peers travel with the
+        site that observed them. Aggregated inter-site edges carry their
+        constituent edge ids and the STRONGEST relationship present, so
+        nothing is hidden -- only folded.
+        """
+
+        from founderos_atlas.sites import SiteCatalogRepository
+        from founderos_atlas.sites.inference import SiteInferenceEngine
+
+        catalog = self._site_catalog
+        if catalog is None:
+            try:
+                catalog = SiteCatalogRepository().load()
+            except Exception:  # noqa: BLE001 - no catalog is a state, not an error
+                catalog = None
+        if catalog is None or not catalog.sites:
+            return {"sites": [], "membership": {}, "aggregated_edges": []}
+        engine = SiteInferenceEngine(catalog)
+        names = {site.site_id: site.name for site in catalog.sites}
+
+        membership: dict[str, str] = {}
+        for node in elements["nodes"]:
+            data = node["data"]
+            if data.get("kind") == "observed":
+                continue
+            verdict = engine.assign(
+                hostname=data.get("hostname"),
+                management_ips=tuple(
+                    ip for ip in (data.get("management_ip"),)
+                    if ip and ip != "Unknown"
+                ),
+                device_ids=(data.get("id"),),
+            )
+            membership[data["id"]] = (
+                verdict.site_id
+                if verdict.status == "assigned" and verdict.site_id
+                else "__none__"
+            )
+        # An unresolved peer belongs where it was seen: the site of the first
+        # discovered device that observed it.
+        for edge in elements["edges"]:
+            data = edge["data"]
+            for observed, seen_by in ((data["target"], data["source"]),
+                                      (data["source"], data["target"])):
+                if observed.startswith("observed:") and observed not in membership:
+                    owner = membership.get(seen_by)
+                    if owner:
+                        membership[observed] = owner
+
+        by_site: dict[str, list] = {}
+        for node in elements["nodes"]:
+            site_id = membership.get(node["data"]["id"])
+            if site_id:
+                by_site.setdefault(site_id, []).append(node["data"])
+        if set(by_site) <= {"__none__"}:
+            return {"sites": [], "membership": {}, "aggregated_edges": []}
+
+        sites = []
+        for site_id, members in sorted(by_site.items()):
+            label = names.get(site_id, "No site evidence")
+            roles: dict[str, int] = {}
+            for member in members:
+                role = str(member.get("role") or "unknown")
+                roles[role] = roles.get(role, 0) + 1
+            sites.append({
+                "id": "site:" + site_id,
+                "site_id": site_id,
+                "label": label,
+                "display_label": label + chr(10) + str(len(members)) + " devices",
+                "count": len(members),
+                "roles": dict(sorted(roles.items())),
+                "stencil": stencil_data_uri("site"),
+                "kind": "site",
+                "evidence": (
+                    "membership from the Site Catalog via multi-signal "
+                    "inference (hostname convention, explicit assignment, "
+                    "subnet corroboration)"
+                    if site_id != "__none__" else
+                    "no assigning site signal was observed for these devices"
+                ),
+            })
+
+        strength = {"physical": 4, "verified-routed": 3,
+                    "routing-adjacency": 2, "protocol-peer": 1, "unknown": 0}
+        aggregates: dict = {}
+        for edge in elements["edges"]:
+            data = edge["data"]
+            a = membership.get(data["source"])
+            b = membership.get(data["target"])
+            if not a or not b or a == b:
+                continue
+            key = tuple(sorted((a, b)))
+            entry = aggregates.setdefault(key, {
+                "id": "agg:" + key[0] + "~" + key[1],
+                "source": "site:" + key[0], "target": "site:" + key[1],
+                "count": 0, "relationship": "unknown", "members": [],
+            })
+            entry["count"] += 1
+            entry["members"].append(data["id"])
+            kind = str(data.get("relationship") or "unknown")
+            if strength.get(kind, 0) > strength.get(entry["relationship"], 0):
+                entry["relationship"] = kind
+        for entry in aggregates.values():
+            plural = "s" if entry["count"] != 1 else ""
+            entry["display_label"] = str(entry["count"]) + " link" + plural
+            entry["members"] = sorted(entry["members"])
+
+        return {
+            "sites": sites,
+            "membership": membership,
+            "aggregated_edges": [aggregates[k] for k in sorted(aggregates)],
+        }
+
     def render(self) -> str:
         template_path = Path(__file__).resolve().parent / "templates" / "topology.html"
         template = template_path.read_text(encoding="utf-8")
@@ -455,9 +579,12 @@ class TopologyRenderer:
                 **self.relationship_summary(),
             }
         )
+        site_json = _script_json(self.site_view(self.elements()))
         return template.replace("__CYTOSCAPE_CDN__", CYTOSCAPE_CDN).replace(
             "__TOPOLOGY_ELEMENTS__", elements_json
-        ).replace("__SNAPSHOT_SUMMARY__", summary_json)
+        ).replace("__SNAPSHOT_SUMMARY__", summary_json).replace(
+            "__SITE_VIEW__", site_json
+        )
 
 
 def _change_highlights(change_report: Any | None) -> dict[str, Any] | None:

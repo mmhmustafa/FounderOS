@@ -226,6 +226,12 @@ def _build() -> dict[str, str]:
 
 STENCILS: dict[str, str] = _build()
 
+# PR-050 (SKYLINE): a SITE is a place on the network diagram, not a literal
+# box. The glyph is a campus outline sheltering three linked device dots --
+# the same icon-plus-nameplate language as every device stencil. Standalone
+# SVG: it needs none of the per-role helpers.
+STENCILS["site"] = '<svg xmlns="http://www.w3.org/2000/svg" width="180" height="144" viewBox="0 0 640 512"><defs><linearGradient id="scg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#dbe4ff"/></linearGradient></defs><ellipse cx="320" cy="488" rx="230" ry="22" fill="#0f172a" opacity="0.08"/><path d="M0 336c0 79.5 64.5 144 144 144H512c70.7 0 128-57.3 128-128c0-61.9-44-113.6-102.4-125.4c4.1-10.7 6.4-22.4 6.4-34.6c0-53-43-96-96-96c-19.7 0-38.1 6-53.3 16.2C367 64.2 315.3 32 256 32C167.6 32 96 103.6 96 192c0 2.7 .1 5.4 .2 8.1C40.2 219.8 0 273.2 0 336z" fill="url(#scg)" stroke="#4f46e5" stroke-width="22" stroke-linejoin="round"/><circle cx="236" cy="330" r="30" fill="#4f46e5"/><circle cx="404" cy="330" r="30" fill="#4f46e5"/><circle cx="320" cy="240" r="30" fill="#818cf8"/><path d="M266 330 L374 330 M252 306 L300 262 M388 306 L340 262" stroke="#4338ca" stroke-width="12" stroke-linecap="round"/></svg>'
+
 
 def stencil_svg(role: str) -> str:
     """The SVG markup for a role (unknown when the role is unmapped)."""
@@ -242,4 +248,6 @@ def stencil_data_uri(role: str) -> str:
 def role_accent(role: str) -> str:
     """The role's accent colour, for legends and chips."""
 
+    if role == "site":
+        return "#4f46e5"
     return _PALETTE.get(role, _PALETTE[ROLE_UNKNOWN])[0]

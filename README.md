@@ -242,3 +242,69 @@ Enterprise Networking SaaS
 8. CEO Review
 
 This lifecycle is the intended product direction; the modules are not implemented yet.
+
+## Sites on the Topology (how grouping works, and how to set it up)
+
+The topology opens at the **site level**: one cloud per site, with all links
+between two sites folded into a single counted line. Double-click a cloud to
+open that site in place; **View → Full topology** shows every device.
+
+### How Atlas decides which site a device belongs to
+
+Grouping is never guessed from the picture — it comes from the **Site
+Catalog** plus multi-signal inference, per device:
+
+| Signal | Effect |
+|---|---|
+| **Explicit assignment** — the device's hostname or device-id is listed on a site | Decisive. Highest confidence. Beats everything else. |
+| **Hostname pattern** — the hostname matches a site's glob (e.g. `delhi-*`) | Assigning. One matching signal = low confidence, two agreeing = medium. |
+| **Seed origin** — the discovery profile that found the device carries a site hint | Assigning (weak). Same voting rules as hostname patterns. |
+| **Subnet (CIDR)** — the management IP falls inside a site's declared range | **Corroborating only.** Raises confidence one step; never assigns by itself, because one supernet can span many sites. |
+
+If assigning signals **disagree**, the device is *ambiguous*; if there are
+none, it is *unknown*. Both land in the **"No site evidence"** cloud — shown
+honestly, never guessed into a region. Unresolved peers travel with the site
+that observed them.
+
+### What to do on a real network
+
+1. **Define your sites** in the catalog: `~/.atlas/workspace/sites.json`
+   (there is no GUI editor yet). One entry per site:
+
+   ```json
+   {
+     "schema_version": "1.0.0",
+     "sites": [
+       {
+         "site_id": "delhi",
+         "name": "Delhi",
+         "hostname_patterns": ["delhi-*", "del-*"],
+         "cidrs": ["10.20.0.0/16"],
+         "explicit_hostnames": [],
+         "explicit_device_ids": []
+       }
+     ]
+   }
+   ```
+
+2. **Lean on your naming convention.** If devices are named
+   `<site>-<role><n>` (e.g. `delhi-core`, `mum-sw1`), one glob per site is
+   all you need. This is the highest-leverage step.
+3. **Add each site's management subnet** under `cidrs` — it corroborates the
+   hostname signal and lifts confidence.
+4. **Pin the stragglers explicitly.** A device that defies the naming
+   convention (an appliance named `fw01`) goes in `explicit_hostnames` —
+   explicit beats everything and is the escape hatch for any wrong grouping.
+5. **Set the site hint on discovery profiles** (profile → Site hint) when a
+   profile only ever discovers one location — useful before a naming
+   convention exists.
+6. **Re-run discovery** (or regenerate the topology) — membership is
+   recomputed from the catalog at render time, so catalog edits apply to the
+   next render without re-discovering.
+
+Sanity checks: the topology header shows `N sites · M inter-site links …`;
+clicking a cloud shows its membership evidence; anything in **"No site
+evidence"** is a device none of your signals matched — fix it with a pattern
+or an explicit assignment rather than ignoring it. The site view appears only
+when the catalog yields at least two groups; with no catalog, the topology
+behaves exactly as before.
