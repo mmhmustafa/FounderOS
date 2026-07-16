@@ -15,7 +15,7 @@ from .base import DEFAULT_PROBE_COMMAND, PlatformDriver
 
 # Platforms Atlas knows about but does not drive yet — named honestly in
 # the unsupported-platform message so engineers know the roadmap.
-FUTURE_PLATFORMS = ("Cisco NX-OS", "Junos", "Arista EOS", "FortiOS", "PAN-OS")
+FUTURE_PLATFORMS = ("FortiOS", "PAN-OS", "Aruba CX")
 
 
 class UnsupportedPlatformError(AtlasDiscoveryError):
@@ -58,6 +58,79 @@ class PlatformRegistry:
                 return driver_cls()
         return None
 
+    def driver_for(self, platform_id: str) -> PlatformDriver | None:
+        """The driver an operator override names, by platform id (Part 4)."""
+
+        for driver_cls in self._drivers:
+            if getattr(driver_cls, "platform_id", None) == platform_id:
+                return driver_cls()
+        return None
+
+    def identify(self, probe_output: str, *, override: str | None = None):
+        """Detection with its reasoning attached (PR-049, Part 4).
+
+        Deterministic: matchers run in registration order; the first match
+        wins exactly as ``detect`` decides, and every OTHER accepting matcher
+        is reported as an alternative rather than silently discarded. The
+        confidence is fixed by evidence kind (never a guess): a unique match
+        scores 0.9, a contested one 0.6, an operator override 0.95 — all
+        under Atlas's 0.95 cap.
+
+        ``override`` is the operator saying "I know what this is". It selects
+        the driver but never erases what detection actually saw.
+        """
+
+        from .capabilities import DetectionResult
+
+        text = probe_output or ""
+        matched = [cls for cls in self._drivers if cls.matches(text)]
+        first_line = next(
+            (line.strip() for line in text.splitlines() if line.strip()), ""
+        )
+        if override:
+            chosen = self.driver_for(override)
+            if chosen is None:
+                return DetectionResult(
+                    platform_id=None, driver=None, confidence=0.0,
+                    evidence=(f"probe replied: {first_line[:100]!r}",),
+                    alternatives=tuple(c.platform_id for c in matched),
+                    reason=f"operator override {override!r} names no registered driver",
+                    overridden=True,
+                )
+            return DetectionResult(
+                platform_id=chosen.platform_id,
+                driver=type(chosen).__name__,
+                confidence=0.95,
+                evidence=(f"operator override: {override}",
+                          f"probe replied: {first_line[:100]!r}"),
+                alternatives=tuple(
+                    c.platform_id for c in matched
+                    if c.platform_id != chosen.platform_id
+                ),
+                reason="operator override",
+                overridden=True,
+            )
+        if not matched:
+            return DetectionResult(
+                platform_id=None, driver=None, confidence=0.0,
+                evidence=(f"probe replied: {first_line[:100]!r}",),
+                reason="no registered matcher accepted the probe output",
+            )
+        winner = matched[0]
+        others = tuple(c.platform_id for c in matched[1:])
+        return DetectionResult(
+            platform_id=winner.platform_id,
+            driver=winner.__name__,
+            confidence=0.9 if not others else 0.6,
+            evidence=(f"probe replied: {first_line[:100]!r}",
+                      f"matcher: {winner.__name__}"),
+            alternatives=others,
+            reason=(
+                "single matcher accepted the probe" if not others else
+                "first of several accepting matchers (registration order)"
+            ),
+        )
+
     def unsupported_message(self, probe_output: str) -> str:
         """The honest, actionable message for an unrecognized platform."""
 
@@ -84,10 +157,22 @@ def default_registry() -> PlatformRegistry:
     from .drivers.atlaslab_firewall import AtlasLabFirewallDriver
     from .drivers.atlaslab_switch import AtlasLabSwitchDriver
     from .drivers.ios import CiscoIOSDriver
+    from .drivers.ios_xe import CiscoIOSXEDriver
+    from .drivers.nxos import CiscoNXOSDriver
+    from .drivers.eos import AristaEOSDriver
+    from .drivers.junos import JunosDriver
     from .drivers.frr import FRRoutingDriver
 
     registry = PlatformRegistry()
+    # PR-049: IOS-XE before legacy IOS. Both matchers accept an IOS-XE probe
+    # ("Cisco IOS XE Software" also contains "Cisco IOS Software" on the next
+    # line), so order decides: XE devices get the production plan, classic
+    # IOS keeps its proven minimal one.
+    registry.register(CiscoIOSXEDriver)
     registry.register(CiscoIOSDriver)
+    registry.register(CiscoNXOSDriver)
+    registry.register(AristaEOSDriver)
+    registry.register(JunosDriver)
     registry.register(FRRoutingDriver)
     # PR-048: the AtlasLab platforms answer the same probe. Their matchers are
     # disjoint from the two above (a device says "AtlasLab firewall" or

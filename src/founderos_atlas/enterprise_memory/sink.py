@@ -27,7 +27,16 @@ from .store import EnterpriseMemoryStore
 
 # Commands whose output IS the running configuration, across platforms.
 _RUNNING_CONFIG_COMMANDS = frozenset(
-    {"show running-config", "show running-config all", "show run"}
+    {
+        "show running-config",
+        "show running-config all",
+        "show run",
+        # Junos: the complete configuration, in stable set-style form (one
+        # deterministic line per statement -- the hierarchy is preserved as
+        # paths, not flattened away). PR-049.
+        "show configuration | display set",
+        "show configuration",
+    }
 )
 
 

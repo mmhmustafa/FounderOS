@@ -151,7 +151,13 @@ class DetectionAndRegistryTests(unittest.TestCase):
         # the same probe — detection still costs exactly one command.
         self.assertEqual(
             (
+                # PR-049: IOS-XE before legacy IOS -- both matchers accept an
+                # XE probe, so order decides which plan an XE device gets.
+                "Cisco IOS-XE",
                 "Cisco IOS / IOS-XE",
+                "Cisco NX-OS",
+                "Arista EOS",
+                "Juniper Junos",
                 "FRRouting",
                 "AtlasLab firewall",
                 "AtlasLab switch",
@@ -166,7 +172,9 @@ class DetectionAndRegistryTests(unittest.TestCase):
         self.assertIn("Platform detected: Unknown", message)
         self.assertIn("Cisco IOS / IOS-XE", message)
         self.assertIn("FRRouting", message)
-        self.assertIn("Junos", message)  # the honest future roadmap
+        # PR-049 made NX-OS/EOS/Junos real drivers; the honest future
+        # roadmap is now Wave 2.
+        self.assertIn("PAN-OS", message)
         self.assertIn("JUNOS 21.4R1.12", message)  # WHY: what the probe said
 
     def test_registry_is_extensible_without_touching_discovery(self) -> None:

@@ -194,8 +194,11 @@ class SSHDeviceTransportTests(unittest.TestCase):
         self.assertTrue(connection.disconnected)
 
     def test_unsupported_device_type_is_rejected_locally(self) -> None:
+        # juniper_junos was the example here until PR-049 made it real; the
+        # principle is unchanged — an unknown personality is refused before
+        # any network I/O, with the supported list in the message.
         with self.assertRaises(UnsupportedPlatformError):
-            SSHDeviceTransport(make_credentials(), device_type="juniper_junos")
+            SSHDeviceTransport(make_credentials(), device_type="vax_vms")
 
     @unittest.skipUnless(
         importlib.util.find_spec("netmiko") is None, "netmiko is installed"
