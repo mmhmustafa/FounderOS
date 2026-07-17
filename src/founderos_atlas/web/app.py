@@ -7,10 +7,19 @@ runs the same in-process backend services the CLI uses (never a subprocess).
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
+from founderos_atlas.console import (
+    ConsoleAuditLog,
+    ConsoleSessionManager,
+    ConsoleTokenStore,
+    DEFAULT_IDLE_TIMEOUT_SECONDS,
+    DEFAULT_MAX_CONCURRENT,
+    DEFAULT_MAX_DURATION_SECONDS,
+)
 from founderos_atlas.transport import DeviceTransport
 from founderos_atlas.workspace import (
     ProfileService,
@@ -20,7 +29,7 @@ from founderos_atlas.workspace import (
 )
 
 from .jobs import DiscoveryJobManager
-from .models import format_timestamp
+from .timefmt import AUTO
 from .routes import make_pipeline_runner, register_routes
 
 
@@ -88,13 +97,62 @@ def create_app(
         ATLAS_TRANSPORT_FACTORY=transport_factory,
         ATLAS_CLOCK=clock,
         ATLAS_HOST=DEFAULT_HOST,
+        # Display only. Every stored timestamp stays UTC; this decides the
+        # zone the GUI renders them in. "auto" = the local operator's own
+        # system clock; "UTC" or an IANA name (e.g. "Asia/Kolkata")
+        # overrides it — NOC teams often standardise on UTC to correlate
+        # against device syslog.
+        ATLAS_DISPLAY_TIMEZONE=os.environ.get("ATLAS_DISPLAY_TIMEZONE", AUTO),
+    )
+
+    # PR-044A (CONSOLE). Interactive SSH is the one place the GUI stops being
+    # read-only, so its limits are explicit and its origin rule is strict.
+    app.config.update(
+        ATLAS_CONSOLE_TOKENS=ConsoleTokenStore(clock=clock),
+        ATLAS_CONSOLE_SESSIONS=ConsoleSessionManager(
+            audit=ConsoleAuditLog(resolved_output / ".atlas" / "console-audit.jsonl"),
+            idle_timeout_seconds=int(
+                os.environ.get(
+                    "ATLAS_CONSOLE_IDLE_TIMEOUT", DEFAULT_IDLE_TIMEOUT_SECONDS
+                )
+            ),
+            max_duration_seconds=int(
+                os.environ.get(
+                    "ATLAS_CONSOLE_MAX_DURATION", DEFAULT_MAX_DURATION_SECONDS
+                )
+            ),
+            max_concurrent=int(
+                os.environ.get("ATLAS_CONSOLE_MAX_SESSIONS", DEFAULT_MAX_CONCURRENT)
+            ),
+            clock=clock,
+        ),
+        ATLAS_CONSOLE_CONNECT_TIMEOUT=float(
+            os.environ.get("ATLAS_CONSOLE_CONNECT_TIMEOUT", 10.0)
+        ),
+        # Extra Origins the console WebSocket will accept. The GUI's own
+        # address is always allowed; this exists for a reverse proxy, and
+        # should stay empty otherwise. Never set it to "*" — a WebSocket has
+        # no CORS to fall back on.
+        ATLAS_CONSOLE_ALLOWED_ORIGINS=tuple(
+            item.strip()
+            for item in os.environ.get("ATLAS_CONSOLE_ALLOWED_ORIGINS", "").split(",")
+            if item.strip()
+        ),
     )
     app.secret_key = "atlas-local-alpha"  # only used for flash messages, local-only
 
-    # Shared formatting: `{{ value | timestamp }}` renders any ISO-8601
-    # timestamp in the standard Atlas display format; non-ISO values pass
-    # through unchanged (see templates/_fmt.html for the tooltip macro).
-    app.add_template_filter(format_timestamp, "timestamp")
+    # Shared formatting: `{{ value | timestamp }}` renders any stored UTC
+    # ISO-8601 timestamp in the operator's display timezone (see timefmt);
+    # non-timestamp values pass through unchanged. templates/_fmt.html wraps
+    # this in a <time> element that preserves the precise instant.
+    from .timefmt import format_timestamp as _format_timestamp, resolve_timezone
+
+    def _timestamp_filter(value):
+        return _format_timestamp(
+            value, tz=resolve_timezone(app.config.get("ATLAS_DISPLAY_TIMEZONE"))
+        )
+
+    app.add_template_filter(_timestamp_filter, "timestamp")
 
     if job_manager is None:
         # In-process background executor for GUI discoveries. Job history

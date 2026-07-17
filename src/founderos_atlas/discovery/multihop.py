@@ -45,7 +45,9 @@ def management_candidate(neighbor: NetworkNeighbor) -> bool:
     return neighbor.protocol in ("cdp", "lldp", "manual")
 
 
-def _discover_with_registry(transport, registry, host: str) -> DiscoveryResult:
+def _discover_with_registry(
+    transport, registry, host: str, evidence_sink=None
+) -> DiscoveryResult:
     """Detect the platform with a lightweight probe, then drive discovery.
 
     The probe output is handed to the matching driver so the detection
@@ -69,6 +71,13 @@ def _discover_with_registry(transport, registry, host: str) -> DiscoveryResult:
     discovery = driver.discover(
         transport, management_ip_hint=host, probe_output=probe_output
     )
+    if evidence_sink is not None:
+        # PR-045: persist the raw evidence this authenticated session already
+        # collected. A memory failure must never break discovery.
+        try:
+            evidence_sink(discovery.result, discovery.raw_outputs)
+        except Exception:  # noqa: BLE001
+            pass
     return discovery.result
 
 
@@ -142,6 +151,7 @@ def discover_multihop(
     on_neighbor: NeighborObserver | None = None,
     reachability=None,
     workers: int = 1,
+    evidence_sink=None,
 ) -> MultiHopDiscoveryReport:
     """Discover the seed device(s), then reachable neighbors breadth-first.
 
@@ -225,11 +235,15 @@ def discover_multihop(
                     raw_outputs = transport.execute_many(
                         resolved_adapter.required_commands
                     )
-                    return engine.discover(
-                        raw_outputs, management_ip_hint=host
-                    ), None
+                    result = engine.discover(raw_outputs, management_ip_hint=host)
+                    if evidence_sink is not None:
+                        try:
+                            evidence_sink(result, raw_outputs)
+                        except Exception:  # noqa: BLE001
+                            pass
+                    return result, None
                 return _discover_with_registry(
-                    transport, resolved_registry, host
+                    transport, resolved_registry, host, evidence_sink
                 ), None
         except (AtlasTransportError, AtlasDiscoveryError) as error:
             return None, error

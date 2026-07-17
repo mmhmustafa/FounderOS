@@ -1,0 +1,96 @@
+{#
+  The universal device action (PR-044A CONSOLE, PR-044B PORTAL, PR-044A FOCUS).
+
+  ONE implementation, rendered wherever a device appears: Topology, Device
+  Details, Timeline, Evidence, Configuration, Advisor and Investigation. No page
+  implements its own SSH or web-access logic, and no page decides for itself
+  whether an action is allowed — `target.eligible` (SSH) and `web` (HTTPS/HTTP)
+  are resolved once, from evidence, in console/resolve.py and
+  management/resolve.py.
+
+  PR-047A (decision 3): SSH and HTTPS are **actions on a device**, not product
+  capabilities of their own. They were removed from the main navigation and live
+  only here. /console and /management still work and still list every device —
+  they are simply no longer presented as things Atlas *does* alongside Topology
+  and Policy. Search results reach these actions via the device page they link
+  to.
+
+  Usage (SSH only, or with web actions):
+    from "_device_actions.html" import device_actions
+    device_actions(target)
+    device_actions(target, web=web_access(device_id=target.device_id))
+
+  `web` is a WebAccess.to_dict() (or None). HTTPS is always preferred: when a
+  verified HTTPS endpoint exists it is the primary web action, and HTTP is
+  offered only as an explicitly-labelled insecure alternative. Unavailable
+  actions are not rendered as dead buttons — the menu stays compact.
+#}
+
+{% macro device_actions(target, compact=False, show_label=True, web=None) %}
+{% if target %}
+<span class="device-actions{% if compact %} device-actions-compact{% endif %}">
+  {% if target.eligible %}
+  <a class="btn btn-sm btn-console"
+     href="/console/{{ target.device_id | urlencode }}"
+     title="Open an interactive SSH session to {{ target.hostname }} at {{ target.management_ip }}">
+    {% if show_label %}Open SSH Console{% else %}SSH{% endif %}
+  </a>
+  <button class="btn btn-sm js-copy-ssh"
+          type="button"
+          data-ssh-command="{{ target.ssh_command }}"
+          title="Copy '{{ target.ssh_command }}' — never includes a password">
+    Copy SSH Command
+  </button>
+  {% else %}
+  <span class="badge badge-muted" title="{{ target.reason }}">SSH unavailable</span>
+  {% endif %}
+
+  {# -- web management (PORTAL). HTTPS preferred; HTTP only when insecure is the only way. -- #}
+  {% if web and web.has_https %}
+  <a class="btn btn-sm btn-web js-web-open"
+     href="{{ web.https_url }}" target="_blank" rel="noopener noreferrer"
+     data-device-id="{{ target.device_id }}" data-protocol="https" data-url="{{ web.https_url }}"
+     title="Open {{ web.https_url }} in a new tab{% if web.certificate_warnings %} — certificate: {{ web.tls_summary }}{% endif %}">
+    Open HTTPS{% if web.certificate_warnings %} <span class="cert-flag" title="{{ web.certificate_warnings | join(' ') }}">⚠</span>{% endif %}
+  </a>
+  <button class="btn btn-sm js-copy-url" type="button" data-url="{{ web.https_url }}"
+          title="Copy {{ web.https_url }} — never includes a password">Copy HTTPS URL</button>
+  {% elif web and web.http_only %}
+  <button class="btn btn-sm btn-web-insecure js-web-open-insecure"
+          type="button"
+          data-device-id="{{ target.device_id }}" data-protocol="http" data-url="{{ web.http_url }}"
+          data-hostname="{{ target.hostname }}"
+          title="{{ web.http_url }} — HTTP is insecure; anything you type travels in the clear">
+    Open HTTP — Insecure
+  </button>
+  <button class="btn btn-sm js-copy-url" type="button" data-url="{{ web.http_url }}"
+          title="Copy {{ web.http_url }}">Copy HTTP URL</button>
+  {% elif web %}
+  {# Asking about web access is answered either way: a live button, or this —
+     greyed, never clickable, and carrying the reason. An empty cell would read
+     as "Atlas didn't check"; this reads as "Atlas checked, and here is why not". #}
+  <button class="btn btn-sm" type="button" disabled
+          title="{{ web.reason }}">{% if compact %}Web{% else %}Web unavailable{% endif %}</button>
+  {% endif %}
+
+  {% if not compact %}
+  {# Labels match the navigation exactly (PR-047A): the Timeline > Configuration
+     view, and the Analyze > Investigate / Predict views. An action should name
+     the place it takes you to. #}
+  <a class="btn btn-sm" href="/configuration/{{ target.device_id | urlencode }}">Configuration</a>
+  <a class="btn btn-sm" href="/paths?device={{ target.hostname | urlencode }}">Investigate</a>
+  <a class="btn btn-sm" href="/predict?device={{ target.hostname | urlencode }}">Predict</a>
+  {% endif %}
+</span>
+{% endif %}
+{% endmacro %}
+
+{#
+  The same decision, rendered as an explanation rather than a button. Use
+  where a page needs to say WHY a device cannot be opened.
+#}
+{% macro device_ssh_state(target) %}
+{% if target and not target.eligible %}
+<p class="muted">{{ target.reason }}</p>
+{% endif %}
+{% endmacro %}

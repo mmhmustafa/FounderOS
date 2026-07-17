@@ -25,6 +25,9 @@ credentials = [
 ]
 web = [
   "flask>=3,<4",
+  # PR-044A (CONSOLE): interactive SSH terminal over a WebSocket.
+  "flask-sock>=0.7,<1",
+  "paramiko>=3,<5",
 ]
 
 [project.scripts]
@@ -42,6 +45,7 @@ founderos_atlas = [
   "dashboard/templates/*.html",
   "web/templates/*.html",
   "web/static/*",
+  "web/static/vendor/*",
 ]
 
 [tool.pytest.ini_options]

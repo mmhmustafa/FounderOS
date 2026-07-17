@@ -5,10 +5,15 @@ from __future__ import annotations
 from contextlib import redirect_stdout
 from datetime import datetime, timedelta, timezone
 from io import StringIO
+import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
+from founderos_atlas.demo import run_atlas_discovery_demo
+from founderos_atlas.sites import Site, SiteCatalog, SiteCatalogRepository
+from founderos_atlas.visualization import TOPOLOGY_VISUAL_STYLE_MARKER
 from founderos_atlas.web import DEFAULT_HOST, create_app
 from founderos_atlas.workspace import (
     InMemoryCredentialProvider,
@@ -54,6 +59,7 @@ def build_client(workdir: Path, service, *, transport_factory=None, clock=None):
         history_root=workdir / "out" / ".atlas" / "history",
         transport_factory=transport_factory,
         clock=clock,
+        workspace_root=workdir / "workspace",
     )
     app.config.update(TESTING=True)
     return app, app.test_client()
@@ -78,6 +84,47 @@ class WebShellTests(unittest.TestCase):
             self.assertIn(b"Mission", body)
             self.assertIn(b"What would you like to do?", body)
             self.assertIn(b"Run Discovery", body)
+
+    def test_topology_alone_opts_into_the_wide_shell(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            _, client = build_client(Path(tmp), make_service(Path(tmp)))
+            topology = client.get("/topology").get_data(as_text=True)
+            dashboard = client.get("/").get_data(as_text=True)
+
+            self.assertIn(
+                '<main class="content content-wide content-topology"', topology
+            )
+            self.assertIn('<main class="content"', dashboard)
+            self.assertNotIn("content-topology", dashboard)
+
+    def test_topology_template_keeps_the_graph_first_and_tables_scrollable(self) -> None:
+        template = Path(
+            "src/founderos_atlas/web/templates/topology.html"
+        ).read_text(encoding="utf-8")
+
+        self.assertLess(
+            template.index('<section class="topology-stage">'),
+            template.index("<h2>Enterprise Knowledge</h2>"),
+        )
+        self.assertEqual(3, template.count('class="table-scroll'))
+        for label in (
+            'aria-label="Enterprise contributions"',
+            'aria-label="Device inventory"',
+            'aria-label="Merge decisions"',
+        ):
+            self.assertIn(label, template)
+
+    def test_shell_css_pins_crisp_surfaces_and_inherited_controls(self) -> None:
+        css = Path("src/founderos_atlas/web/static/atlas.css").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("button, input, select, textarea { font: inherit; }", css)
+        self.assertRegex(css, r"\.content-wide \{[^}]*max-width: none")
+        self.assertRegex(css, r"\.btn \{[^}]*border: 1px solid")
+        self.assertRegex(css, r"\.card \{[^}]*border: 1px solid")
+        self.assertRegex(css, r"\.topology-stage \{[^}]*border: 1px solid")
+        self.assertRegex(css, r"\.table-scroll \{[^}]*overflow-x: auto")
 
     def test_profiles_route_lists_without_password(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -142,6 +189,144 @@ class WebShellTests(unittest.TestCase):
             _, client = build_client(Path(tmp), make_service(Path(tmp)))
             for path in ("/", "/profiles", "/history", "/changes", "/topology", "/incidents"):
                 self.assertEqual(200, client.get(path).status_code, path)
+
+    def test_topology_route_rebuilds_a_missing_current_viewer_from_snapshot(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workdir = Path(tmp)
+            service = make_service(workdir)
+            profile = add_profile(service)
+            scope = workdir / "out" / ".atlas" / "profiles" / profile.profile_id
+            scope.mkdir(parents=True)
+            _, _, snapshot = run_atlas_discovery_demo()
+            (scope / "topology_snapshot.json").write_text(
+                json.dumps(snapshot.to_dict(), sort_keys=True), encoding="utf-8"
+            )
+
+            _, client = build_client(workdir, service)
+            response = client.get(f"/topology?scope={profile.profile_id}")
+
+            self.assertEqual(200, response.status_code)
+            viewer = scope / "atlas_topology.html"
+            self.assertTrue(viewer.is_file())
+            self.assertIn(
+                TOPOLOGY_VISUAL_STYLE_MARKER,
+                viewer.read_text(encoding="utf-8"),
+            )
+            self.assertIn(b"atlas_topology.html", response.data)
+            self.assertIn(b"?visual_style=", response.data)
+
+            with patch(
+                "founderos_atlas.web.routes.TopologyRenderer.render",
+                side_effect=AssertionError("current viewer should not rerender"),
+            ) as render:
+                second = client.get(f"/topology?scope={profile.profile_id}")
+            self.assertEqual(200, second.status_code)
+            render.assert_not_called()
+
+    def test_topology_curation_api_persists_conflicts_undo_and_site_types(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workdir = Path(tmp)
+            service = make_service(workdir)
+            profile = add_profile(service)
+            scope = workdir / "out" / ".atlas" / "profiles" / profile.profile_id
+            scope.mkdir(parents=True)
+            snapshot = run_atlas_discovery_demo()[2]
+            (scope / "topology_snapshot.json").write_text(
+                json.dumps(snapshot.to_dict(), sort_keys=True), encoding="utf-8"
+            )
+            SiteCatalogRepository(workdir / "workspace").save(SiteCatalog(sites=(
+                Site(site_id="alpha", name="Alpha"),
+                Site(site_id="internet", name="Internet"),
+            )))
+            device = snapshot.devices[0]
+            _app, client = build_client(workdir, service)
+            payload = {
+                "device_id": device["device_id"],
+                "hostname": device["hostname"],
+                "management_ip": device["management_ip"],
+                "serial_number": device["serial_number"],
+                "vendor": device["vendor"],
+                "site_id": "alpha",
+                "reason": "Operator verified rack location",
+                "expected_revision": 0,
+            }
+
+            assigned = client.put(
+                "/api/topology/site-assignments", json=payload
+            )
+            self.assertEqual(200, assigned.status_code, assigned.get_data(as_text=True))
+            assigned_json = assigned.get_json()
+            self.assertEqual(1, assigned_json["revision"])
+            self.assertTrue((workdir / "workspace" / "site-overrides.json").is_file())
+            self.assertTrue((workdir / "workspace" / "site-overrides.audit.jsonl").is_file())
+
+            # A completely new Flask app/client models closing and reopening
+            # the browser (and also catches process-local-only persistence).
+            _restarted_app, restarted_client = build_client(workdir, service)
+            restarted_state = restarted_client.get(
+                "/api/topology/curation"
+            ).get_json()
+            self.assertEqual(1, restarted_state["overrides"]["revision"])
+            self.assertEqual(
+                "alpha",
+                restarted_state["overrides"]["overrides"][0]["site_id"],
+            )
+            topology_page = restarted_client.get(
+                f"/topology?scope={profile.profile_id}"
+            )
+            self.assertEqual(200, topology_page.status_code)
+            self.assertIn(b"artifact_version=", topology_page.data)
+            viewer_path = scope / "atlas_topology.html"
+            viewer = viewer_path.read_text(encoding="utf-8")
+            self.assertIn("<!-- ATLAS_SITE_OVERRIDE_REVISION=1 -->", viewer)
+            self.assertIn('"source":"operator"', viewer)
+            artifact = restarted_client.get(
+                f"/artifacts/.atlas/profiles/{profile.profile_id}/atlas_topology.html"
+            )
+            self.assertEqual("no-store, max-age=0", artifact.headers["Cache-Control"])
+            artifact.close()
+
+            stale = client.put(
+                "/api/topology/site-assignments",
+                json={**payload, "site_id": "internet", "expected_revision": 0},
+            )
+            self.assertEqual(409, stale.status_code)
+
+            changed_type = client.put(
+                "/api/topology/sites/internet", json={"site_type": "internet"}
+            )
+            self.assertEqual(200, changed_type.status_code)
+            self.assertEqual(
+                "internet",
+                SiteCatalogRepository(workdir / "workspace").load()
+                .get("internet").site_type,
+            )
+
+            undone = client.post(
+                "/api/topology/site-assignments/undo",
+                json={
+                    "subject_key": assigned_json["event"]["subject_key"],
+                    "expected_revision": 1,
+                },
+            )
+            self.assertEqual(200, undone.status_code, undone.get_data(as_text=True))
+            curation = client.get("/api/topology/curation").get_json()
+            self.assertEqual(2, curation["overrides"]["revision"])
+            self.assertEqual([], curation["overrides"]["overrides"])
+            self.assertEqual(2, len(curation["history"]))
+
+            # ``Site not identified`` is the supported explicit-unassigned
+            # destination, not a catalog lookup for the internal id.
+            unidentified = client.put(
+                "/api/topology/site-assignments",
+                json={**payload, "site_id": "__none__", "expected_revision": 2},
+            )
+            self.assertEqual(
+                200, unidentified.status_code,
+                unidentified.get_data(as_text=True),
+            )
+            state = client.get("/api/topology/curation").get_json()
+            self.assertEqual("__none__", state["overrides"]["overrides"][0]["site_id"])
 
     def test_discovery_page_lists_saved_profiles(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -233,6 +418,9 @@ class WebCliCommandTests(unittest.TestCase):
                 ["atlas", "web"],
                 atlas_browser_opener=opened.append,
                 atlas_web_server_runner=runner,
+                # This test binds nothing, so it must not care whether this
+                # machine happens to have a server on 8765 (PR-047A).
+                atlas_web_port_probe=lambda host, port: False,
             )
         self.assertEqual(0, code)
         self.assertIn("http://127.0.0.1:8765", stdout.getvalue())
@@ -250,3 +438,144 @@ class WebCliCommandTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OneServerPerPortTests(unittest.TestCase):
+    """Atlas must refuse to become the second server on a port.
+
+    On Linux, binding a listening port fails with EADDRINUSE. On Windows,
+    SO_REUSEADDR — which the dev server sets by default to dodge TIME_WAIT on
+    Unix — means "steal the port" instead, so a second `atlas web` does not
+    fail. It quietly becomes a second server, and the GUI answers from
+    whichever process wins: possibly one started hours ago, running older code.
+
+    That is not a mistake an operator can avoid by being careful. Nothing
+    warns them, both servers look fine, and the symptom is a GUI that ignores
+    the change they just made. Refusing to start is the only honest option.
+    """
+
+    def _start(self, *, port=8765, probe=None, runner=None):
+        from founderos_runtime.cli.commands import atlas_web_command
+
+        return atlas_web_command(
+            host="127.0.0.1",
+            port=port,
+            port_probe=probe,
+            server_runner=runner or (lambda **kwargs: None),
+            browser_opener=lambda url: None,
+        )
+
+    def test_refuses_to_start_when_the_port_is_already_serving(self) -> None:
+        from founderos_runtime.cli.commands import CliError
+
+        with self.assertRaises(CliError) as caught:
+            self._start(probe=lambda host, port: True)
+        message = str(caught.exception)
+        self.assertIn("already serving", message)
+        # The refusal must say what to do about it, and offer a real way out.
+        self.assertIn("--port", message)
+
+    def test_starts_normally_when_the_port_is_free(self) -> None:
+        started: dict = {}
+        code, _ = self._start(
+            port=8799,
+            probe=lambda host, port: False,
+            runner=lambda **kwargs: started.update(kwargs),
+        )
+        self.assertEqual(0, code)
+        self.assertEqual({"host": "127.0.0.1", "port": 8799}, started)
+
+    def test_the_escape_hatch_the_message_offers_actually_exists(self) -> None:
+        """The refusal recommends `atlas web --port N`; that must dispatch."""
+
+        from founderos_runtime.cli.main import _parse_port_flag
+
+        self.assertEqual((8766, []), _parse_port_flag(["--port", "8766"]))
+        self.assertEqual((8766, []), _parse_port_flag(["--port=8766"]))
+        self.assertEqual((None, []), _parse_port_flag([]))
+
+    def test_a_bad_port_is_refused_rather_than_guessed(self) -> None:
+        from founderos_runtime.cli.commands import CliError
+        from founderos_runtime.cli.main import _parse_port_flag
+
+        for tokens in (["--port", "abc"], ["--port", "0"], ["--port", "99999"]):
+            with self.assertRaises(CliError):
+                _parse_port_flag(tokens)
+
+    def test_the_probe_reports_a_free_port_as_free(self) -> None:
+        from founderos_runtime.cli.commands import port_is_serving
+
+        # Nothing is bound here; the probe must not claim otherwise.
+        self.assertFalse(port_is_serving("127.0.0.1", 8798, timeout=0.2))
+
+
+class SeedRangeIsVisibleWhereTheSeedIsShownTests(unittest.TestCase):
+    """A profile created from a CIDR must not present itself as a single IP.
+
+    The wizard expands "172.20.20.0/24" into candidate addresses and seeds from
+    the first one, so every screen that showed a profile's seed showed
+    "172.20.20.1" — an address the operator never typed and cannot recognise.
+    These pin the operator's own path (the rendered pages), not just the model:
+    the range was recorded correctly well before any of these screens showed it.
+    """
+
+    def add_cidr_profile(self, service):
+        return add_profile(
+            service, name="labdab", site="Lab", management_ip="172.20.20.1",
+            seeds=["172.20.20.2", "172.20.20.3"], seed_cidr="172.20.20.0/24",
+        )
+
+    def test_discover_page_shows_the_range_in_the_table_and_the_dropdown(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            service = make_service(Path(tmp))
+            self.add_cidr_profile(service)
+            _, client = build_client(Path(tmp), service)
+            page = client.get("/discovery").data
+            # Both the Networks table and the profile <option> label.
+            self.assertEqual(2, page.count(b"172.20.20.0/24"))
+            self.assertNotIn(b"172.20.20.1", page)
+            # The column header no longer promises an IP it cannot deliver.
+            self.assertIn(b"<th>Seed</th>", page)
+
+    def test_profiles_page_shows_the_range(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            service = make_service(Path(tmp))
+            self.add_cidr_profile(service)
+            _, client = build_client(Path(tmp), service)
+            page = client.get("/profiles").data
+            self.assertIn(b"172.20.20.0/24", page)
+
+    def test_edit_form_explains_where_its_seed_address_came_from(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            service = make_service(Path(tmp))
+            self.add_cidr_profile(service)
+            _, client = build_client(Path(tmp), service)
+            form = client.get("/profiles/labdab/edit").data
+            # The field must keep the real address — it is what Atlas connects
+            # to — but say why it is not what was typed.
+            self.assertIn(b'value="172.20.20.1"', form)
+            self.assertIn(b"172.20.20.0/24", form)
+
+    def test_a_seed_profile_still_shows_its_address_everywhere(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            service = make_service(Path(tmp))
+            add_profile(service)  # no seed_cidr
+            _, client = build_client(Path(tmp), service)
+            self.assertIn(b"10.0.0.1", client.get("/discovery").data)
+            self.assertIn(b"10.0.0.1", client.get("/profiles").data)
+
+    def test_saving_an_edit_does_not_erase_the_range(self) -> None:
+        # The edit form has no seed_cidr input, so an ordinary save posts
+        # without it. That must not be read as "clear it".
+        with tempfile.TemporaryDirectory() as tmp:
+            service = make_service(Path(tmp))
+            self.add_cidr_profile(service)
+            _, client = build_client(Path(tmp), service)
+            response = client.post("/profiles/labdab", data={
+                "name": "labdab", "site": "Lab", "management_ip": "172.20.20.1",
+                "username": "atlas", "password": "", "max_depth": "1",
+                "max_devices": "10",
+            })
+            self.assertIn(response.status_code, (200, 302))
+            self.assertEqual("172.20.20.0/24", service.get_profile("labdab").seed_cidr)
+            self.assertIn(b"172.20.20.0/24", client.get("/profiles").data)

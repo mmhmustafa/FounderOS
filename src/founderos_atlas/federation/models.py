@@ -63,6 +63,7 @@ class CanonicalInterface:
     ip_address: str | None
     description: str | None
     observed_by: tuple[str, ...]  # profile names, deterministic order
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -72,6 +73,7 @@ class CanonicalInterface:
             "ip_address": self.ip_address,
             "description": self.description,
             "observed_by": list(self.observed_by),
+            "metadata": dict(self.metadata),
         }
 
 
@@ -84,6 +86,7 @@ class LinkObservation:
     run_id: str | None
     observed_at: str | None
     protocol: str
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -92,6 +95,7 @@ class LinkObservation:
             "run_id": self.run_id,
             "observed_at": self.observed_at,
             "protocol": self.protocol,
+            "metadata": dict(self.metadata),
         }
 
 
@@ -113,6 +117,7 @@ class CanonicalLink:
     protocol: str
     observations: tuple[LinkObservation, ...]
     cross_profile: bool
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     @property
     def is_boundary(self) -> bool:
@@ -139,6 +144,7 @@ class CanonicalLink:
             "observed_by": list(self.observed_by),
             "cross_profile": self.cross_profile,
             "is_boundary": self.is_boundary,
+            "metadata": dict(self.metadata),
         }
 
 

@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% from "_device_actions.html" import device_actions %}
+{% block title %}Device Access{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Device Access</h1>
+</div>
+<p class="muted">
+  Every way Atlas can reach a device it has a <strong>verified management endpoint</strong> for —
+  an address Atlas authenticated to during discovery — over SSH, or over the device's web interface
+  where one has been verified. A router ID, BGP peer, next hop, loopback or unresolved peer is a
+  protocol fact, not a way in, and is never offered here. Where there is no verified web interface
+  the action is greyed with the reason on hover: Atlas checked, and tells you what it found.
+</p>
+
+<div class="tiles">
+  <div class="tile"><strong>Devices you can open</strong><span>{{ eligible_count }}</span></div>
+  <div class="tile"><strong>Devices with a web UI</strong><span>{{ web_count }}</span></div>
+  <div class="tile"><strong>Verified HTTPS</strong><span>{{ https_count }}</span></div>
+  <div class="tile"><strong>Devices in scope</strong><span>{{ targets | length }}</span></div>
+  <div class="tile"><strong>Live sessions</strong><span>{{ sessions | length }}</span></div>
+  <div class="tile"><strong>Operator</strong><span class="tile-text">{{ operator.name }}</span></div>
+</div>
+
+{% if not operator.authenticated %}
+<section class="card card-warn">
+  <h2>Who Atlas thinks you are</h2>
+  <p class="muted">
+    Atlas has no login yet, so it cannot verify who is asking: <strong>anyone with access to
+    this computer is treated as the operator</strong> and can open a session to any device
+    below using the stored credentials. Sessions are refused unless they come from the Atlas
+    interface itself, which stops other websites from reaching this endpoint — but it does
+    not stop someone at this keyboard.
+  </p>
+</section>
+{% endif %}
+
+{% if sessions %}
+<section class="card">
+  <h2>Live Sessions</h2>
+  <table class="grid">
+    <thead><tr><th>Device</th><th>Endpoint</th><th>User</th><th>Opened</th><th>Operator</th><th></th></tr></thead>
+    <tbody>
+      {% for item in sessions %}
+      <tr>
+        <td><strong>{{ item.hostname }}</strong></td>
+        <td><code>{{ item.management_ip }}:{{ item.port }}</code></td>
+        <td>{{ item.username }}</td>
+        <td>{{ item.opened_at }}</td>
+        <td>{{ item.operator }}</td>
+        <td class="row-actions">
+          <a class="btn btn-sm" href="/console/{{ item.device_id | urlencode }}">Open</a>
+          <button class="btn btn-sm js-disconnect" data-session="{{ item.session_id }}">Disconnect</button>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+<section class="card">
+  <h2>Devices</h2>
+  {% if targets %}
+  <table class="grid">
+    <thead>
+      <tr>
+        <th>Device</th><th>Network</th><th>Management endpoint</th><th>Credential</th>
+        <th>Web interface</th><th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for target in targets %}
+      {% set web = web_by_device.get(target.device_id) %}
+      <tr>
+        <td><strong>{{ target.hostname }}</strong><div class="muted">{{ target.platform or '—' }}</div></td>
+        <td>{{ target.network }}</td>
+        <td>
+          {% if target.management_ip %}<code>{{ target.management_ip }}:{{ target.port }}</code>
+          {% else %}<span class="muted">not verified</span>{% endif %}
+        </td>
+        <td>
+          {% if target.credential_name %}{{ target.credential_name }}
+          {% else %}<span class="muted">none</span>{% endif %}
+        </td>
+        <td>
+          {% if web and web.has_https %}
+          <code>{{ web.https_url }}</code>
+          {% if web.tls_summary %}
+          <div class="{{ 'tls-warn' if web.certificate_warnings else 'muted' }}">{{ web.tls_summary }}</div>
+          {% endif %}
+          {% elif web and web.has_http %}
+          <code>{{ web.http_url }}</code> <span class="badge badge-muted">insecure</span>
+          {% elif web %}
+          <span class="muted">{{ web.reason }}</span>
+          {% else %}<span class="muted">—</span>{% endif %}
+        </td>
+        <td class="row-actions">
+          {{ device_actions(target, compact=True, web=web) }}
+          {# The write side of web access, beside the action it enables: an
+             operator looking at a greyed Web button wants exactly these two. #}
+          <button class="btn btn-sm js-verify-web" data-device-id="{{ target.device_id }}"
+                  title="Probe {{ target.management_ip }} for a web interface now">Verify</button>
+          <button class="btn btn-sm js-define-web" data-device-id="{{ target.device_id }}"
+                  data-hostname="{{ target.hostname }}"
+                  title="Record the URL of this device's web interface yourself">Define URL</button>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No devices in this scope yet. Run a discovery first — Atlas can only reach a
+    device it has authenticated to.</p>
+  {% endif %}
+</section>
+
+<p class="muted">
+  Atlas never opens a session on its own and never runs a command on your behalf. What you type
+  is yours: it is not filtered, and it is not recorded. Atlas records only that a session
+  happened — operator, device, endpoint, credential reference, and times.
+</p>
+<p class="muted">
+  A <strong>candidate</strong> is a port that answered but not as a web interface; Atlas does not
+  call it verified. A self-signed or expired certificate is reported, never hidden — network
+  equipment usually presents one, and that is not proof of identity. Atlas never sends a credential
+  to a device UI and never suppresses your browser's own TLS warning. Opening a web UI is recorded
+  (device, URL, outcome); what you then type into the device is not.
+</p>
+{% endblock %}

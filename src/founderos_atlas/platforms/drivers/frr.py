@@ -23,6 +23,11 @@ from founderos_atlas.discovery.models import (
     NetworkInterface,
     NetworkNeighbor,
 )
+from founderos_atlas.routing import (
+    OspfAdjacencyObservation,
+    bgp_sessions_from_summary,
+    routing_metadata,
+)
 
 from ..base import (
     CAP_COLLECTED,
@@ -58,6 +63,10 @@ _INTERFACE_HEAD = re.compile(
 # observations — the correlation engine needs them for point-to-point
 # subnet matching and secondary-address ownership. Normalization records
 # them; it never infers relationships from them.
+# "  HWaddr: aa:c1:ab:f5:49:b4"
+_HWADDR_PATTERN = re.compile(
+    r"(?mi)^\s*HWaddr:\s*(?P<mac>[0-9a-f]{2}(?::[0-9a-f]{2}){5})\s*$"
+)
 _INET_PATTERN = re.compile(
     r"(?m)^\s*inet\s+(?P<address>\d+\.\d+\.\d+\.\d+)"
     r"(?:/(?P<prefix>\d+))?(?P<secondary>\s+secondary)?"
@@ -166,6 +175,15 @@ class FRRoutingAdapter(DiscoveryAdapter):
                 metadata["prefix_length"] = int(primary.group("prefix"))
             if secondaries:
                 metadata["secondary_ips"] = tuple(secondaries)
+            # PR-048: the interface's hardware address, recorded exactly as
+            # vtysh reports it. A layer-2 switch learns MACs, not identities,
+            # so this is the only thing that can turn "something is on port
+            # eth1" into "delhi-core:eth2 is on port eth1". Recorded here as a
+            # plain observation; the correlation that uses it lives in the
+            # enterprise layer, which can see more than one device at a time.
+            hwaddr = _HWADDR_PATTERN.search(block)
+            if hwaddr:
+                metadata["hardware_address"] = hwaddr.group("mac").casefold()
             interfaces.append(
                 NetworkInterface(
                     name=match.group("name"),
@@ -217,6 +235,10 @@ class FRRoutingAdapter(DiscoveryAdapter):
                         "adjacency_address": match.group("address"),
                         "management_endpoint": False,
                         "ospf_state": match.group("state"),
+                        "process_id": None,
+                        "area_id": None,
+                        "vrf": "default",
+                        "address_family": "ipv4",
                         "source_command": SHOW_OSPF_NEIGHBORS,
                     },
                 )
@@ -278,6 +300,10 @@ class FRRoutingDriver(PlatformDriver):
         bgp_peers = _parse_bgp_peers(
             discovery.raw_outputs.get(SHOW_BGP_SUMMARY, "")
         )
+        sessions = bgp_sessions_from_summary(
+            discovery.raw_outputs.get(SHOW_BGP_SUMMARY, ""),
+            source_command=SHOW_BGP_SUMMARY,
+        )
         result = discovery.result
         metadata = dict(result.device.metadata)
         if routes is not None:
@@ -287,22 +313,35 @@ class FRRoutingDriver(PlatformDriver):
             if bgp_peers.get("router_id"):
                 # An identity claim for the ownership index (PR-043.7).
                 metadata["bgp_router_id"] = bgp_peers["router_id"]
+        ospf = tuple(
+            OspfAdjacencyObservation(
+                neighbor_router_id=str(item.metadata.get("router_id")),
+                adjacency_address=item.metadata.get("adjacency_address"),
+                local_interface=item.local_interface,
+                state=str(item.metadata.get("ospf_state") or "unknown"),
+                process_id=item.metadata.get("process_id"),
+                area_id=item.metadata.get("area_id"),
+                vrf=str(item.metadata.get("vrf") or "default"),
+                address_family=str(item.metadata.get("address_family") or "ipv4"),
+                source_command=SHOW_OSPF_NEIGHBORS,
+            ) for item in result.neighbors if item.protocol == "ospf"
+        )
+        metadata["routing_evidence"] = routing_metadata(ospf=ospf, bgp=sessions)
         peer_neighbors = tuple(
             NetworkNeighbor(
                 local_device_id=result.device.device_id,
                 local_interface="bgp",  # a session, not a physical port
-                remote_hostname=peer,
+                remote_hostname=session.peer_address,
                 remote_interface=None,
                 remote_management_ip=None,  # peer addresses are NOT endpoints
                 protocol="bgp",
                 metadata={
                     "observation": "protocol-peer",
-                    "peer_address": peer,
+                    **session.to_dict(),
                     "management_endpoint": False,
-                    "source_command": SHOW_BGP_SUMMARY,
                 },
             )
-            for peer in (bgp_peers or {}).get("peers", ())
+            for session in sessions
         )
         result = replace(
             result,

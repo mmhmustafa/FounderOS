@@ -15,7 +15,7 @@
   --ink: #172033;
   --muted: #5b6472;            /* 5.6:1 on --panel: AA for normal text */
   --line: #dbe2ea;
-  --line-strong: #b6c2d0;
+  --line-strong: #c7d2df;
   --brand: #111827;
   --accent: #2563eb;
   --accent-dark: #1d4ed8;
@@ -33,21 +33,21 @@
   --topbar-muted: #93c5fd;
 
   /* Typography: one family, an approved weight scale (400/500/600/700). */
-  --font-sans: Inter, ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+  --font-sans: "Segoe UI Variable Text", "Segoe UI", Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
   --font-mono: ui-monospace, "Cascadia Code", Consolas, monospace;
   --weight-regular: 400;
   --weight-medium: 500;
   --weight-semibold: 600;
   --weight-bold: 700;
   --leading-tight: 1.25;
-  --leading-body: 1.55;
+  --leading-body: 1.5;
 
   /* Shape and depth */
   --radius-sm: 6px;
   --radius: 8px;
   --radius-lg: 12px;
   --radius-pill: 999px;
-  --shadow-sm: 0 1px 3px rgba(15, 23, 42, .08);
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, .05);
   --shadow-md: 0 2px 8px rgba(15, 23, 42, .10);
   --shadow-lg: 0 18px 50px rgba(15, 23, 42, .35);
   --border-thin: 1px;
@@ -71,10 +71,10 @@
 
 /* -- 2. Base --------------------------------------------------------------- */
 * { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; }
+html { font-family: var(--font-sans); font-synthesis: none; -webkit-text-size-adjust: 100%; }
 body {
   margin: 0;
-  font-family: var(--font-sans);
+  font-family: inherit;
   font-size: 14px;
   line-height: var(--leading-body);
   color: var(--ink);
@@ -82,17 +82,20 @@ body {
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
 }
+button, input, select, textarea { font: inherit; }
 a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
 code { background: #eef2f7; padding: 1px 5px; border-radius: 4px; font-size: 12px; font-family: var(--font-mono); overflow-wrap: anywhere; }
 svg.icon { vertical-align: -3px; flex: 0 0 auto; }
 img, svg, canvas, iframe { max-width: 100%; }
 
-h1 { margin: 0 0 18px; font-size: 24px; font-weight: var(--weight-bold); line-height: var(--leading-tight); overflow-wrap: break-word; }
-h2 { margin: 0 0 12px; font-size: 16px; font-weight: var(--weight-semibold); line-height: var(--leading-tight); }
-h3 { margin: 0 0 8px; font-size: 14px; font-weight: var(--weight-semibold); }
+h1 { margin: 0 0 18px; font-size: 24px; font-weight: var(--weight-bold); line-height: 1.2; overflow-wrap: break-word; }
+h2 { margin: 0 0 12px; font-size: 16px; font-weight: var(--weight-semibold); line-height: 1.25; }
+h3 { margin: 0 0 8px; font-size: 14px; font-weight: var(--weight-semibold); line-height: 1.3; }
 .muted { color: var(--muted); }
-.page-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
+.page-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
+.topology-page-head { margin-bottom: 12px; }
+.topology-page-head h1 { margin-bottom: 0; }
 
 /* Reduced motion: honor the user preference everywhere, permanently. */
 @media (prefers-reduced-motion: reduce) {
@@ -165,26 +168,46 @@ textarea:focus-visible, summary:focus-visible, [tabindex]:focus-visible {
 .sidebar-note { padding: 12px 20px; font-size: 11px; color: #8b98ab; }
 .sidebar-backdrop { display: none; }
 
-.content { padding: 22px 26px; max-width: var(--content-max); min-width: 0; width: 100%; }
+/* Workflow navigation (PR-047A): views grouped under the question they answer.
+   The group label orients; the views stay visible and one click away. */
+.sidebar .nav-group { margin-bottom: 10px; }
+.sidebar .nav-group-label {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 20px 4px; font-size: 10px; font-weight: var(--weight-bold); letter-spacing: .8px;
+  text-transform: uppercase; color: #8b98ab;
+}
+.sidebar .nav-group-label .icon { opacity: .6; }
+.sidebar .nav-group-link { font-weight: var(--weight-semibold); }
+.sidebar .subnav { list-style: none; margin: 0; padding: 0; flex: none; }
+.sidebar .subnav a { padding: 7px 20px 7px 38px; font-size: 13px; min-height: 40px; border-left: 3px solid transparent; }
+.sidebar .subnav a.active { border-left: 3px solid var(--accent); padding-left: 38px; }
+
+.content { min-width: 0; width: 100%; padding: 22px 26px; max-width: var(--content-max); }
+.content-wide { width: 100%; max-width: none; }
+.content-topology { padding: 18px 20px 28px; }
 
 /* -- 6. Buttons -------------------------------------------------------------- */
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
   min-height: var(--control-height);
-  padding: 6px 15px;
+  padding: 6px 14px;
+  border: var(--border-thin) solid var(--line-strong);
   border-radius: var(--radius);
-  background: #e2e8f0; color: var(--ink);
-  border: var(--border-thin) solid transparent;
-  cursor: pointer; font-size: 14px; font-weight: var(--weight-medium); font-family: inherit;
-  line-height: 1.3; text-align: center;
+  background: #f8fafc; color: var(--ink);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer; font: inherit; font-size: 14px; font-weight: var(--weight-medium);
+  line-height: 1.2; text-align: center;
 }
-.btn:hover { background: #cbd5e1; text-decoration: none; }
-.btn-primary { background: var(--accent); color: #fff; }
-.btn-primary:hover { background: var(--accent-dark); }
-.btn-danger { background: var(--red-soft); color: var(--red-dark); }
+.btn:hover { background: #eef2f7; border-color: #aebccc; text-decoration: none; }
+/* An action Atlas checked and cannot offer: visibly present, plainly not
+   clickable, reason on hover. Never a button that looks live and does nothing. */
+.btn[disabled], .btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn[disabled]:hover, .btn:disabled:hover { background: #f8fafc; border-color: var(--line-strong); }
+.btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn-primary:hover { background: var(--accent-dark); border-color: var(--accent-dark); }
+.btn-danger { background: var(--red-soft); border-color: #fecaca; color: var(--red-dark); }
 .btn-danger:hover { background: #fecaca; }
 .btn-sm { min-height: var(--control-height-sm); padding: 3px 10px; font-size: 13px; }
-.btn:disabled { opacity: .55; cursor: not-allowed; }
 
 /* Comfortable touch targets on touch-first devices. */
 @media (pointer: coarse) {
@@ -200,14 +223,16 @@ textarea:focus-visible, summary:focus-visible, [tabindex]:focus-visible {
 .status-warning .badge { background: var(--amber); }
 .status-critical { border-left-color: var(--red); } .status-critical .badge { background: var(--red); }
 .status-unknown .badge { background: var(--slate); }
+.status-degraded { border-left-color: var(--amber-fill); } .status-degraded .badge { background: var(--amber); }
+.status-stale { border-left-color: var(--slate); } .status-stale .badge { background: var(--slate); }
 
 .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; margin-bottom: 18px; }
-.tile { background: var(--panel); border-radius: 10px; padding: 14px 16px; box-shadow: var(--shadow-sm); min-width: 0; }
+.tile { background: var(--panel); border: var(--border-thin) solid var(--line-strong); border-radius: 10px; padding: 14px 16px; box-shadow: var(--shadow-sm); min-width: 0; }
 .tile strong { display: block; color: var(--muted); font-size: 11px; font-weight: var(--weight-semibold); text-transform: uppercase; letter-spacing: .4px; }
 .tile span { font-size: 26px; font-weight: var(--weight-bold); overflow-wrap: break-word; }
 .tile span.tile-text { font-size: 18px; }
 
-.card { background: var(--panel); border-radius: 10px; padding: 18px; box-shadow: var(--shadow-sm); margin-bottom: 18px; min-width: 0; }
+.card { background: var(--panel); border: var(--border-thin) solid var(--line-strong); border-radius: 10px; padding: 18px; box-shadow: var(--shadow-sm); margin-bottom: 18px; min-width: 0; }
 .card ul { margin: 0; padding-left: 18px; color: #334155; }
 .card li { margin-bottom: 6px; }
 .card.root-cause { border-left: 8px solid var(--accent); }
@@ -215,7 +240,9 @@ textarea:focus-visible, summary:focus-visible, [tabindex]:focus-visible {
 .card.plane-degraded { border-left: 6px solid var(--amber-fill); }
 .card.plane-unknown { border-left: 6px solid var(--slate); }
 .card.plane-no_known_impact { border-left: 6px solid var(--green); }
-.actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.card-warn { border-left: 4px solid var(--amber-fill); }
+.actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.topology-controls { margin-bottom: 14px; }
 .columns { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); gap: 18px; margin-bottom: 18px; }
 
 /* -- 8. Tables ---------------------------------------------------------------
@@ -223,20 +250,22 @@ textarea:focus-visible, summary:focus-visible, [tabindex]:focus-visible {
    allows deliberate, labelled horizontal scrolling on narrow screens.
    The wrapper is keyboard-focusable so the overflow is reachable
    without a pointer. */
-.table-scroll { position: relative; overflow-x: auto; border-radius: 10px; box-shadow: var(--shadow-sm); background: var(--panel); margin-bottom: 18px; }
-.table-scroll > .grid { box-shadow: none; margin-bottom: 0; }
-.card .table-scroll { box-shadow: none; border: var(--border-thin) solid var(--line); }
-.grid { width: 100%; border-collapse: collapse; background: var(--panel); border-radius: 10px; overflow: hidden; box-shadow: var(--shadow-sm); }
+.table-scroll { position: relative; width: 100%; overflow-x: auto; overscroll-behavior-inline: contain; border: var(--border-thin) solid var(--line-strong); border-radius: var(--radius); box-shadow: var(--shadow-sm); background: var(--panel); margin-bottom: 18px; }
+.table-scroll .grid { min-width: 680px; border: 0; border-radius: 0; box-shadow: none; margin-bottom: 0; }
+.table-scroll-wide .grid { min-width: 1080px; }
+.table-scroll .grid tr:last-child td { border-bottom: 0; }
+.card .table-scroll { box-shadow: none; }
+.grid { width: 100%; border: var(--border-thin) solid var(--line-strong); border-collapse: collapse; background: var(--panel); border-radius: 10px; overflow: hidden; box-shadow: var(--shadow-sm); }
 .grid th, .grid td { text-align: left; padding: 10px 12px; border-bottom: var(--border-thin) solid var(--line); font-size: 14px; }
 .grid th { background: #f8fafc; color: #475569; font-size: 12px; font-weight: var(--weight-semibold); text-transform: uppercase; letter-spacing: .3px; white-space: nowrap; }
 .grid tbody tr:hover { background: #f8fafc; }
-.grid tbody tr:last-child td { border-bottom: none; }
 .row-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .row-actions form { margin: 0; }
 .row-archived td { color: var(--muted); }
+.row-selected { outline: 2px solid var(--accent); outline-offset: -2px; }
 
 /* -- 9. Forms ----------------------------------------------------------------- */
-.form { background: var(--panel); border-radius: 10px; padding: 20px; box-shadow: var(--shadow-sm); max-width: 520px; }
+.form { background: var(--panel); border: var(--border-thin) solid var(--line-strong); border-radius: 10px; padding: 20px; box-shadow: var(--shadow-sm); max-width: 520px; }
 .form label { display: block; margin-bottom: 14px; font-size: 13px; color: #475569; font-weight: var(--weight-medium); }
 .form input, .form select, .form textarea {
   display: block; width: 100%; margin-top: 5px;
@@ -421,9 +450,64 @@ textarea:focus-visible, summary:focus-visible, [tabindex]:focus-visible {
 .search-foot { display: flex; gap: 16px; flex-wrap: wrap; padding: 10px 18px; border-top: var(--border-thin) solid var(--line); font-size: 12px; }
 
 /* -- 17. Topology ------------------------------------------------------------------ */
-.topology-frame { width: 100%; height: calc(100vh - 170px); min-height: 320px; border: var(--border-thin) solid var(--line); border-radius: 10px; background: #fff; }
+.topology-stage { margin-bottom: 18px; padding: 7px; border: var(--border-thin) solid var(--line-strong); border-radius: 10px; background: var(--panel); box-shadow: var(--shadow-sm); }
+.topology-stage .muted { margin: 8px 6px 2px; }
+.topology-frame { display: block; width: 100%; min-height: 560px; height: calc(100vh - 150px); border: 0; border-radius: var(--radius-sm); background: #fff; }
 
-/* -- 18. Responsive shell -----------------------------------------------------------
+/* -- 18. Configuration Intelligence (PR-044 MEMORY) --------------------------------
+   Colour carries the change kind; the row is still readable without it
+   (text + line numbers). */
+.config-diff code { font-size: 12px; white-space: pre-wrap; word-break: break-all; }
+.config-diff td { vertical-align: top; }
+.diff-added { background: #ecfdf5; }
+.diff-removed { background: #fef2f2; }
+.diff-equal { background: transparent; }
+
+/* The configuration viewer is a long monospace listing; keep it scrollable
+   inside its own card rather than stretching the page. Line numbers are
+   fixed-width so the text column aligns like a real config listing. */
+.config-view-scroll { max-height: 640px; overflow: auto; border: var(--border-thin) solid var(--line); border-radius: var(--radius-sm); }
+.config-view-scroll .grid { margin: 0; }
+.config-view code { font-size: 12px; }
+.config-view td:first-child { width: 48px; text-align: right; user-select: none; }
+.config-view .line-masked { background: #fffbeb; }
+
+/* -- 19. Console (PR-044A): interactive SSH. The terminal owns a dark surface
+   regardless of the page around it — an engineer reads a CLI, not a page. */
+.console-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 12px; }
+.console-identity { display: flex; flex-direction: column; gap: 2px; }
+.console-meta { display: flex; align-items: center; gap: 12px; }
+.console-facts { margin-bottom: 16px; }
+.console-card { background: #0f172a; border-color: #1e293b; }
+.console-card h2 { color: #e2e8f0; }
+.console-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.console-cred { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.console-cred .muted { color: #94a3b8; }
+.console-terminal { height: 520px; width: 100%; }
+.device-actions { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.device-actions-compact { gap: 4px; }
+.btn-console { background: var(--accent); color: #fff; border-color: var(--accent); }
+.badge-muted { background: #e2e8f0; color: var(--muted); }
+/* PR-047B (PROOF): a collection outcome, toned by what it means to an
+   operator. `info` is deliberately not a warning colour — an empty
+   response is an answer, not a fault, and the colour must not argue with
+   the sentence next to it. */
+.badge-ok { background: var(--green); color: #fff; }
+.badge-info { background: #e2e8f0; color: var(--muted); }
+.badge-warn { background: var(--amber); color: #fff; }
+.badge-bad { background: var(--red); color: #fff; }
+.log-output { background: #0f172a; color: #e2e8f0; padding: 12px; border-radius: var(--radius);
+  overflow-x: auto; max-height: 620px; overflow-y: auto; font-size: 12px;
+  font-family: var(--font-mono); white-space: pre; tab-size: 4; }
+/* PR-044B (PORTAL): web-management actions. */
+.btn-web { background: #0f766e; color: #fff; border-color: #0f766e; }
+.btn-web:hover { background: #0d655e; border-color: #0d655e; }
+.btn-web-insecure { background: #fff7ed; color: #9a3412; border-color: #fdba74; }
+.btn-web-insecure:hover { background: #ffedd5; }
+.cert-flag { color: var(--amber); font-weight: var(--weight-bold); }
+.tls-warn { color: var(--amber); }
+
+/* -- 20. Responsive shell -----------------------------------------------------------
    ≤1024px: the sidebar becomes an off-canvas drawer behind the ☰ toggle.
    The drawer overlays content with a backdrop; Escape and backdrop close it. */
 @media (max-width: 1024px) {
@@ -453,6 +537,15 @@ textarea:focus-visible, summary:focus-visible, [tabindex]:focus-visible {
   .search-trigger-keys { display: none; }
   h1 { font-size: 21px; }
   .content { padding: 16px 12px; }
+}
+
+@media (max-width: 760px) {
+  .content-topology { padding: 14px; }
+  .topology-page-head { align-items: stretch; }
+  .topology-page-head .btn { width: 100%; text-align: center; }
+  .topology-frame { min-height: 480px; height: 70vh; }
+  .topology-controls { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; }
+  .topology-controls .btn { flex: 0 0 auto; }
 }
 
 @media (max-width: 480px) {

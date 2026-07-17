@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% from "_device_actions.html" import device_actions %}
+{% block title %}Timeline{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Timeline</h1>
+</div>
+<p class="muted">
+  Everything Atlas remembers happening, in one chronology: configurations that changed and
+  discoveries that ran. Each entry links to the evidence behind it — Atlas records what it observed,
+  never what it assumed.
+</p>
+
+<div class="tiles">
+  <div class="tile"><strong>Configuration changes</strong><span>{{ change_count }}</span></div>
+  <div class="tile"><strong>Discoveries</strong><span>{{ discovery_count }}</span></div>
+  <div class="tile"><strong>Devices remembered</strong><span>{{ totals.devices }}</span></div>
+  <div class="tile"><strong>Configuration versions</strong><span>{{ totals.versions }}</span></div>
+  <div class="tile"><strong>Evidence records</strong><span>{{ evidence_totals.evidence_records }}</span></div>
+</div>
+
+<section class="card">
+  <h2>Recent Activity</h2>
+  {% if activity %}
+  <table class="grid">
+    <thead>
+      <tr><th>When</th><th>What</th><th>Detail</th><th>Device</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for entry in activity %}
+      <tr>
+        <td>{{ entry.occurred_at }}</td>
+        <td>
+          {% if entry.kind == 'configuration' %}
+          <span class="hop-badge hop-badge-{{ 'failed' if entry.severity == 'high' else ('warning' if entry.severity == 'medium' else 'unknown') }}">Configuration</span>
+          {% else %}
+          <span class="hop-badge badge-muted">Discovery</span>
+          {% endif %}
+        </td>
+        <td>
+          {{ entry.title }}
+          {% if entry.detail %}<div class="muted">{{ entry.detail }}</div>{% endif %}
+        </td>
+        <td>
+          {% if entry.hostname %}
+          {{ entry.hostname }}
+          {# Any device list offers the same device actions (PR-047A decision 3). #}
+          {% set target = device_target(device_id=entry.device_id) %}
+          {% if target %}<div>{{ device_actions(target, compact=True, show_label=False,
+                                               web=web_access(device_id=entry.device_id)) }}</div>{% endif %}
+          {% else %}<span class="muted">—</span>{% endif %}
+        </td>
+        <td class="row-actions"><a class="btn btn-sm" href="{{ entry.href }}">View</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">
+    Nothing recorded yet. Run a discovery with configuration collection enabled — Atlas records each
+    device's configuration automatically, and every later change appears here.
+  </p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Views</h2>
+  <p class="muted">The same history, from four angles. Each answers a different question.</p>
+  <table class="grid">
+    <tbody>
+      <tr>
+        <td><strong><a href="/changes">Changes</a></strong></td>
+        <td>What the last discovery found different — topology, configuration, operational state.</td>
+      </tr>
+      <tr>
+        <td><strong><a href="/configuration">Configuration</a></strong></td>
+        <td>Every device's configuration history: versions, diffs, and what each change did.</td>
+      </tr>
+      <tr>
+        <td><strong><a href="/history">Discoveries</a></strong></td>
+        <td>Every discovery Atlas has run, and what each one saw.</td>
+      </tr>
+      <tr>
+        <td><strong><a href="/evidence">Evidence</a></strong></td>
+        <td>The raw bytes each device returned, preserved verbatim and content-addressed.</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+{% endblock %}

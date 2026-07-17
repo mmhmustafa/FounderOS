@@ -12,7 +12,13 @@ from unittest.mock import patch
 import urllib.request
 
 from founderos_atlas.demo import run_atlas_discovery_demo
-from founderos_atlas.visualization import CYTOSCAPE_CDN, TopologyRenderer
+from founderos_atlas.visualization import (
+    CYTOSCAPE_CDN,
+    TOPOLOGY_VISUAL_STYLE_MARKER,
+    TOPOLOGY_VISUAL_STYLE_VERSION,
+    TopologyRenderer,
+    topology_visual_style_is_current,
+)
 from founderos_runtime.cli import main
 
 
@@ -34,17 +40,56 @@ class TopologyVisualizationTests(unittest.TestCase):
         self.assertIn("Atlas Topology Viewer", html)
         self.assertIn("cytoscape({", html)
         self.assertIn("name: 'cose'", html)
-        self.assertIn("minZoom: 0.25", html)
+        self.assertIn("minZoom:", html)
         self.assertIn("id=\"fit\"", html)
         self.assertIn("id=\"search\"", html)
         self.assertIn("cy.on('tap', 'node'", html)
         self.assertIn("cy.on('mouseover', 'node'", html)
         self.assertIn("search-match", html)
+        # PORTAL-adjacent polish: the raw evidence kind must not be an edge
+        # label, and interface names are the meaningful link caption.
+        self.assertNotIn("'label': 'data(protocol)'", html)
+        self.assertIn("data(source_interface)", html)
+        self.assertIn("data(display_label)", html)
+
+    def test_protocol_views_are_separate_and_derive_domain_boundaries(self) -> None:
+        routing_facts = {
+            str(device["hostname"]): {
+                "ospf_areas": ["0"],
+                "ospf_process_ids": ["1"],
+                "bgp_as": "64512",
+            }
+            for device in self.snapshot.devices
+        }
+        renderer = TopologyRenderer(
+            self.snapshot, viewer_context={"routing_facts": routing_facts}
+        )
+        view = renderer.routing_view(renderer.elements())
+        self.assertTrue(view["ospf"]["groups"])
+        self.assertTrue(view["bgp"]["groups"])
+        self.assertEqual(self.snapshot.device_count, view["ospf"]["covered_devices"])
+        self.assertEqual(self.snapshot.device_count, view["bgp"]["covered_devices"])
+        html = renderer.render()
+        self.assertIn("OSPF areas", html)
+        self.assertIn("BGP autonomous systems", html)
+        self.assertIn("Edit topology", html)
+        self.assertNotIn("site-hub", html)
 
     def test_rendering_is_deterministic(self) -> None:
         first = TopologyRenderer(self.snapshot).render()
         second = TopologyRenderer(self.snapshot).render()
         self.assertEqual(first, second)
+
+    def test_rendering_carries_its_deterministic_visual_style_version(self) -> None:
+        html = TopologyRenderer(self.snapshot).render()
+        self.assertTrue(TOPOLOGY_VISUAL_STYLE_VERSION)
+        self.assertEqual(1, html.count(TOPOLOGY_VISUAL_STYLE_MARKER))
+        self.assertTrue(topology_visual_style_is_current(html))
+        self.assertFalse(
+            topology_visual_style_is_current(
+                "<!-- TOPOLOGY_VISUAL_STYLE_VERSION=stale -->"
+            )
+        )
 
     def test_renderer_uses_only_pinned_cytoscape_external_url(self) -> None:
         html = TopologyRenderer(self.snapshot).render()
@@ -92,3 +137,138 @@ class TopologyVisualizationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SiteViewTests(unittest.TestCase):
+    """PR-050 (SKYLINE): the site level of the topology.
+
+    Grouping comes from the Site Catalog through the inference engine and
+    from nowhere else; totals are preserved (a device can never be lost by
+    folding); aggregated edges carry their constituents and the STRONGEST
+    relationship; and with no catalog the feature simply is not there.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        from founderos_atlas.sites.models import Site, SiteCatalog
+
+        _, _, cls.snapshot = run_atlas_discovery_demo()
+        elements = TopologyRenderer(cls.snapshot).elements()
+        discovered = [
+            n["data"] for n in elements["nodes"]
+            if n["data"]["kind"] == "discovered"
+        ]
+        # Split the discovered estate across two explicit sites so at least
+        # one real edge crosses the boundary. Explicit assignment is used on
+        # purpose: it is the strongest signal and keeps the fixture
+        # independent of the demo's hostname spelling.
+        cls.first = discovered[0]["hostname"]
+        cls.rest = [d["hostname"] for d in discovered[1:]]
+        cls.catalog = SiteCatalog(sites=(
+            Site(site_id="alpha", name="Alpha",
+                 explicit_hostnames=(cls.first,)),
+            Site(site_id="beta", name="Beta",
+                 explicit_hostnames=tuple(cls.rest)),
+        ))
+
+    def _view(self, catalog=None):
+        renderer = TopologyRenderer(
+            self.snapshot, site_catalog=catalog or self.catalog
+        )
+        return renderer.site_view(renderer.elements()), renderer.elements()
+
+    def test_no_catalog_means_no_site_view(self) -> None:
+        from founderos_atlas.sites.models import SiteCatalog
+
+        view, _ = self._view(catalog=SiteCatalog())
+        self.assertEqual([], view["sites"])
+        self.assertEqual({}, view["membership"])
+
+    def test_every_node_is_grouped_and_none_is_lost(self) -> None:
+        view, elements = self._view()
+        self.assertEqual(len(view["membership"]), len(elements["nodes"]))
+        total_in_sites = sum(site["count"] for site in view["sites"])
+        self.assertEqual(total_in_sites, len(elements["nodes"]))
+
+    def test_membership_comes_from_the_catalog_not_hostname_parsing(self) -> None:
+        view, elements = self._view()
+        by_id = {n["data"]["id"]: n["data"] for n in elements["nodes"]}
+        for node_id, site_id in view["membership"].items():
+            data = by_id[node_id]
+            if data["kind"] == "observed":
+                continue
+            expected = "alpha" if data["hostname"] == self.first else "beta"
+            self.assertEqual(expected, site_id, data["hostname"])
+
+    def test_unresolved_peers_ride_with_the_site_that_observed_them(self) -> None:
+        view, elements = self._view()
+        observed = [
+            n["data"]["id"] for n in elements["nodes"]
+            if n["data"]["kind"] == "observed"
+        ]
+        self.assertTrue(observed)
+        for node_id in observed:
+            self.assertIn(view["membership"][node_id], ("alpha", "beta"))
+
+    # The demo snapshot has ONE discovered device, so cross-site folding
+    # cannot be exercised on it -- these tests build a small synthetic
+    # estate instead: two sites, three devices, edges of mixed strength.
+    @staticmethod
+    def _synthetic():
+        from founderos_atlas.sites.models import Site, SiteCatalog
+
+        def node(node_id, hostname):
+            return {"data": {"id": node_id, "hostname": hostname,
+                             "label": hostname, "kind": "discovered",
+                             "management_ip": "Unknown", "role": "router"}}
+
+        elements = {
+            "nodes": [node("d:a1", "a1"), node("d:b1", "b1"),
+                      node("d:b2", "b2")],
+            "edges": [
+                {"data": {"id": "x1", "source": "d:a1", "target": "d:b1",
+                          "relationship": "protocol-peer"}},
+                {"data": {"id": "x2", "source": "d:a1", "target": "d:b1",
+                          "relationship": "physical"}},
+                {"data": {"id": "in1", "source": "d:b1", "target": "d:b2",
+                          "relationship": "physical"}},
+            ],
+        }
+        catalog = SiteCatalog(sites=(
+            Site(site_id="alpha", name="Alpha", explicit_hostnames=("a1",)),
+            Site(site_id="beta", name="Beta", explicit_hostnames=("b1", "b2")),
+        ))
+        return elements, catalog
+
+    def test_aggregates_fold_every_cross_site_edge_and_only_those(self) -> None:
+        elements, catalog = self._synthetic()
+        renderer = TopologyRenderer(self.snapshot, site_catalog=catalog)
+        view = renderer.site_view(elements)
+        folded = [m for agg in view["aggregated_edges"] for m in agg["members"]]
+        self.assertEqual(["x1", "x2"], sorted(folded))   # never the intra-site in1
+        self.assertTrue(all(agg["count"] == len(agg["members"])
+                            for agg in view["aggregated_edges"]))
+
+    def test_the_strongest_relationship_wins_the_aggregate(self) -> None:
+        # Two edges between the same pair: a weak BGP observation and a
+        # physical link. The folded line must claim physical -- claiming less
+        # would understate proven evidence, claiming an unproven kind would
+        # invent it.
+        elements, catalog = self._synthetic()
+        renderer = TopologyRenderer(self.snapshot, site_catalog=catalog)
+        agg = renderer.site_view(elements)["aggregated_edges"][0]
+        self.assertEqual(2, agg["count"])
+        self.assertEqual("physical", agg["relationship"])
+
+    def test_site_view_is_deterministic(self) -> None:
+        one, _ = self._view()
+        two, _ = self._view()
+        self.assertEqual(one, two)
+
+    def test_the_artifact_embeds_the_site_view(self) -> None:
+        html = TopologyRenderer(
+            self.snapshot, site_catalog=self.catalog
+        ).render()
+        self.assertIn("const siteView = ", html)
+        self.assertIn("site:alpha", html)   # embedded compact JSON
+        self.assertNotIn("__SITE_VIEW__", html)

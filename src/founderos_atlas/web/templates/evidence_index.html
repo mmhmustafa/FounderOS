@@ -1,0 +1,223 @@
+{% extends "base.html" %}
+{% from "_device_actions.html" import device_actions %}
+{% block title %}Evidence{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Evidence</h1>
+  <span class="actions">
+    <a class="btn" href="/timeline">Timeline</a>
+    {% if session %}
+    <a class="btn" href="/evidence/session/{{ session.session_id | urlencode }}/bundle"
+       title="Download every device's evidence from this discovery as a zip — outputs are masked">
+      Download Session Bundle
+    </a>
+    {% endif %}
+  </span>
+</div>
+
+{% if not sessions %}
+{# Part 10: an empty page must say what to do, not just that it is empty. #}
+<section class="card">
+  <div class="status-banner"><span>No evidence has been collected yet.</span></div>
+  <p class="muted">Atlas records what every device returns during discovery — the exact
+    output, kept so a conclusion can always be traced back to it.
+    <a href="/discovery">Run Discovery</a> to begin.</p>
+</section>
+
+{% else %}
+<p class="muted">What Atlas collected from this network, from which device, and whether it
+  worked. Every conclusion Atlas reaches rests on these records — open one to see the
+  device's own words and what depends on them.</p>
+
+<section class="card">
+  <form class="form" method="get" action="/evidence">
+    <label>Discovery session
+      <select name="session" onchange="this.form.submit()">
+        {% for s in sessions %}
+        <option value="{{ s.session_id }}" {{ 'selected' if session and s.session_id == session.session_id else '' }}>
+          {{ s.started_at }} — {{ s.network or s.profile_name }} ({{ s.status }})
+        </option>
+        {% endfor %}
+      </select>
+    </label>
+    <noscript><button class="btn" type="submit">Show</button></noscript>
+  </form>
+</section>
+
+{% if summary %}
+<section class="card">
+  <h2>Evidence Collection — {{ summary.network or session.profile_name or 'this network' }}</h2>
+  {# These replace the storage tiles that used to head this page (unique blobs,
+     deduplicated observations, stored bytes). Each of these answers a question
+     an operator actually has; none of those did. The storage numbers are not
+     gone — they are in System Details at the foot of the page, where an
+     administrator can still reach them. #}
+  <ul class="kv">
+    <li><span>Devices reached</span><span>{{ summary.devices_reached }}</span></li>
+    <li><span>Devices authenticated</span><span>{{ summary.devices_authenticated }} / {{ summary.devices_reached }}</span></li>
+    <li><span>Configurations collected</span><span>{{ summary.configurations_collected }} / {{ summary.devices_with_evidence }}</span></li>
+    <li><span>Commands attempted</span><span>{{ summary.commands_attempted }}</span></li>
+    <li><span>Collected successfully</span><span>{{ summary.commands_collected }}</span></li>
+    <li><span>Empty responses</span><span>{{ summary.empty_responses }}</span></li>
+    <li><span>Unsupported commands</span><span>{{ summary.unsupported_commands }}</span></li>
+    <li><span>Failed collections</span><span>{{ summary.failed_collections }}</span></li>
+    <li><span>Warnings</span><span>{{ summary.warnings }}</span></li>
+    <li><span>Collection completeness</span><span>
+      {% if summary.completeness_percent is none %}Unknown{% else %}{{ summary.completeness_percent }}%{% endif %}
+    </span></li>
+  </ul>
+  {% if summary.empty_responses %}
+  {# The single most misread number on this page. An operator seeing "9 empty"
+     next to a healthy lab needs to know Atlas is not reporting a fault. #}
+  <p class="muted">An empty response is not a failure — the command ran and the device had
+    nothing to report. Completeness counts it as collected.</p>
+  {% endif %}
+</section>
+{% endif %}
+
+<section class="card">
+  <h2>Devices in this Discovery</h2>
+
+  {# Part 7: filter the device table by what is actually in this session. The
+     options are derived from the session's own records, so a filter can never
+     offer a value that would return nothing. #}
+  <form class="form" method="get" action="/evidence">
+    <input type="hidden" name="session" value="{{ session.session_id }}">
+    <div class="form-row">
+      <label>Search
+        <input type="search" name="q" value="{{ filters.q }}"
+               placeholder="device, IP, command, platform…">
+      </label>
+      <label>Platform
+        <select name="platform">
+          <option value="">All platforms</option>
+          {% for p in options.platforms %}
+          <option value="{{ p }}" {{ 'selected' if filters.platform == p else '' }}>{{ p }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Command
+        <select name="command">
+          <option value="">All commands</option>
+          {% for c in options.commands %}
+          <option value="{{ c }}" {{ 'selected' if filters.command == c else '' }}>{{ c }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Status
+        <select name="status">
+          <option value="">Any status</option>
+          {% for s in options.statuses %}
+          <option value="{{ s }}" {{ 'selected' if filters.status == s else '' }}>{{ s | title }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+    <div class="form-actions">
+      <button class="btn" type="submit">Filter</button>
+      {% if filtered %}<a class="btn" href="/evidence?session={{ session.session_id | urlencode }}">Clear</a>{% endif %}
+    </div>
+  </form>
+
+  {% if filtered %}
+  <p class="muted">Showing {{ visible_count }} of {{ record_count }} evidence records.
+    The summary above always describes the whole discovery.</p>
+  {% endif %}
+
+  {% if devices %}
+  <table class="grid">
+    <thead>
+      <tr><th>Device</th><th>Platform</th><th>Commands</th><th>Empty</th>
+          <th>Configuration</th><th>Last collected</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for d in devices %}
+      {% set target = device_target(device_id=d.device_id) %}
+      <tr>
+        <td>
+          <strong>{{ d.hostname }}</strong>
+          {% if target and target.management_ip %}<span class="muted">{{ target.management_ip }}</span>{% endif %}
+          {# Part 9: the same universal action every other device surface uses.
+             This page implements no action logic of its own. #}
+          {% if target %}<div>{{ device_actions(target, compact=True, show_label=False,
+                                                web=web_access(device_id=d.device_id)) }}</div>{% endif %}
+        </td>
+        <td>{{ d.platform or '—' }}</td>
+        <td>{{ d.commands_collected }} / {{ d.commands_attempted }}</td>
+        <td>{{ d.empty_responses or '—' }}</td>
+        <td>{% if d.has_configuration %}<span class="badge">Collected</span>
+            {% else %}<span class="muted">Not collected</span>{% endif %}</td>
+        <td>{{ d.last_collected_at or '—' }}</td>
+        <td class="row-actions">
+          <a class="btn btn-sm" href="/evidence/device/{{ d.device_id | urlencode }}?session={{ session.session_id | urlencode }}">Evidence</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% elif filtered %}
+  <p class="muted">No evidence matches these filters.
+    <a href="/evidence?session={{ session.session_id | urlencode }}">Clear them</a> to see the whole discovery.</p>
+  {% else %}
+  <p class="muted">Atlas discovered devices in this session but did not collect command evidence.</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Discovery Sessions</h2>
+  <table class="grid">
+    <thead>
+      <tr><th>Session</th><th>Network</th><th>Started</th><th>Devices</th>
+          <th>Configurations</th><th>Evidence</th><th>Status</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for s in sessions %}
+      <tr>
+        <td><a href="/evidence?session={{ s.session_id | urlencode }}"><code>{{ s.session_id }}</code></a></td>
+        <td>{{ s.network or s.profile_name }}</td>
+        <td>{{ s.started_at }}</td>
+        <td>{{ s.device_count }}</td>
+        <td>{{ s.configuration_count }}</td>
+        <td>{{ s.evidence_count }}</td>
+        <td><span class="badge">{{ s.status | title }}</span></td>
+        <td class="row-actions">
+          <a class="btn btn-sm" href="/evidence/session/{{ s.session_id | urlencode }}/bundle">Bundle</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if sessions | length == 1 %}
+  {# The most useful thing this page can say when it is new: there is nothing
+     to compare against yet, and that is why Changes is empty. #}
+  <p class="muted">This is the only discovery Atlas remembers, so there is nothing to
+    compare it against yet. <a href="/discovery">Run discovery again</a> and the
+    <a href="/changes">Changes</a> view will begin reporting what moved.</p>
+  {% endif %}
+</section>
+{% endif %}
+
+<section class="card">
+  <details>
+    <summary class="muted">Enterprise Memory — System Details</summary>
+    {# Kept for administrators, deliberately out of the way. These describe the
+       storage engine, not the network: they report that content-addressing is
+       working, which is a property of the design rather than a question an
+       operator asks. #}
+    <p class="muted">How the evidence above is stored. These are properties of the storage
+      engine, not of your network.</p>
+    <ul class="kv">
+      <li><span>Discovery sessions</span><span>{{ totals.sessions }}</span></li>
+      <li><span>Devices remembered</span><span>{{ totals.devices }}</span></li>
+      <li><span>Evidence records</span><span>{{ totals.evidence_records }}</span></li>
+      <li><span>Configuration snapshots</span><span>{{ totals.configuration_snapshots }}</span></li>
+      <li><span>Unique blobs stored</span><span>{{ totals.unique_blobs }}</span></li>
+      <li><span>Duplicates suppressed</span><span>{{ totals.deduplicated }}</span></li>
+      <li><span>Stored bytes</span><span>{{ totals.stored_bytes }}</span></li>
+    </ul>
+    <p class="muted">Evidence is content-addressed: identical output collected twice is
+      stored once. Raw evidence is preserved verbatim so a future parser can reprocess
+      history without reconnecting to a device.</p>
+  </details>
+</section>
+{% endblock %}

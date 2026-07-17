@@ -101,7 +101,9 @@ class NavigationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             _, client = build_world(Path(tmp))
             page = client.get("/incidents?scope=all").data
-            self.assertIn(b"Path Intelligence", page)
+            # PR-047A: the cross-link names the destination as the navigation
+            # names it (Analyze > Investigate).
+            self.assertIn(b"Investigate", page)
             self.assertIn(b"What is an incident investigation?", page)
             self.assertIn(b"Investigate a path instead", page)
 

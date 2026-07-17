@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}SSH Console — {{ target.hostname }}{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/xterm.css') }}">
+{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>SSH Console — {{ target.hostname }}</h1>
+  <span class="actions"><a class="btn" href="/console">All Devices</a></span>
+</div>
+
+{% if not target.eligible %}
+<section class="card card-warn">
+  <h2>SSH is not available for this device</h2>
+  <p>{{ target.reason }}</p>
+  <p class="muted">
+    Atlas offers a session only where it has a <strong>verified management endpoint</strong> — an
+    address it authenticated to during discovery. It will not guess one from a router ID, a BGP
+    peer address, a next hop, or a loopback: those prove a protocol relationship, not that anyone
+    can log in there.
+  </p>
+  <p class="row-actions">
+    <a class="btn" href="/configuration/{{ target.device_id | urlencode }}">Configuration History</a>
+    <a class="btn" href="/topology">Device Details</a>
+  </p>
+</section>
+{% else %}
+
+<div class="console-head">
+  <div class="console-identity">
+    <strong>{{ target.hostname }}</strong>
+    <span class="muted">{{ target.platform or 'unknown platform' }} · {{ target.management_ip }}:{{ target.port }}</span>
+  </div>
+  <div class="console-meta">
+    <span id="console-state" class="job-badge job-badge-queued">Ready</span>
+    <span class="muted" id="console-duration">—</span>
+  </div>
+</div>
+
+<ul class="kv console-facts">
+  <li><span>Credential set</span><span>{{ target.credential_name or 'none' }} <span class="muted">({{ target.username or 'no user' }})</span></span></li>
+  <li><span>Endpoint evidence</span><span>Atlas authenticated to this address during discovery</span></li>
+  <li><span>Operator</span><span>{{ operator.name }}{% if not operator.authenticated %} <span class="muted">— unverified: {{ operator.basis }}</span>{% endif %}</span></li>
+</ul>
+
+<div id="console-alert" class="card card-warn" hidden>
+  <h2 id="console-alert-title">Attention</h2>
+  <p id="console-alert-body"></p>
+  <div id="console-alert-fingerprints" hidden>
+    <ul class="kv">
+      <li><span>Atlas trusted</span><span><code id="fp-known"></code></span></li>
+      <li><span>Device presented</span><span><code id="fp-new"></code></span></li>
+    </ul>
+  </div>
+  <p class="row-actions" id="console-alert-actions"></p>
+</div>
+
+<section class="card console-card">
+  <div class="console-toolbar">
+    <button class="btn btn-sm" id="btn-connect">Connect</button>
+    <button class="btn btn-sm" id="btn-disconnect" disabled>Disconnect</button>
+    <button class="btn btn-sm js-copy-ssh" data-ssh-command="{{ target.ssh_command }}">Copy SSH Command</button>
+    {% if credential_sets | length > 1 %}
+    <label class="console-cred">
+      <span class="muted">Credential</span>
+      <select id="credential-ref">
+        {% for item in credential_sets %}
+        <option value="{{ item.credential_ref }}"{% if item.credential_ref == target.credential_ref %} selected{% endif %}>{{ item.name }} ({{ item.username }})</option>
+        {% endfor %}
+      </select>
+    </label>
+    {% endif %}
+  </div>
+  <div id="terminal" class="console-terminal"></div>
+</section>
+
+<p class="muted">
+  The SSH session runs on the Atlas server; your browser holds only the terminal. The password
+  never leaves the server — it is not in this page, this URL, or the connection to it. What you
+  type is not filtered and not recorded; Atlas records only that a session happened.
+</p>
+
+<script src="{{ url_for('static', filename='vendor/xterm.js') }}"></script>
+<script src="{{ url_for('static', filename='vendor/xterm-addon-fit.js') }}"></script>
+<script src="{{ url_for('static', filename='atlas-console.js') }}"></script>
+<script>
+  window.ATLAS_CONSOLE = {
+    deviceId: {{ target.device_id | tojson }},
+    hostname: {{ target.hostname | tojson }},
+    managementIp: {{ target.management_ip | tojson }},
+    port: {{ target.port | tojson }},
+    credentialRef: {{ target.credential_ref | tojson }}
+  };
+  document.addEventListener('DOMContentLoaded', function () { AtlasConsole.init(window.ATLAS_CONSOLE); });
+</script>
+{% endif %}
+{% endblock %}

@@ -14,21 +14,120 @@ from pathlib import Path
 from typing import Any
 
 
-NAV_ITEMS = (
-    ("dashboard", "Mission", "/"),
-    ("advisor", "Advisor", "/advisor"),
-    ("discovery", "Discover", "/discovery"),
-    ("profiles", "Profiles", "/profiles"),
-    ("credentials", "Credentials", "/credentials"),
-    ("topology", "Topology", "/topology"),
-    ("predict", "Predict", "/predict"),
-    ("paths", "Paths", "/paths"),
-    ("compass", "Compass", "/compass"),
-    ("history", "History", "/history"),
-    ("changes", "Changes", "/changes"),
-    ("incidents", "Incidents", "/incidents"),
-    ("settings", "Settings", "/settings"),
+# -- Navigation (PR-047A FOCUS) ----------------------------------------------
+#
+# Atlas is organised around the questions an operator actually asks, not around
+# the packages that answer them. Six workflows:
+#
+#   Mission   — "what is my status?"
+#   Network   — "what is my network?"
+#   Timeline  — "what changed?"
+#   Policy    — "does it meet standard?"
+#   Analyze   — "answer my question"
+#   Setup     — "configure Atlas"
+#
+# Two rules keep this honest:
+#
+# 1. **Only the active group expands.** The sidebar shows six links; the group
+#    you are in reveals its views. Six choices, not eighteen — while every view
+#    remains one click from its workflow.
+# 2. **Device access is not a workflow.** SSH and HTTPS are *actions on a
+#    device*, offered wherever a device appears (see `_device_actions.html`).
+#    They are deliberately absent here: `/console` and `/management` still work
+#    and nothing was removed, but a product does not put "open a terminal" in
+#    its main menu.
+
+
+@dataclass(frozen=True)
+class NavItem:
+    """One view inside a workflow. ``key`` is what a route passes as ``active``."""
+
+    key: str
+    label: str
+    href: str
+
+
+@dataclass(frozen=True)
+class NavGroup:
+    """One workflow. ``href`` is where the group link lands (its first view)."""
+
+    key: str
+    label: str
+    href: str
+    items: tuple[NavItem, ...]
+
+    @property
+    def has_views(self) -> bool:
+        """Whether this group is worth expanding — a single-view group is just
+        a link, and rendering a one-item sub-list would be noise."""
+
+        return len(self.items) > 1
+
+
+NAV_GROUPS: tuple[NavGroup, ...] = (
+    NavGroup("mission", "Mission", "/", (
+        NavItem("dashboard", "Overview", "/"),
+        NavItem("incidents", "Incidents", "/incidents"),
+    )),
+    NavGroup("network", "Network", "/topology", (
+        NavItem("topology", "Topology", "/topology"),
+    )),
+    # PR-047A: Changes / Configuration / Discoveries / Evidence were four
+    # top-level items answering one question — "what changed?". They are one
+    # workflow now, entered through the Timeline overview. Nothing was removed;
+    # every view is intact beneath it. This is also the natural home for the
+    # future Change → Impact capability.
+    # PR-047B ordered these the way the work actually happens: a discovery runs,
+    # it changes things, the configurations are what changed, and the evidence
+    # is what proves all of it. Evidence sits last deliberately — it is where
+    # the other views lead when an operator asks "why do you say that?", not a
+    # place to start.
+    NavGroup("timeline", "Timeline", "/timeline", (
+        NavItem("timeline", "Overview", "/timeline"),
+        NavItem("history", "Discoveries", "/history"),
+        NavItem("changes", "Changes", "/changes"),
+        NavItem("configuration", "Configuration", "/configuration"),
+        NavItem("memory", "Evidence", "/evidence"),
+    )),
+    NavGroup("policy", "Policy", "/policy", (
+        NavItem("policy", "Compliance", "/policy"),
+    )),
+    NavGroup("analyze", "Analyze", "/advisor", (
+        NavItem("advisor", "Advisor", "/advisor"),
+        NavItem("paths", "Investigate", "/paths"),
+        NavItem("predict", "Predict", "/predict"),
+        NavItem("compass", "Compass", "/compass"),
+    )),
+    NavGroup("setup", "Setup", "/discovery", (
+        NavItem("discovery", "Discover", "/discovery"),
+        NavItem("profiles", "Profiles", "/profiles"),
+        NavItem("credentials", "Credentials", "/credentials"),
+        NavItem("settings", "Settings", "/settings"),
+    )),
 )
+
+
+# Every view key → the workflow that owns it. Built once, so a route keeps
+# passing the same ``active`` key it always passed and the sidebar works out
+# which group to open.
+NAV_GROUP_FOR_ITEM: dict[str, str] = {
+    item.key: group.key for group in NAV_GROUPS for item in group.items
+}
+
+# The flat view of the same navigation. This is the pre-FOCUS shape of the nav,
+# preserved as a derived value so the long-standing symbol keeps working. It is
+# not used to render anything — the sidebar reads NAV_GROUPS — so if a future
+# reader finds no consumer, deleting this is safe.
+NAV_ITEMS = tuple(
+    (item.key, item.label, item.href) for group in NAV_GROUPS for item in group.items
+)
+
+
+def nav_group_for(active: str) -> str:
+    """The workflow that owns the active view. Falls back to the view's own key
+    so an unknown/one-off page never highlights the wrong workflow."""
+
+    return NAV_GROUP_FOR_ITEM.get(active, active)
 
 
 def format_timestamp(value: str | None) -> str:
@@ -49,6 +148,13 @@ def profile_row(profile) -> dict[str, Any]:
         "name": profile.name,
         "site": profile.site or "-",
         "management_ip": profile.management_ip,
+        "seed_cidr": getattr(profile, "seed_cidr", None),
+        # What the operator actually asked for. A CIDR is expanded into
+        # candidate addresses at creation, so a /24 sweep used to render as its
+        # first address — "172.20.20.1" for a profile the operator created by
+        # typing "172.20.20.0/24". Every screen shows this instead, so none of
+        # them can disagree about what a profile's entry point is.
+        "seed_label": getattr(profile, "seed_cidr", None) or profile.management_ip,
         "username": profile.username,
         "max_depth": profile.max_depth,
         "max_devices": profile.max_devices,
@@ -233,6 +339,68 @@ def prediction_targets(snapshot: dict | None) -> list[dict[str, Any]]:
         )
     targets.sort(key=lambda item: item["hostname"].casefold())
     return targets
+
+
+def timeline_activity(
+    config_events, discovery_rows, *, limit: int = 40
+) -> list[dict[str, Any]]:
+    """One chronology across everything Atlas remembers happening.
+
+    Changes, Configuration, Discoveries and Evidence were four pages answering
+    one question — *what changed?* This merges the two kinds of thing that
+    actually occur on a timeline (a configuration changed; a discovery ran) into
+    a single ordered list, so the workflow has one front door.
+
+    Each entry carries its ``discovery_session``: the seam that links a
+    configuration change back to the discovery that observed it. That link is
+    what a future Change → Impact capability will follow — it is recorded here
+    deliberately, and deliberately not yet followed.
+
+    Pure aggregation over already-formed records. Sorting uses the stored UTC
+    instants; only the caller renders them in the operator's zone.
+    """
+
+    from urllib.parse import quote
+
+    entries: list[dict[str, Any]] = []
+    for event in config_events:
+        entries.append(
+            {
+                "occurred_at": event.occurred_at,
+                "kind": "configuration",
+                "title": f"{event.hostname} configuration changed",
+                "detail": event.summary,
+                "device_id": event.device_id,
+                "hostname": event.hostname,
+                "network": event.network,
+                "severity": event.highest_severity,
+                "discovery_session": event.discovery_session,
+                "change_count": event.change_count,
+                "href": f"/configuration/{quote(str(event.device_id), safe='')}",
+            }
+        )
+    for row in discovery_rows:
+        devices = row.get("device_count", 0)
+        entries.append(
+            {
+                "occurred_at": row.get("started_at_iso") or "",
+                "kind": "discovery",
+                "title": f"Discovery ran on {row.get('profile') or 'the network'}",
+                "detail": (
+                    f"{devices} device(s), {row.get('relationship_count', 0)} "
+                    f"relationship(s) · {row.get('network_status', 'unknown')}"
+                ),
+                "device_id": None,
+                "hostname": None,
+                "network": row.get("profile") or "",
+                "severity": "low",
+                "discovery_session": row.get("record_id"),
+                "change_count": 0,
+                "href": "/history",
+            }
+        )
+    entries.sort(key=lambda item: item["occurred_at"] or "", reverse=True)
+    return entries[:limit]
 
 
 def device_inventory(scoped_snapshots) -> list[dict[str, Any]]:

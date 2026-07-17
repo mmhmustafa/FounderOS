@@ -96,7 +96,10 @@ class UnifiedPipelineTests(unittest.TestCase):
             for line in (
                 "[1/9] Connecting to seed device ... ok",
                 "[2/9] Discovering topology ... ok (2 device(s), 0 failed)",
-                "[3/9] Collecting configurations ... ok (2 device(s))",
+                # PR-044 (MEMORY): the step now reports how many collected
+                # configurations became remembered changes.
+                "[3/9] Collecting configurations ... ok (2 device(s); "
+                "2 configuration change(s) remembered)",
                 "[4/9] Loading previous baseline ... skipped (first discovery)",
                 "[5/9] Comparing topology & state ... skipped (no baseline)",
                 "[6/9] Comparing configurations ... skipped (no baseline configurations)",

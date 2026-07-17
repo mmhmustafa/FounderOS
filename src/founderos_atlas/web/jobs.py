@@ -85,6 +85,11 @@ class DiscoveryJob:
     current_depth: int | None = None  # not reported by the engine yet
     devices_discovered: int = 0
     failed_devices: int = 0
+    # The two things a non-connecting address can mean, kept apart (PR-043.10's
+    # rule, applied here): a device that refused us, and an address with no
+    # device on it. Only the first is a problem.
+    auth_failed_devices: int = 0
+    addresses_without_device: int = 0
     created_at: str | None = None
     started_at: str | None = None
     completed_at: str | None = None
@@ -130,6 +135,8 @@ class DiscoveryJob:
             "current_depth": self.current_depth,
             "devices_discovered": self.devices_discovered,
             "failed_devices": self.failed_devices,
+            "auth_failed_devices": self.auth_failed_devices,
+            "addresses_without_device": self.addresses_without_device,
             "created_at": self.created_at,
             "started_at": self.started_at,
             "completed_at": self.completed_at,
@@ -286,17 +293,31 @@ class DiscoveryJobManager:
             job.summary = dict(summary)
             failed = int(summary.get("failed_devices") or job.failed_devices or 0)
             job.failed_devices = failed
-            if failed:
-                # PR-043.1: this counts only legitimate connection attempts
-                # to verified candidate endpoints — protocol peers observed
-                # through routing evidence are never attempted, so they can
-                # never appear here.
+            # An address that never answered is discovery COVERAGE, not a
+            # failure. Sweeping a /24 that holds nine devices leaves 245
+            # addresses silent — that is the correct answer, not a warning, and
+            # calling those "verified management endpoints" was simply untrue:
+            # they were never verified as anything. Only a device that ANSWERED
+            # and refused our credentials is worth an operator's attention.
+            #
+            # enterprise_intelligence has drawn this line since PR-043.10; this
+            # is the same rule, from the same function, finally applied to the
+            # discovery job. (Older summaries carry neither key: then the honest
+            # answer is to say nothing rather than guess.)
+            refused = summary.get("auth_failed_devices")
+            silent = summary.get("addresses_without_device")
+            job.auth_failed_devices = int(refused or 0)
+            job.addresses_without_device = int(silent or 0)
+
+            if refused:
                 job.warning = (
-                    f"{failed} verified management endpoint(s) could not be "
-                    "reached; successful results were preserved."
+                    f"{int(refused)} device(s) refused authentication; Atlas "
+                    "reached them but could not sign in. Successful results "
+                    "were preserved."
                 )
                 job.message = "Discovery completed with warnings"
             else:
+                job.warning = None
                 job.message = "Discovery completed successfully"
             self._persist()
 
@@ -439,6 +460,10 @@ class DiscoveryJobManager:
                 message=str(entry.get("message") or ""),
                 devices_discovered=int(entry.get("devices_discovered") or 0),
                 failed_devices=int(entry.get("failed_devices") or 0),
+                auth_failed_devices=int(entry.get("auth_failed_devices") or 0),
+                addresses_without_device=int(
+                    entry.get("addresses_without_device") or 0
+                ),
                 created_at=entry.get("created_at"),
                 started_at=entry.get("started_at"),
                 completed_at=entry.get("completed_at"),

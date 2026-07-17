@@ -13,24 +13,27 @@
 {% if profiles %}
 <section class="card">
   <h2>Networks</h2>
-  <div class="table-scroll" role="region" aria-label="Networks" tabindex="0">
+  {# This table is server-rendered at page load, so while a discovery runs
+     beside it, it goes stale — showing "running" and "never" next to a panel
+     reporting the run as complete. atlas.js refreshes THIS BODY when a run
+     finishes, rather than reloading the page (which would discard the
+     JS-rendered results panel). #}
   <table class="grid">
     <thead>
-      <tr><th>Network</th><th>Site</th><th>Seed IP</th><th>Last Discovery</th><th>Status</th></tr>
+      <tr><th>Network</th><th>Site</th><th>Seed</th><th>Last Discovery</th><th>Status</th></tr>
     </thead>
-    <tbody>
+    <tbody id="networks-body">
       {% for p in profiles %}
       <tr>
         <td>{{ p.name }}</td>
         <td>{{ p.site }}</td>
-        <td>{{ p.management_ip }}</td>
+        <td>{{ p.seed_label }}</td>
         <td>{{ p.last_discovery }}</td>
         <td>{{ p.job_status }}</td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
-  </div>
 </section>
 
 <section class="card">
@@ -40,7 +43,7 @@
         {% if not selected %}<option value="" selected disabled>— Select a network —</option>{% endif %}
         {% for p in profiles %}
         <option value="{{ p.name }}" data-profile-id="{{ p.profile_id }}" {{ 'selected' if selected == p.name else '' }}>
-          {{ p.name }} — {{ p.management_ip }}{% if p.site != '-' %} ({{ p.site }}){% endif %}
+          {{ p.name }} — {{ p.seed_label }}{% if p.site != '-' %} ({{ p.site }}){% endif %}
         </option>
         {% endfor %}
       </select>

@@ -19,7 +19,16 @@ from .exceptions import (
 )
 
 
-SUPPORTED_DEVICE_TYPES = ("cisco_ios", "cisco_xe")
+# PR-049 (POLYGLOT): the session personality is chosen by the platform
+# driver, never hardcoded here. Each entry is a netmiko device_type whose
+# prompt handling, pagination and timing netmiko already knows.
+SUPPORTED_DEVICE_TYPES = (
+    "cisco_ios",
+    "cisco_xe",
+    "cisco_nxos",
+    "arista_eos",
+    "juniper_junos",
+)
 
 _AUTH_EXCEPTION_NAMES = frozenset(
     {"NetmikoAuthenticationException", "AuthenticationException"}
@@ -227,6 +236,6 @@ def _ensure_command_permitted(output: str, command: str, host: str) -> None:
         )
     if any(marker in lowered for marker in _UNSUPPORTED_MARKERS):
         raise UnsupportedPlatformError(
-            f"Device {host} did not recognize {command!r}. Atlas live discovery "
-            "requires a Cisco IOS or IOS-XE device."
+            f"Device {host} did not recognize {command!r}. The platform does "
+            "not support this command dialect."
         )

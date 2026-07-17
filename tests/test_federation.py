@@ -29,6 +29,7 @@ from founderos_atlas.federation import (
 )
 from founderos_atlas.path_intelligence import investigate_path
 from founderos_atlas.prediction import ChangeRequest, predict
+from founderos_atlas.visualization import TOPOLOGY_VISUAL_STYLE_MARKER
 
 from tests.test_atlas_transport import PASSWORD
 from tests.test_multihop_discovery import ScriptedNetwork
@@ -94,6 +95,40 @@ def edge(local_id: str, local_if: str, remote: str, remote_if: str | None) -> di
 
 
 class MergeRuleTests(unittest.TestCase):
+    def test_routing_and_interface_evidence_survives_federation(self) -> None:
+        local = device("R1", "10.0.0.1", serial="SER-R1")
+        local["metadata"] = {
+            "routing_evidence": {
+                "ospf_adjacencies": [{
+                    "peer_address": "10.0.0.2",
+                    "state": "full",
+                    "area": "0",
+                    "source": "show ip ospf neighbor",
+                }],
+                "bgp_sessions": [],
+            }
+        }
+        local["interfaces"][0]["metadata"] = {"vrf": "WAN"}
+        observed_edge = edge(local["device_id"], "Gi0/1", "R2", "Gi0/1")
+        observed_edge["protocol"] = "ospf"
+        observed_edge["metadata"] = {"state": "full", "area": "0"}
+
+        graph = build_enterprise_graph((
+            contribution("hyd", [local, device("R2", "10.0.0.2")], [observed_edge]),
+        ))
+        snapshot = build_enterprise_snapshot(graph)
+        rendered = next(item for item in snapshot.devices if item["hostname"] == "R1")
+        self.assertEqual(
+            "full",
+            rendered["metadata"]["routing_evidence"]["ospf_adjacencies"][0]["state"],
+        )
+        self.assertEqual("WAN", rendered["interfaces"][0]["metadata"]["vrf"])
+        federated_edge = next(item for item in snapshot.edges if item["protocol"] == "ospf")
+        self.assertEqual("0", federated_edge["metadata"]["area"])
+        self.assertEqual(
+            "full", federated_edge["metadata"]["observations"][0]["metadata"]["state"]
+        )
+
     def test_same_serial_across_profiles_merges(self) -> None:
         graph = build_enterprise_graph(
             (
@@ -509,6 +544,28 @@ class EnterpriseGuiTests(unittest.TestCase):
                 self.assertIn(hostname, viewer)
             self.assertNotIn(PASSWORD, viewer)
             self.assertNotIn(PASSWORD.encode(), page)
+
+    def test_cached_enterprise_viewer_refreshes_when_its_style_marker_is_stale(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workdir = Path(tmp)
+            _, client = self.build_world(workdir)
+            self.assertEqual(200, client.get("/topology?scope=all").status_code)
+            enterprise = enterprise_scope_dir(workdir)
+            viewer = enterprise / "atlas_topology.html"
+            snapshot_before = (enterprise / "topology_snapshot.json").read_bytes()
+            viewer.write_text("<html>old enterprise style</html>", encoding="utf-8")
+
+            response = client.get("/topology?scope=all")
+
+            self.assertEqual(200, response.status_code)
+            refreshed = viewer.read_text(encoding="utf-8")
+            self.assertIn(TOPOLOGY_VISUAL_STYLE_MARKER, refreshed)
+            self.assertIn("A1", refreshed)
+            self.assertIn("B1", refreshed)
+            self.assertEqual(
+                snapshot_before,
+                (enterprise / "topology_snapshot.json").read_bytes(),
+            )
 
     def test_enterprise_inventory_merges_the_shared_gateway_once(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

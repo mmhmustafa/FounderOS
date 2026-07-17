@@ -502,7 +502,9 @@ class WizardGuiTests(unittest.TestCase):
                 data={"mode": "seed", "seed": "10.0.0.1", "name": "X"},
                 follow_redirects=True,
             )
-            self.assertIn(b"username, and password are required", response.data)
+            # PR-047A: the rule is "a way to authenticate" — its own credential
+            # OR a credential set. With neither, discovery is still refused.
+            self.assertIn(b"needs a way to authenticate", response.data)
 
     def test_mission_launches_the_wizard(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

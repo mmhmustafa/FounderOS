@@ -21,6 +21,19 @@ from founderos_atlas.config import (
     safe_artifact_name,
     write_configuration_artifacts,
 )
+from founderos_atlas.config_memory import (
+    ConfigMemoryStore,
+    RecordOutcome,
+    decide_collection,
+)
+from founderos_atlas.enterprise_memory import (
+    DiscoverySession,
+    EnterpriseMemoryStore,
+    EvidenceSink,
+    MODE_SEED,
+    SESSION_COMPLETED,
+    SESSION_RUNNING,
+)
 from founderos_atlas.config_intelligence import (
     compare_configurations,
     render_config_report_json,
@@ -255,6 +268,11 @@ def atlas_discover_command(
     active_profile_id: str | None = None
     active_service: ProfileService | None = None
     collect_override: bool | None = None
+    # PR-044 (MEMORY): the profile's collection policy and its schedule
+    # context; None keeps the legacy boolean/interactive behaviour.
+    collection_policy: str | None = None
+    collection_schedule_hours = 24
+    last_collected_at: str | None = None
     if profile is not None:
         active_service = _profile_service(profile_service)
         try:
@@ -266,6 +284,9 @@ def atlas_discover_command(
         host, username, password = inputs.management_ip, inputs.username, inputs.password
         max_depth, max_devices = inputs.max_depth, inputs.max_devices
         collect_override = inputs.collect_configuration
+        collection_policy = inputs.collection_policy
+        collection_schedule_hours = inputs.collection_schedule_hours
+        last_collected_at = inputs.last_discovery
         # Every profile discovers into its own isolated scope: its own
         # current artifacts, configs, and history. Comparison baselines can
         # therefore only ever come from the same profile's previous run.
@@ -341,12 +362,76 @@ def atlas_discover_command(
     started_at = read_clock()
     emit("")
     emit("Atlas Discovery Pipeline")
+
+    # PR-045 (Enterprise Memory): every discovery persists a session, the raw
+    # evidence each device returned, and configuration snapshots — captured
+    # during the discovery that already runs, reusing its authenticated
+    # sessions. Memory is a side effect: its setup is guarded so a failure
+    # here never breaks discovery.
+    memory_session_id = started_at.strftime("%Y-%m-%d_%H-%M-%S")
+    memory_store: EnterpriseMemoryStore | None = None
+    memory_sink: EvidenceSink | None = None
+    memory_capture = None
+    try:
+        memory_store = EnterpriseMemoryStore(
+            Path(config_output_dir).parent / "enterprise-memory"
+        )
+        memory_store.begin_session(
+            DiscoverySession(
+                session_id=memory_session_id,
+                network=active_profile or "local workspace",
+                profile_id=active_profile_id or "local",
+                profile_name=active_profile or "local workspace",
+                started_at=started_at.isoformat(timespec="seconds"),
+                user="local-operator",
+                credential_ref=(inputs.credential_ref if profile is not None else None),
+                mode=MODE_SEED,
+                seeds=(host, *((inputs.seeds if profile is not None else ()) or ())),
+                status=SESSION_RUNNING,
+            )
+        )
+        memory_sink = EvidenceSink(memory_store, discovery_session=memory_session_id)
+
+        def memory_capture(result, raw_outputs):
+            device = result.device
+            driver_meta = (device.metadata or {}).get("platform_driver") or {}
+            memory_sink.capture(
+                device_id=device.device_id,
+                hostname=device.hostname,
+                raw_outputs=raw_outputs,
+                platform=device.platform,
+                software_version=device.os_version,
+                platform_driver=driver_meta.get("driver") if isinstance(driver_meta, dict) else None,
+                credential_ref=(inputs.credential_ref if profile is not None else None),
+            )
+    except Exception:  # noqa: BLE001 - memory must never break discovery
+        memory_store = None
+        memory_sink = None
+        memory_capture = None
+
     try:
         config = MultiHopConfig(max_depth=max_depth, max_devices=max_devices)
-        credentials = DeviceCredentials(host=host, username=username, password=password)
+        # A profile may authenticate purely from credential sets, and then has
+        # no credential of its own to seed from. Every connection in that case
+        # comes from the per-device resolver below (`credential_factory`), so
+        # nothing needs a DeviceCredentials — and building one out of empty
+        # strings only trips its own "username is required" validation. It is
+        # constructed when there is something real to put in it, and not before.
+        credentials = (
+            DeviceCredentials(host=host, username=username, password=password)
+            if (username and password)
+            else None
+        )
         build_transport = transport_factory or SSHDeviceTransport
 
         def host_transport(next_host: str) -> DeviceTransport:
+            # Only ever the traversal factory when there is no profile, and a
+            # profile-less run cannot reach here without a credential.
+            if credentials is None:  # pragma: no cover - defensive
+                raise CliError(
+                    "No credential to connect with: a profile that authenticates "
+                    "from credential sets resolves them per device."
+                )
             return build_transport(replace(credentials, host=next_host))
 
         # Profile runs resolve credentials per device: the profile's own
@@ -370,12 +455,20 @@ def atlas_discover_command(
                 set_ids=inputs.credential_sets,
                 profile_id=active_profile_id,
                 site_hint=inputs.site_hint,
-                profile_default=CredentialCandidate(
-                    credential_ref=inputs.credential_ref,
-                    username=username,
-                    label="profile credential",
-                    priority=0,
-                    source="profile-default",
+                # A profile may authenticate purely from credential sets. Then
+                # it has no credential of its own, and offering an empty one as
+                # the first candidate would waste an attempt on every host.
+                # `profile_default` is optional at every layer for this reason.
+                profile_default=(
+                    CredentialCandidate(
+                        credential_ref=inputs.credential_ref,
+                        username=username,
+                        label="profile credential",
+                        priority=0,
+                        source="profile-default",
+                    )
+                    if (username and inputs.credential_ref)
+                    else None
                 ),
                 seed_hosts=(host, *(inputs.seeds or ())),
             )
@@ -392,13 +485,14 @@ def atlas_discover_command(
         )
         report, graph, snapshot = run_multihop_discovery(
             traversal_factory,
-            credentials.host,
+            host,  # the seed address; `credentials` may not exist (set-only)
             config=config,
             policy=active_boundary,
             extra_seeds=active_seeds or (),
             on_neighbor=on_neighbor,
             reachability=reachability,
             workers=resolved_workers,
+            evidence_sink=memory_capture,
         )
     except AtlasTransportError as error:
         raise CliError(str(error)) from error
@@ -411,20 +505,94 @@ def atlas_discover_command(
         f"ok ({len(report.connected)} device(s), {len(report.failed)} failed)",
     )
 
-    config_collections = _collect_configurations_if_requested(
+    # PR-044 (MEMORY): collection is policy driven, and every collected
+    # configuration is remembered in the scope's content-addressed memory.
+    discovery_session = started_at.strftime("%Y-%m-%d_%H-%M-%S")
+    config_memory_root = Path(config_output_dir).parent / "config-memory"
+    collection_decision = decide_collection(
+        collection_policy if collection_policy is not None else collect_override,
+        now=started_at.isoformat(timespec="seconds"),
+        last_collected_at=last_collected_at,
+        schedule_hours=collection_schedule_hours,
+        is_discovery_run=True,
+    ) if (collection_policy is not None or collect_override is not None) else None
+    config_collections, memory_outcomes = _collect_configurations_if_requested(
         read_input,
         build_transport,
         credentials,
         report,
         config_output_dir,
-        collect_override=collect_override,
+        collect_override=(
+            collection_decision.collect if collection_decision is not None else None
+        ),
         host_factory=credential_factory,
+        memory_root=config_memory_root,
+        network=active_profile or "local workspace",
+        profile_id=active_profile_id or "local",
+        discovery_session=discovery_session,
+        collected_at=started_at.isoformat(timespec="seconds"),
+        enterprise_store=memory_store,
+        enterprise_credential_ref=(inputs.credential_ref if profile is not None else None),
+        enterprise_discovery_policy=(
+            collection_policy if collection_policy is not None else None
+        ),
     )
     if config_collections is None:
-        step(3, "Collecting configurations", "skipped (not requested)")
+        reason = (
+            collection_decision.reason
+            if collection_decision is not None
+            else "not requested"
+        )
+        step(3, "Collecting configurations", f"skipped ({reason})")
     else:
-        step(3, "Collecting configurations", f"ok ({len(config_collections)} device(s))")
+        remembered = sum(1 for item in memory_outcomes if item.changed)
+        step(
+            3,
+            "Collecting configurations",
+            f"ok ({len(config_collections)} device(s); "
+            f"{remembered} configuration change(s) remembered)",
+        )
     completed_at = read_clock()
+
+    # PR-045: finalize the discovery session with what was actually captured.
+    if memory_store is not None:
+        try:
+            duration = (completed_at - started_at).total_seconds()
+            # Count from the store (authoritative): configuration snapshots
+            # land during the config-collection pass, after the discovery
+            # sink has run, so the sink's own counters undercount them.
+            session_evidence = len(
+                memory_store.evidence_records(discovery_session=memory_session_id)
+            )
+            session_configs = len({
+                snap.config_sha256
+                for snap in memory_store.configuration_snapshots()
+                if snap.discovery_session == memory_session_id
+            })
+            memory_store.complete_session(
+                DiscoverySession(
+                    session_id=memory_session_id,
+                    network=active_profile or "local workspace",
+                    profile_id=active_profile_id or "local",
+                    profile_name=active_profile or "local workspace",
+                    started_at=started_at.isoformat(timespec="seconds"),
+                    completed_at=completed_at.isoformat(timespec="seconds"),
+                    duration_seconds=round(duration, 3),
+                    user="local-operator",
+                    credential_ref=(inputs.credential_ref if profile is not None else None),
+                    mode=MODE_SEED,
+                    seeds=(host, *((inputs.seeds if profile is not None else ()) or ())),
+                    device_count=snapshot.device_count,
+                    authenticated_count=len(report.connected),
+                    configuration_count=session_configs,
+                    evidence_count=session_evidence,
+                    error_count=len(report.failed),
+                    warning_count=len(snapshot.warnings),
+                    status=SESSION_COMPLETED,
+                )
+            )
+        except Exception:  # noqa: BLE001 - memory never breaks the pipeline
+            pass
 
     baseline = load_previous_baseline(history_root)
     if baseline.available:
@@ -1217,6 +1385,34 @@ def atlas_investigate_command(
     )
 
 
+def port_is_serving(host: str, port: int, *, timeout: float = 0.4) -> bool:
+    """Is something already answering on this address?
+
+    The check exists because of a Windows-specific trap. On Linux, binding a
+    port that is already listening fails with EADDRINUSE. On Windows,
+    ``SO_REUSEADDR`` — which the dev server sets by default to dodge TIME_WAIT
+    on Unix — means "steal the port" instead. So a second ``atlas web`` does
+    **not** fail there. It quietly becomes a second server on the same port,
+    and requests go to whichever one wins.
+
+    That is not a mistake an operator can avoid by being careful: nothing warns
+    them, both servers look fine, and the GUI starts answering from whichever
+    process happened to win — including one started hours ago, running code
+    from before their last change. Refusing to start is the only honest option.
+    """
+
+    import socket
+
+    probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    probe.settimeout(timeout)
+    try:
+        return probe.connect_ex((host, port)) == 0
+    except OSError:
+        return False
+    finally:
+        probe.close()
+
+
 def atlas_web_command(
     *,
     host: str = "127.0.0.1",
@@ -1225,8 +1421,24 @@ def atlas_web_command(
     history_root: str | Path | None = None,
     browser_opener: BrowserOpener | None = None,
     server_runner: Callable[..., None] | None = None,
+    port_probe: Callable[[str, int], bool] | None = None,
 ) -> tuple[int, str]:
     """Start the local Atlas web GUI (binds to 127.0.0.1 only)."""
+
+    # Refuse to become the second server on this port (see port_is_serving).
+    # Checked before anything is built, so the message is the first thing the
+    # operator sees rather than a GUI that looks started and is not theirs.
+    probe = port_probe or port_is_serving
+    if probe(host, port):
+        raise CliError(
+            f"Something is already serving http://{host}:{port} — "
+            f"most likely another 'atlas web'.\n"
+            f"Atlas will not start a second server on the same port: on "
+            f"Windows both would bind, and the GUI would answer from "
+            f"whichever won — possibly one running older code.\n"
+            f"Stop the running server, or start this one elsewhere: "
+            f"atlas web --port {port + 1}"
+        )
 
     try:
         from founderos_atlas.web import create_app
@@ -1534,20 +1746,36 @@ def _regenerate_dashboard(
 def _collect_configurations_if_requested(
     read_input: PromptReader,
     build_transport: TransportFactory,
-    credentials: DeviceCredentials,
+    # None when the profile authenticates purely from credential sets; then
+    # `host_factory` (the per-device resolver) supplies every transport and
+    # this is never consulted.
+    credentials: DeviceCredentials | None,
     report,
     config_output_dir: str | Path,
     *,
     collect_override: bool | None = None,
     host_factory=None,
-) -> tuple[tuple[str, str, str], ...] | None:
-    """Collect read-only configuration per discovered device.
+    memory_root: str | Path | None = None,
+    network: str = "unknown",
+    profile_id: str = "unknown",
+    discovery_session: str = "unrecorded",
+    collected_at: str | None = None,
+    enterprise_store=None,
+    enterprise_credential_ref: str | None = None,
+    enterprise_discovery_policy: str | None = None,
+):
+    """Collect read-only configuration per discovered device, and remember it.
 
-    ``collect_override`` (from a saved profile) skips the interactive prompt.
-    ``host_factory`` (multi-credential runs) builds the per-host transport
-    with the same safe credential resolution discovery used. Returns None
-    when declined, else (hostname, status, detail) entries where detail is
-    the artifact directory or a clean failure message.
+    ``collect_override`` (from a saved profile's collection policy) skips the
+    interactive prompt. ``host_factory`` (multi-credential runs) builds the
+    per-host transport with the same safe credential resolution discovery
+    used.
+
+    PR-044 (MEMORY): every successfully collected configuration is also
+    recorded into the scope's content-addressed Configuration Memory, so an
+    unchanged device costs one observation rather than a duplicate copy.
+    Returns ``(collections, memory_outcomes)``; ``collections`` is None when
+    collection was declined.
     """
 
     if collect_override is not None:
@@ -1559,8 +1787,10 @@ def _collect_configurations_if_requested(
             answer = ""
         collect = answer in ("y", "yes")
     if not collect:
-        return None
+        return None, ()
+    store = ConfigMemoryStore(memory_root) if memory_root is not None else None
     collections: list[tuple[str, str, str]] = []
+    outcomes: list[RecordOutcome] = []
     for visit, result in zip(report.connected, report.results):
         hostname = result.device.hostname
         try:
@@ -1574,9 +1804,57 @@ def _collect_configurations_if_requested(
                 Path(config_output_dir) / safe_artifact_name(hostname),
             )
             collections.append((hostname, artifact.status, str(paths.directory)))
+            if store is not None:
+                outcomes.append(
+                    store.record(
+                        artifact.running_config,
+                        device_id=result.device.device_id,
+                        hostname=hostname,
+                        network=network,
+                        profile_id=profile_id,
+                        discovery_session=discovery_session,
+                        collected_at=collected_at or artifact.collected_at,
+                        platform=result.device.platform,
+                        vendor=result.device.vendor,
+                        os_name=result.device.os_name,
+                        os_version=result.device.os_version,
+                        management_ip=result.device.management_ip,
+                    )
+                )
+            # PR-045: the running-config just collected is also a
+            # configuration snapshot (and running-config raw evidence) in
+            # Enterprise Memory — sharing one content-addressed blob, so no
+            # duplicate storage. Guarded: memory never breaks collection.
+            if enterprise_store is not None and (artifact.running_config or "").strip():
+                driver_meta = (result.device.metadata or {}).get("platform_driver") or {}
+                driver_name = (
+                    driver_meta.get("driver") if isinstance(driver_meta, dict) else None
+                )
+                try:
+                    enterprise_store.store_evidence(
+                        device_id=result.device.device_id, hostname=hostname,
+                        command="show running-config",
+                        output=artifact.running_config,
+                        discovery_session=discovery_session,
+                        platform=result.device.platform,
+                        software_version=result.device.os_version,
+                        platform_driver=driver_name,
+                    )
+                    enterprise_store.store_configuration(
+                        device_id=result.device.device_id, hostname=hostname,
+                        discovery_session=discovery_session,
+                        running_config=artifact.running_config,
+                        platform=result.device.platform,
+                        software_version=result.device.os_version,
+                        platform_driver=driver_name,
+                        credential_ref=enterprise_credential_ref,
+                        discovery_policy=enterprise_discovery_policy,
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
         except (AtlasConfigurationError, AtlasTransportError, OSError) as error:
             collections.append((hostname, "failed", str(error)))
-    return tuple(collections)
+    return tuple(collections), tuple(outcomes)
 
 
 def atlas_compare_command(

@@ -30,6 +30,28 @@ _AUTH_MARKERS = ("authentication", "username and password")
 RECENT_HISTORY_WINDOW = 5
 
 
+def is_auth_failure(detail: str | None) -> bool:
+    """Did a device answer and refuse our credentials?
+
+    This is the line between the two things a failed address can mean, and it
+    is drawn here **once** so every consumer draws it the same way:
+
+    - **A device refused us.** Something is there; Atlas could not get in.
+      That is worth an operator's attention.
+    - **Nothing answered.** In a CIDR sweep that is 245 addresses with no
+      device on them — the expected, correct result of scanning a /24 with
+      nine devices in it. It is discovery *coverage*, never a failure.
+
+    Confusing the second for the first is how a complete discovery (9 of 9
+    devices found) came to report itself "completed with warnings".
+    """
+
+    if not detail:
+        return False
+    lowered = detail.casefold()
+    return any(marker in lowered for marker in _AUTH_MARKERS)
+
+
 @dataclass(frozen=True)
 class IntelligenceEvidence:
     """Everything the intelligence engines read. Plain data, no secrets."""
@@ -194,9 +216,7 @@ class IntelligenceEvidence:
     @property
     def auth_failed_hosts(self) -> tuple[str, ...]:
         hosts = [
-            host
-            for host, detail in self.failed_details
-            if any(marker in detail.casefold() for marker in _AUTH_MARKERS)
+            host for host, detail in self.failed_details if is_auth_failure(detail)
         ]
         return tuple(sorted(set(hosts)))
 

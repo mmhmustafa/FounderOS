@@ -1,8 +1,11 @@
 {% extends "base.html" %}
-{% import "_fmt.html" as fmt %}
-{% block title %}Path Intelligence{% endblock %}
+{% from "_device_actions.html" import device_actions %}
+{% block title %}Investigate{% endblock %}
 {% block content %}
-<h1>Path Intelligence — {{ active_scope_label }}</h1>
+{# PR-047A: named for the question the operator is asking ("why can't A reach
+   B?"), matching its navigation label. Path Intelligence remains the engine
+   behind it. #}
+<h1>Investigate — {{ active_scope_label }}</h1>
 
 {% if needs_scope %}
 <p class="muted">Pick a scope in the Scope selector above — path investigations run against that scope's evidence.</p>
@@ -61,7 +64,7 @@
   <div class="job-head">
     <span class="badge job-badge job-badge-{{ 'completed' if investigation.status == 'connected' else ('failed' if investigation.status == 'failed' else 'interrupted') }}">{{ investigation.status | title }}</span>
     <span>Confidence: {{ investigation.confidence_band | title }} ({{ investigation.confidence_percent }}%)</span>
-    <span class="muted">{{ fmt.when(investigation.generated_at) }}</span>
+    <span class="muted">{{ investigation.generated_at }}</span>
   </div>
   {% if investigation.path %}
   <p><strong>Path:</strong> {{ investigation.path | join(' → ') }}</p>
@@ -95,10 +98,12 @@
       <details {% if hop.status == 'failed' %}open{% endif %}>
         <summary><span class="hop-dot"></span><strong>Hop {{ hop.hop_number }}: {{ hop.device }}</strong>
           <span class="badge hop-badge hop-badge-{{ hop.status }}">{{ hop.status | title }}</span>
-          {{ fmt.confidence(hop.confidence_band, hop.confidence_percent) }}
+          <span class="muted">{{ hop.confidence_band | title }} ({{ hop.confidence_percent }}%)</span>
         </summary>
         <p>{{ hop.explanation }}</p>
         <p class="muted">Ingress: {{ hop.ingress_interface or '—' }} · Egress: {{ hop.egress_interface or '—' }} · Link: {{ hop.link_state }} · Management: {{ hop.management_state }}</p>
+        <p class="row-actions">{{ device_actions(device_target(hostname=hop.device), compact=True,
+                                                web=web_access(hostname=hop.device)) }}</p>
         {% if hop.evidence %}
         <ul>{% for item in hop.evidence %}<li class="muted">Evidence: {{ item }}</li>{% endfor %}</ul>
         {% endif %}
@@ -127,14 +132,13 @@
 
 {% if past_investigations %}
 <section class="card">
-  <h2>Recent Investigations</h2>
-  <div class="table-scroll" role="region" aria-label="Recent investigations" tabindex="0">
+  <h2>Recent investigations</h2>
   <table class="grid">
     <thead><tr><th>When</th><th>Source</th><th>Destination</th><th>Result</th><th>Confidence</th></tr></thead>
     <tbody>
       {% for entry in past_investigations %}
       <tr>
-        <td>{{ fmt.when(entry.generated_at) }}</td>
+        <td>{{ entry.generated_at }}</td>
         <td>{{ entry.source }}</td>
         <td>{{ entry.destination }}</td>
         <td><span class="badge hop-badge hop-badge-{{ 'pass' if entry.status == 'connected' else ('failed' if entry.status == 'failed' else 'unknown') }}">{{ entry.status | title }}</span></td>
@@ -143,7 +147,6 @@
       {% endfor %}
     </tbody>
   </table>
-  </div>
   <p class="muted">Each investigation is stored with its evidence so it can be replayed later.</p>
 </section>
 {% endif %}

@@ -47,6 +47,11 @@ class ResolvedDiscoveryInputs:
     credential_sets: tuple[str, ...] = ()
     site_hint: str | None = None
     credential_ref: str = ""
+    # PR-044 (MEMORY): the profile's configuration collection policy. None
+    # means "use the legacy collect_configuration boolean".
+    collection_policy: str | None = None
+    collection_schedule_hours: int = 24
+    last_discovery: str | None = None
 
 
 class ProfileService:
@@ -109,6 +114,7 @@ class ProfileService:
         collect_configuration: bool = False,
         description: str | None = None,
         seeds: tuple[str, ...] = (),
+        seed_cidr: str | None = None,
         boundary=None,
         credential_sets: tuple[str, ...] = (),
         site_hint: str | None = None,
@@ -118,11 +124,24 @@ class ProfileService:
             raise InvalidProfileError("A profile name is required.")
         if self._repository.exists(name):
             raise DuplicateProfileError(f"A profile named {name.strip()!r} already exists.")
-        if not password:
+        # A profile needs a way in — its own credential, or a credential set.
+        # Sets alone are sufficient: their entries carry their own usernames and
+        # passwords, and the resolver has always accepted them without a
+        # profile default. Demanding a password anyway made an operator retype
+        # a credential they had already saved.
+        own_credential = bool(username.strip()) and bool(password)
+        if not own_credential and not credential_sets:
+            raise InvalidProfileError(
+                "A profile needs a way to authenticate: a username and password, "
+                "or at least one credential set."
+            )
+        if own_credential and not password:
             raise InvalidProfileError("A password is required to save a profile.")
-        self._ensure_credential_store()
         profile_id = self._unique_profile_id(name)
-        credential_ref = credential_ref_for(profile_id)
+        # No own credential -> no secret to store, and no reference to one.
+        credential_ref = credential_ref_for(profile_id) if own_credential else ""
+        if own_credential:
+            self._ensure_credential_store()
         now = self._now()
         profile = DiscoveryProfile(
             profile_id=profile_id,
@@ -139,11 +158,17 @@ class ProfileService:
             last_discovery=None,
             description=description,
             seeds=tuple(seeds),
+            seed_cidr=seed_cidr,
             boundary=boundary,
             credential_sets=tuple(credential_sets),
             site_hint=site_hint,
             domain_hint=domain_hint,
         )
+        if not own_credential:
+            # Credential-set-only: there is no secret of this profile's own to
+            # store, and nothing to roll back if the write fails.
+            self._repository.add(profile)
+            return profile
         # Store the secret first; if it fails, no dangling metadata is left.
         self._credentials.save(credential_ref, password)
         try:
@@ -170,16 +195,23 @@ class ProfileService:
         collect_configuration: bool | None = None,
         description: str | None = None,
         seeds: tuple[str, ...] | None = None,
+        seed_cidr: str | None = None,
         boundary=None,
         clear_boundary: bool = False,
         credential_sets: tuple[str, ...] | None = None,
         site_hint: str | None = None,
         domain_hint: str | None = None,
+        collection_policy: str | None = None,
+        collection_schedule_hours: int | None = None,
     ) -> DiscoveryProfile:
         """Update a profile in place; ``new_name`` renames it.
 
         A rename keeps the stable ``profile_id`` (and therefore the stored
         credential and every piece of scoped discovery history).
+
+        Every field not passed is PRESERVED — including ``archived`` and the
+        PR-044 collection policy. An edit must never silently un-archive a
+        profile or reset how it collects configuration.
         """
 
         existing = self._repository.get(name)
@@ -188,7 +220,12 @@ class ProfileService:
             name=new_name if new_name and new_name.strip() else existing.name,
             management_ip=management_ip if management_ip is not None else existing.management_ip,
             username=username if username is not None else existing.username,
-            credential_ref=existing.credential_ref,
+            # Giving a password to a set-only profile mints its first
+            # reference; it had none, so there was none to reuse.
+            credential_ref=(
+                existing.credential_ref
+                or (credential_ref_for(existing.profile_id) if password else "")
+            ),
             site=None if clear_site else (site if site is not None else existing.site),
             max_depth=max_depth if max_depth is not None else existing.max_depth,
             max_devices=max_devices if max_devices is not None else existing.max_devices,
@@ -202,6 +239,7 @@ class ProfileService:
             last_discovery=existing.last_discovery,
             description=description if description is not None else existing.description,
             seeds=tuple(seeds) if seeds is not None else existing.seeds,
+            seed_cidr=seed_cidr if seed_cidr is not None else existing.seed_cidr,
             boundary=(
                 None if clear_boundary
                 else (boundary if boundary is not None else existing.boundary)
@@ -213,10 +251,24 @@ class ProfileService:
             ),
             site_hint=site_hint if site_hint is not None else existing.site_hint,
             domain_hint=domain_hint if domain_hint is not None else existing.domain_hint,
+            # Preserved unless explicitly changed (see the docstring).
+            archived=existing.archived,
+            collection_policy=(
+                collection_policy
+                if collection_policy is not None
+                else existing.collection_policy
+            ),
+            collection_schedule_hours=(
+                collection_schedule_hours
+                if collection_schedule_hours is not None
+                else existing.collection_schedule_hours
+            ),
         )
         if password:
             self._ensure_credential_store()
-            self._credentials.save(existing.credential_ref, password)
+            # `updated` carries the reference — freshly minted when a set-only
+            # profile is given its first password of its own.
+            self._credentials.save(updated.credential_ref, password)
         self._repository.replace(existing.name, updated)
         return updated
 
@@ -254,7 +306,10 @@ class ProfileService:
                 f"A profile named {target_name!r} already exists."
             )
         profile_id = self._unique_profile_id(target_name)
-        credential_ref = credential_ref_for(profile_id)
+        # A set-only source has no secret of its own, so the clone gets no
+        # reference to one either — a reference to a secret that was never
+        # stored is worse than no reference at all.
+        credential_ref = credential_ref_for(profile_id) if source.credential_ref else ""
         now = self._now()
         clone = replace(
             source,
@@ -267,11 +322,14 @@ class ProfileService:
             archived=False,
         )
         # Copy the secret to the clone's own reference; the clone is
-        # independent, so deleting either never affects the other.
-        try:
-            password = self._credentials.get(source.credential_ref)
-        except AtlasWorkspaceError:
-            password = None
+        # independent, so deleting either never affects the other. A set-only
+        # source has no secret to copy.
+        password = None
+        if source.credential_ref:
+            try:
+                password = self._credentials.get(source.credential_ref)
+            except AtlasWorkspaceError:
+                password = None
         if password:
             self._ensure_credential_store()
             self._credentials.save(credential_ref, password)
@@ -293,14 +351,28 @@ class ProfileService:
         survives this deletion (PR-043.9, Part 4)."""
 
         removed = self._repository.delete(name)
-        self._credentials.delete(removed.credential_ref)
+        # A set-only profile stored no secret of its own; there is nothing to
+        # delete, and asking the store to forget an empty reference is a bug,
+        # not a no-op. The credential SET is untouched either way — it belongs
+        # to the operator, not to this profile.
+        if removed.credential_ref:
+            self._credentials.delete(removed.credential_ref)
         return removed
 
     # -- discovery integration ---------------------------------------------
 
     def resolve_discovery_inputs(self, name: str) -> ResolvedDiscoveryInputs:
         profile = self._repository.get(name)
-        password = self._credentials.get(profile.credential_ref)
+        # A profile may authenticate purely from credential sets. Then it has
+        # no credential of its own and no reference to one — asking the store
+        # for the secret behind an empty reference is not a lookup, it is a
+        # bug. The resolver takes it from here: `profile_default` is optional,
+        # and the sets carry their own usernames and passwords.
+        password = (
+            self._credentials.get(profile.credential_ref)
+            if profile.credential_ref
+            else ""
+        )
         return ResolvedDiscoveryInputs(
             profile_name=profile.name,
             management_ip=profile.management_ip,
@@ -315,6 +387,9 @@ class ProfileService:
             credential_sets=profile.credential_sets,
             site_hint=profile.site_hint or profile.site,
             credential_ref=profile.credential_ref,
+            collection_policy=profile.collection_policy,
+            collection_schedule_hours=profile.collection_schedule_hours,
+            last_discovery=profile.last_discovery,
         )
 
     def record_discovery(self, name: str, when: datetime | str | None = None) -> DiscoveryProfile:

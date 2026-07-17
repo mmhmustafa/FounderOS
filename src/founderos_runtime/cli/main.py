@@ -83,6 +83,10 @@ def main(
     atlas_root_cause_markdown_output: str | Path | None = None,
     atlas_profile_service=None,
     atlas_web_server_runner=None,
+    # Injected alongside the server runner for the same reason: a test that
+    # does not bind a port must not depend on whether this machine happens to
+    # have something listening on one.
+    atlas_web_port_probe=None,
 ) -> int:
     arguments = list(sys.argv[1:] if argv is None else argv)
     if not arguments:
@@ -263,12 +267,17 @@ def main(
         except CliError as error:
             print(render_error(str(error)), file=sys.stderr)
             return 1
-    elif arguments == ["atlas", "web"]:
+    elif arguments[:2] == ["atlas", "web"]:
         try:
+            port, remaining = _parse_port_flag(arguments[2:])
+            if remaining:
+                raise CliError(f"Unknown option(s) for atlas web: {' '.join(remaining)}")
             code, output = atlas_web_command(
                 history_root=atlas_history_root,
                 browser_opener=atlas_browser_opener,
                 server_runner=atlas_web_server_runner,
+                port_probe=atlas_web_port_probe,
+                **({"port": port} if port is not None else {}),
             )
         except CliError as error:
             print(render_error(str(error)), file=sys.stderr)
@@ -372,6 +381,38 @@ def main(
         return 2
     print(output)
     return code
+
+
+def _parse_port_flag(tokens: list[str]) -> tuple[int | None, list[str]]:
+    """Extract --port <n> / --port=<n>; return (port, leftover).
+
+    Atlas refuses to start a second server on a busy port, so the operator
+    needs a way to say "somewhere else" — this is it.
+    """
+
+    remaining: list[str] = []
+    port: int | None = None
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        value: str | None = None
+        if token == "--port" and index + 1 < len(tokens):
+            value = tokens[index + 1]
+            index += 2
+        elif token.startswith("--port="):
+            value = token.split("=", 1)[1]
+            index += 1
+        else:
+            remaining.append(token)
+            index += 1
+            continue
+        try:
+            port = int(value)
+        except ValueError:
+            raise CliError(f"--port needs a number, not {value!r}") from None
+        if not 1 <= port <= 65535:
+            raise CliError(f"--port must be between 1 and 65535, not {port}")
+    return port, remaining
 
 
 def _parse_profile_flag(tokens: list[str]) -> tuple[str | None, list[str]]:

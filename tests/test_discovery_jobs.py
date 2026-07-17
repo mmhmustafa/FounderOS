@@ -366,7 +366,9 @@ class DiscoveryJobIsolationTests(unittest.TestCase):
             manager.wait(job_id, timeout=30)
             # Same browser session, no scope parameter: Lab B is in focus.
             page = client.get("/history").data
-            self.assertIn(b"Discovery History \xe2\x80\x94 Lab B", page)
+            # PR-047A: the page title matches its navigation label (Timeline >
+            # Discoveries). The scope is still what the assertion is about.
+            self.assertIn(b"Discoveries \xe2\x80\x94 Lab B", page)
 
     def test_dashboard_reflects_results_without_restart(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -391,7 +393,7 @@ class DiscoverPageTests(unittest.TestCase):
             manager.wait(job_id, timeout=30)
             page = client.get("/discovery").data
             for expected in (b"Lab A", b"Lab B", b"10.0.0.1", b"10.0.1.1",
-                             b"Seed IP", b"Last Discovery", b"completed"):
+                             b"Seed", b"Last Discovery", b"completed"):
                 self.assertIn(expected, page)
             self.assertNotIn(PASSWORD.encode(), page)
 
@@ -495,3 +497,75 @@ class JobManagerRestartTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SilentAddressesAreNotFailuresTests(unittest.TestCase):
+    """A CIDR sweep of a /24 holding nine devices leaves 245 addresses silent.
+
+    Atlas reported that as "245 verified management endpoint(s) could not be
+    reached" — untrue twice over: they were never verified as anything, and
+    their silence is the correct answer, not a warning. A complete discovery
+    (9 of 9 devices) announced itself "completed with warnings".
+
+    enterprise_intelligence has drawn the line between "a device refused us"
+    and "nothing is there" since PR-043.10; these pin that the discovery job
+    draws the same line, from the same function.
+    """
+
+    def _job(self, summary):
+        import threading
+
+        from founderos_atlas.web.jobs import DiscoveryJob, DiscoveryJobManager
+
+        job = DiscoveryJob(
+            job_id="j", profile_id="p", profile_name="lab",
+            site=None, management_ip="172.20.20.1",
+        )
+        manager = DiscoveryJobManager.__new__(DiscoveryJobManager)
+        manager._lock = threading.RLock()
+        manager._persist = lambda: None
+        manager._now = lambda: "2026-07-15T00:00:00+00:00"
+        manager._elapsed = lambda _job: 72.4
+        manager._finish_completed(job, summary)
+        return job
+
+    def test_silent_addresses_never_warn(self) -> None:
+        job = self._job({
+            "devices": 9, "failed_devices": 245,
+            "addresses_without_device": 245, "auth_failed_devices": 0,
+        })
+        self.assertIsNone(job.warning)
+        self.assertEqual("Discovery completed successfully", job.message)
+
+    def test_a_device_that_refused_us_does_warn(self) -> None:
+        job = self._job({
+            "devices": 9, "failed_devices": 5,
+            "addresses_without_device": 2, "auth_failed_devices": 3,
+        })
+        self.assertIsNotNone(job.warning)
+        self.assertIn("refused authentication", job.warning)
+        self.assertNotIn("verified management endpoint", job.warning)
+        self.assertEqual("Discovery completed with warnings", job.message)
+
+    def test_the_two_kinds_are_counted_apart(self) -> None:
+        job = self._job({
+            "devices": 9, "failed_devices": 247,
+            "addresses_without_device": 245, "auth_failed_devices": 2,
+        })
+        self.assertEqual(245, job.addresses_without_device)
+        self.assertEqual(2, job.auth_failed_devices)
+
+    def test_older_summaries_without_the_counts_say_nothing(self) -> None:
+        # A job reloaded from a pre-fix summary must not invent a warning.
+        job = self._job({"devices": 9, "failed_devices": 245})
+        self.assertIsNone(job.warning)
+
+    def test_one_definition_of_an_auth_failure(self) -> None:
+        from founderos_atlas.enterprise_intelligence import is_auth_failure
+
+        self.assertTrue(is_auth_failure("Authentication failed for user"))
+        self.assertTrue(is_auth_failure("bad username and password"))
+        # Silence is not a refusal.
+        self.assertFalse(is_auth_failure("connection timed out"))
+        self.assertFalse(is_auth_failure("no route to host"))
+        self.assertFalse(is_auth_failure(None))

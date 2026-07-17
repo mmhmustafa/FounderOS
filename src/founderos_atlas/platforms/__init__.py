@@ -38,6 +38,25 @@ from .classify import (
     relationship_kind,
 )
 from .drivers import CiscoIOSDriver, FRRoutingAdapter, FRRoutingDriver
+from .capabilities import (
+    CAPABILITIES,
+    CapabilityReport,
+    CommandSpec,
+    DetectionResult,
+    DriverDiagnostics,
+    EXPERIMENTAL,
+    BETA,
+    PRODUCTION,
+    FAILED,
+    NOT_ATTEMPTED,
+    SUPPORTED,
+    SUPPORTED_WITH_LIMITATIONS,
+    UNSUPPORTED,
+    TIER_DEEP,
+    TIER_FAST,
+    TIER_STANDARD,
+)
+from .production import ProductionDriver
 from .registry import (
     FUTURE_PLATFORMS,
     PlatformRegistry,

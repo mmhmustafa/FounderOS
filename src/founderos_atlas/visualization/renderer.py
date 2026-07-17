@@ -19,10 +19,44 @@ from founderos_atlas.platforms.classify import (
 )
 from founderos_atlas.topology import TopologySnapshot
 
+from .stencils import STENCILS
+from .stencils import role_accent as _role_accent
 from .stencils import stencil_data_uri
 
 
 CYTOSCAPE_CDN = "https://unpkg.com/cytoscape@3.29.2/dist/cytoscape.min.js"
+
+_TOPOLOGY_TEMPLATE_PATH = Path(__file__).resolve().parent / "templates" / "topology.html"
+
+
+def _visual_style_version() -> str:
+    """Fingerprint every source that determines the rendered viewer's look.
+
+    The version is content-derived so a future template or stencil change
+    automatically makes current saved viewers stale after the process reloads.
+    Snapshot data is deliberately excluded: it changes the graph, not the
+    visual contract used to draw it.
+    """
+
+    digest = sha256(_TOPOLOGY_TEMPLATE_PATH.read_bytes())
+    for role in sorted(STENCILS):
+        digest.update(b"\0role\0")
+        digest.update(role.encode("utf-8"))
+        digest.update(b"\0svg\0")
+        digest.update(STENCILS[role].encode("utf-8"))
+    return f"1-{digest.hexdigest()}"
+
+
+TOPOLOGY_VISUAL_STYLE_VERSION = _visual_style_version()
+TOPOLOGY_VISUAL_STYLE_MARKER = (
+    f"<!-- TOPOLOGY_VISUAL_STYLE_VERSION={TOPOLOGY_VISUAL_STYLE_VERSION} -->"
+)
+
+
+def topology_visual_style_is_current(html: str) -> bool:
+    """Whether rendered topology HTML carries this installation's style."""
+
+    return isinstance(html, str) and TOPOLOGY_VISUAL_STYLE_MARKER in html[:512]
 
 # Fused relationship type -> displayed relationship class (PR-043.7).
 # Solid = verified physical; dashed = verified routed; dotted = observed
@@ -61,6 +95,8 @@ class TopologyRenderer:
         snapshot: TopologySnapshot,
         change_report: Any | None = None,
         viewer_context: Mapping[str, Any] | None = None,
+        site_catalog: Any | None = None,
+        site_overrides: Any | None = None,
     ) -> None:
         if not isinstance(snapshot, TopologySnapshot):
             raise TypeError("snapshot must be a TopologySnapshot")
@@ -69,6 +105,10 @@ class TopologyRenderer:
         self._snapshot = snapshot
         self._change = _change_highlights(change_report)
         self._context = dict(viewer_context or {})
+        # Injectable for tests and callers with their own catalog; None means
+        # the operator's workspace catalog.
+        self._site_catalog = site_catalog
+        self._site_overrides = site_overrides
 
     def elements(self) -> dict[str, list[dict[str, Any]]]:
         """Return deterministic Cytoscape nodes and edges without rendering HTML.
@@ -100,6 +140,11 @@ class TopologyRenderer:
             for name, value in (self._context.get("config_changes") or {}).items()
         }
         last_discovered = str(self._context.get("last_discovered") or "unrecorded")
+        routing_facts = {
+            str(name).casefold(): dict(value)
+            for name, value in (self._context.get("routing_facts") or {}).items()
+            if isinstance(value, Mapping)
+        }
         nodes: dict[str, dict[str, Any]] = {}
         for device in self._snapshot.devices:
             device_id = str(device["device_id"])
@@ -107,10 +152,21 @@ class TopologyRenderer:
             hostname_key = str(device["hostname"]).casefold()
             depth = (device.get("metadata") or {}).get("discovery_depth")
             role, role_evidence = classify_role(device)
+            hostname = str(device["hostname"])
+            mgmt = str(device["management_ip"] or "").strip()
+            routing = _device_routing_view(
+                device,
+                routing_facts.get(hostname_key, {}),
+            )
             node_data = {
                 "id": device_id,
-                "label": str(device["hostname"]),
-                "hostname": str(device["hostname"]),
+                "label": hostname,
+                # Two-line caption under the icon: name, then the endpoint an
+                # engineer would actually reach it at.
+                "display_label": f"{hostname}\n{mgmt}" if mgmt else hostname,
+                "role_label": _role_label(role),
+                "accent": _role_accent(role),
+                "hostname": hostname,
                 "aliases": list(_device_aliases(device)),
                 "management_ip": str(device["management_ip"]),
                 "vendor": vendor,
@@ -129,6 +185,8 @@ class TopologyRenderer:
                 "last_config_change": config_changes.get(hostname_key, "None recorded"),
                 "kind": "discovered",
                 "color": _vendor_color(vendor),
+                "serial_number": device.get("serial_number"),
+                **routing,
             }
             if self._change is not None:
                 node_data["change"] = self._change_status(str(device["hostname"]))
@@ -140,6 +198,9 @@ class TopologyRenderer:
                     "data": {
                         "id": ghost_id,
                         "label": hostname,
+                        # Same display rule as every node: no display_label,
+                        # no nameplate.
+                        "display_label": f"{hostname}\nno longer discovered",
                         "hostname": hostname,
                         "aliases": [],
                         "management_ip": "unknown",
@@ -229,6 +290,14 @@ class TopologyRenderer:
                         "data": {
                             "id": target_id,
                             "label": remote_hostname,
+                            # The stylesheet renders display_label; without it
+                            # an unresolved peer drew as a bare "?" with no
+                            # name — indistinguishable from every other one.
+                            # Say what was observed and how.
+                            "display_label": (
+                                f"{remote_hostname}\n"
+                                f"{str(edge['protocol']).upper()} peer — unresolved"
+                            ),
                             "hostname": remote_hostname,
                             "aliases": [],
                             "management_ip": edge["remote_management_ip"]
@@ -341,6 +410,14 @@ class TopologyRenderer:
 
         edges: list[dict[str, Any]] = []
         for edge_data in logical_edges.values():
+            # Replace the raw evidence kind ("interface-ownership") that used
+            # to be plastered on every line with a human tag; the interface
+            # pair is carried for the hover tooltip and detail panel.
+            edge_data["link_tag"] = _link_tag(
+                edge_data.get("fused_type"),
+                str(edge_data.get("relationship") or ""),
+                str(edge_data.get("protocol") or ""),
+            )
             digest = sha256(
                 json.dumps(
                     {key: value for key, value in edge_data.items() if key != "observations"},
@@ -415,10 +492,265 @@ class TopologyRenderer:
         )
         return counts
 
+
+    def site_view(self, elements) -> dict:
+        """Effective sites: inference underneath, durable overrides on top."""
+
+        from founderos_atlas.sites import (
+            SITE_TYPE_SITE,
+            SiteCatalogRepository,
+            SiteOverrideCatalog,
+            SiteOverrideRepository,
+        )
+        from founderos_atlas.sites.inference import SiteInferenceEngine
+
+        catalog = self._site_catalog
+        if catalog is None:
+            try:
+                catalog = SiteCatalogRepository().load()
+            except Exception:  # noqa: BLE001 - no catalog is a state, not an error
+                catalog = None
+        if catalog is None or not catalog.sites:
+            return {
+                "sites": [], "membership": {}, "aggregated_edges": [],
+                "site_options": [], "override_revision": 0,
+            }
+        overrides = self._site_overrides
+        if overrides is None:
+            try:
+                overrides = SiteOverrideRepository().load()
+            except Exception:  # noqa: BLE001 - curation absence is a state
+                overrides = SiteOverrideCatalog()
+        engine = SiteInferenceEngine(catalog)
+        names = {site.site_id: site.name for site in catalog.sites}
+        types = {site.site_id: site.site_type for site in catalog.sites}
+
+        membership: dict[str, str] = {}
+        for node in elements["nodes"]:
+            data = node["data"]
+            if data.get("kind") == "observed":
+                continue
+            verdict = engine.assign(
+                hostname=data.get("hostname"),
+                management_ips=tuple(
+                    ip for ip in (data.get("management_ip"),)
+                    if ip and ip != "Unknown"
+                ),
+                device_ids=(data.get("id"),),
+            )
+            inferred = (
+                verdict.site_id if verdict.status == "assigned" else None
+            )
+            override = overrides.find(
+                device_id=data.get("id"),
+                hostname=data.get("hostname"),
+                management_ip=data.get("management_ip"),
+                serial_number=data.get("serial_number"),
+                vendor=data.get("vendor"),
+            )
+            # ``__none__`` is the explicit operator choice "site not
+            # identified". It is a real curation state, not a catalog row,
+            # and therefore must not be mistaken for an orphaned site.
+            orphaned = bool(
+                override
+                and override.site_id != "__none__"
+                and override.site_id not in names
+            )
+            effective = (
+                override.site_id if override and not orphaned else inferred
+            )
+            membership[data["id"]] = effective or "__none__"
+            conflict = bool(
+                override
+                and override.site_id != (inferred or "__none__")
+            )
+            data["site_assignment"] = {
+                "source": "operator" if override and not orphaned else (
+                    "inferred" if inferred else "unknown"
+                ),
+                "effective_site_id": effective,
+                "effective_site_name": names.get(effective, "Site not identified"),
+                "inferred_site_id": inferred,
+                "inferred_site_name": names.get(inferred) if inferred else None,
+                "subject_key": override.subject_key if override else None,
+                "override_revision": overrides.revision,
+                "override_reason": override.reason if override else None,
+                "conflict": conflict,
+                "orphaned": orphaned,
+                "evidence": verdict.to_dict(),
+            }
+        # An unresolved peer belongs where it was seen: the site of the first
+        # discovered device that observed it.
+        for edge in elements["edges"]:
+            data = edge["data"]
+            for observed, seen_by in ((data["target"], data["source"]),
+                                      (data["source"], data["target"])):
+                if observed.startswith("observed:") and observed not in membership:
+                    owner = membership.get(seen_by)
+                    if owner:
+                        membership[observed] = owner
+
+        by_site: dict[str, list] = {}
+        for node in elements["nodes"]:
+            site_id = membership.get(node["data"]["id"])
+            if site_id:
+                by_site.setdefault(site_id, []).append(node["data"])
+        if set(by_site) <= {"__none__"}:
+            return {
+                "sites": [], "membership": {}, "aggregated_edges": [],
+                "site_options": [
+                    {"site_id": site.site_id, "name": site.name,
+                     "site_type": site.site_type}
+                    for site in catalog.sites
+                ],
+                "override_revision": overrides.revision,
+            }
+
+        sites = []
+        for site_id, members in sorted(by_site.items()):
+            label = names.get(site_id, "Site not identified")
+            site_type = types.get(site_id, SITE_TYPE_SITE)
+            roles: dict[str, int] = {}
+            for member in members:
+                role = str(member.get("role") or "unknown")
+                roles[role] = roles.get(role, 0) + 1
+            sites.append({
+                "id": "site:" + site_id,
+                "site_id": site_id,
+                "label": label,
+                "display_label": label + chr(10) + str(len(members)) + " devices",
+                "count": len(members),
+                "roles": dict(sorted(roles.items())),
+                "site_type": site_type,
+                "stencil": stencil_data_uri(
+                    "site" if site_type == SITE_TYPE_SITE
+                    else "site-" + site_type
+                ),
+                "kind": "site",
+                "evidence": (
+                    "membership from the Site Catalog via multi-signal "
+                    "inference (hostname convention, explicit assignment, "
+                    "subnet corroboration)"
+                    if site_id != "__none__" else
+                    "no assigning site signal was observed for these devices"
+                ),
+            })
+
+        strength = {"physical": 4, "verified-routed": 3,
+                    "routing-adjacency": 2, "protocol-peer": 1, "unknown": 0}
+        aggregates: dict = {}
+        for edge in elements["edges"]:
+            data = edge["data"]
+            a = membership.get(data["source"])
+            b = membership.get(data["target"])
+            if not a or not b or a == b:
+                continue
+            key = tuple(sorted((a, b)))
+            entry = aggregates.setdefault(key, {
+                "id": "agg:" + key[0] + "~" + key[1],
+                "source": "site:" + key[0], "target": "site:" + key[1],
+                "count": 0, "relationship": "unknown", "members": [],
+            })
+            entry["count"] += 1
+            entry["members"].append(data["id"])
+            kind = str(data.get("relationship") or "unknown")
+            if strength.get(kind, 0) > strength.get(entry["relationship"], 0):
+                entry["relationship"] = kind
+        for entry in aggregates.values():
+            plural = "s" if entry["count"] != 1 else ""
+            entry["display_label"] = str(entry["count"]) + " link" + plural
+            entry["members"] = sorted(entry["members"])
+
+        return {
+            "sites": sites,
+            "membership": membership,
+            "aggregated_edges": [aggregates[k] for k in sorted(aggregates)],
+            "site_options": [
+                {"site_id": site.site_id, "name": site.name,
+                 "site_type": site.site_type}
+                for site in catalog.sites
+            ],
+            "override_revision": overrides.revision,
+        }
+
+    def routing_view(self, elements: dict) -> dict:
+        """Derived protocol domains for dedicated evidence-aware views."""
+
+        nodes = {
+            item["data"]["id"]: item["data"] for item in elements["nodes"]
+            if item["data"].get("kind") not in ("observed", "removed")
+        }
+        ospf_members: dict[tuple[str, str, str], set[str]] = {}
+        bgp_members: dict[tuple[str, str], set[str]] = {}
+        for node_id, data in nodes.items():
+            for item in data.get("ospf_memberships") or ():
+                key = (
+                    str(item.get("vrf") or "default"),
+                    str(item.get("process_id") or "domain"),
+                    str(item.get("area_id") or "unobserved"),
+                )
+                ospf_members.setdefault(key, set()).add(node_id)
+            for item in data.get("bgp_memberships") or ():
+                local_as = str(item.get("local_as") or "").strip()
+                if local_as:
+                    key = (str(item.get("vrf") or "default"), local_as)
+                    bgp_members.setdefault(key, set()).add(node_id)
+
+        ospf_edge_ids = {
+            item["data"]["id"] for item in elements["edges"]
+            if _edge_is_protocol(item["data"], "ospf")
+        }
+        bgp_edge_ids = {
+            item["data"]["id"] for item in elements["edges"]
+            if _edge_is_protocol(item["data"], "bgp")
+        }
+        ospf_groups, ospf_assignment = _protocol_groups(
+            protocol="ospf", members=ospf_members,
+            elements=elements, relevant_edges=ospf_edge_ids,
+        )
+        bgp_groups, bgp_assignment = _protocol_groups(
+            protocol="bgp", members=bgp_members,
+            elements=elements, relevant_edges=bgp_edge_ids,
+        )
+        return {
+            "ospf": {
+                "groups": ospf_groups,
+                "membership": ospf_assignment,
+                "edge_ids": sorted(ospf_edge_ids),
+                "covered_devices": len(ospf_assignment),
+                "total_devices": len(nodes),
+            },
+            "bgp": {
+                "groups": bgp_groups,
+                "membership": bgp_assignment,
+                "edge_ids": sorted(bgp_edge_ids),
+                "covered_devices": len(bgp_assignment),
+                "total_devices": len(nodes),
+            },
+        }
+
     def render(self) -> str:
-        template_path = Path(__file__).resolve().parent / "templates" / "topology.html"
-        template = template_path.read_text(encoding="utf-8")
-        elements_json = _script_json(self.elements())
+        template = _TOPOLOGY_TEMPLATE_PATH.read_text(encoding="utf-8")
+        elements = self.elements()
+        site_view = self.site_view(elements)
+        routing_view = self.routing_view(elements)
+        curation_marker = (
+            "<!-- ATLAS_SITE_OVERRIDE_REVISION="
+            + str(site_view.get("override_revision") or 0)
+            + " -->"
+        )
+        if template.startswith("<!doctype html>"):
+            template = template.replace(
+                "<!doctype html>",
+                f"<!doctype html>\n{TOPOLOGY_VISUAL_STYLE_MARKER}"
+                f"\n{curation_marker}",
+                1,
+            )
+        else:
+            template = (
+                f"{TOPOLOGY_VISUAL_STYLE_MARKER}\n{curation_marker}\n{template}"
+            )
+        elements_json = _script_json(elements)
         summary_json = _script_json(
             {
                 "snapshot_id": self._snapshot.snapshot_id,
@@ -428,9 +760,207 @@ class TopologyRenderer:
                 **self.relationship_summary(),
             }
         )
+        site_json = _script_json(site_view)
+        routing_json = _script_json(routing_view)
         return template.replace("__CYTOSCAPE_CDN__", CYTOSCAPE_CDN).replace(
             "__TOPOLOGY_ELEMENTS__", elements_json
-        ).replace("__SNAPSHOT_SUMMARY__", summary_json)
+        ).replace("__SNAPSHOT_SUMMARY__", summary_json).replace(
+            "__SITE_VIEW__", site_json
+        ).replace(
+            "__ROUTING_VIEW__", routing_json
+        )
+
+
+def _device_routing_view(device: Mapping, configured: Mapping) -> dict[str, Any]:
+    metadata = dict(device.get("metadata") or {})
+    operational = dict(metadata.get("routing_evidence") or {})
+    ospf_adjacencies = [
+        dict(item) for item in operational.get("ospf_adjacencies") or ()
+        if isinstance(item, Mapping)
+    ]
+    bgp_sessions = [
+        dict(item) for item in operational.get("bgp_sessions") or ()
+        if isinstance(item, Mapping)
+    ]
+
+    ospf_memberships: list[dict[str, Any]] = []
+    areas = [str(value) for value in configured.get("ospf_areas") or ()]
+    interface_areas = {
+        str(item.get("interface")): str(item.get("area"))
+        for item in configured.get("ospf_interfaces") or ()
+        if isinstance(item, Mapping) and item.get("interface") and item.get("area")
+    }
+    processes = [
+        str(value) for value in configured.get("ospf_process_ids") or ()
+    ] or ["domain"]
+    vrfs = [str(value) for value in configured.get("vrfs") or ()] or ["default"]
+    for area in areas:
+        for process in processes:
+            item = {
+                "area_id": area,
+                "process_id": process,
+                "vrf": "default" if "default" in vrfs else vrfs[0],
+                "address_family": "ipv4",
+                "evidence_state": "configured-only",
+            }
+            if item not in ospf_memberships:
+                ospf_memberships.append(item)
+    for adjacency in ospf_adjacencies:
+        observed_area = adjacency.get("area_id")
+        if not observed_area:
+            observed_area = interface_areas.get(
+                str(adjacency.get("local_interface") or "")
+            )
+        if not observed_area and len(areas) == 1:
+            observed_area = areas[0]
+        item = {
+            "area_id": observed_area or "unobserved",
+            "process_id": adjacency.get("process_id") or "domain",
+            "vrf": adjacency.get("vrf") or "default",
+            "address_family": adjacency.get("address_family") or "ipv4",
+            "evidence_state": "observed",
+        }
+        # An operational adjacency with unknown area must not overwrite a
+        # configured, more-specific area membership.
+        if item["area_id"] != "unobserved" or not ospf_memberships:
+            if item not in ospf_memberships:
+                ospf_memberships.append(item)
+
+    configured_as = str(configured.get("bgp_as") or "").strip() or None
+    bgp_memberships: list[dict[str, Any]] = []
+    if configured_as:
+        bgp_memberships.append({
+            "local_as": configured_as,
+            "vrf": "default",
+            "address_family": "ipv4-unicast",
+            "evidence_state": "configured-only",
+        })
+    for session in bgp_sessions:
+        local_as = str(session.get("local_as") or configured_as or "").strip()
+        if not local_as:
+            continue
+        item = {
+            "local_as": local_as,
+            "vrf": session.get("vrf") or "default",
+            "address_family": session.get("address_family") or "ipv4-unicast",
+            "evidence_state": "observed",
+        }
+        existing = next(
+            (
+                value for value in bgp_memberships
+                if value["local_as"] == item["local_as"]
+                and value["vrf"] == item["vrf"]
+            ),
+            None,
+        )
+        if existing:
+            existing["evidence_state"] = "observed"
+        else:
+            bgp_memberships.append(item)
+    observed_peers = {
+        str(item.get("peer_address")) for item in bgp_sessions
+        if item.get("peer_address")
+    }
+    for neighbor in configured.get("bgp_neighbors") or ():
+        if not isinstance(neighbor, Mapping):
+            continue
+        peer = str(neighbor.get("neighbor") or "").strip()
+        if not peer or peer in observed_peers:
+            continue
+        bgp_sessions.append({
+            "peer_address": peer,
+            "remote_as": neighbor.get("remote_as"),
+            "local_as": configured_as,
+            "state": "configured",
+            "vrf": "default",
+            "address_family": "ipv4-unicast",
+            "evidence_state": "configured-only",
+            "source_command": "running configuration",
+        })
+    return {
+        "ospf_memberships": ospf_memberships,
+        "ospf_adjacencies": ospf_adjacencies,
+        "bgp_memberships": bgp_memberships,
+        "bgp_sessions": bgp_sessions,
+        "routing_vrfs": vrfs,
+    }
+
+
+def _edge_is_protocol(data: Mapping, protocol: str) -> bool:
+    values = {
+        str(data.get("protocol") or "").casefold(),
+        str(data.get("fused_type") or "").casefold(),
+        str(data.get("link_tag") or "").casefold(),
+    }
+    if protocol == "ospf":
+        return bool(values & {"ospf", "ospf-neighbor"})
+    return bool(values & {"bgp", "bgp-peer"})
+
+
+def _protocol_groups(
+    *, protocol: str,
+    members: Mapping[tuple, set[str]],
+    elements: Mapping,
+    relevant_edges: set[str],
+) -> tuple[list[dict[str, Any]], dict[str, list[str]]]:
+    """Split reused area/ASN identifiers into connected components."""
+
+    edges = [
+        item["data"] for item in elements["edges"]
+        if item["data"]["id"] in relevant_edges
+    ]
+    groups: list[dict[str, Any]] = []
+    assignment: dict[str, list[str]] = {}
+    for key in sorted(members, key=lambda value: tuple(map(str, value))):
+        device_ids = set(members[key])
+        adjacency = {node_id: set() for node_id in device_ids}
+        for edge in edges:
+            left, right = edge.get("source"), edge.get("target")
+            if left in device_ids and right in device_ids:
+                adjacency[left].add(right)
+                adjacency[right].add(left)
+        components: list[list[str]] = []
+        remaining = set(device_ids)
+        while remaining:
+            seed = min(remaining)
+            stack = [seed]
+            component: set[str] = set()
+            while stack:
+                current = stack.pop()
+                if current in component:
+                    continue
+                component.add(current)
+                stack.extend(adjacency.get(current, ()))
+            remaining.difference_update(component)
+            components.append(sorted(component))
+        for index, component in enumerate(components, start=1):
+            if protocol == "ospf":
+                vrf, process, area = key
+                base_label = f"OSPF {vrf} · Area {area}"
+                attributes = {
+                    "vrf": vrf, "process_id": process, "area_id": area,
+                }
+            else:
+                vrf, local_as = key
+                base_label = f"BGP {vrf} · AS {local_as}"
+                attributes = {"vrf": vrf, "local_as": local_as}
+            suffix = f" · domain {index}" if len(components) > 1 else ""
+            digest = sha256(
+                (protocol + repr(key) + repr(component)).encode("utf-8")
+            ).hexdigest()[:12]
+            group_id = f"{protocol}-domain:{digest}"
+            groups.append({
+                "id": group_id,
+                "label": base_label + suffix,
+                "kind": "protocol-domain",
+                "protocol": protocol,
+                "count": len(component),
+                "members": component,
+                **attributes,
+            })
+            for node_id in component:
+                assignment.setdefault(node_id, []).append(group_id)
+    return groups, assignment
 
 
 def _change_highlights(change_report: Any | None) -> dict[str, Any] | None:
@@ -466,6 +996,59 @@ def _device_aliases(device: Any) -> tuple[str, ...]:
 def _vendor_color(vendor: str) -> str:
     normalized = vendor.casefold()
     return _VENDOR_COLORS.get(normalized, _VENDOR_COLORS["unknown"])
+
+
+# Friendly role captions for the node card and legend. Keyed by the actual
+# classify_role constants (layer2_switch, wireless_access_point, …).
+_ROLE_LABELS = {
+    "router": "Router",
+    "layer2_switch": "Switch",
+    "layer3_switch": "L3 Switch",
+    "firewall": "Firewall",
+    "server": "Server",
+    "linux_host": "Host",
+    "wireless_access_point": "Access Point",
+    "load_balancer": "Load Balancer",
+    "cloud": "Cloud",
+    "unknown": "Unknown device",
+    "unresolved_peer": "Unresolved peer",
+}
+
+
+def _role_label(role: str) -> str:
+    if role in _ROLE_LABELS:
+        return _ROLE_LABELS[role]
+    return role.replace("_", " ").replace("-", " ").title() if role else "Device"
+
+
+# A short, human tag for a link — what an engineer calls it, not the internal
+# evidence kind. This is what replaced "interface-ownership" plastered on
+# every edge: the line style already shows physical-vs-routed, so the tag only
+# names a routing protocol when that is the actual relationship.
+_LINK_TAGS = {
+    "verified-physical": "",
+    "verified-routed": "routed",
+    "physical": "",
+    "layer-2": "",
+    "layer-3": "L3",
+    "ospf": "OSPF",
+    "routing-adjacency": "OSPF",
+    "bgp": "BGP",
+    "protocol-peer": "BGP",
+    "static": "static",
+    "inferred": "inferred",
+}
+
+
+def _link_tag(fused_type: str | None, relationship: str, protocol: str) -> str:
+    for key in (fused_type, relationship, protocol):
+        if key and str(key).casefold() in _LINK_TAGS:
+            return _LINK_TAGS[str(key).casefold()]
+    # An observed protocol we did not map (cdp/lldp) reads fine upper-cased.
+    proto = str(protocol or "").strip()
+    if proto and proto not in ("interface-ownership", "evidence", "unknown"):
+        return proto.upper() if len(proto) <= 5 else proto
+    return ""
 
 
 def _script_json(value: Any) -> str:

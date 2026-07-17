@@ -146,8 +146,23 @@ class DetectionAndRegistryTests(unittest.TestCase):
 
     def test_detection_order_is_registration_order(self) -> None:
         registry = default_registry()
+        # PR-048 added the two AtlasLab platforms. They are registered last so
+        # a lab platform could never shadow a production one, and they answer
+        # the same probe — detection still costs exactly one command.
         self.assertEqual(
-            ("Cisco IOS / IOS-XE", "FRRouting"), registry.supported_platforms()
+            (
+                # PR-049: IOS-XE before legacy IOS -- both matchers accept an
+                # XE probe, so order decides which plan an XE device gets.
+                "Cisco IOS-XE",
+                "Cisco IOS / IOS-XE",
+                "Cisco NX-OS",
+                "Arista EOS",
+                "Juniper Junos",
+                "FRRouting",
+                "AtlasLab firewall",
+                "AtlasLab switch",
+            ),
+            registry.supported_platforms(),
         )
         self.assertEqual(("show version",), registry.probe_commands())
 
@@ -157,7 +172,9 @@ class DetectionAndRegistryTests(unittest.TestCase):
         self.assertIn("Platform detected: Unknown", message)
         self.assertIn("Cisco IOS / IOS-XE", message)
         self.assertIn("FRRouting", message)
-        self.assertIn("Junos", message)  # the honest future roadmap
+        # PR-049 made NX-OS/EOS/Junos real drivers; the honest future
+        # roadmap is now Wave 2.
+        self.assertIn("PAN-OS", message)
         self.assertIn("JUNOS 21.4R1.12", message)  # WHY: what the probe said
 
     def test_registry_is_extensible_without_touching_discovery(self) -> None:
@@ -729,6 +746,49 @@ class StencilAndPresentationTests(unittest.TestCase):
         # The unresolved-peer stencil is dashed; the fallback is unknown.
         self.assertIn("stroke-dasharray", stencil_svg("unresolved_peer"))
         self.assertEqual(stencil_svg("unknown"), stencil_svg("nonsense-role"))
+
+    def test_stencils_share_thin_outline_rendering_contract(self) -> None:
+        from xml.etree import ElementTree
+
+        from founderos_atlas.platforms import DEVICE_ROLES
+        from founderos_atlas.visualization.stencils import STENCILS, stencil_svg
+
+        expected_roles = set(DEVICE_ROLES) | {
+            "site", "site-wan", "site-internet", "site-cloud",
+        }
+        self.assertEqual(expected_roles, set(STENCILS))
+        # Ordinary sites are overview clouds now; their names are overlaid in
+        # the cloud body by Cytoscape rather than floating above a building.
+        self.assertIn('A16 16', stencil_svg("site"))
+        self.assertNotIn('<rect', stencil_svg("site"))
+
+        forbidden_tags = {"filter", "image", "linearGradient", "radialGradient"}
+        for role in sorted(expected_roles):
+            svg = stencil_svg(role)
+            root = ElementTree.fromstring(svg)
+            self.assertEqual("512", root.attrib.get("width"), role)
+            self.assertEqual("512", root.attrib.get("height"), role)
+            self.assertEqual("0 0 64 64", root.attrib.get("viewBox"), role)
+            self.assertEqual(
+                "geometricPrecision", root.attrib.get("shape-rendering"), role
+            )
+
+            stroke_widths: list[float] = []
+            for element in root.iter():
+                tag = element.tag.rsplit("}", 1)[-1]
+                self.assertNotIn(tag, forbidden_tags, role)
+                self.assertNotIn("filter", element.attrib, role)
+                # The old grounding ellipse used element opacity; restrained
+                # tint fills use the explicit fill-opacity channel instead.
+                self.assertNotIn("opacity", element.attrib, role)
+                if "stroke-width" in element.attrib:
+                    stroke_widths.append(float(element.attrib["stroke-width"]))
+
+            self.assertTrue(stroke_widths, role)
+            self.assertTrue(
+                all(width in {1.25, 1.5} for width in stroke_widths),
+                f"{role}: {stroke_widths}",
+            )
 
     def test_router_and_unresolved_nodes_get_their_stencils(self) -> None:
         elements = self.viewer(self.frr_snapshot()).elements()

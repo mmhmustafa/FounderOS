@@ -436,3 +436,384 @@ class DiscoverWithProfileTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CredentialSetOnlyProfileTests(unittest.TestCase):
+    """A profile needs a way IN — not necessarily a username of its own.
+
+    Atlas made an operator who had already saved a credential set retype a
+    username and password anyway: the wizard blocked on "Please fill out this
+    field" for a credential that was sitting in the set they had just ticked.
+    The engine never needed it — `profile_default` is optional at every layer
+    of the resolver, and a set's entries carry their own usernames and
+    passwords. The form was imposing a restriction the engine does not have.
+    """
+
+    def test_a_credential_set_is_enough(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            service = make_service(Path(tmp))
+            profile = service.add_profile(
+                name="Set Only",
+                management_ip="10.0.0.1",
+                username="",
+                password="",
+                credential_sets=("lab-admin",),
+            )
+            self.assertEqual(("lab-admin",), profile.credential_sets)
+            self.assertEqual("", profile.username)
+            # No credential of its own means no secret to store, and no
+            # reference to one — not an empty reference to a missing secret.
+            self.assertEqual("", profile.credential_ref)
+
+    def test_a_set_only_profile_survives_its_whole_lifecycle(self) -> None:
+        """Creating it was never the hard part — using it was.
+
+        The first version of this change fixed the model and the forms and
+        left every path that READS a profile asking the credential store for
+        the secret behind an empty reference. Discovery died on stage 1 with
+        "credential_ref must be a non-empty string" — the profile saved fine
+        and could not run. Duplicate and delete had the same hole.
+
+        So: every step, not just the one that was reported.
+        """
+
+        with tempfile.TemporaryDirectory() as tmp:
+            service = make_service(Path(tmp))
+            service.add_profile(
+                name="Set Only", management_ip="10.0.0.1",
+                username="", password="", credential_sets=("lab-admin",),
+            )
+
+            # RUN — the one that broke: no own credential, nothing to look up.
+            inputs = service.resolve_discovery_inputs("Set Only")
+            self.assertEqual("", inputs.password)
+            self.assertEqual(("lab-admin",), inputs.credential_sets)
+
+            # DUPLICATE — a clone of a set-only profile has no secret to copy,
+            # and must not hold a reference to one that was never stored.
+            clone = service.duplicate_profile("Set Only", new_name="Set Only Copy")
+            self.assertEqual("", clone.credential_ref)
+            self.assertEqual(("lab-admin",), clone.credential_sets)
+
+            # DELETE — nothing of its own to forget.
+            service.delete_profile("Set Only Copy")
+
+    def test_a_set_only_profile_reaches_the_network_with_the_sets_credential(self) -> None:
+        """The assertion that actually matters: does it CONNECT?
+
+        Everything else here checks that a set-only profile can be stored and
+        read. This checks the only thing an operator cares about — that the
+        credential from the set arrives at the transport. Two regressions got
+        past "it saves fine": `credential_ref must be a non-empty string`, then
+        `username is required`, each one layer further down the same path. So
+        this walks the whole way to the socket.
+        """
+
+        from founderos_atlas.credentials import CredentialSetRepository
+        from founderos_atlas.credentials.models import CredentialEntry, CredentialSet
+        from founderos_runtime.cli.commands import CliError, atlas_discover_command
+
+        with tempfile.TemporaryDirectory() as tmp:
+            workdir = Path(tmp)
+            service = make_service(workdir)
+            CredentialSetRepository(service.repository.root).save(
+                CredentialSet(
+                    set_id="lab-admin",
+                    name="Lab Admin",
+                    entries=(
+                        CredentialEntry(
+                            entry_id="e1", label="lab", username="atlas",
+                            credential_ref="ref-lab", priority=10,
+                        ),
+                    ),
+                )
+            )
+            service.credential_provider.save("ref-lab", "labpass")
+            service.add_profile(
+                name="Set Only", management_ip="10.0.0.1",
+                username="", password="", credential_sets=("lab-admin",),
+            )
+
+            seen: dict[str, str] = {}
+
+            def factory(credentials):
+                seen.setdefault("username", credentials.username)
+                seen.setdefault("password", credentials.password)
+                raise OSError("no network in tests")
+
+            with self.assertRaises(CliError):
+                atlas_discover_command(
+                    profile="Set Only",
+                    profile_service=service,
+                    transport_factory=factory,
+                    topology_output=workdir / "t.html",
+                    snapshot_output=workdir / "s.json",
+                    brief_output=workdir / "b.md",
+                    config_output_dir=workdir / "configs",
+                    dashboard_output=workdir / "d.html",
+                    history_root=workdir / ".atlas" / "history",
+                    change_report_json_output=workdir / "c.json",
+                    change_report_markdown_output=workdir / "c.md",
+                    config_change_json_output=workdir / "cc.json",
+                    config_change_markdown_output=workdir / "cc.md",
+                    state_change_json_output=workdir / "sc.json",
+                    state_change_markdown_output=workdir / "sc.md",
+                    browser_opener=lambda url: None,
+                    progress=lambda line: None,
+                )
+            # The SET's credential reached the transport — resolved per device,
+            # with no credential of the profile's own anywhere in the path.
+            self.assertEqual("atlas", seen.get("username"))
+            self.assertEqual("labpass", seen.get("password"))
+
+    def test_giving_a_set_only_profile_a_password_later_mints_a_reference(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            service = make_service(Path(tmp))
+            service.add_profile(
+                name="Set Only", management_ip="10.0.0.1",
+                username="", password="", credential_sets=("lab-admin",),
+            )
+            updated = service.update_profile("Set Only", username="atlas", password="later")
+            # It had no reference to reuse; one is created rather than saving
+            # the secret under an empty key.
+            self.assertTrue(updated.credential_ref)
+            self.assertEqual("later", service.credential_provider.get(updated.credential_ref))
+
+    def test_a_profile_with_no_way_in_at_all_is_refused(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            service = make_service(Path(tmp))
+            with self.assertRaises(InvalidProfileError) as caught:
+                service.add_profile(
+                    name="No Way In",
+                    management_ip="10.0.0.2",
+                    username="",
+                    password="",
+                    credential_sets=(),
+                )
+            self.assertIn("way to authenticate", str(caught.exception))
+
+    def test_its_own_credential_still_works_exactly_as_before(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            service = make_service(Path(tmp))
+            profile = service.add_profile(
+                name="Own Cred",
+                management_ip="10.0.0.3",
+                username="atlas",
+                password="secret",
+            )
+            self.assertEqual("atlas", profile.username)
+            self.assertTrue(profile.credential_ref)
+            self.assertEqual("secret", service.credential_provider.get(profile.credential_ref))
+
+    def test_the_model_states_the_real_rule(self) -> None:
+        # Either its own credential, or a set — the model, not just the form.
+        with self.assertRaises(InvalidProfileError):
+            DiscoveryProfile(
+                profile_id="p", name="n", management_ip="10.0.0.4",
+                username="", credential_ref="",
+            )
+        # A set alone satisfies it.
+        profile = DiscoveryProfile(
+            profile_id="p", name="n", management_ip="10.0.0.4",
+            username="", credential_ref="", credential_sets=("lab-admin",),
+        )
+        self.assertEqual(("lab-admin",), profile.credential_sets)
+
+
+class WizardAcceptsACredentialSetTests(unittest.TestCase):
+    """The GUI must not demand a credential the engine does not need.
+
+    Reported from the wizard: "I have selected the lab admin for credentials,
+    still it asks to fill the credentials." It did — both fields were
+    unconditionally `required`, in the browser AND on the server.
+    """
+
+    def _app(self, tmp: Path):
+        from founderos_atlas.web import create_app
+
+        from tests.test_profile_isolation import make_service
+
+        def unreachable(_credentials):
+            # Accepting a credential set STARTS a real discovery. These tests
+            # are about the credential rule, not the network, so every host
+            # fails instantly — otherwise the job thread outlives the temp
+            # directory and teardown races it.
+            raise OSError("no network in tests")
+
+        app = create_app(
+            profile_service=make_service(tmp),
+            output_dir=tmp,
+            history_root=tmp / ".atlas" / "history",
+            transport_factory=unreachable,
+        )
+        app.config.update(TESTING=True)
+        return app
+
+    def _client(self, tmp: Path):
+        return self._app(tmp).test_client()
+
+    @staticmethod
+    def _settle(app) -> None:
+        """Let any started discovery finish before the temp directory goes."""
+
+        manager = app.config.get("ATLAS_JOB_MANAGER")
+        if manager is None:
+            return
+        for job in manager.list_recent():
+            manager.wait(job["job_id"], timeout=30)
+
+    @staticmethod
+    def _flashes(client) -> list[str]:
+        with client.session_transaction() as session:
+            return [message for _category, message in session.get("_flashes", [])]
+
+    def test_a_credential_set_alone_starts_discovery(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            app = self._app(Path(tmp))
+            client = app.test_client()
+            client.post(
+                "/discovery/wizard/start",
+                data={
+                    "mode": "seed", "policy": "fast", "seed": "10.0.0.1",
+                    "name": "Set Only", "username": "", "password": "",
+                    "credential_sets": "lab-admin",
+                },
+            )
+            messages = self._flashes(client)
+            self.assertFalse(
+                any("authenticate" in message for message in messages),
+                f"a chosen credential set was refused: {messages}",
+            )
+            self._settle(app)
+
+    def test_no_credential_at_all_is_still_refused(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            client = self._client(Path(tmp))
+            client.post(
+                "/discovery/wizard/start",
+                data={
+                    "mode": "seed", "policy": "fast", "seed": "10.0.0.1",
+                    "name": "No Way In", "username": "", "password": "",
+                },
+            )
+            self.assertTrue(
+                any("authenticate" in m for m in self._flashes(client)),
+                "discovery started with no way to authenticate",
+            )
+
+    def test_the_review_step_does_not_ask_again_for_a_chosen_set(self) -> None:
+        """Empty credential boxes above "Start Discovery" read as a demand.
+
+        Making them merely optional was not enough: the review step still
+        showed two blank fields with "nothing to re-enter" printed underneath
+        them, which is a contradiction. The step exists to re-enter a password
+        Atlas never echoes — a chosen set carries one, so there is nothing to
+        re-enter and the fields are put away behind an explicit opt-in.
+        """
+
+        import re
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = self._client(Path(tmp))
+            page = client.post(
+                "/discovery/wizard/preview",
+                data={
+                    "mode": "seed", "policy": "balanced", "seed": "10.0.0.1",
+                    "credential_sets": "lab-admin",
+                },
+            ).get_data(as_text=True)
+            review = page[page.find("wizard/start"):]
+            self.assertIn("nothing to re-enter", review)
+            self.assertIn("lab-admin", review)          # names what will be used
+            self.assertIn("credential-override", review)  # tucked away, not gone
+            # No bare required credential field is put in the operator's way.
+            self.assertIsNone(re.search(r'name="password"[^>]*required', review))
+
+    def test_the_review_step_still_confirms_a_password_without_a_set(self) -> None:
+        import re
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = self._client(Path(tmp))
+            page = client.post(
+                "/discovery/wizard/preview",
+                data={"mode": "seed", "policy": "balanced", "seed": "10.0.0.1"},
+            ).get_data(as_text=True)
+            review = page[page.find("wizard/start"):]
+            self.assertIsNotNone(re.search(r'name="password"[^>]*required', review))
+            self.assertIn("Re-enter the password", review)
+
+    def test_the_wizard_does_not_hard_require_the_fields(self) -> None:
+        """Ticking a set relaxes them client-side too (js-credential-optional)."""
+
+        wizard = Path(
+            "src/founderos_atlas/web/templates/discovery_wizard.html"
+        ).read_text(encoding="utf-8")
+        self.assertIn("js-credential-optional", wizard)
+        self.assertIn("js-credential-set", wizard)
+        # The placeholder must not masquerade as a filled-in value.
+        self.assertNotIn('placeholder="atlas"', wizard)
+
+
+class ProfileRemembersTheRangeItWasGivenTests(unittest.TestCase):
+    """"I am choosing CIDR and giving 172.20.20.0/24, but it shows seed IP as
+    172.20.20.1."
+
+    It did. A CIDR is expanded into candidate addresses at creation, and the
+    range itself was never stored — so the profile could not tell a /24 sweep
+    from someone who typed 254 addresses by hand, and every screen showed the
+    only address it had: the first one. The plan knew
+    (`attributes['cidr']`); the profile was simply never told.
+    """
+
+    def test_a_cidr_profile_shows_the_range_not_its_first_address(self) -> None:
+        from founderos_atlas.discovery import resolve_plan
+        from founderos_atlas.web.models import profile_row
+
+        with tempfile.TemporaryDirectory() as tmp:
+            service = make_service(Path(tmp))
+            plan = resolve_plan(
+                "management-network", cidr="172.20.20.0/24", policy="balanced"
+            )
+            seeds = plan.seed_addresses
+            profile = service.add_profile(
+                name="labdab", management_ip=seeds[0], username="atlas",
+                password="pw", seeds=seeds[1:],
+                seed_cidr=plan.attributes.get("cidr"),
+            )
+            self.assertEqual("172.20.20.0/24", profile.seed_cidr)
+            # The entry point still IS the first candidate — traversal is
+            # untouched; only what the operator is shown changed.
+            self.assertEqual("172.20.20.1", profile.management_ip)
+            self.assertEqual("172.20.20.0/24", profile_row(profile)["seed_label"])
+
+    def test_a_seed_profile_still_shows_its_address(self) -> None:
+        from founderos_atlas.web.models import profile_row
+
+        with tempfile.TemporaryDirectory() as tmp:
+            service = make_service(Path(tmp))
+            profile = service.add_profile(
+                name="single", management_ip="10.0.0.9",
+                username="atlas", password="pw",
+            )
+            self.assertIsNone(profile.seed_cidr)
+            self.assertEqual("10.0.0.9", profile_row(profile)["seed_label"])
+
+    def test_the_range_survives_a_round_trip_and_a_duplicate(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            service = make_service(Path(tmp))
+            service.add_profile(
+                name="labdab", management_ip="172.20.20.1", username="atlas",
+                password="pw", seed_cidr="172.20.20.0/24",
+            )
+            # Re-read from disk: it is persisted, not just held in memory.
+            self.assertEqual("172.20.20.0/24", service.get_profile("labdab").seed_cidr)
+            clone = service.duplicate_profile("labdab", new_name="labdab copy")
+            self.assertEqual("172.20.20.0/24", clone.seed_cidr)
+
+    def test_a_profile_written_before_this_existed_still_loads(self) -> None:
+        # Backward compatibility: no seed_cidr key at all.
+        profile = DiscoveryProfile.from_dict({
+            "profile_id": "p", "name": "old", "management_ip": "10.0.0.1",
+            "username": "atlas", "credential_ref": "ref",
+        })
+        self.assertIsNone(profile.seed_cidr)

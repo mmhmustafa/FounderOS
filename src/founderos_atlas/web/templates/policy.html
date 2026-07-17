@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+{% block title %}Enterprise Policy{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Enterprise Policy</h1>
+  <span class="actions muted">{{ report.pack.name }} v{{ report.pack.version }} · {{ report.pack.policy_count }} policies</span>
+</div>
+<p class="muted">
+  Atlas does not hard-code compliance — it evaluates policies. Every verdict below is reached the
+  same way: evidence is drawn from what Atlas actually collected, a rule declares what compliant
+  looks like, and the engine scores confidence and explains itself. A device whose configuration
+  Atlas has not collected is reported <strong>Unknown</strong>, never guessed.
+</p>
+
+<div class="tiles">
+  <div class="tile"><strong>Compliance score</strong><span>{{ report.score }}%</span></div>
+  <div class="tile"><strong>Passed</strong><span>{{ report.passed }}</span></div>
+  <div class="tile"><strong>Warnings</strong><span>{{ report.warnings }}</span></div>
+  <div class="tile"><strong>Failed</strong><span>{{ report.failed }}</span></div>
+  <div class="tile"><strong>Unknown</strong><span>{{ report.unknown }}</span></div>
+  <div class="tile"><strong>Devices</strong><span>{{ report.device_count }}</span></div>
+</div>
+<p class="muted" style="margin-top:-8px;">
+  Score is passed ÷ judged, over the {{ report.judged }} evaluation(s) where a verdict was reached;
+  the {{ report.unknown }} Unknown result(s) are excluded from the denominator rather than counted
+  as pass or fail. Evaluated for <strong>{{ report.scope_label }}</strong>{% if generated_at %} · {{ generated_at }}{% endif %}.
+</p>
+
+<section class="card">
+  <h2>Policy Results</h2>
+  {% if report.evaluations %}
+  <p class="muted">Select a result to see the evidence, reasoning, configuration, recommendation and confidence behind it.</p>
+  <div class="path-timeline">
+    {% for e in report.evaluations %}
+    {% set status_class = 'pass' if e.status == 'pass' else ('failed' if e.status == 'fail' else ('warning' if e.status == 'warning' else 'unknown')) %}
+    {# Confidence is shown only when it should change what the reader does.
+       A confident, deterministic verdict speaks for itself. #}
+    {% set conf = confidence_display(e.result.confidence, conflicting=e.result.evidence_conflicting|length > 0) %}
+    <details>
+      <summary>
+        <span class="badge hop-badge hop-badge-{{ status_class }}">{{ e.status_label }}</span>
+        <strong>{{ e.policy.name }}</strong>
+        <span class="muted">· {{ e.hostname }}</span>
+        <span class="muted">· {{ e.policy.category | title }}</span>
+        <span class="muted">· severity {{ e.policy.severity }}</span>
+        {% if conf %}
+        <span class="hop-badge hop-badge-{{ conf.tone }}" style="margin-left:auto;"
+              title="{{ conf.why }}">{{ conf.label }}{% if conf.percent %} ({{ conf.percent }}%){% endif %}</span>
+        {% endif %}
+      </summary>
+      <div style="padding:8px 4px 14px 4px;">
+        <p><strong>Conclusion.</strong> {{ e.result.conclusion }}</p>
+
+        <p class="muted" style="margin-bottom:4px;"><strong>Why (reasoning path)</strong></p>
+        <ul>
+          {% for step in e.result.reasoning_path %}
+          <li>{{ step.statement }}</li>
+          {% endfor %}
+        </ul>
+
+        {% if e.config_snippet %}
+        <p class="muted" style="margin-bottom:4px;"><strong>Configuration (masked)</strong></p>
+        <pre style="overflow-x:auto;background:var(--panel);padding:10px;border-radius:6px;font-size:12px;">{% for line in e.config_snippet %}{{ line }}
+{% endfor %}</pre>
+        {% endif %}
+
+        <p class="muted" style="margin-bottom:4px;"><strong>Evidence used</strong></p>
+        {% if e.result.evidence_used %}
+        <ul>
+          {% for ev in e.result.evidence_used %}
+          <li>
+            <code>{{ ev.kind }}</code> — {{ ev.summary }}
+            {% if ev.provenance and ev.provenance.command %}<span class="muted">(<code>{{ ev.provenance.command }}</code>{% if ev.provenance.session_id %}, session {{ ev.provenance.session_id }}{% endif %})</span>{% endif %}
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="muted">None — no evidence of the required kind was available.</p>
+        {% endif %}
+
+        {% if e.result.evidence_missing %}
+        <p class="muted" style="margin-bottom:4px;"><strong>Evidence missing</strong></p>
+        <ul>
+          {% for gap in e.result.evidence_missing %}
+          <li><code>{{ gap.kind }}</code> — {{ gap.detail or gap.why }}</li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+
+        {% if e.result.recommendations %}
+        <p class="muted" style="margin-bottom:4px;"><strong>Recommendation</strong></p>
+        <ul>
+          {% for rec in e.result.recommendations %}
+          <li>{{ rec.action }} <span class="muted">— {{ rec.rationale }}</span></li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+
+        {% if e.result.alternatives_rejected %}
+        <p class="muted" style="margin-bottom:4px;"><strong>Alternatives considered and rejected</strong></p>
+        <ul>
+          {% for alt in e.result.alternatives_rejected %}
+          <li>{{ alt.statement }} <span class="muted">— {{ alt.why_not }}</span></li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+
+        {# Opened detail = the reader asked for the reasoning. Full disclosure here. #}
+        <p class="muted" style="margin-bottom:4px;"><strong>Confidence</strong> — {{ confidence_detail(e.result.confidence) }}</p>
+        {% if e.result.confidence.factors %}
+        <ul>
+          {% for f in e.result.confidence.factors %}
+          <li>{{ f.name }}: {{ '%+.2f' % f.points }} <span class="muted">— {{ f.why }}</span></li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+
+        <p class="muted" style="font-size:12px;">
+          Rule set {{ e.result.provenance.rule_set_version }} · engine {{ e.result.provenance.engine_version }} ·
+          expected state: {{ e.policy.expected_state }}
+        </p>
+      </div>
+    </details>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="muted">
+    Nothing to evaluate in this scope yet. Run a discovery with configuration collection enabled —
+    Atlas records each device's configuration automatically, and policy evaluation reads it from the
+    <a href="/evidence">Evidence</a> it collected.
+  </p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Installed Policy Packs</h2>
+  <p class="muted">
+    A policy pack is data, not code. Compliance is one pack; Security, CIS, STIG, PCI-DSS and
+    customer packs install the same way, over the same unchanged reasoning engine.
+  </p>
+  <table class="grid">
+    <thead><tr><th>Pack</th><th>Version</th><th>Author</th><th>Policies</th><th>Categories</th></tr></thead>
+    <tbody>
+      {% for p in packs %}
+      <tr>
+        <td><strong>{{ p.name }}</strong> <span class="muted"><code>{{ p.pack_id }}</code></span></td>
+        <td>{{ p.version }}</td>
+        <td>{{ p.author }}</td>
+        <td>{{ p.policy_count }}</td>
+        <td>{% for c in p.categories %}<span class="hop-badge badge-muted">{{ c | title }}</span> {% endfor %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

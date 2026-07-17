@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from uuid import uuid4
 
 from founderos_atlas.workspace.exceptions import WorkspaceCorruptedError
 from founderos_atlas.workspace.repository import default_workspace_root
@@ -37,8 +38,17 @@ class SiteCatalogRepository:
 
     def save(self, catalog: SiteCatalog) -> None:
         self._root.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(
-            json.dumps(catalog.to_dict(), indent=2, sort_keys=True, ensure_ascii=False)
-            + "\n",
-            encoding="utf-8",
+        temporary = self.path.with_name(
+            f".{self.path.name}.{uuid4().hex}.writing"
         )
+        try:
+            temporary.write_text(
+                json.dumps(
+                    catalog.to_dict(), indent=2, sort_keys=True,
+                    ensure_ascii=False,
+                ) + "\n",
+                encoding="utf-8",
+            )
+            temporary.replace(self.path)
+        finally:
+            temporary.unlink(missing_ok=True)

@@ -16,6 +16,8 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
+from uuid import uuid4
 
 from founderos_atlas.credentials import (
     CredentialScope,
@@ -41,7 +43,20 @@ from founderos_atlas.federation import (
 )
 from founderos_atlas.history import HistoryRepository, generate_timeline
 from founderos_atlas.search import SearchService, search_enterprise
-from founderos_atlas.sites import SiteCatalogRepository
+from founderos_atlas.sites import (
+    SITE_TYPES,
+    Site,
+    SiteCatalog,
+    SiteCatalogRepository,
+    SiteOverrideConflictError,
+    SiteOverrideRepository,
+)
+from founderos_atlas.topology import TopologySnapshot
+from founderos_atlas.visualization import (
+    TOPOLOGY_VISUAL_STYLE_VERSION,
+    TopologyRenderer,
+    topology_visual_style_is_current,
+)
 from founderos_atlas.incidents import (
     IncidentArtifacts,
     IncidentInvestigator,
@@ -63,21 +78,175 @@ from founderos_atlas.workspace import (
 )
 
 from .models import (
-    NAV_ITEMS,
+    NAV_GROUPS,
     change_summaries,
     credential_set_rows,
     device_inventory,
     history_rows,
     load_json,
+    nav_group_for,
     prediction_targets,
     profile_row,
+    timeline_activity,
 )
+
+
+def _viewer_has_current_visual_style(path: Path) -> bool:
+    if not path.is_file():
+        return False
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            return topology_visual_style_is_current(handle.read(512))
+    except (OSError, UnicodeError):
+        return False
+
+
+def _viewer_has_site_override_revision(path: Path, revision: int) -> bool:
+    if not path.is_file():
+        return False
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            header = handle.read(1024)
+    except (OSError, UnicodeError):
+        return False
+    return f"<!-- ATLAS_SITE_OVERRIDE_REVISION={revision} -->" in header
+
+
+def _current_topology_viewer_url(
+    path: str, artifact_path: Path | None = None
+) -> str:
+    """Cache-bust current HTML after style or persisted curation changes."""
+
+    artifact_version = 0
+    if artifact_path is not None:
+        try:
+            artifact_version = artifact_path.stat().st_mtime_ns
+        except OSError:
+            pass
+    return (
+        f"{path}?visual_style={TOPOLOGY_VISUAL_STYLE_VERSION}"
+        f"&artifact_version={artifact_version}"
+    )
+
+
+def _configuration_viewer_context(
+    output: Path,
+) -> tuple[tuple[str, ...], dict[str, str], dict[str, dict]]:
+    from founderos_atlas.config_memory import extract_facts
+
+    configs = output / "configs"
+    try:
+        configured = tuple(
+            sorted(
+                (entry.name for entry in configs.iterdir() if entry.is_dir()),
+                key=str.casefold,
+            )
+        )
+    except OSError:
+        configured = ()
+
+    changes: dict[str, str] = {}
+    routing_facts: dict[str, dict] = {}
+    for hostname in configured:
+        path = configs / hostname / "running_config.txt"
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            continue
+        if text.strip():
+            routing_facts[hostname] = extract_facts(text).view()
+    report = load_json(output / "config_change_report.json") or {}
+    rows = report.get("reports") or ()
+    if isinstance(rows, list | tuple):
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            hostname = row.get("hostname")
+            change_count = row.get("change_count")
+            if isinstance(hostname, str) and isinstance(change_count, int):
+                changes[hostname] = f"{change_count} change(s)"
+    return configured, changes, routing_facts
+
+
+def _refresh_current_topology_viewer(
+    output: Path,
+    *,
+    workspace_root: str | Path,
+    last_discovered: str | None = None,
+    force: bool = False,
+) -> bool:
+    """Refresh one current viewer from its adjacent immutable snapshot.
+
+    Only the live scope root is accepted by callers. History repositories are
+    never traversed or rewritten; their viewer remains the record of what that
+    discovery produced at the time.
+    """
+
+    viewer_path = output / "atlas_topology.html"
+    try:
+        override_revision = SiteOverrideRepository(workspace_root).load().revision
+    except AtlasWorkspaceError:
+        # Preserve an existing readable viewer when workspace state is
+        # corrupt; the curation API will report the underlying error.
+        return False
+    if (
+        not force
+        and _viewer_has_current_visual_style(viewer_path)
+        and _viewer_has_site_override_revision(viewer_path, override_revision)
+    ):
+        return False
+
+    snapshot_data = load_json(output / "topology_snapshot.json")
+    if snapshot_data is None:
+        return False
+    # One same-directory temporary per attempt keeps ``replace`` atomic while
+    # also making simultaneous browser requests unable to clobber each
+    # other's in-progress render.
+    temporary_path = viewer_path.with_name(
+        f".{viewer_path.name}.{uuid4().hex}.refreshing"
+    )
+    try:
+        snapshot = TopologySnapshot.from_dict(snapshot_data)
+        configured, config_changes, routing_facts = (
+            _configuration_viewer_context(output)
+        )
+        workspace = Path(workspace_root)
+        html = TopologyRenderer(
+            snapshot,
+            change_report=load_json(output / "change_report.json"),
+            viewer_context={
+                "last_discovered": last_discovered
+                or snapshot.created_at
+                or "unrecorded",
+                "configured_hostnames": configured,
+                "config_changes": config_changes,
+                "routing_facts": routing_facts,
+            },
+            # Refreshes run inside the app's injected workspace, which can be
+            # different from the process default in tests and embeddings.  A
+            # viewer must retain its site-level topology when its style is
+            # upgraded.
+            site_catalog=SiteCatalogRepository(workspace).load(),
+            site_overrides=SiteOverrideRepository(workspace).load(),
+        ).render()
+        temporary_path.write_text(html, encoding="utf-8")
+        temporary_path.replace(viewer_path)
+    except (AtlasWorkspaceError, KeyError, OSError, TypeError, ValueError):
+        # A bad current snapshot must not destroy a still-readable old viewer
+        # or turn the surrounding topology page into a server error.
+        try:
+            temporary_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return False
+    return True
 
 
 def register_routes(app) -> None:
     from flask import (
         abort,
         flash,
+        g,
         jsonify,
         redirect,
         render_template,
@@ -97,7 +266,14 @@ def register_routes(app) -> None:
         return cfg("ATLAS_PROFILE_SERVICE")
 
     def base_context(active: str) -> dict:
-        return {"nav_items": NAV_ITEMS, "active": active, "product": "Atlas"}
+        # ``active`` is the view key a route already passed; the sidebar derives
+        # which workflow to open from it, so no route had to change.
+        return {
+            "nav_groups": NAV_GROUPS,
+            "active": active,
+            "active_group": nav_group_for(active),
+            "product": "Atlas",
+        }
 
     # -- Scopes ---------------------------------------------------------------
 
@@ -148,6 +324,24 @@ def register_routes(app) -> None:
     # request rebuilds. Freshness flags still track the current clock.
     enterprise_cache: dict = {"fingerprint": None, "graph": None, "snapshot": None}
 
+    def enterprise_routing_facts(graph, profiles) -> dict[str, dict]:
+        by_name: dict[str, dict] = {}
+        for profile in profiles:
+            scope = profile_scope(output_dir(), profile.profile_id, profile.name)
+            _configured, _changes, facts = _configuration_viewer_context(
+                scope.output_dir
+            )
+            for hostname, value in facts.items():
+                by_name.setdefault(hostname.casefold(), value)
+        merged: dict[str, dict] = {}
+        for device in graph.devices:
+            for name in (device.hostname, *device.aliases):
+                value = by_name.get(str(name).casefold())
+                if value is not None:
+                    merged[device.hostname] = value
+                    break
+        return merged
+
     def enterprise_world():
         """The federated enterprise graph + snapshot for the Enterprise
         scope — a cached VIEW over the isolated profile scopes, never a
@@ -177,8 +371,21 @@ def register_routes(app) -> None:
                 ),
                 now=now,
             )
+            catalog = SiteCatalogRepository(cfg("ATLAS_WORKSPACE_ROOT")).load()
+            overrides = SiteOverrideRepository(
+                cfg("ATLAS_WORKSPACE_ROOT")
+            ).load()
             snapshot = (
-                write_enterprise_artifacts(output_dir(), graph).to_dict()
+                write_enterprise_artifacts(
+                    output_dir(), graph,
+                    site_catalog=catalog,
+                    site_overrides=overrides,
+                    viewer_context={
+                        "routing_facts": enterprise_routing_facts(
+                            graph, profiles
+                        )
+                    },
+                ).to_dict()
                 if graph.devices
                 else None
             )
@@ -210,6 +417,17 @@ def register_routes(app) -> None:
             if scope.scope_id == scope_id:
                 return profile
         return None
+
+    def refresh_scope_topology_viewer(
+        scope: DiscoveryScope, *, force: bool = False
+    ) -> bool:
+        profile = profile_for_scope(scope.scope_id)
+        return _refresh_current_topology_viewer(
+            scope.output_dir,
+            workspace_root=cfg("ATLAS_WORKSPACE_ROOT"),
+            last_discovered=(profile.last_discovery if profile is not None else None),
+            force=force,
+        )
 
     def scoped_world(scope_id: str):
         """The graph + snapshot for the selected scope (PR-043.9, Part 1).
@@ -871,17 +1089,24 @@ def register_routes(app) -> None:
         name = request.form.get("name", "").strip()
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
-        if not name or not username or not password:
+        credential_sets = tuple(request.form.getlist("credential_sets"))
+        # A profile needs a way in — its own credential, or a credential set.
+        # Sets alone are sufficient: their entries carry their own usernames and
+        # passwords. Demanding a username and password anyway made an operator
+        # who had picked a saved set retype a credential Atlas never needed.
+        if not name:
+            flash("A profile name is required to run discovery.", "error")
+            return redirect(url_for("discovery_wizard"))
+        if not (username and password) and not credential_sets:
             flash(
-                "A profile name, username, and password are required to run "
-                "discovery.",
+                "Discovery needs a way to authenticate: a username and "
+                "password, or a credential set.",
                 "error",
             )
             return redirect(url_for("discovery_wizard"))
         seeds = plan.seed_addresses
         try:
             service = profile_service()
-            credential_sets = tuple(request.form.getlist("credential_sets"))
             if service.repository.exists(name):
                 service.update_profile(
                     name,
@@ -889,6 +1114,9 @@ def register_routes(app) -> None:
                     username=username,
                     password=password,
                     seeds=seeds[1:],
+                    # Remember the range that was typed, not just the
+                    # addresses it expanded into (PR-047A).
+                    seed_cidr=plan.attributes.get("cidr"),
                     max_depth=plan.effective_depth,
                     max_devices=plan.max_devices,
                     collect_configuration=plan.collect_configuration,
@@ -902,6 +1130,7 @@ def register_routes(app) -> None:
                     username=username,
                     password=password,
                     seeds=seeds[1:],
+                    seed_cidr=plan.attributes.get("cidr"),
                     max_depth=plan.effective_depth,
                     max_devices=plan.max_devices,
                     collect_configuration=plan.collect_configuration,
@@ -1010,6 +1239,783 @@ def register_routes(app) -> None:
             return jsonify(_running_execution_sample())
         return jsonify(_completed_execution_demo())
 
+    # -- Configuration Memory (PR-044) -------------------------------------
+
+    def display_timezone():
+        """The zone the GUI renders stored UTC instants in (display only)."""
+
+        from .timefmt import resolve_timezone
+
+        return resolve_timezone(app.config.get("ATLAS_DISPLAY_TIMEZONE"))
+
+    def config_memory_store(scope):
+        """The Configuration Memory of one scope — what Atlas remembers."""
+
+        from founderos_atlas.config_memory import ConfigMemoryStore
+
+        return ConfigMemoryStore(scope.output_dir / "config-memory")
+
+    def config_memory_scopes(scopes, scope_id):
+        """The scopes a Configuration view covers: one network, or all."""
+
+        if scope_id == GLOBAL_SCOPE_ID:
+            return aggregation_scopes(scopes)
+        return (scopes[scope_id],)
+
+    # -- Enterprise Memory (PR-045) ----------------------------------------
+
+    def memory_store(scope):
+        from founderos_atlas.enterprise_memory import EnterpriseMemoryStore
+
+        return EnterpriseMemoryStore(scope.output_dir / "enterprise-memory")
+
+    def memory_service(scope):
+        from founderos_atlas.enterprise_memory import EnterpriseMemory
+
+        return EnterpriseMemory(memory_store(scope))
+
+    def memory_scopes(scopes, scope_id):
+        if scope_id == GLOBAL_SCOPE_ID:
+            return aggregation_scopes(scopes)
+        return (scopes[scope_id],)
+
+    def _find_memory(scopes, scope_id, *, session_id=None, device_id=None):
+        """(service, scope) for the scope that holds a given session/device."""
+
+        for scope in memory_scopes(scopes, scope_id):
+            service = memory_service(scope)
+            if session_id is not None and service.get_discovery_session(session_id):
+                return service, scope
+            if device_id is not None and service.get_device_memory(device_id):
+                return service, scope
+        return None, None
+
+    # -- Evidence Explorer (PR-047B, PROOF) --------------------------------
+    #
+    # The page these routes replaced reported on the storage engine: unique
+    # blobs, deduplicated observations, stored bytes. The drill-down beneath it
+    # was good and complete, and nothing outside it ever pointed in, so an
+    # operator asking "why does Atlas believe this?" landed on a wall of
+    # counters. These routes answer the operator's four questions instead —
+    # what was collected, from where, what failed, and what depends on it —
+    # over exactly the same records. Enterprise Memory, CORTEX and the blob
+    # store are untouched; every derivation lives in web/evidence_view.py.
+
+    EVIDENCE_PAGE_SIZE = 50
+
+    # A configuration can be tens of thousands of lines. Rendering all of it
+    # into a <pre> is how a page stops responding, so the view is capped and
+    # says so — the whole thing is always one Download click away, and the cap
+    # is on *rendering*, never on what Atlas stored.
+    EVIDENCE_MAX_VIEW_LINES = 2000
+
+    def _page_arg(name: str = "page", default: int = 1) -> int:
+        """A page number from the query string, or the default.
+
+        A hand-edited "?page=banana" is an operator typo, not an error worth a
+        500 — it means "the first page".
+        """
+
+        try:
+            return int(request.args.get(name) or default)
+        except (TypeError, ValueError):
+            return default
+
+    def _evidence_sessions(scopes, scope_id):
+        rows: list[dict] = []
+        for scope in memory_scopes(scopes, scope_id):
+            for session in memory_store(scope).list_sessions():
+                row = session.to_dict()
+                row["scope_id"] = scope.scope_id
+                rows.append(row)
+        rows.sort(key=lambda s: s["started_at"], reverse=True)
+        return rows
+
+    def _evidence_storage_totals(scopes, scope_id):
+        """The storage internals — kept, but demoted to System Details."""
+
+        totals = {"sessions": 0, "devices": 0, "evidence_records": 0,
+                  "configuration_snapshots": 0, "unique_blobs": 0,
+                  "deduplicated": 0, "stored_bytes": 0}
+        for scope in memory_scopes(scopes, scope_id):
+            for key, value in memory_store(scope).statistics().items():
+                if key in totals:
+                    totals[key] += value
+        return totals
+
+    def _session_scope(scopes, scope_id, session_id):
+        for scope in memory_scopes(scopes, scope_id):
+            if memory_store(scope).get_session(session_id):
+                return scope
+        return None
+
+    def _matches_filters(row, filters):
+        """Server-side filtering (Part 7) — no new search engine, just the
+        fields the operator can see, matched against what they typed."""
+
+        if filters["device"] and row.get("device_id") != filters["device"]:
+            return False
+        if filters["platform"] and (row.get("platform") or "") != filters["platform"]:
+            return False
+        if filters["command"] and (row.get("command") or "") != filters["command"]:
+            return False
+        if filters["status"] and (row.get("collection_status") or "") != filters["status"]:
+            return False
+        if filters["source"] and (row.get("source") or "") != filters["source"]:
+            return False
+        if filters["q"]:
+            needle = filters["q"].casefold()
+            haystack = " ".join(str(row.get(key) or "") for key in (
+                "hostname", "device_id", "command", "platform", "source",
+                "software_version",
+            )).casefold()
+            if needle not in haystack:
+                return False
+        return True
+
+    def _evidence_filters():
+        return {
+            "device": (request.args.get("device") or "").strip(),
+            "platform": (request.args.get("platform") or "").strip(),
+            "command": (request.args.get("command") or "").strip(),
+            "status": (request.args.get("status") or "").strip(),
+            "source": (request.args.get("source") or "").strip(),
+            "q": (request.args.get("q") or "").strip(),
+        }
+
+    @app.route("/evidence")
+    def evidence_page():
+        """Evidence — what Atlas collected, from where, and whether it worked."""
+
+        from .evidence_view import collection_summary, device_rows
+
+        context, scopes, scope_id = scoped_context("memory")
+        sessions = _evidence_sessions(scopes, scope_id)
+        if not sessions:
+            return render_template(
+                "evidence_index.html", sessions=(), session=None, summary=None,
+                devices=(), filters=_evidence_filters(), options={},
+                totals=_evidence_storage_totals(scopes, scope_id), **context,
+            )
+
+        requested = (request.args.get("session") or "").strip()
+        session = next(
+            (s for s in sessions if s["session_id"] == requested), sessions[0]
+        )
+        scope = _session_scope(scopes, scope_id, session["session_id"])
+        store = memory_store(scope)
+        records = [
+            r.to_dict()
+            for r in store.evidence_records(discovery_session=session["session_id"])
+        ]
+        snapshots = [
+            s.to_dict() for s in store.configuration_snapshots()
+            if s.discovery_session == session["session_id"]
+        ]
+
+        # The summary describes the SESSION, not the filter. A filtered view
+        # that also re-scored completeness would let an operator narrow to one
+        # device and read its number as the network's.
+        summary = collection_summary(session, records, snapshots).to_dict()
+
+        filters = _evidence_filters()
+        visible = [r for r in records if _matches_filters(r, filters)]
+        # Snapshots must be filtered alongside the records they came from. A
+        # configuration IS one of these records (the same bytes under another
+        # view), so a snapshot surviving a filter that excluded every one of
+        # its device's records would put the device back in the table and make
+        # "no evidence matches these filters" unreachable.
+        seen = {r.get("device_id") for r in visible}
+        devices = device_rows(
+            visible, [s for s in snapshots if s.get("device_id") in seen]
+        )
+
+        options = {
+            "platforms": sorted({r.get("platform") for r in records if r.get("platform")}),
+            "commands": sorted({r.get("command") for r in records if r.get("command")}),
+            "statuses": sorted({
+                r.get("collection_status") for r in records if r.get("collection_status")
+            }),
+            "sources": sorted({r.get("source") for r in records if r.get("source")}),
+        }
+        return render_template(
+            "evidence_index.html",
+            sessions=sessions, session=session, summary=summary,
+            devices=devices, filters=filters, options=options,
+            filtered=any(filters.values()),
+            record_count=len(records), visible_count=len(visible),
+            totals=_evidence_storage_totals(scopes, scope_id),
+            **context,
+        )
+
+    @app.route("/evidence/device/<path:device_id>")
+    def evidence_device_page(device_id: str):
+        """One device's collected commands — provenance only, never output.
+
+        No blob is read here (Part 11): the listing is built entirely from the
+        records index, so opening a device with a 40MB configuration in its
+        history costs the same as opening one without.
+        """
+
+        from .evidence_view import command_row, device_rows
+
+        context, scopes, scope_id = scoped_context("memory")
+        service, _scope = _find_memory(scopes, scope_id, device_id=device_id)
+        if service is None:
+            flash("Atlas has no memory of that device in this scope.", "error")
+            return redirect(url_for("evidence_page"))
+
+        memory = service.get_device_memory(device_id)
+        session_id = (request.args.get("session") or "").strip()
+        records = [r.to_dict() for r in service.get_raw_evidence(device_id)]
+        if session_id:
+            records = [r for r in records if r.get("discovery_session") == session_id]
+
+        filters = _evidence_filters()
+        visible = [r for r in records if _matches_filters(r, filters)]
+        visible.sort(key=lambda r: (r.get("collected_at") or "", r.get("command") or ""),
+                     reverse=True)
+
+        page = max(1, _page_arg())
+        total_pages = max(1, -(-len(visible) // EVIDENCE_PAGE_SIZE))
+        page = min(page, total_pages)
+        start = (page - 1) * EVIDENCE_PAGE_SIZE
+        rows = [command_row(r) for r in visible[start:start + EVIDENCE_PAGE_SIZE]]
+
+        snapshots = [s.to_dict() for s in service.get_configuration_history(device_id)]
+        device = next(
+            iter(device_rows(records, snapshots)),
+            {"device_id": device_id, "hostname": memory.hostname if memory else device_id},
+        )
+        return render_template(
+            "evidence_device.html",
+            device=device, memory=memory.to_dict() if memory else None,
+            rows=rows, filters=filters, session_id=session_id,
+            sessions=_evidence_sessions(scopes, scope_id),
+            page=page, total_pages=total_pages,
+            visible_count=len(visible), record_count=len(records),
+            configurations=snapshots,
+            **context,
+        )
+
+    @app.route("/evidence/device/<path:device_id>/record/<sha>")
+    def evidence_record_page(device_id: str, sha: str):
+        """One command's evidence: masked output, the facts Atlas already has,
+        and the conclusions that rest on it.
+
+        This is the page every "why does Atlas believe this?" should end at.
+        """
+
+        from .evidence_view import command_row, normalized_facts
+
+        context, scopes, scope_id = scoped_context("memory")
+        service, scope = _find_memory(scopes, scope_id, device_id=device_id)
+        if service is None:
+            abort(404)
+        record = next(
+            (r for r in service.get_raw_evidence(device_id) if r.content_sha256 == sha),
+            None,
+        )
+        if record is None:
+            abort(404)
+
+        view = service.view_evidence(record)
+        text = view.text
+        truncated = False
+        total_lines = 0
+        if text:
+            lines = text.splitlines()
+            total_lines = len(lines)
+            if total_lines > EVIDENCE_MAX_VIEW_LINES:
+                text = "\n".join(lines[:EVIDENCE_MAX_VIEW_LINES])
+                truncated = True
+
+        data = record.to_dict()
+        snapshot = next(
+            (s.to_dict() for s in service.get_configuration_history(device_id)
+             if s.config_sha256 == record.content_sha256),
+            None,
+        )
+        return render_template(
+            "evidence_record.html",
+            device_id=device_id, row=command_row(data), record=data,
+            text=text, masked_line_count=view.masked_line_count,
+            truncated=truncated, total_lines=total_lines,
+            shown_lines=EVIDENCE_MAX_VIEW_LINES,
+            facts=normalized_facts(data, snapshot=snapshot),
+            usage=_evidence_usage(service, scope, data).to_dict(),
+            **context,
+        )
+
+    def _evidence_usage(service, scope, record):
+        """Which conclusions used this evidence (Part 6).
+
+        Policies are evaluated only for evidence Atlas can actually trace — the
+        running configuration — and only for this one device. Evaluating the
+        whole pack across every device to render one page would make the page
+        cost grow with the network.
+        """
+
+        from .evidence_view import UsedBy, is_traceable, used_by
+
+        if not is_traceable(record):
+            return used_by(record)
+        try:
+            from founderos_atlas.policy import PolicyEngine, default_pack
+
+            engine = PolicyEngine()
+            evaluations = [
+                engine.evaluate_device(
+                    service, record["device_id"], policy,
+                    scope_label=getattr(scope, "label", ""),
+                ).to_dict()
+                for policy in default_pack().policies
+            ]
+        except Exception:  # noqa: BLE001
+            # Usage is context, never the point of the page. If policy
+            # evaluation is unavailable the evidence must still render — and
+            # say honestly that usage could not be determined, not claim none.
+            return UsedBy(findings=(), tracked=False, message=(
+                "Atlas could not determine which conclusions use this evidence."
+            ))
+        return used_by(record, policy_evaluations=evaluations)
+
+    @app.route("/evidence/device/<path:device_id>/record/<sha>/download")
+    def evidence_record_download(device_id: str, sha: str):
+        """Download one command's exact bytes — raw, for the local operator.
+
+        Raw and unmasked: an export is the one place the raw text is the
+        point, served only over the loopback GUI (as configuration export
+        already is)."""
+
+        from flask import Response
+
+        _context, scopes, scope_id = scoped_context("memory")
+        service, _scope = _find_memory(scopes, scope_id, device_id=device_id)
+        if service is None:
+            abort(404)
+        text = service.download_evidence(sha)
+        if text is None:
+            abort(404)
+        record = next(
+            (r for r in service.get_raw_evidence(device_id) if r.content_sha256 == sha),
+            None,
+        )
+        from .evidence_bundle import safe_name
+
+        name = safe_name(record.command if record else "evidence",
+                         fallback="evidence")
+        _audit_raw_export(kind="command", subject=f"{device_id}:{sha[:10]}")
+        return Response(
+            text,
+            content_type="text/plain; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{name}-{sha[:10]}.txt"'},
+        )
+
+    @app.route("/evidence/device/<path:device_id>/bundle")
+    def evidence_device_bundle(device_id: str):
+        """This device's evidence as a zip — masked unless raw is asked for."""
+
+        from flask import Response
+
+        from .evidence_bundle import build_device_bundle, safe_name
+
+        _context, scopes, scope_id = scoped_context("memory")
+        service, _scope = _find_memory(scopes, scope_id, device_id=device_id)
+        if service is None:
+            abort(404)
+        raw = request.args.get("raw") == "1"
+        session_id = (request.args.get("session") or "").strip() or None
+        data = build_device_bundle(service, device_id, raw=raw, session_id=session_id)
+        if data is None:
+            abort(404)
+        if raw:
+            _audit_raw_export(kind="device-bundle", subject=device_id)
+        stem = safe_name(device_id, fallback="device")
+        suffix = "-raw" if raw else ""
+        return Response(
+            data,
+            content_type="application/zip",
+            headers={
+                "Content-Disposition":
+                    f'attachment; filename="evidence-device-{stem}{suffix}.zip"'
+            },
+        )
+
+    @app.route("/evidence/session/<path:session_id>/bundle")
+    def evidence_session_bundle(session_id: str):
+        """A whole discovery session's evidence as a zip, one folder per device."""
+
+        from flask import Response
+
+        from .evidence_bundle import build_session_bundle, safe_name
+
+        _context, scopes, scope_id = scoped_context("memory")
+        service, _scope = _find_memory(scopes, scope_id, session_id=session_id)
+        if service is None:
+            abort(404)
+        raw = request.args.get("raw") == "1"
+        data = build_session_bundle(service, session_id, raw=raw)
+        if data is None:
+            abort(404)
+        if raw:
+            _audit_raw_export(kind="session-bundle", subject=session_id)
+        stem = safe_name(session_id, fallback="session")
+        suffix = "-raw" if raw else ""
+        return Response(
+            data,
+            content_type="application/zip",
+            headers={
+                "Content-Disposition":
+                    f'attachment; filename="evidence-session-{stem}{suffix}.zip"'
+            },
+        )
+
+    def _audit_raw_export(*, kind: str, subject: str) -> None:
+        """Record that unmasked evidence left Atlas.
+
+        A raw export is the one action here that can put a secret in a file the
+        operator then forwards. It is allowed — the local operator owns these
+        devices — but it is never silent.
+        """
+
+        app.logger.info("atlas.evidence.raw_export kind=%s subject=%s", kind, subject)
+
+    # -- compatibility: /memory is where Evidence used to live --------------
+    #
+    # Renaming a route is not worth breaking a bookmark, a saved link, or the
+    # two pages that already point here. Every old path resolves to its new
+    # equivalent (PR-047A made the same promise for /management).
+
+    @app.route("/memory")
+    def memory_page():
+        return redirect(url_for("evidence_page", **request.args.to_dict()), code=302)
+
+    @app.route("/memory/session/<path:session_id>")
+    def memory_session_page(session_id: str):
+        return redirect(url_for("evidence_page", session=session_id), code=302)
+
+    @app.route("/memory/device/<path:device_id>")
+    def memory_device_page(device_id: str):
+        return redirect(url_for("evidence_device_page", device_id=device_id), code=302)
+
+    @app.route("/memory/device/<path:device_id>/evidence/<sha>")
+    def memory_evidence_view(device_id: str, sha: str):
+        return redirect(
+            url_for("evidence_record_page", device_id=device_id, sha=sha), code=302
+        )
+
+    @app.route("/memory/device/<path:device_id>/evidence/<sha>/download")
+    def memory_evidence_download(device_id: str, sha: str):
+        return redirect(
+            url_for("evidence_record_download", device_id=device_id, sha=sha), code=302
+        )
+
+    @app.route("/evidence/device/<path:device_id>/config/<sha>/download")
+    def evidence_config_download(device_id: str, sha: str):
+        """Download one configuration snapshot — raw, for the local operator."""
+
+        from flask import Response
+
+        _context, scopes, scope_id = scoped_context("memory")
+        service, _scope = _find_memory(scopes, scope_id, device_id=device_id)
+        if service is None:
+            abort(404)
+        text = service.download_configuration(sha)
+        if text is None:
+            abort(404)
+        _audit_raw_export(kind="configuration", subject=f"{device_id}:{sha[:10]}")
+        return Response(
+            text,
+            content_type="text/plain; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="config-{sha[:10]}.txt"'},
+        )
+
+    @app.route("/memory/device/<path:device_id>/config/<sha>/download")
+    def memory_config_download(device_id: str, sha: str):
+        return redirect(
+            url_for("evidence_config_download", device_id=device_id, sha=sha), code=302
+        )
+
+    # -- Enterprise Policy (PR-047, SENTINEL) ------------------------------
+
+    @app.route("/policy")
+    def policy_page():
+        """Enterprise Policy — evaluate the installed policy pack against every
+        device Atlas remembers, entirely through the CORTEX reasoning engine.
+
+        Compliance is one policy pack; the engine is the reusable reasoning
+        framework (PR-046). Every verdict is evidence-based, confidence-scored,
+        and explained — a device with no configuration in memory is reported
+        Unknown, never guessed."""
+
+        from founderos_atlas.policy import PolicyEngine, list_packs
+
+        from .timefmt import format_timestamp
+
+        context, scopes, scope_id = scoped_context("policy")
+        engine = PolicyEngine()
+        memories = [
+            (scope.label, memory_service(scope))
+            for scope in memory_scopes(scopes, scope_id)
+        ]
+        report = engine.evaluate_scopes(
+            memories, scope_label=context["active_scope_label"]
+        )
+        return render_template(
+            "policy.html",
+            report=report.to_dict(),
+            packs=[p.to_dict() for p in list_packs()],
+            generated_at=format_timestamp(report.generated_at, tz=display_timezone()),
+            **context,
+        )
+
+    # -- Timeline (PR-047A FOCUS) ------------------------------------------
+
+    @app.route("/timeline")
+    def timeline_page():
+        """Timeline — one front door for "what changed?".
+
+        Changes, Configuration, Discoveries and Evidence each answered a slice
+        of the same question from its own page. This is the workflow they belong
+        to: one chronology across configuration changes and discovery runs, with
+        each detailed view one click away. Nothing was removed — this is the
+        entry point those four views were always missing.
+        """
+
+        from founderos_atlas.config_memory import enterprise_timeline
+
+        from .timefmt import format_with_relative
+
+        tz = display_timezone()
+        context, scopes, scope_id = scoped_context("timeline")
+
+        config_events: list = []
+        totals = {
+            "devices": 0, "versions": 0, "unique_configurations": 0,
+            "deduplicated_observations": 0,
+        }
+        for scope in config_memory_scopes(scopes, scope_id):
+            store = config_memory_store(scope)
+            histories = store.histories()
+            config_events.extend(
+                enterprise_timeline(histories, config_text=store.config_text)
+            )
+            for key, value in store.statistics().items():
+                if key in totals:
+                    totals[key] += value
+
+        discovery_rows: list[dict] = []
+        for scope in aggregation_scopes(scopes) if scope_id == GLOBAL_SCOPE_ID else (scopes[scope_id],):
+            index = HistoryRepository(scope.history_root).load()
+            discovery_rows.extend(history_rows(index, scope_label=scope.label))
+
+        evidence_totals = {"sessions": 0, "evidence_records": 0}
+        for scope in memory_scopes(scopes, scope_id):
+            for key, value in memory_store(scope).statistics().items():
+                if key in evidence_totals:
+                    evidence_totals[key] += value
+
+        activity = timeline_activity(config_events, discovery_rows)
+        for entry in activity:
+            entry["occurred_at"] = format_with_relative(entry["occurred_at"], tz=tz)
+
+        return render_template(
+            "timeline.html",
+            activity=activity,
+            change_count=len(config_events),
+            discovery_count=len(discovery_rows),
+            totals=totals,
+            evidence_totals=evidence_totals,
+            **context,
+        )
+
+    @app.route("/configuration")
+    def configuration_page():
+        """Browse remembered configuration: devices, versions, timeline."""
+
+        from founderos_atlas.config_memory import enterprise_timeline, group_by_day
+
+        from .timefmt import day_key_for, format_timestamp, format_with_relative
+
+        tz = display_timezone()
+        context, scopes, scope_id = scoped_context("configuration")
+        devices: list[dict] = []
+        events: list = []
+        totals = {
+            "devices": 0, "versions": 0, "observations": 0,
+            "unique_configurations": 0, "stored_bytes": 0,
+            "deduplicated_observations": 0,
+        }
+        for scope in config_memory_scopes(scopes, scope_id):
+            store = config_memory_store(scope)
+            histories = store.histories()
+            for history in histories:
+                latest = history.latest
+                devices.append(
+                    {
+                        "device_id": history.device_id,
+                        "hostname": history.hostname,
+                        "network": history.network,
+                        "scope_id": scope.scope_id,
+                        "version_count": history.version_count,
+                        "observations": history.total_observations,
+                        "last_seen": (
+                            format_with_relative(latest.last_seen, tz=tz)
+                            if latest
+                            else "—"
+                        ),
+                        "platform": latest.snapshot.platform if latest else "—",
+                    }
+                )
+            events.extend(
+                enterprise_timeline(histories, config_text=store.config_text)
+            )
+            for key, value in store.statistics().items():
+                if key in totals:
+                    totals[key] += value
+        devices.sort(key=lambda row: row["hostname"].casefold())
+        events.sort(key=lambda item: item.occurred_at, reverse=True)
+        # Sorting and day-keying use the stored UTC instants; only the
+        # rendered strings are converted to the operator's zone.
+        days = group_by_day(tuple(events[:60]), day_of=day_key_for(tz))
+        for day in days:
+            for event in day["events"]:
+                event["occurred_at"] = format_timestamp(event["occurred_at"], tz=tz)
+        return render_template(
+            "configuration.html",
+            devices=devices,
+            timeline=days,
+            change_count=len(events),
+            totals=totals,
+            search=request.args.get("q", "").strip(),
+            **context,
+        )
+
+    def _find_history(scopes, scope_id, device_id):
+        """(store, history, scope) for a device across the active scope(s)."""
+
+        for scope in config_memory_scopes(scopes, scope_id):
+            store = config_memory_store(scope)
+            history = store.history(device_id)
+            if history is not None:
+                return store, history, scope
+        return None, None, None
+
+    @app.route("/configuration/<path:device_id>")
+    def configuration_device(device_id: str):
+        """One device's version history, with an optional comparison."""
+
+        from founderos_atlas.config_memory import (
+            config_view,
+            device_timeline,
+            extract_facts,
+            semantic_diff,
+            text_diff,
+        )
+
+        from .timefmt import format_timestamp, format_with_relative
+
+        tz = display_timezone()
+        context, scopes, scope_id = scoped_context("configuration")
+        store, history, _scope = _find_history(scopes, scope_id, device_id)
+        if history is None:
+            flash(
+                "Atlas has no remembered configuration for that device in "
+                "this scope.",
+                "error",
+            )
+            return redirect(url_for("configuration_page"))
+
+        latest = history.latest
+        # Default comparison: the previous version against the latest.
+        current_number = _int(request.args.get("current"), latest.version)
+        default_previous = max(1, current_number - 1)
+        previous_number = _int(request.args.get("previous"), default_previous)
+        current = history.version(current_number) or latest
+        previous = history.version(previous_number)
+
+        comparison = None
+        semantic = ()
+        facts = None
+        viewer = None
+        current_text = store.config_text(current.config_sha256)
+        if current_text is not None:
+            # view() keeps the counts AND the detail behind them; an
+            # operator opening a device asks "which neighbours", not "how
+            # many".
+            facts = extract_facts(current_text).view()
+            # Reading a remembered configuration is the point of
+            # remembering it. Masked — export is the only raw path.
+            viewer = config_view(current_text).to_dict()
+        if previous is not None and previous.version != current.version:
+            before = store.config_text(previous.config_sha256)
+            after = current_text
+            if before is not None and after is not None:
+                comparison = text_diff(before, after, context_lines=3).to_dict()
+                semantic = tuple(
+                    event.to_dict()
+                    for event in semantic_diff(
+                        extract_facts(before), extract_facts(after)
+                    )
+                )
+        def _version_row(version):
+            row = version.to_dict()
+            row["first_seen"] = format_timestamp(version.first_seen, tz=tz)
+            row["last_seen"] = format_with_relative(version.last_seen, tz=tz)
+            return row
+
+        def _timeline_row(event):
+            row = event.to_dict()
+            row["occurred_at"] = format_timestamp(event.occurred_at, tz=tz)
+            return row
+
+        return render_template(
+            "configuration_device.html",
+            history=history.to_dict(),
+            versions=[_version_row(version) for version in history.versions],
+            current=current.to_dict(),
+            previous=previous.to_dict() if previous else None,
+            comparison=comparison,
+            semantic=semantic,
+            facts=facts,
+            viewer=viewer,
+            timeline=[
+                _timeline_row(event)
+                for event in device_timeline(history, config_text=store.config_text)
+            ],
+            **context,
+        )
+
+    @app.route("/configuration/<path:device_id>/export/<int:version>")
+    def configuration_export(device_id: str, version: int):
+        """Export one remembered version as text.
+
+        SENSITIVE: this is the exact device configuration. It is served
+        only to the local operator over the loopback GUI, never masked —
+        an export is the one place the raw text is the point.
+        """
+
+        from flask import Response
+
+        from founderos_atlas.config import safe_artifact_name
+
+        _context, scopes, scope_id = scoped_context("configuration")
+        store, history, _scope = _find_history(scopes, scope_id, device_id)
+        if history is None:
+            abort(404)
+        text = store.version_text(device_id, version)
+        if text is None:
+            abort(404)
+        filename = f"{safe_artifact_name(history.hostname)}-v{version}.txt"
+        return Response(
+            text,
+            # mimetype= appends its own charset; passing one here produced
+            # "text/plain; charset=utf-8; charset=utf-8".
+            content_type="text/plain; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
     # -- Topology / History / Changes --------------------------------------
 
     @app.route("/topology")
@@ -1021,11 +2027,16 @@ def register_routes(app) -> None:
                 for scope in aggregation_scopes(scopes)
                 if scope.snapshot_path.is_file()
             ]
+            for scope in with_data:
+                refresh_scope_topology_viewer(scope)
             viewers = [
                 {
                     "label": scope.label,
                     "scope_id": scope.scope_id,
-                    "href": f"/artifacts/{artifact_prefix(scope)}atlas_topology.html",
+                    "href": _current_topology_viewer_url(
+                        f"/artifacts/{artifact_prefix(scope)}atlas_topology.html",
+                        scope.output_dir / "atlas_topology.html",
+                    ),
                 }
                 for scope in with_data
                 if (scope.output_dir / "atlas_topology.html").is_file()
@@ -1034,6 +2045,12 @@ def register_routes(app) -> None:
                 # Enterprise federation (PR-037A): one canonical graph with
                 # provenance, merge decisions, and visible boundaries.
                 graph, snapshot = enterprise_world()
+                if snapshot is not None:
+                    _refresh_current_topology_viewer(
+                        enterprise_scope_dir(output_dir()),
+                        workspace_root=cfg("ATLAS_WORKSPACE_ROOT"),
+                        last_discovered=snapshot.get("created_at"),
+                    )
                 rows = get_enterprise_inventory(graph)
                 site_options = sorted({row["site"] for row in rows})
                 site_filter = request.args.get("site", "").strip()
@@ -1055,8 +2072,9 @@ def register_routes(app) -> None:
                     site_filter=site_filter,
                     viewers=viewers,
                     has_topology=snapshot is not None,
-                    topology_src=(
-                        f"/artifacts/{ENTERPRISE_ARTIFACT_PREFIX}atlas_topology.html"
+                    topology_src=_current_topology_viewer_url(
+                        f"/artifacts/{ENTERPRISE_ARTIFACT_PREFIX}atlas_topology.html",
+                        enterprise_scope_dir(output_dir()) / "atlas_topology.html",
                     ),
                     **enterprise_context(graph),
                     **context,
@@ -1074,13 +2092,179 @@ def register_routes(app) -> None:
                 **context,
             )
         scope = scopes[scope_id]
+        refresh_scope_topology_viewer(scope)
         exists = (scope.output_dir / "atlas_topology.html").is_file()
         return render_template(
             "topology.html",
             global_view=False,
             has_topology=exists,
-            topology_src=f"/artifacts/{artifact_prefix(scope)}atlas_topology.html",
+            topology_src=_current_topology_viewer_url(
+                f"/artifacts/{artifact_prefix(scope)}atlas_topology.html",
+                scope.output_dir / "atlas_topology.html",
+            ),
             **context,
+        )
+
+    def refresh_curated_topologies() -> None:
+        """Re-render current artifacts only; immutable history stays frozen."""
+
+        scopes = known_scopes()
+        for scope in aggregation_scopes(scopes):
+            if scope.snapshot_path.is_file():
+                refresh_scope_topology_viewer(scope, force=True)
+        # Workspace JSON participates in the enterprise fingerprint, but
+        # explicitly clear the in-process cache so the mutation response has
+        # already rebuilt the artifact before the iframe reloads.
+        enterprise_cache.update(fingerprint=None, graph=None, snapshot=None)
+        if any(
+            scope.snapshot_path.is_file()
+            for scope in aggregation_scopes(scopes)
+        ):
+            enterprise_world()
+
+    def curation_payload() -> dict:
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            abort(400, description="A JSON object is required.")
+        origin = request.headers.get("Origin")
+        if origin and origin.rstrip("/") != request.host_url.rstrip("/"):
+            abort(403, description="Cross-origin topology edits are refused.")
+        return payload
+
+    def override_identity(payload: dict) -> dict:
+        return {
+            "device_id": str(payload.get("device_id") or "").strip() or None,
+            "hostname": str(payload.get("hostname") or "").strip() or None,
+            "management_ip": (
+                str(payload.get("management_ip") or "").strip() or None
+            ),
+            "serial_number": (
+                str(payload.get("serial_number") or "").strip() or None
+            ),
+            "vendor": str(payload.get("vendor") or "").strip() or None,
+        }
+
+    @app.route("/api/topology/curation")
+    def api_topology_curation():
+        workspace = cfg("ATLAS_WORKSPACE_ROOT")
+        catalog = SiteCatalogRepository(workspace).load()
+        repository = SiteOverrideRepository(workspace)
+        overrides = repository.load()
+        return jsonify({
+            "catalog": catalog.to_dict(),
+            "overrides": overrides.to_dict(),
+            "history": [item.to_dict() for item in repository.history()],
+            "operator": "local-operator",
+            "authorization": (
+                "local single-user curation; server-side roles are required "
+                "before remote multi-user deployment"
+            ),
+        })
+
+    @app.route("/api/topology/site-assignments", methods=["PUT"])
+    def api_assign_topology_site():
+        payload = curation_payload()
+        site_id = str(payload.get("site_id") or "").strip()
+        catalog = SiteCatalogRepository(cfg("ATLAS_WORKSPACE_ROOT")).load()
+        if site_id != "__none__" and catalog.get(site_id) is None:
+            return jsonify(error="The requested site does not exist."), 400
+        expected = payload.get("expected_revision")
+        try:
+            result, event = SiteOverrideRepository(
+                cfg("ATLAS_WORKSPACE_ROOT")
+            ).assign(
+                site_id=site_id,
+                reason=str(payload.get("reason") or "").strip() or None,
+                actor="local-operator",
+                expected_revision=int(expected) if expected is not None else None,
+                **override_identity(payload),
+            )
+        except SiteOverrideConflictError as error:
+            return jsonify(error=str(error)), 409
+        except ValueError as error:
+            return jsonify(error=str(error)), 400
+        refresh_curated_topologies()
+        return jsonify(
+            revision=result.revision,
+            event=event.to_dict(),
+            message="Persistent site assignment saved.",
+        )
+
+    @app.route("/api/topology/site-assignments/revert", methods=["POST"])
+    def api_revert_topology_site():
+        payload = curation_payload()
+        expected = payload.get("expected_revision")
+        try:
+            result, event = SiteOverrideRepository(
+                cfg("ATLAS_WORKSPACE_ROOT")
+            ).revert(
+                reason=str(payload.get("reason") or "").strip() or None,
+                actor="local-operator",
+                expected_revision=int(expected) if expected is not None else None,
+                **override_identity(payload),
+            )
+        except SiteOverrideConflictError as error:
+            return jsonify(error=str(error)), 409
+        except ValueError as error:
+            return jsonify(error=str(error)), 400
+        refresh_curated_topologies()
+        return jsonify(
+            revision=result.revision,
+            event=event.to_dict(),
+            message="Returned to evidence-based site inference.",
+        )
+
+    @app.route("/api/topology/site-assignments/undo", methods=["POST"])
+    def api_undo_topology_site():
+        payload = curation_payload()
+        subject_key = str(payload.get("subject_key") or "").strip()
+        if not subject_key:
+            return jsonify(error="subject_key is required."), 400
+        expected = payload.get("expected_revision")
+        try:
+            result, event = SiteOverrideRepository(
+                cfg("ATLAS_WORKSPACE_ROOT")
+            ).undo(
+                subject_key=subject_key,
+                actor="local-operator",
+                expected_revision=int(expected) if expected is not None else None,
+            )
+        except SiteOverrideConflictError as error:
+            return jsonify(error=str(error)), 409
+        except ValueError as error:
+            return jsonify(error=str(error)), 400
+        refresh_curated_topologies()
+        return jsonify(
+            revision=result.revision,
+            event=event.to_dict(),
+            message="Last site assignment change undone.",
+        )
+
+    @app.route("/api/topology/sites/<site_id>", methods=["PUT"])
+    def api_update_topology_site(site_id: str):
+        from dataclasses import replace
+
+        payload = curation_payload()
+        site_type = str(payload.get("site_type") or "").strip()
+        if site_type not in SITE_TYPES:
+            return jsonify(
+                error="site_type must be one of " + ", ".join(SITE_TYPES)
+            ), 400
+        repository = SiteCatalogRepository(cfg("ATLAS_WORKSPACE_ROOT"))
+        catalog = repository.load()
+        existing = catalog.get(site_id)
+        if existing is None:
+            return jsonify(error="The requested site does not exist."), 404
+        repository.save(SiteCatalog(sites=tuple(
+            replace(site, site_type=site_type)
+            if site.site_id == site_id else site
+            for site in catalog.sites
+        )))
+        refresh_curated_topologies()
+        return jsonify(
+            site_id=site_id,
+            site_type=site_type,
+            message="Site type saved.",
         )
 
     @app.route("/history")
@@ -1782,12 +2966,18 @@ def register_routes(app) -> None:
 
     @app.route("/settings")
     def settings():
+        from .timefmt import AUTO, timezone_label
+
         provider = resolve_credential_provider()
         try:
             available = provider.available()
         except Exception:  # pragma: no cover - defensive
             available = False
+        tz_setting = str(app.config.get("ATLAS_DISPLAY_TIMEZONE") or AUTO)
         context = {
+            "display_timezone_setting": tz_setting,
+            "display_timezone_label": timezone_label(display_timezone()),
+            "display_timezone_is_auto": tz_setting.casefold() == AUTO,
             "workspace_root": str(cfg("ATLAS_WORKSPACE_ROOT")),
             "output_dir": str(output_dir()),
             "history_root": str(cfg("ATLAS_HISTORY_ROOT")),
@@ -1798,11 +2988,635 @@ def register_routes(app) -> None:
         }
         return render_template("settings.html", **context, **base_context("settings"))
 
+    # -- Console (PR-044A) --------------------------------------------------
+
+    def console_scopes(scopes, scope_id):
+        """The scopes a console view covers: one network, or all of them."""
+
+        if scope_id == GLOBAL_SCOPE_ID:
+            return aggregation_scopes(scopes)
+        return (scopes[scope_id],)
+
+    def _scope_devices(scope):
+        """Canonical devices in one scope, from its topology snapshot.
+
+        A device is here only because Atlas opened an authenticated session
+        to its management_ip and collected its identity. Unresolved peers
+        are observations, not devices, and never appear.
+        """
+
+        import json
+
+        path = scope.snapshot_path
+        if not path.is_file():
+            return ()
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return ()
+        devices = data.get("devices")
+        return tuple(devices) if isinstance(devices, list) else ()
+
+    def _credential_set_repo():
+        from founderos_atlas.credentials.repository import CredentialSetRepository
+
+        return CredentialSetRepository(Path(cfg("ATLAS_WORKSPACE_ROOT")))
+
+    def _set_entries(set_ids=None):
+        """Enabled credential-set entries, best first (lower priority wins).
+
+        ``set_ids`` limits to a profile's named sets; None means every set.
+        """
+
+        try:
+            sets = _credential_set_repo().load()
+        except Exception:  # noqa: BLE001 - no sets is a state, not an error
+            return []
+        entries = []
+        for set_id, credential_set in sorted(sets.items()):
+            if set_ids is not None and set_id not in set_ids:
+                continue
+            for entry in credential_set.entries:
+                if entry.enabled:
+                    entries.append((credential_set, entry))
+        entries.sort(key=lambda pair: (pair[1].priority, pair[0].set_id))
+        return entries
+
+    def _scope_login(scope):
+        """(username, credential_ref, credential_name) for a scope.
+
+        A set-only profile has no username and no credential_ref of its own —
+        its way in is a credential set. Discovery learned this in PR-047A's
+        follow-up ("a set-only profile connects with the set's credential");
+        without the same fallback here, the console resolved such a scope to
+        "<profile> (no user)" and every Connect died with
+        "Choose a credential set" — even though the profile HAS chosen one.
+        """
+
+        profile = profile_for_scope(scope.scope_id)
+        if profile is None:
+            return None, None, None
+        if profile.username and profile.credential_ref:
+            return profile.username, profile.credential_ref, profile.name
+        for credential_set, entry in _set_entries(set(profile.credential_sets)):
+            return (
+                entry.username,
+                entry.credential_ref,
+                f"{credential_set.name} — {entry.label}",
+            )
+        return profile.username, profile.credential_ref, profile.name
+
+    def console_targets(scopes, scope_id):
+        """Every canonical device in the active scope, resolved for SSH."""
+
+        from founderos_atlas.console import resolve_targets
+
+        found = []
+        for scope in console_scopes(scopes, scope_id):
+            username, credential_ref, credential_name = _scope_login(scope)
+            found.extend(
+                resolve_targets(
+                    _scope_devices(scope),
+                    network=scope.label,
+                    scope_id=scope.scope_id,
+                    username=username,
+                    credential_ref=credential_ref,
+                    credential_name=credential_name,
+                )
+            )
+        return tuple(found)
+
+    def console_target(scopes, scope_id, device_id: str):
+        """One canonical device resolved for SSH, or None if there is no
+        such canonical device in this scope (which is what an unresolved
+        peer is)."""
+
+        from founderos_atlas.console import find_target
+
+        for scope in console_scopes(scopes, scope_id):
+            username, credential_ref, credential_name = _scope_login(scope)
+            target = find_target(
+                _scope_devices(scope),
+                device_id,
+                network=scope.label,
+                scope_id=scope.scope_id,
+                username=username,
+                credential_ref=credential_ref,
+                credential_name=credential_name,
+            )
+            if target is not None:
+                return target
+        return None
+
+    def console_credential_choices(scopes, scope_id):
+        """Credential sets the operator may pick from, by reference.
+
+        References only. The secrets they name stay in the credential store.
+        """
+
+        choices = []
+        seen = set()
+        for profile in profile_service().list_profiles(include_archived=True):
+            if not profile.credential_ref or profile.credential_ref in seen:
+                continue
+            seen.add(profile.credential_ref)
+            choices.append(
+                {
+                    "credential_ref": profile.credential_ref,
+                    "name": profile.name,
+                    "username": profile.username,
+                }
+            )
+        # Credential sets are choices too — for a set-only estate they are
+        # the ONLY choices, and this list used to come back empty.
+        for credential_set, entry in _set_entries():
+            if entry.credential_ref in seen:
+                continue
+            seen.add(entry.credential_ref)
+            choices.append(
+                {
+                    "credential_ref": entry.credential_ref,
+                    "name": f"{credential_set.name} — {entry.label}",
+                    "username": entry.username,
+                }
+            )
+        return choices
+
+    def console_credential_for(scopes, scope_id, credential_ref: str):
+        """(username, password) for a credential reference.
+
+        The one place the console reads a secret. It is handed straight to
+        paramiko and never returned to a route, a template, or a socket.
+        """
+
+        for profile in profile_service().list_profiles(include_archived=True):
+            if profile.credential_ref == credential_ref:
+                password = profile_service().credential_provider.get(
+                    credential_ref
+                )
+                return profile.username, password
+        # A set entry's reference resolves the same way: the ref names the
+        # secret in the store, the entry carries the username beside it.
+        for _credential_set, entry in _set_entries():
+            if entry.credential_ref == credential_ref:
+                password = profile_service().credential_provider.get(
+                    credential_ref
+                )
+                return entry.username, password
+        raise KeyError("unknown credential reference")
+
+    def console_host_key_store():
+        from founderos_atlas.console import HostKeyStore
+
+        return HostKeyStore(Path(cfg("ATLAS_WORKSPACE_ROOT")) / "known_hosts.json")
+
+    def console_audit():
+        from founderos_atlas.console import ConsoleAuditLog
+
+        return ConsoleAuditLog(output_dir() / ".atlas" / "console-audit.jsonl")
+
+    def console_probe_host_key(host: str, port: int):
+        from founderos_atlas.console import probe_host_key
+
+        return probe_host_key(host, port, console_host_key_store())
+
+    # -- Management / web access (PR-044B, PORTAL) -------------------------
+
+    def management_store(scope):
+        from founderos_atlas.management import ManagementServiceStore
+
+        return ManagementServiceStore(scope.output_dir / "management-services.json")
+
+    def _device_for(scopes, scope_id, device_id: str):
+        """The raw canonical device record + owning scope, or (None, None)."""
+
+        for scope in console_scopes(scopes, scope_id):
+            for device in _scope_devices(scope):
+                if str(device.get("device_id") or "").strip() == str(device_id).strip():
+                    return device, scope
+        return None, None
+
+    def web_access_for(scopes, scope_id, device_id: str):
+        """Resolve one canonical device's web-management actions."""
+
+        from founderos_atlas.management import resolve_web_access
+
+        device, scope = _device_for(scopes, scope_id, device_id)
+        if device is None:
+            return None
+        services = management_store(scope).services_for(device_id)
+        return resolve_web_access(
+            device, network=scope.label, scope_id=scope.scope_id, services=services
+        )
+
+    def management_audit():
+        # Web opens share the console's connection audit — one honest record
+        # of who reached which device, how, and with what outcome.
+        return console_audit()
+
+    @app.route("/api/device/<path:device_id>/actions")
+    def device_actions_api(device_id: str):
+        """The universal device action, as JSON (PR-048A).
+
+        The topology viewer is a generated artifact: it exists as a file on
+        disk and cannot know at render time whether a device is SSH-eligible
+        or has a verified web endpoint — both can change after any discovery
+        or verification. When Atlas serves the artifact, the viewer asks here
+        and gets the same answer every template gets: resolved from evidence,
+        for the active scope, by console/resolve and management/resolve. One
+        decision, one place, one more consumer.
+        """
+
+        _ctx, scopes, scope_id = scoped_context("topology")
+        wanted = str(device_id).strip()
+        hostname = (request.args.get("hostname") or "").strip().casefold()
+        targets = console_targets(scopes, scope_id)
+        target = next((t for t in targets if t.device_id == wanted), None)
+        if target is None and hostname:
+            # The enterprise topology mints its own node ids
+            # ("ent:access1:172.20.20.23") that the console resolver has
+            # never heard of. The hostname is the identity both graphs agree
+            # on — the same fallback the template helpers already offer.
+            target = next(
+                (t for t in targets if t.hostname.casefold() == hostname), None
+            )
+        # Web access is keyed by canonical device id; follow the ssh
+        # resolution to it when the caller's id was a federated one.
+        canonical_id = target.device_id if target is not None else wanted
+        web = web_access_for(scopes, scope_id, canonical_id)
+        if target is None and web is None:
+            # Not a canonical device in this scope — an unresolved peer, or a
+            # stale id. No actions, said plainly.
+            return jsonify(error="not a canonical device in this scope"), 404
+        return jsonify(
+            device_id=canonical_id,
+            ssh=target.to_dict() if target is not None else None,
+            web=web.to_dict() if web is not None else None,
+        )
+
+    # What the console surface needs from the GUI, without an import cycle.
+    console_deps = SimpleNamespace(
+        scoped_context=scoped_context,
+        console_target=console_target,
+        credential_choices=console_credential_choices,
+        credential_for=console_credential_for,
+        host_key_store=console_host_key_store,
+        probe_host_key=console_probe_host_key,
+        audit=console_audit,
+        token_store=lambda: app.config["ATLAS_CONSOLE_TOKENS"],
+        session_manager=lambda: app.config["ATLAS_CONSOLE_SESSIONS"],
+    )
+
+    @app.context_processor
+    def _console_action_context():
+        """Make the universal device action available to EVERY template.
+
+        This is what stops eleven pages each growing their own idea of when
+        SSH is allowed. A template asks for a target by device id or
+        hostname; the answer always comes from console/resolve.py, from
+        evidence, for the scope the operator is actually looking at.
+
+        Resolution is cached per request: a topology page with 60 nodes
+        reads the snapshot once, not sixty times.
+        """
+
+        def _targets_for_request():
+            cache = getattr(g, "_console_targets", None)
+            if cache is None:
+                try:
+                    _ctx, scopes, scope_id = scoped_context("topology")
+                    cache = console_targets(scopes, scope_id)
+                except Exception:  # noqa: BLE001 - a widget must not 500 a page
+                    cache = ()
+                g._console_targets = cache
+            return cache
+
+        def device_target(device_id=None, hostname=None):
+            if not device_id and not hostname:
+                return None
+            cache = _targets_for_request()
+            if device_id:
+                wanted = str(device_id).strip()
+                for target in cache:
+                    if target.device_id == wanted:
+                        return target.to_dict()
+            if hostname:
+                wanted = str(hostname).strip().casefold()
+                for target in cache:
+                    if target.hostname.casefold() == wanted:
+                        return target.to_dict()
+            # Not a canonical device in this scope — an unresolved peer, or a
+            # name from another network. No target, therefore no SSH action.
+            return None
+
+        def devices_mentioned(*texts):
+            """Canonical devices named in some text, resolved for SSH.
+
+            Deterministic: an exact, word-boundary match of a canonical
+            hostname against text Atlas itself produced. It cannot invent a
+            device, and it cannot offer a session to something that is not a
+            canonical device with a verified endpoint.
+
+            This is how Advisor *suggests* a console. It never opens one —
+            the engineer clicks, or nothing happens.
+            """
+
+            import re
+
+            cache = _targets_for_request()
+            haystack = " ".join(str(item or "") for item in texts)
+            if not haystack.strip():
+                return []
+            found = []
+            for target in cache:
+                if not target.eligible:
+                    continue
+                pattern = r"\b" + re.escape(target.hostname) + r"\b"
+                if re.search(pattern, haystack, re.IGNORECASE):
+                    found.append(target.to_dict())
+            return found
+
+        def _web_access_for_request():
+            cache = getattr(g, "_web_access", None)
+            if cache is None:
+                try:
+                    _ctx, scopes, scope_id = scoped_context("topology")
+                    cache = {}
+                    for scope in console_scopes(scopes, scope_id):
+                        store = management_store(scope)
+                        for device in _scope_devices(scope):
+                            did = str(device.get("device_id") or "").strip()
+                            if not did:
+                                continue
+                            from founderos_atlas.management import resolve_web_access
+
+                            cache[did] = resolve_web_access(
+                                device,
+                                network=scope.label,
+                                scope_id=scope.scope_id,
+                                services=store.services_for(did),
+                            )
+                except Exception:  # noqa: BLE001 - a widget must not 500 a page
+                    cache = {}
+                g._web_access = cache
+            return cache
+
+        def web_access(device_id=None, hostname=None):
+            """Web-management actions for a device, for the action macro.
+
+            Same rule as ``device_target``: resolved from evidence, for the
+            active scope, cached per request. An unresolved peer or unknown
+            name yields nothing.
+            """
+
+            cache = _web_access_for_request()
+            if device_id:
+                found = cache.get(str(device_id).strip())
+                if found is not None:
+                    return found.to_dict()
+            if hostname:
+                wanted = str(hostname).strip().casefold()
+                for access in cache.values():
+                    if access.hostname.casefold() == wanted:
+                        return access.to_dict()
+            return None
+
+        # PR-047A: confidence presentation is a product decision, made once,
+        # here — so no page invents its own idea of when a score is worth the
+        # reader's attention. See web/confidence.py.
+        from .confidence import confidence_detail, confidence_display
+
+        return {
+            "device_target": device_target,
+            "devices_mentioned": devices_mentioned,
+            "web_access": web_access,
+            "confidence_display": confidence_display,
+            "confidence_detail": confidence_detail,
+        }
+
+    @app.route("/console")
+    def console_index():
+        """Device Access — every way Atlas can reach a device, in one place.
+
+        SSH and the web interface are two ways into the same device, resolved
+        from the same evidence and the same verified management endpoint. They
+        were two pages; a device is one thing, so this is one page. Verifying a
+        web interface and defining an operator URL are actions *on a device*,
+        and live here beside the actions they enable.
+        """
+
+        context, scopes, scope_id = scoped_context("console")
+        targets = console_targets(scopes, scope_id)
+        manager = app.config["ATLAS_CONSOLE_SESSIONS"]
+        manager.expire_due()
+        rows = [item.to_dict() for item in targets]
+        # Web state per device, keyed by device id, so the table can show what
+        # Atlas found without re-resolving per cell.
+        web_by_device = {
+            device_id: access
+            for device_id, access in _web_access_map(scopes, scope_id).items()
+        }
+        return render_template(
+            "console_index.html",
+            targets=rows,
+            web_by_device=web_by_device,
+            eligible_count=sum(1 for item in targets if item.eligible),
+            web_count=sum(1 for a in web_by_device.values() if a["any_web"]),
+            https_count=sum(1 for a in web_by_device.values() if a["has_https"]),
+            sessions=[item.to_dict() for item in manager.sessions()],
+            operator=_console_operator().to_dict(),
+            **context,
+        )
+
+    def _web_access_map(scopes, scope_id) -> dict:
+        """Every device's resolved web-management state for the active scope."""
+
+        from founderos_atlas.management import resolve_web_access
+
+        found: dict = {}
+        for scope in console_scopes(scopes, scope_id):
+            store = management_store(scope)
+            for device in _scope_devices(scope):
+                device_id = str(device.get("device_id") or "").strip()
+                if not device_id:
+                    continue
+                found[device_id] = resolve_web_access(
+                    device,
+                    network=scope.label,
+                    scope_id=scope.scope_id,
+                    services=store.services_for(device_id),
+                ).to_dict()
+        return found
+
+    def _console_operator():
+        from founderos_atlas.console import require_operator
+
+        return require_operator()
+
+    from .console_routes import register_console_routes
+
+    register_console_routes(app, console_deps)
+
+    # -- Management / web-access routes (PR-044B, PORTAL) ------------------
+
+    def _guard_console_origin():
+        """Same origin gate the console POSTs use (see console.security)."""
+
+        from founderos_atlas.console import origin_allowed
+
+        allowed = app.config.get("ATLAS_CONSOLE_ALLOWED_ORIGINS") or ()
+        if not origin_allowed(
+            request.headers.get("Origin"),
+            host_header=request.headers.get("Host"),
+            allowed_hosts=tuple(str(item) for item in allowed),
+        ):
+            return False
+        return True
+
+    @app.route("/management")
+    def management_index():
+        """Web management is not a place — it is one of the ways into a device.
+
+        This page listed the same devices as Device Access, resolved from the
+        same evidence, and offered the same actions. It is gone; the URL is not,
+        so an existing link or bookmark still lands somewhere true. The verify /
+        define / opened endpoints below remain — they are the write side of web
+        access, and Device Access calls them.
+        """
+
+        return redirect(url_for("console_index"), code=302)
+
+    @app.route("/management/<path:device_id>/verify", methods=["POST"])
+    def management_verify(device_id: str):
+        """Probe a device's management address for a web interface, now."""
+
+        if not _guard_console_origin():
+            return jsonify({"error": "This request did not come from Atlas."}), 403
+        _context, scopes, scope_id = scoped_context("management")
+        device, scope = _device_for(scopes, scope_id, device_id)
+        if device is None:
+            return jsonify({"error": "No such device in this scope."}), 404
+
+        from founderos_atlas.console import resolve_target
+        from founderos_atlas.management import (
+            WebServiceVerifier,
+            detect_certificate_change,
+            resolve_web_access,
+        )
+
+        target = resolve_target(device, network=scope.label, scope_id=scope.scope_id)
+        if not target.eligible or not target.management_ip:
+            return jsonify({"error": target.reason, "state": target.state}), 409
+
+        store = management_store(scope)
+        known = store.known_index(device_id)
+        verifier = WebServiceVerifier()
+        try:
+            services = verifier.verify(device_id, target.management_ip, known=known)
+        except Exception:  # noqa: BLE001 - never leak a trace
+            return jsonify(
+                {"error": "Atlas could not complete web-service verification."}
+            ), 502
+
+        # Certificate-change detection against the previously stored HTTPS.
+        cert_changed = False
+        previous_fp = None
+        for service in services:
+            prev = known.get((service.protocol, service.port))
+            changed, oldfp = detect_certificate_change(prev, service)
+            if changed:
+                cert_changed = True
+                previous_fp = oldfp
+        store.record_services(device_id, services)
+        access = resolve_web_access(
+            device, network=scope.label, scope_id=scope.scope_id,
+            services=store.services_for(device_id),
+            certificate_changed=cert_changed, previous_fingerprint=previous_fp,
+        )
+        management_audit().record(
+            "web-service-verified", session_id="-",
+            operator=_console_operator().name, device_id=device_id,
+            hostname=target.hostname, management_ip=target.management_ip,
+            port=0, credential_ref=None, result=access.state,
+            detail=f"{len(services)} service(s)",
+        )
+        return jsonify(access.to_dict())
+
+    @app.route("/management/<path:device_id>/define", methods=["POST"])
+    def management_define(device_id: str):
+        """Record an operator-stated management URL."""
+
+        if not _guard_console_origin():
+            return jsonify({"error": "This request did not come from Atlas."}), 403
+        _context, scopes, scope_id = scoped_context("management")
+        device, scope = _device_for(scopes, scope_id, device_id)
+        if device is None:
+            return jsonify({"error": "No such device in this scope."}), 404
+
+        from urllib.parse import urlsplit
+
+        from founderos_atlas.management import PROTOCOL_HTTP, PROTOCOL_HTTPS
+
+        payload = request.json if request.is_json else {}
+        url = str((payload or {}).get("url") or "").strip()
+        reason = str((payload or {}).get("reason") or "").strip() or None
+        parts = urlsplit(url)
+        if parts.scheme not in (PROTOCOL_HTTPS, PROTOCOL_HTTP) or not parts.hostname:
+            return jsonify(
+                {"error": "Enter a full http(s):// management URL."}
+            ), 400
+        port = parts.port or (443 if parts.scheme == PROTOCOL_HTTPS else 80)
+        service = management_store(scope).define_endpoint(
+            device_id, url=url, protocol=parts.scheme, address=parts.hostname,
+            port=port, user=_console_operator().name, reason=reason,
+        )
+        management_audit().record(
+            "web-endpoint-defined", session_id="-",
+            operator=_console_operator().name, device_id=device_id,
+            hostname=str(device.get("hostname") or device_id),
+            management_ip=parts.hostname, port=port, credential_ref=None,
+            result="operator-defined", detail=url,
+        )
+        return jsonify(service.to_dict())
+
+    @app.route("/management/<path:device_id>/opened", methods=["POST"])
+    def management_opened(device_id: str):
+        """Audit that the operator opened a device's web UI.
+
+        The browser reports it after opening the tab. Records the URL and
+        outcome — never a password, cookie, or anything the operator then
+        typed into the device.
+        """
+
+        if not _guard_console_origin():
+            return jsonify({"error": "This request did not come from Atlas."}), 403
+        payload = request.json if request.is_json else {}
+        url = str((payload or {}).get("url") or "").strip()
+        protocol = str((payload or {}).get("protocol") or "").strip()
+        _context, scopes, scope_id = scoped_context("management")
+        device, _scope = _device_for(scopes, scope_id, device_id)
+        hostname = str((device or {}).get("hostname") or device_id)
+        management_audit().record(
+            "web-management-opened", session_id="-",
+            operator=_console_operator().name, device_id=device_id,
+            hostname=hostname, management_ip="", port=0, credential_ref=None,
+            result=("insecure-http" if protocol == "http" else "opened"),
+            detail=url,
+        )
+        return jsonify({"recorded": True})
+
     # -- Artifact serving ---------------------------------------------------
 
     @app.route("/artifacts/<path:name>")
     def artifacts(name: str):
-        return send_from_directory(str(output_dir()), name)
+        response = send_from_directory(str(output_dir()), name)
+        if name.endswith("atlas_topology.html"):
+            # The current viewer is derived mutable presentation over an
+            # immutable snapshot. Browser caches must never resurrect an old
+            # curation revision after the operator closes and reopens Atlas.
+            response.headers["Cache-Control"] = "no-store, max-age=0"
+            response.headers["Pragma"] = "no-cache"
+        return response
 
 
 def _completed_execution_demo() -> dict:
@@ -1972,6 +3786,26 @@ def _boundary_from_form(form) -> BoundaryPolicy | None:
     )
 
 
+def _platform_label(family: str) -> str:
+    """The name an operator recognises for a driver family.
+
+    A snapshot records the driver's id (``frr``); every other Atlas surface
+    shows its display name (``FRRouting``). The drivers already carry both, so
+    the label comes from them rather than from a hand-kept lookup that would
+    drift the first time a driver is added.
+    """
+
+    try:
+        from founderos_atlas.platforms import default_registry
+
+        for driver in default_registry().drivers():
+            if driver.platform_id == family:
+                return driver.display_name
+    except Exception:  # noqa: BLE001 - a label must never break a page
+        pass
+    return family
+
+
 def make_pipeline_runner(app):
     """The shared discovery service adapter for GUI jobs.
 
@@ -2045,6 +3879,15 @@ def make_pipeline_runner(app):
         # PR-043.1: honest relationship categories — physical links vs
         # routing adjacencies vs protocol peers vs unresolved peers.
         relations = metadata.get("relationships") or {}
+        # The run's own statistics already separate the two things a
+        # non-connecting address can mean, and have since PR-043.10. Reading
+        # them here is what stops the GUI announcing "245 verified management
+        # endpoint(s) could not be reached" about 245 addresses that simply
+        # have no device on them — while this very snapshot recorded
+        # discovery_completeness_percent: 100 and authentication_failures: 0.
+        # Legacy snapshots carry no statistics; then both counts stay None and
+        # the job says nothing rather than guessing.
+        stats = metadata.get("discovery_statistics") or {}
         return {
             "devices": record.device_count,
             "relationships": record.relationship_count,
@@ -2052,8 +3895,15 @@ def make_pipeline_runner(app):
             "duration_seconds": record.duration_seconds,
             "network_status": record.network_status,
             "failed_devices": len(record.failures),
+            "auth_failed_devices": stats.get("authentication_failures"),
+            "addresses_without_device": stats.get("unused_addresses"),
+            "addresses_scanned": stats.get("addresses_scanned"),
+            "discovery_completeness_percent": stats.get(
+                "discovery_completeness_percent"
+            ),
             "platforms": ", ".join(
-                f"{name}: {count}" for name, count in sorted(platforms.items())
+                f"{_platform_label(name)}: {count}"
+                for name, count in sorted(platforms.items())
             ),
             "physical_links": relations.get("physical_links"),
             "routing_adjacencies": relations.get("routing_adjacencies"),

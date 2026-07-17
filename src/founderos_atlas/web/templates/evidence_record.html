@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block title %}{{ row.command }} — {{ row.hostname }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  {# Part 4: the command is the identifier. The content hash addresses the blob
+     and is real provenance, but nobody looks for "0825788d" — they look for
+     "show version". The hash is available below, under System Details. #}
+  <h1>{{ row.command }}</h1>
+  <span class="actions">
+    <a class="btn" href="/evidence/device/{{ device_id | urlencode }}">Device Evidence</a>
+  </span>
+</div>
+<p class="muted">{{ row.hostname }} · <code>{{ device_id }}</code>
+  {% if row.platform %} · {{ row.platform }}{% endif %}
+  · collected {{ row.collected_at }}</p>
+
+<section class="card">
+  <div class="status-banner">
+    <span class="badge badge-{{ row.status_tone }}">{{ row.status_label }}</span>
+    <span>{{ row.status_meaning }}</span>
+  </div>
+  {% if row.detail %}<p class="muted">{{ row.detail }}</p>{% endif %}
+  {% if row.status_tone == 'bad' %}
+  {# Part 10: a failure is the one status where the operator needs somewhere to
+     go, not just something to read. #}
+  <div class="actions">
+    <a class="btn" href="/discovery">Retry Discovery</a>
+    <a class="btn" href="/console/{{ device_id | urlencode }}">Open SSH</a>
+    <a class="btn" href="/evidence/device/{{ device_id | urlencode }}">View Device</a>
+  </div>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Output</h2>
+  {% if text %}
+  <p class="muted">
+    Masked for display — any line containing a secret is redacted here and in the
+    default bundle.
+    {% if masked_line_count %}<strong>{{ masked_line_count }}</strong>
+      {{ 'line was' if masked_line_count == 1 else 'lines were' }} redacted.{% endif %}
+    Download serves the exact bytes to you, the local operator.
+  </p>
+  <div class="actions">
+    <button class="btn btn-sm js-copy-output" type="button"
+            title="Copy the masked output shown below">Copy Output</button>
+    <a class="btn btn-sm" href="/evidence/device/{{ device_id | urlencode }}/record/{{ row.content_sha256 }}/download">
+      Download Output — raw
+    </a>
+  </div>
+  {% if truncated %}
+  {# Part 11: a 40,000-line configuration must not be what makes this page
+     unusable. The cap is on rendering only — the download is always whole. #}
+  <p class="muted">Showing the first {{ shown_lines }} of {{ total_lines }} lines.
+    Download for the complete output.</p>
+  {% endif %}
+  <pre class="log-output" id="evidence-output">{{ text }}</pre>
+  {% else %}
+  <p class="muted">{{ row.status_meaning }}</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Normalized Facts</h2>
+  {% if facts %}
+  <p class="muted">What Atlas already derived from this evidence. Nothing here is parsed
+    for this page — these are the facts Atlas recorded when it collected the output.</p>
+  <ul class="kv">
+    {% for f in facts %}
+    <li><span>{{ f.label }}</span><span>{{ f.value }}</span></li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="muted">No normalized facts were produced from this evidence.</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Used By Atlas</h2>
+  {% if usage.tracked and usage.findings %}
+  <p class="muted">These conclusions were produced using this exact evidence — matched by
+    content, not by name.</p>
+  <ul class="kv">
+    {% for f in usage.findings %}
+    <li>
+      <span>{% if f.url %}<a href="{{ f.url }}">{{ f.module }}</a>{% else %}{{ f.module }}{% endif %}</span>
+      <span>{{ f.title }}{% if f.detail %} — {{ f.detail }}{% endif %}</span>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  {# Part 6: never invent a relationship. "Nothing used this" and "we do not
+     record that" are different sentences and the operator gets the true one. #}
+  <p class="muted">{{ usage.message }}</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <details>
+    <summary class="muted">Evidence — System Details</summary>
+    <ul class="kv">
+      <li><span>Content address (SHA-256)</span><span><code>{{ row.content_sha256 or '—' }}</code></span></li>
+      <li><span>Discovery session</span><span>
+        <a href="/evidence?session={{ row.discovery_session | urlencode }}"><code>{{ row.discovery_session }}</code></a>
+      </span></li>
+      <li><span>Output size</span><span>{{ row.byte_size }} bytes</span></li>
+      <li><span>Transport</span><span>{{ row.transport or '—' }}</span></li>
+      <li><span>Evidence source</span><span>{{ row.source or '—' }}</span></li>
+      <li><span>Parser version</span><span>{{ row.parser_version or '—' }}</span></li>
+      <li><span>Platform driver</span><span>{{ row.platform_driver or '—' }}</span></li>
+      <li><span>Atlas version</span><span>{{ record.atlas_version or '—' }}</span></li>
+    </ul>
+  </details>
+</section>
+{% endblock %}

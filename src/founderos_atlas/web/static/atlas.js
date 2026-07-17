@@ -100,7 +100,9 @@
       setText("summary-adjacencies", job.summary.routing_adjacencies ?? "—");
       setText("summary-peers", job.summary.protocol_peers ?? "—");
       setText("summary-unresolved", job.summary.unresolved_peers ?? "—");
-      setText("summary-duration", job.summary.duration_seconds + " seconds");
+      // "73s", to match the elapsed counter above it — not "72.366208 seconds".
+      var secs = job.summary.duration_seconds;
+      setText("summary-duration", secs == null ? "—" : Math.round(secs) + "s");
       show("job-warning", Boolean(job.warning));
       if (job.warning) setText("job-warning", job.warning);
       var topology = byId("action-topology");
@@ -118,6 +120,26 @@
     }
   }
 
+  // The Networks table is server-rendered at page load, so a run finishing
+  // beside it leaves it claiming "running" / "never". Re-fetch the page and
+  // swap in that table's fresh body — a full reload would be simpler but would
+  // throw away the results panel, which only exists because renderJob drew it.
+  function refreshNetworksTable() {
+    var body = byId("networks-body");
+    if (!body || !window.fetch || !window.DOMParser) return;
+    fetch(window.location.pathname + window.location.search, {
+      credentials: "same-origin"
+    })
+      .then(function (response) { return response.text(); })
+      .then(function (html) {
+        var fresh = new DOMParser()
+          .parseFromString(html, "text/html")
+          .getElementById("networks-body");
+        if (fresh) body.innerHTML = fresh.innerHTML;
+      })
+      .catch(function () { /* the stale table is not worth an error */ });
+  }
+
   function poll(jobId) {
     fetch("/api/discovery/jobs/" + encodeURIComponent(jobId))
       .then(function (response) { return response.json(); })
@@ -126,6 +148,9 @@
         renderJob(payload.job);
         if (payload.job.status === "queued" || payload.job.status === "running") {
           window.setTimeout(function () { poll(jobId); }, POLL_MS);
+        } else {
+          // Terminal: the run just finished under this page.
+          refreshNetworksTable();
         }
       })
       .catch(function () {
@@ -173,6 +198,45 @@
     var button = form.querySelector('button[type="submit"].btn-primary');
     if (button) button.disabled = true;
   });
+
+  /*
+   * A profile needs a way in — its own credential, or a credential set.
+   *
+   * Ticking a set makes the username/password optional: the set already
+   * carries one, and the resolver has always accepted sets without a profile
+   * default. Previously both fields stayed `required`, so choosing a saved
+   * credential set still blocked the form on "Please fill out this field" —
+   * for a credential the operator had already saved. The server enforces the
+   * same rule; this only stops the browser refusing first.
+   */
+  (function () {
+    var sets = document.querySelectorAll(".js-credential-set");
+    var fields = document.querySelectorAll(".js-credential-optional");
+    if (!sets.length || !fields.length) return;
+
+    // A set is "chosen" whether it is ticked (the wizard's checkboxes) or
+    // typed (the profile form's comma-separated ids). Same rule, both shapes.
+    function anySetChosen() {
+      return Array.prototype.some.call(sets, function (input) {
+        return input.type === "checkbox" ? input.checked : Boolean(input.value.trim());
+      });
+    }
+    function sync() {
+      var optional = anySetChosen();
+      Array.prototype.forEach.call(fields, function (field) {
+        field.required = !optional;
+        // The browser keeps a stale validity message until the value changes.
+        if (optional && field.setCustomValidity) field.setCustomValidity("");
+      });
+      var hint = document.querySelector(".js-credential-hint");
+      if (hint) hint.classList.toggle("credential-optional", optional);
+    }
+    Array.prototype.forEach.call(sets, function (input) {
+      input.addEventListener("change", sync);
+      input.addEventListener("input", sync);  // typed set ids
+    });
+    sync();  // a set may already be chosen on a re-render or an edit
+  }());
 
   // Re-attach to an in-flight job after refresh or navigation.
   var panel = byId("job-panel");

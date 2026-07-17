@@ -68,6 +68,14 @@ class DiscoveryProfile:
     # PR-033 entry-point semantics; all optional and backward compatible.
     description: str | None = None
     seeds: tuple[str, ...] = ()  # additional seeds; management_ip is seed #1
+    # The address range this profile was created to sweep, when it was created
+    # from one ("172.20.20.0/24"). A CIDR is expanded into candidate addresses
+    # at creation, so without this the profile cannot tell a /24 sweep from
+    # someone who typed 254 addresses by hand — and every screen showed the
+    # first address as if the operator had named it. This records what they
+    # actually asked for. It is a LABEL, not a boundary: BoundaryPolicy
+    # decides what discovery may follow; this only remembers what was typed.
+    seed_cidr: str | None = None
     boundary: BoundaryPolicy | None = None
     credential_sets: tuple[str, ...] = ()
     site_hint: str | None = None
@@ -76,25 +84,36 @@ class DiscoveryProfile:
     # it from active discovery and enterprise aggregation without deleting
     # it or the Network/Enterprise Knowledge it contributed to.
     archived: bool = False
+    # PR-044 (MEMORY): configuration collection is policy driven —
+    # always | scheduled | manual | discovery-only | disabled. None keeps
+    # backward compatibility: the legacy ``collect_configuration`` boolean
+    # decides (True -> always, False -> disabled).
+    collection_policy: str | None = None
+    collection_schedule_hours: int = 24
 
     def __post_init__(self) -> None:
         for field_name in ("profile_id", "name"):
             value = getattr(self, field_name)
             if not isinstance(value, str) or not value.strip():
                 raise InvalidProfileError(f"{field_name} must be a non-empty string")
-        # A profile authenticates either with its own credential (username +
-        # credential_ref) or through referenced credential sets (schema
-        # 1.1.0 wizard profiles); both fields may be empty only in the
-        # credential-set case.
         for field_name in ("username", "credential_ref"):
             value = getattr(self, field_name)
             if not isinstance(value, str):
                 raise InvalidProfileError(f"{field_name} must be a string")
-            if not value.strip() and not self.credential_sets:
-                raise InvalidProfileError(
-                    f"{field_name} must be a non-empty string unless the "
-                    "profile references credential sets"
-                )
+        # The real rule is not "a profile has a username" — it is **a profile
+        # must have a way in**. Its own credential is one way; a credential set
+        # is another, and the resolver has always accepted sets alone
+        # (`profile_default` is optional at every layer). Requiring both meant
+        # an operator with a saved credential set was made to retype a username
+        # and password the engine never needed.
+        has_own_credential = bool(self.username.strip()) and bool(
+            self.credential_ref.strip()
+        )
+        if not has_own_credential and not self.credential_sets:
+            raise InvalidProfileError(
+                "a profile needs a way to authenticate: a username and password, "
+                "or at least one credential set"
+            )
         try:
             object.__setattr__(self, "management_ip", str(ip_address(str(self.management_ip).strip())))
         except ValueError as error:
@@ -113,6 +132,24 @@ class DiscoveryProfile:
             raise InvalidProfileError("collect_configuration must be a boolean")
         if not isinstance(self.archived, bool):
             raise InvalidProfileError("archived must be a boolean")
+        if self.collection_policy is not None:
+            from founderos_atlas.config_memory.policy import COLLECTION_POLICIES
+
+            policy = str(self.collection_policy).strip().casefold()
+            if policy not in COLLECTION_POLICIES:
+                raise InvalidProfileError(
+                    "collection_policy must be one of: "
+                    + ", ".join(COLLECTION_POLICIES)
+                )
+            object.__setattr__(self, "collection_policy", policy)
+        if (
+            not isinstance(self.collection_schedule_hours, int)
+            or isinstance(self.collection_schedule_hours, bool)
+            or self.collection_schedule_hours < 1
+        ):
+            raise InvalidProfileError(
+                "collection_schedule_hours must be a positive integer"
+            )
         object.__setattr__(self, "name", " ".join(self.name.strip().split()))
         object.__setattr__(self, "site", (self.site.strip() or None) if isinstance(self.site, str) else None)
         normalized_seeds: list[str] = []
@@ -166,11 +203,14 @@ class DiscoveryProfile:
             "last_discovery": self.last_discovery,
             "description": self.description,
             "seeds": list(self.seeds),
+            "seed_cidr": self.seed_cidr,
             "boundary": self.boundary.to_dict() if self.boundary is not None else None,
             "credential_sets": list(self.credential_sets),
             "site_hint": self.site_hint,
             "domain_hint": self.domain_hint,
             "archived": self.archived,
+            "collection_policy": self.collection_policy,
+            "collection_schedule_hours": self.collection_schedule_hours,
         }
 
     @classmethod
@@ -193,6 +233,9 @@ class DiscoveryProfile:
                 last_discovery=value.get("last_discovery"),
                 description=value.get("description"),
                 seeds=tuple(str(item) for item in (value.get("seeds") or ())),
+                # Absent on every profile written before this existed; they
+                # were created from a seed or a list, and None says so.
+                seed_cidr=value.get("seed_cidr"),
                 boundary=(
                     BoundaryPolicy.from_dict(value["boundary"])
                     if value.get("boundary")
@@ -204,6 +247,10 @@ class DiscoveryProfile:
                 site_hint=value.get("site_hint"),
                 domain_hint=value.get("domain_hint"),
                 archived=bool(value.get("archived", False)),
+                collection_policy=value.get("collection_policy"),
+                collection_schedule_hours=int(
+                    value.get("collection_schedule_hours", 24)
+                ),
             )
         except KeyError as error:
             raise InvalidProfileError(f"profile is missing field {error}") from error

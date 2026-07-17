@@ -6,36 +6,151 @@
   <title>Atlas Topology Viewer</title>
   <script src="__CYTOSCAPE_CDN__"></script>
   <style>
-    :root { color-scheme: light; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
-    * { box-sizing: border-box; }
-    body { margin: 0; color: #172033; background: #f3f6fb; }
-    header { display: flex; gap: 12px 16px; align-items: center; padding: 12px 18px; background: #111827; color: white; flex-wrap: wrap; }
-    header h1 { margin: 0; font-size: 18px; white-space: nowrap; }
-    #search { flex: 1 1 180px; max-width: 440px; min-width: 0; border: 0; border-radius: 6px; padding: 9px 11px; font: inherit; }
-    button { border: 1px solid #94a3b8; border-radius: 6px; padding: 8px 12px; background: white; cursor: pointer; font: inherit; }
-    a:focus-visible, button:focus-visible, input:focus-visible, summary:focus-visible { outline: 2px solid #60a5fa; outline-offset: 2px; }
-    main { display: grid; grid-template-columns: minmax(0, 1fr) 300px; min-height: 420px; height: calc(100vh - 62px); }
-    #cy { min-height: 420px; background: white; }
-    aside { overflow: auto; padding: 18px; border-left: 1px solid #dbe2ea; background: #f8fafc; min-width: 0; }
-    aside h2 { margin-top: 0; font-size: 17px; }
-    .field { margin-bottom: 12px; overflow-wrap: anywhere; }
-    .field strong { display: block; color: #475569; font-size: 12px; text-transform: uppercase; }
-    #tooltip { position: fixed; display: none; z-index: 10; pointer-events: none; padding: 7px 9px; border-radius: 5px; background: #111827; color: white; font-size: 12px; }
-    .summary { margin-left: auto; color: #cbd5e1; font-size: 12px; }
-    #node-list { margin-top: 14px; border-top: 1px solid #dbe2ea; padding-top: 10px; }
-    #node-list summary { cursor: pointer; color: #475569; font-size: 13px; }
-    #node-list ul { list-style: none; margin: 8px 0 0; padding: 0; }
-    #node-list button { display: block; width: 100%; text-align: left; margin: 2px 0; padding: 6px 8px; border: 0; border-radius: 5px; background: transparent; font-size: 13px; }
-    #node-list button:hover { background: #e2e8f0; }
-    /* Small screens: the details panel stacks below the graph — it is
-       never hidden, so every device inspection stays available. */
-    @media (max-width: 760px) {
-      main { grid-template-columns: 1fr; grid-template-rows: minmax(320px, 55vh) auto; height: auto; }
-      aside { border-left: 0; border-top: 1px solid #dbe2ea; max-height: 45vh; }
-      .summary { flex-basis: 100%; margin-left: 0; }
+    :root {
+      color-scheme: light;
+      --font-sans: "Segoe UI Variable Text", "Segoe UI", Inter, ui-sans-serif, system-ui, sans-serif;
+      --ink: #0f172a;
+      --muted: #475569;
+      --subtle: #64748b;
+      --line: #cbd5e1;
+      --line-strong: #94a3b8;
+      --surface: #ffffff;
+      --surface-muted: #f8fafc;
+      --accent: #2563eb;
+      --accent-dark: #1d4ed8;
+      --edge-physical: #475569;
+      --edge-routed: #2563eb;
+      --edge-adjacency: #64748b;
+      --edge-peer: #7c3aed;
+      --edge-layer3: #0369a1;
+      --role-router: #3b82f6;
+      --role-switch: #0ea5e9;
+      --role-server: #64748b;
+      --role-host: #6366f1;
+      --role-firewall: #ef4444;
+      --role-unresolved: #94a3b8;
+      --role-site: #4f46e5;
+      font-family: var(--font-sans);
+      font-synthesis: none;
+      text-rendering: optimizeLegibility;
     }
-    @media (prefers-reduced-motion: reduce) {
-      *, *::before, *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; }
+    * { box-sizing: border-box; }
+    html, body { min-height: 100%; }
+    body {
+      min-height: 100vh; margin: 0; display: flex; flex-direction: column;
+      color: var(--ink); background: #f3f6fb; line-height: 1.45;
+      -webkit-font-smoothing: antialiased;
+    }
+    button, input, select, textarea { font: inherit; }
+    header {
+      display: grid; grid-template-columns: auto minmax(180px, 1fr) auto auto auto auto auto;
+      gap: 9px 12px; align-items: center; padding: 11px 16px;
+      background: #111827; color: white; border-bottom: 1px solid #263244;
+    }
+    header h1 { margin: 0; font-size: 18px; line-height: 1.2; white-space: nowrap; letter-spacing: -.01em; }
+    #search { width: 100%; max-width: 440px; border: 1px solid #64748b; border-radius: 6px; padding: 8px 10px; color: var(--ink); background: #fff; }
+    button { border: 1px solid var(--line-strong); border-radius: 6px; padding: 7px 11px; background: white; color: var(--ink); cursor: pointer; }
+    button:hover { border-color: #64748b; background: #f8fafc; }
+    button:focus-visible, input:focus-visible, select:focus-visible {
+      outline: 2px solid #60a5fa; outline-offset: 2px;
+    }
+    .layout-label { color: #cbd5e1; font-size: 12px; display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+    .layout-label select { border: 1px solid #64748b; border-radius: 6px; padding: 6px 8px; background: white; color: var(--ink); cursor: pointer; }
+    .summary {
+      grid-column: 1 / -1; margin: 0; color: #cbd5e1; font-size: 12px;
+      line-height: 1.35; font-variant-numeric: tabular-nums;
+    }
+    main { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 280px; }
+    main.details-collapsed { grid-template-columns: minmax(0, 1fr); }
+    main.details-collapsed aside { display: none; }
+    .graph-wrap { position: relative; min-width: 0; min-height: 420px; }
+    #cy { width: 100%; height: 100%; min-height: 420px; background: white; }
+    #legend { position: absolute; left: 14px; bottom: 14px; z-index: 5; background: rgba(255,255,255,0.97);
+      border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; font-size: 12px; color: var(--muted);
+      box-shadow: 0 1px 2px rgba(15,23,42,0.05); max-width: 220px; }
+    #legend h3 { margin: 0 0 7px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--subtle); }
+    #legend .row { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
+    #legend .swatch { width: 26px; flex: 0 0 26px; }
+    #legend .line { display: inline-block; width: 26px; height: 0; border-top-width: 1.5px; }
+    #legend .dot { width: 13px; height: 13px; border-radius: 3px; flex: 0 0 13px; }
+    #legend .divider { height: 1px; background: #eef2f7; margin: 8px 0; }
+    aside { overflow: auto; padding: 18px; border-left: 1px solid var(--line); background: var(--surface-muted); }
+    aside h2 { margin-top: 0; font-size: 17px; }
+    .field { margin-bottom: 12px; }
+    .field strong { display: block; color: #475569; font-size: 12px; text-transform: uppercase; }
+    .status-badge { display: inline-flex; align-items: center; padding: 2px 7px;
+      margin-left: 6px; border: 1px solid #cbd5e1; border-radius: 999px;
+      background: #fff; color: #475569; font-size: 11px; font-weight: 600; }
+    .status-badge.operator { border-color: #93c5fd; background: #eff6ff; color: #1d4ed8; }
+    .status-badge.conflict { border-color: #fbbf24; background: #fffbeb; color: #92400e; }
+    .edit-panel { margin-top: 14px; padding: 12px; border: 1px solid #bfdbfe;
+      border-radius: 8px; background: #eff6ff; }
+    .edit-panel label { display: block; margin-bottom: 8px; color: #334155;
+      font-size: 12px; font-weight: 600; }
+    .edit-panel select, .edit-panel input { width: 100%; margin-top: 4px;
+      border: 1px solid #94a3b8; border-radius: 6px; padding: 7px 8px; background: #fff; }
+    .edit-panel .edit-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+    #edit-mode[aria-pressed="true"] { border-color: #60a5fa; background: #dbeafe; color: #1d4ed8; }
+    /* PR-044A (CONSOLE): device actions on a managed node. */
+    .node-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 16px; padding-top: 14px; border-top: 1px solid #e2e8f0; }
+    .node-action { display: inline-block; padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; color: #0f172a; font-size: 12px; text-decoration: none; }
+    /* An unavailable action is greyed and carries its reason in the title —
+       "Atlas checked, and here is why not" — never a dead link, never absent. */
+    .node-action-disabled { color: #94a3b8; background: #f1f5f9; border-style: dashed; cursor: not-allowed; }
+    .node-action-insecure { border-color: #f59e0b; color: #b45309; }
+    /* Right-click menu: the universal device action, where the pointer is. */
+    #context-menu { position: absolute; display: none; z-index: 20; min-width: 210px;
+      background: #ffffff; border: 1px solid #cbd5e1; border-radius: 8px;
+      box-shadow: 0 8px 24px rgba(15,23,42,.18); padding: 5px; }
+    #context-menu .menu-head { padding: 7px 10px 5px; font-size: 12px; font-weight: 700;
+      color: #334155; border-bottom: 1px solid #e2e8f0; margin-bottom: 4px; }
+    #context-menu .menu-item { display: block; padding: 7px 10px; border-radius: 5px;
+      font-size: 13px; color: #0f172a; text-decoration: none; }
+    #context-menu .menu-item:hover { background: #eff6ff; }
+    #context-menu .menu-item-disabled { color: #94a3b8; cursor: not-allowed; }
+    #context-menu .menu-item-disabled:hover { background: transparent; }
+    #context-menu .menu-item-insecure { color: #b45309; }
+    /* PR-050A: the way back down. Chips for every open site. */
+    #open-sites { position: absolute; top: 12px; left: 14px; z-index: 6;
+      display: flex; gap: 8px; flex-wrap: wrap; }
+    #viewport-hint { position: absolute; top: 12px; right: 14px; z-index: 6;
+      max-width: 290px; padding: 6px 9px; border: 1px solid var(--line);
+      border-radius: 6px; background: rgba(255,255,255,.96); color: var(--muted);
+      box-shadow: 0 1px 2px rgba(15,23,42,.05); font-size: 12px; }
+    #viewport-hint[hidden] { display: none; }
+    .site-chip { display: inline-flex; align-items: center; gap: 7px;
+      background: #eef2ff; border: 1px solid #c7d2fe; border-radius: 999px;
+      padding: 5px 8px 5px 12px; font-size: 12px; font-weight: 600;
+      color: #3730a3; }
+    .site-chip button { border: 0; background: #c7d2fe; color: #312e81;
+      border-radius: 999px; width: 18px; height: 18px; line-height: 1;
+      padding: 0; font-size: 12px; cursor: pointer; }
+    .site-chip button:hover { background: #a5b4fc; }
+    .site-chip-all { background: #fff; border-color: #cbd5e1; color: #334155; }
+    .node-action:hover { border-color: #94a3b8; background: #f8fafc; }
+    .node-action-primary { background: #2563eb; border-color: #2563eb; color: #fff; }
+    .node-action-primary:hover { background: #1d4ed8; border-color: #1d4ed8; }
+    #tooltip { position: fixed; left: 0; top: 0; display: none; z-index: 10; pointer-events: none; padding: 7px 10px; border-radius: 6px; background: rgba(17,24,39,0.92); color: white; font-size: 12px; box-shadow: 0 4px 12px rgba(15,23,42,0.25); will-change: transform; max-width: 320px; }
+    @media (max-width: 1050px) {
+      header { display: flex; flex-wrap: wrap; }
+      header h1 { flex: 0 0 auto; }
+      #search { flex: 1 1 300px; }
+      .summary { flex: 1 0 100%; }
+      main { display: block; position: relative; }
+      .graph-wrap { height: 100%; }
+      aside {
+        position: absolute; z-index: 9; top: 12px; right: 12px;
+        width: min(340px, calc(100% - 24px)); max-height: calc(100% - 24px);
+        border: 1px solid var(--line); border-radius: 8px;
+        box-shadow: 0 8px 24px rgba(15,23,42,.14);
+      }
+    }
+    @media (max-width: 720px) {
+      header { display: grid; grid-template-columns: 1fr 1fr; }
+      header h1, #search, .summary { grid-column: 1 / -1; }
+      .layout-label { min-width: 0; }
+      .layout-label select { width: 100%; }
+      #legend { display: none; }
     }
   </style>
 </head>
@@ -43,98 +158,471 @@
   <header>
     <h1>Atlas Topology Viewer</h1>
     <input id="search" type="search" placeholder="Search hostname, IP, vendor, or platform" aria-label="Search topology">
-    <button id="fit" type="button">Fit graph</button>
+    <label class="layout-label" id="view-label" style="display:none">View
+      <select id="view-mode" aria-label="Topology view level">
+        <option value="sites" selected>Site overview</option>
+        <option value="full">All devices (pan)</option>
+        <option value="ospf">OSPF areas</option>
+        <option value="bgp">BGP autonomous systems</option>
+      </select>
+    </label>
+    <label class="layout-label">Layout
+      <select id="layout" aria-label="Graph layout">
+        <option value="logical" selected>Logical (sites & tiers)</option>
+        <option value="tiered">Tiered</option>
+        <option value="concentric">Concentric</option>
+        <option value="force">Force</option>
+        <option value="circle">Circle</option>
+        <option value="grid">Grid</option>
+      </select>
+    </label>
+    <button id="fit" type="button" title="Reset at a scale where labels remain readable">Reset view</button>
+    <button id="edit-mode" type="button" aria-pressed="false" title="Curate persistent site membership" hidden>Edit topology</button>
+    <button id="details-toggle" type="button" aria-controls="details" aria-expanded="true">Details</button>
     <span class="summary" id="summary"></span>
   </header>
-  <main>
-    <div id="cy" role="img" aria-label="Interactive topology graph. Use the device list in the details panel for a keyboard-accessible alternative."></div>
-    <aside aria-label="Topology details">
-      <div id="details">
-        <h2>Details</h2>
-        <p>Click a node to inspect its normalized information, or a connection to see why Atlas created it, which evidence supports it, and what confidence it has.</p>
+  <main id="viewer-main">
+    <div class="graph-wrap">
+      <div id="cy" aria-label="Interactive topology graph"></div>
+      <div id="context-menu" role="menu" aria-label="Device actions"></div>
+      <div id="open-sites" aria-label="Open sites"></div>
+      <div id="viewport-hint" role="status" aria-live="polite" hidden></div>
+      <div id="legend" aria-label="Legend">
+        <h3>Links</h3>
+        <div class="row"><span class="swatch"><span class="line" style="border-top-style:solid;border-top-color:var(--edge-physical)"></span></span> Physical</div>
+        <div class="row"><span class="swatch"><span class="line" style="border-top-style:dashed;border-top-color:var(--edge-routed)"></span></span> Verified routed</div>
+        <div class="row"><span class="swatch"><span class="line" style="border-top-style:dashed;border-top-color:var(--edge-adjacency)"></span></span> Routing adjacency</div>
+        <div class="row"><span class="swatch"><span class="line" style="border-top-style:dotted;border-top-color:var(--edge-peer)"></span></span> BGP peering</div>
+        <div class="divider"></div>
+        <h3>Devices</h3>
+        <div class="row"><span class="dot" style="background:var(--role-router)"></span> Router</div>
+        <div class="row"><span class="dot" style="background:var(--role-switch)"></span> Switch</div>
+        <div class="row"><span class="dot" style="background:var(--role-server)"></span> Server</div>
+        <div class="row"><span class="dot" style="background:var(--role-host)"></span> Host</div>
+        <div class="row"><span class="dot" style="background:var(--role-firewall)"></span> Firewall</div>
+        <div class="row"><span class="dot" style="background:transparent;border:1px dashed var(--role-unresolved)"></span> Unresolved peer</div>
+        <div class="row" id="legend-site" style="display:none"><span class="dot" style="background:transparent;border:1px solid var(--role-site)"></span> Site (double-click to open)</div>
+        <div class="row" id="legend-ospf" style="display:none"><span class="dot" style="background:#eff6ff;border:1px solid #60a5fa"></span> OSPF area boundary</div>
+        <div class="row" id="legend-bgp" style="display:none"><span class="dot" style="background:#f5f3ff;border:1px solid #a78bfa"></span> BGP AS boundary</div>
       </div>
-      <details id="node-list">
-        <summary>Device list (keyboard alternative)</summary>
-        <ul id="node-list-items"></ul>
-      </details>
+    </div>
+    <aside id="details">
+      <h2>Details</h2>
+      <p>Click a node to inspect its normalized information, or a connection to see why Atlas created it, which evidence supports it, and what confidence it has.</p>
     </aside>
   </main>
   <div id="tooltip"></div>
   <script>
     const topologyElements = __TOPOLOGY_ELEMENTS__;
     const snapshotSummary = __SNAPSHOT_SUMMARY__;
-    const summaryParts = [`${snapshotSummary.device_count} discovered devices`];
-    summaryParts.push(`${snapshotSummary.physical_links ?? 0} physical links`);
-    if (snapshotSummary.verified_routed) summaryParts.push(`${snapshotSummary.verified_routed} verified routed links`);
-    if (snapshotSummary.routing_adjacencies) summaryParts.push(`${snapshotSummary.routing_adjacencies} routing adjacencies`);
-    if (snapshotSummary.protocol_peers) summaryParts.push(`${snapshotSummary.protocol_peers} BGP peerings`);
+    const siteView = __SITE_VIEW__;
+    const routingView = __ROUTING_VIEW__;
+    // Lead with the device count and TOTAL links, then break down only the
+    // link kinds that are actually present — so a routed-only fabric never
+    // opens with a scary "0 physical links".
+    const linkKinds = [];
+    if (snapshotSummary.physical_links) linkKinds.push(`${snapshotSummary.physical_links} physical`);
+    if (snapshotSummary.verified_routed) linkKinds.push(`${snapshotSummary.verified_routed} verified routed`);
+    if (snapshotSummary.routing_adjacencies) linkKinds.push(`${snapshotSummary.routing_adjacencies} routing adjacency`);
+    if (snapshotSummary.protocol_peers) linkKinds.push(`${snapshotSummary.protocol_peers} BGP`);
+    // The count of links actually DRAWN (fused, logical), not the raw
+    // directional observations in the snapshot — so it matches the canvas.
+    const totalLinks = topologyElements.edges.length;
+    const summaryParts = [`${snapshotSummary.device_count} devices`];
+    summaryParts.push(`${totalLinks} link${totalLinks === 1 ? '' : 's'}${linkKinds.length ? ` (${linkKinds.join(', ')})` : ''}`);
     if (snapshotSummary.unresolved_peers) summaryParts.push(`${snapshotSummary.unresolved_peers} unresolved peer identities`);
-    document.getElementById('summary').textContent = summaryParts.join(' · ');
+    const fullSummaryText = summaryParts.join(' · ');
+    document.getElementById('summary').textContent = fullSummaryText;
+    window.syncSummary = viewMode => {
+      const el = document.getElementById('summary');
+      if (viewMode === 'sites' && (typeof siteView !== 'undefined')) {
+        el.textContent = siteView.sites.length + ' sites · ' +
+          siteView.aggregated_edges.length + ' inter-site links · ' +
+          fullSummaryText;
+      } else if ((viewMode === 'ospf' || viewMode === 'bgp') && routingView[viewMode]) {
+        const view = routingView[viewMode];
+        el.textContent = `${view.groups.length} ${viewMode.toUpperCase()} domains · ` +
+          `${view.covered_devices}/${view.total_devices} devices with evidence · ` +
+          `${view.edge_ids.length} observed links`;
+      } else { el.textContent = fullSummaryText; }
+    };
+
+    // One rendering contract for DOM text, canvas text, and relationship
+    // colours. CSS owns the tokens; Cytoscape receives their computed values.
+    const rootTokens = getComputedStyle(document.documentElement);
+    const token = name => rootTokens.getPropertyValue(name).trim();
+    const GRAPH_THEME = Object.freeze({
+      fontFamily: token('--font-sans'),
+      ink: token('--ink'),
+      line: token('--line'),
+      lineStrong: token('--line-strong'),
+      accent: token('--accent'),
+      physical: token('--edge-physical'),
+      routed: token('--edge-routed'),
+      adjacency: token('--edge-adjacency'),
+      peer: token('--edge-peer'),
+      layer3: token('--edge-layer3'),
+    });
+    // Supersample enough for clean curves and text, but bound the backing
+    // canvas so a large future estate does not allocate three unbounded 3×
+    // layers. Native 2×/2.5× output is crisp at common desktop scale factors.
+    const RENDER_PIXEL_RATIO = Math.min(
+      2.5, Math.max(2, window.devicePixelRatio || 1)
+    );
+
+    // The embedded Network page has less horizontal room than the standalone
+    // viewer. Keep the canvas full-width there; details remain one click away
+    // as an overlay and open automatically after a selection.
+    const viewerMain = document.getElementById('viewer-main');
+    const detailsToggle = document.getElementById('details-toggle');
+    const compactViewer = window.matchMedia('(max-width: 1050px)');
+    const setDetailsOpen = open => {
+      viewerMain.classList.toggle('details-collapsed', !open);
+      detailsToggle.setAttribute('aria-expanded', String(open));
+      detailsToggle.textContent = open ? 'Hide details' : 'Details';
+    };
+    // An empty details panel must never make the network smaller. It opens
+    // automatically as soon as the operator selects a node or connection.
+    setDetailsOpen(false);
 
     // The ICON is the device role; COLOR/BORDER is operational state —
     // never shape alone (PR-043.1 stencil framework).
+    // Layouts an operator can switch between. Force reads well for a routed
+    // fabric; circle and grid help when a mesh gets busy.
+    const LAYOUTS = {
+      // Concentric reads a routed fabric as a hierarchy: the most-connected
+      // devices (core) sit in the centre, edge and access ripple outward.
+      concentric: { name: 'concentric', animate: false, fit: true, padding: 30,
+                    minNodeSpacing: 75, concentric: n => n.degree(),
+                    levelWidth: () => 1.4 },
+      // Tiered: core at the top, distribution/edge/access flowing downward —
+      // the way a network diagram is usually drawn.
+      // spacingFactor 1.4 spread 40+ devices into rows so wide that fitting
+      // them shrank every label below legibility. Tighter tiers raise the
+      // fit zoom — more pixels for the same icons and names.
+      tiered: { name: 'breadthfirst', animate: false, fit: true, padding: 24,
+                directed: false, circle: false, grid: true, spacingFactor: 1.12 },
+      force: { name: 'cose', animate: false, fit: true, padding: 40,
+               idealEdgeLength: 150, nodeRepulsion: 14000, nodeOverlap: 28,
+               gravity: 0.2, componentSpacing: 160 },
+      circle: { name: 'circle', animate: false, fit: true, padding: 40 },
+      grid: { name: 'grid', animate: false, fit: true, padding: 40 }
+    };
+
     const cy = cytoscape({
       container: document.getElementById('cy'),
       elements: [...topologyElements.nodes, ...topologyElements.edges],
-      layout: { name: 'cose', animate: false, fit: true, padding: 40 },
-      minZoom: 0.25,
+      // The real layout is selected below after the site model is known.
+      // A preset avoids flashing a briefly auto-fitted miniature graph.
+      layout: { name: 'preset', fit: false },
+      minZoom: 0.2,
       maxZoom: 3,
+      pixelRatio: RENDER_PIXEL_RATIO,
+      textureOnViewport: false,
+      motionBlur: false,
       style: [
+        // Just the icon — no plate, no border. The node body is invisible;
+        // the device picture IS the node. A coloured ring appears only when
+        // there is operational state to show (new / changed / selected).
         { selector: 'node', style: {
           'shape': 'round-rectangle',
-          'background-color': '#ffffff',
+          'background-opacity': 0,
           'background-image': 'data(stencil)',
           'background-fit': 'contain',
-          'background-clip': 'node',
-          'label': 'data(label)', 'color': '#172033',
-          /* Cytoscape accepts only normal/bold or multiples of 100. */
+          'background-clip': 'none',
+          // Icon sits in the upper part of the node; the nameplate below
+          // overlaps its base so the name reads as a label ON the device,
+          // not floating away from it.
+          'background-width': '92%', 'background-height': '92%',
+          'background-position-y': '-8px',
+          // Hostname first. Management IP joins the nameplate only when the
+          // operator zooms in; two-line labels at estate scale create blur.
+          'label': 'data(label)', 'color': GRAPH_THEME.ink,
+          // Labels are the point of the map: a topology whose names cannot be
+          // read is a picture, not a tool. Larger type on a SOLID nameplate —
+          // a translucent one let edge lines bleed through the letters, which
+          // is most of why the text read as blurry at fit-zoom.
+          'font-family': GRAPH_THEME.fontFamily,
+          'font-size': 13, 'font-weight': 600,
+          // Never paint miniature text. At overview zoom the label disappears
+          // and the icon/tooltip carries identity until the operator zooms in.
+          'min-zoomed-font-size': 11,
+          'text-valign': 'bottom', 'text-halign': 'center', 'text-margin-y': -14,
+          'text-wrap': 'wrap', 'text-max-width': 138, 'line-height': 1.3,
+          'text-background-color': '#ffffff', 'text-background-opacity': 1,
+          'text-background-shape': 'round-rectangle', 'text-background-padding': 4,
+          'text-border-color': GRAPH_THEME.lineStrong, 'text-border-width': 1, 'text-border-opacity': 1,
+          'width': 68, 'height': 76,
+          'border-width': 0,
+          // The nameplate is part of the node for pointer purposes -- moving
+          // the cursor from icon to label must not fire a mouseout.
+          'text-events': 'yes',
+          // Emphasis eases in and out; nothing snaps.
+          'transition-property': 'opacity, underlay-opacity',
+          'transition-duration': '0.15s',
+          'transition-timing-function': 'ease-out'
+        }},
+        { selector: 'node[kind = "observed"]', style: { 'opacity': 0.78 }},
+        { selector: 'node.label-detailed[kind != "site"][kind != "protocol-domain"]', style: {
+          'label': 'data(display_label)'
+        }},
+        { selector: 'node.label-suppressed', style: { 'label': '' }},
+        // A folded site is a quiet cloud with its compact name INSIDE the
+        // artwork. This stays legible at overview scale and removes the
+        // floating nameplates that made the map feel diagram-generator-like.
+        { selector: 'node[kind = "site"]', style: {
+          'label': 'data(display_label)',
+          'width': 158, 'height': 112,
           'font-size': 11, 'font-weight': 600,
-          'text-valign': 'bottom', 'text-margin-y': 7,
-          'width': 46, 'height': 46, 'border-width': 2.5, 'border-color': '#94a3b8'
+          'min-zoomed-font-size': 9,
+          'background-image': 'data(stencil)',
+          'background-fit': 'contain',
+          'background-clip': 'none',
+          'background-width': '100%', 'background-height': '100%',
+          'background-position-y': '0%',
+          'text-valign': 'center', 'text-halign': 'center',
+          // The visual centre of the cloud body is slightly below its SVG
+          // centre because of the upper cloud lobes.
+          'text-margin-y': 11,
+          'text-wrap': 'wrap', 'text-max-width': 102,
+          'color': GRAPH_THEME.ink,
+          'text-background-opacity': 0, 'text-border-width': 0
         }},
-        { selector: 'node[kind = "observed"]', style: { 'border-style': 'dashed', 'border-color': '#94a3b8', 'opacity': 0.9 }},
-        { selector: 'node[change = "new"]', style: { 'border-color': '#16a34a', 'border-width': 5 }},
-        { selector: 'node[change = "changed"]', style: { 'border-color': '#f59e0b', 'border-width': 5 }},
-        { selector: 'node[change = "removed"]', style: { 'border-color': '#dc2626', 'border-width': 5, 'border-style': 'dashed', 'opacity': 0.75 }},
-        { selector: 'node:selected', style: { 'border-color': '#2563eb', 'border-width': 5 }},
+        { selector: 'node[kind = "site"][site_type = "wan"]', style: {
+          'width': 176, 'height': 122, 'font-weight': 700
+        }},
+        { selector: 'node[kind = "site"][site_type = "internet"]', style: {
+          // Internet remains visually distinct and appears only for an
+          // explicitly typed catalog entry.
+          'width': 126, 'height': 126, 'text-margin-y': 0,
+          'text-background-color': '#ffffff', 'text-background-opacity': 0.88,
+          'text-background-shape': 'round-rectangle',
+          'text-background-padding': 3
+        }},
+        // Dedicated control-plane views use quiet compound boundaries. The
+        // device icons remain untouched inside them; only explicit evidence
+        // creates a domain.
+        { selector: 'node[kind = "protocol-domain"]', style: {
+          'shape': 'round-rectangle', 'background-image': 'none',
+          'background-color': '#eff6ff', 'background-opacity': 0.42,
+          'border-color': '#60a5fa', 'border-width': 1,
+          'border-style': 'solid', 'padding': 28,
+          'label': 'data(label)', 'font-family': GRAPH_THEME.fontFamily,
+          'font-size': 13, 'font-weight': 700, 'color': '#1e3a8a',
+          'text-valign': 'top', 'text-halign': 'left',
+          'text-margin-x': 8, 'text-margin-y': -8,
+          'text-background-opacity': 0, 'text-border-width': 0,
+          'z-compound-depth': 'bottom'
+        }},
+        { selector: 'node[kind = "protocol-domain"][protocol = "bgp"]', style: {
+          'background-color': '#f5f3ff', 'border-color': '#a78bfa',
+          'color': '#5b21b6'
+        }},
+        { selector: 'node.protocol-boundary', style: {
+          'border-color': '#f59e0b', 'border-width': 2,
+          'border-style': 'double'
+        }},
+        // State ring: a rounded halo around the icon, only when it means
+        // something. `background-opacity` stays 0 so the ring frames the
+        // picture rather than boxing it.
+        { selector: 'node[change = "new"]', style: { 'border-color': '#16a34a', 'border-width': 2, 'border-opacity': 0.95 }},
+        { selector: 'node[change = "changed"]', style: { 'border-color': '#d97706', 'border-width': 2, 'border-opacity': 0.95 }},
+        { selector: 'node[change = "removed"]', style: { 'border-color': '#dc2626', 'border-width': 2, 'border-style': 'dashed', 'opacity': 0.7 }},
+        { selector: 'node:selected', style: { 'border-color': GRAPH_THEME.accent, 'border-width': 2, 'border-opacity': 1 }},
+
+        // Base edge: a soft, rounded line. The STYLE carries the
+        // relationship (solid = physical, dashed = routed, dotted =
+        // observed-only); the interface names live in the hover tooltip and
+        // on the selected edge — never plastered on every line.
+        // Thin, straight links keep the devices the focus. Style carries the
+        // relationship: solid = physical, dashed = routed, dotted = observed.
         { selector: 'edge', style: {
-          'width': 2, 'line-color': '#94a3b8', 'curve-style': 'bezier'
+          'width': 1.2, 'line-color': GRAPH_THEME.adjacency, 'curve-style': 'straight',
+          'target-arrow-shape': 'none',
+          'transition-property': 'opacity, line-color, underlay-opacity',
+          'transition-duration': '0.15s',
+          'transition-timing-function': 'ease-out'
         }},
-        { selector: 'edge[relationship = "physical"]', style: { 'line-style': 'solid' }},
-        { selector: 'edge[relationship = "routing-adjacency"]', style: {
-          'line-style': 'dashed', 'line-color': '#64748b',
-          'label': 'data(protocol)', 'font-size': 9, 'color': '#64748b',
-          'text-background-color': '#ffffff', 'text-background-opacity': 0.8
+        { selector: 'edge[relationship = "physical"]', style: { 'line-style': 'solid', 'line-color': GRAPH_THEME.physical, 'width': 1.5 }},
+        { selector: 'edge[relationship = "verified-routed"]', style: { 'line-style': 'dashed', 'line-color': GRAPH_THEME.routed, 'width': 1.35 }},
+        { selector: 'edge[relationship = "routing-adjacency"]', style: { 'line-style': 'dashed', 'line-color': GRAPH_THEME.adjacency, 'width': 1.25, 'opacity': 0.62 }},
+        { selector: 'edge[relationship = "protocol-peer"]', style: { 'line-style': 'dotted', 'line-color': GRAPH_THEME.peer, 'width': 1.25, 'opacity': 0.55 }},
+        { selector: 'edge[relationship = "layer-3"]', style: { 'line-style': 'dashed', 'line-color': GRAPH_THEME.layer3, 'width': 1.25 }},
+        { selector: 'edge[relationship = "inferred"]', style: { 'line-style': 'dotted', 'line-color': GRAPH_THEME.adjacency, 'width': 1.1, 'opacity': 0.5 }},
+        { selector: 'edge[relationship = "unknown"]', style: { 'line-style': 'dotted', 'line-color': GRAPH_THEME.adjacency, 'width': 1.1, 'opacity': 0.5 }},
+
+        // PR-050: aggregate styling comes AFTER the relationship rules on
+        // purpose -- a folded link keeps its own confident look.
+        { selector: 'edge[kind = "aggregate"]', style: {
+          'label': 'data(display_label)', 'font-family': GRAPH_THEME.fontFamily,
+          'font-size': 12, 'font-weight': 600, 'min-zoomed-font-size': 10,
+          'color': GRAPH_THEME.ink, 'text-background-color': '#ffffff',
+          'text-background-opacity': 1, 'text-background-padding': 5,
+          'text-background-shape': 'round-rectangle',
+          'text-border-color': '#bfdbfe', 'text-border-width': 1,
+          'text-border-opacity': 1,
+          // The reference look: dashed blue runs with a dot where the link
+          // meets each badge.
+          'curve-style': 'bezier', 'control-point-step-size': 60,
+          'width': 1.75, 'line-color': GRAPH_THEME.routed, 'line-style': 'dashed',
+          'line-dash-pattern': [7, 6],
+          'source-arrow-shape': 'circle', 'target-arrow-shape': 'circle',
+          'source-arrow-color': '#2563eb', 'target-arrow-color': '#2563eb',
+          'arrow-scale': 0.75
         }},
-        { selector: 'edge[relationship = "protocol-peer"]', style: {
-          'line-style': 'dotted', 'line-color': '#94a3b8',
-          'label': 'data(protocol)', 'font-size': 9, 'color': '#94a3b8',
-          'text-background-color': '#ffffff', 'text-background-opacity': 0.8
+        { selector: 'edge[kind = "aggregate"][relationship = "physical"]',
+          style: { 'line-style': 'solid', 'width': 2 }},
+        { selector: 'edge[kind = "aggregate"][relationship = "unknown"]',
+          style: { 'line-color': '#93c5fd',
+                   'source-arrow-color': '#93c5fd',
+                   'target-arrow-color': '#93c5fd', 'width': 1.5 }},
+
+        // Hover lift (#5): the focused device grows and its links brighten;
+        // everything else fades so the neighbourhood stands out.
+        { selector: 'node.node-lift', style: {
+          'underlay-color': GRAPH_THEME.accent, 'underlay-opacity': 0.10,
+          'underlay-padding': 8, 'underlay-shape': 'ellipse',
+          'z-index': 999
         }},
-        { selector: 'edge[relationship = "verified-routed"]', style: {
-          'line-style': 'dashed', 'line-color': '#2563eb', 'width': 2.5,
-          'label': 'data(protocol)', 'font-size': 9, 'color': '#2563eb',
-          'text-background-color': '#ffffff', 'text-background-opacity': 0.8
+        { selector: 'node.drop-target', style: {
+          'underlay-color': '#2563eb', 'underlay-opacity': 0.16,
+          'underlay-padding': 22, 'underlay-shape': 'ellipse',
+          'border-color': '#2563eb', 'border-width': 2,
+          'z-index': 997
         }},
-        { selector: 'edge[relationship = "layer-3"]', style: {
-          'line-style': 'dashed', 'line-color': '#0ea5e9'
+        { selector: 'edge.edge-hi', style: {
+          'line-color': '#f59e0b', 'opacity': 1, 'z-index': 998,
+          'underlay-color': '#f59e0b', 'underlay-opacity': 0.12,
+          'underlay-padding': 5
         }},
-        { selector: 'edge[relationship = "inferred"]', style: {
-          'line-style': 'dotted', 'line-color': '#cbd5e1'
+        { selector: '.faded', style: { 'opacity': 0.18 }},
+
+        // Hover and selection reveal the interface names at each end —
+        // Packet-Tracer style, but only when you ask for them.
+        { selector: 'edge.hover, edge:selected', style: {
+          'line-color': '#f59e0b', 'opacity': 1,
+          'underlay-color': '#f59e0b', 'underlay-opacity': 0.12,
+          'underlay-padding': 5,
+          'source-label': 'data(source_interface)', 'target-label': 'data(target_interface)',
+          'source-text-offset': 26, 'target-text-offset': 26,
+          'font-size': 10, 'color': '#0f172a',
+          'text-background-color': '#fff7ed', 'text-background-opacity': 1,
+          'text-background-shape': 'round-rectangle', 'text-background-padding': 2,
+          'text-border-color': '#fcd34d', 'text-border-width': 1, 'text-border-opacity': 1
         }},
-        { selector: 'edge[relationship = "unknown"]', style: {
-          'line-style': 'dotted', 'line-color': '#e2e8f0'
-        }},
-        { selector: 'edge:selected', style: { 'line-color': '#f59e0b', 'width': 3.5 }},
-        { selector: '.search-muted', style: { 'opacity': 0.18 }},
-        { selector: '.search-match', style: { 'border-color': '#f59e0b', 'border-width': 5, 'opacity': 1 }}
+        { selector: '.search-muted', style: { 'opacity': 0.15 }},
+        { selector: '.search-match', style: { 'border-color': '#d97706', 'border-width': 2, 'opacity': 1 }}
       ]
     });
+
+    const resizeGraph = () => requestAnimationFrame(() => cy.resize());
+    detailsToggle.addEventListener('click', () => {
+      const opening = viewerMain.classList.contains('details-collapsed');
+      setDetailsOpen(opening);
+      resizeGraph();
+    });
+    const revealDetails = () => {
+      if (viewerMain.classList.contains('details-collapsed')) {
+        setDetailsOpen(true);
+        resizeGraph();
+      }
+    };
+
+    // Layout switcher.
+    const layoutSelect = document.getElementById('layout');
+    if (layoutSelect) {
+      layoutSelect.addEventListener('change', () => {
+        if (typeof rebuildView === 'function' &&
+            (sitesEnabled || layoutSelect.value === 'logical')) {
+          rebuildView();
+          return;
+        }
+        const chosen = LAYOUTS[layoutSelect.value] || LAYOUTS.force;
+        cy.one('layoutstop', () => requestAnimationFrame(() => {
+          applyReadableViewport(false);
+          finishRebuild((viewSelect && viewSelect.value) || 'full');
+        }));
+        cy.layout({ ...chosen, fit: false }).run();
+      });
+    }
 
     const details = document.getElementById('details');
     const tooltip = document.getElementById('tooltip');
     const escapeHtml = value => String(value).replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+    // This viewer is both a pane inside Atlas and a standalone artifact
+    // file. Device actions link back into Atlas, so the question is not
+    // "am I in an iframe?" but "is Atlas serving me?" — the old iframe test
+    // silently dropped every action the moment the operator clicked "Open
+    // in new tab", even though the very same server was still on the other
+    // end of the URL. Served over http(s), Atlas is there; opened from
+    // disk (file://), it is not.
+    const servedByAtlas = /^https?:$/.test(window.location.protocol);
+    const editButton = document.getElementById('edit-mode');
+    let editMode = false;
+    let selectedDetailNodeId = null;
+    const siteOptionsHtml = selected => (siteView.site_options || []).map(site =>
+      `<option value="${escapeHtml(site.site_id)}"${site.site_id === selected ? ' selected' : ''}>` +
+      `${escapeHtml(site.name)} · ${escapeHtml(site.site_type)}</option>`
+    ).join('');
+    if (servedByAtlas && (siteView.site_options || []).length) {
+      editButton.hidden = false;
+      editButton.addEventListener('click', () => {
+        editMode = !editMode;
+        editButton.setAttribute('aria-pressed', String(editMode));
+        editButton.textContent = editMode ? 'Finish editing' : 'Edit topology';
+        if (editMode) {
+          viewSelect.value = 'sites';
+          rebuildView();
+          showEditHint('Edit mode: double-click the source site, then drag a device onto a highlighted destination cloud.');
+        } else {
+          viewportHint.hidden = true;
+          rebuildView();
+        }
+        if (selectedDetailNodeId) {
+          const node = cy.getElementById(selectedDetailNodeId);
+          if (node.length) { details.innerHTML = nodeDetails(node.data()); }
+        }
+      });
+    }
     const nodeDetails = data => {
+      if (data.kind === 'protocol-domain') {
+        const name = data.protocol === 'ospf' ? 'OSPF area' : 'BGP autonomous system';
+        return `
+      <h2>${escapeHtml(data.label)}</h2>
+      <div class="field"><strong>Control-plane domain</strong>${name}</div>
+      <div class="field"><strong>Devices represented</strong>${escapeHtml(data.count || 0)}</div>
+      ${data.area_id ? `<div class="field"><strong>Area</strong>${escapeHtml(data.area_id)}</div>` : ''}
+      ${data.local_as ? `<div class="field"><strong>Local AS</strong>${escapeHtml(data.local_as)}</div>` : ''}
+      <div class="field"><strong>VRF</strong>${escapeHtml(data.vrf || 'default')}</div>
+      <p style="font-size:13px;color:#475569">This boundary is derived from normalized configured and operational evidence. Disconnected reuse of the same identifier is kept as a separate domain.</p>`;
+      }
+      if (data.kind === 'site') {
+        const roles = Object.entries(data.roles || {})
+          .map(([role, count]) => `${escapeHtml(role)}: ${count}`).join(', ');
+        const isOpen = expandedSites.has(data.site_id);
+        return `
+      <h2>${escapeHtml(data.label)}</h2>
+      <div class="field"><strong>Site</strong>${data.count} devices</div>
+      <div class="field"><strong>Site type</strong>${escapeHtml(data.site_type || 'site')}</div>
+      <div class="field"><strong>Roles</strong>${roles || 'none'}</div>
+      <div class="field"><strong>Membership evidence</strong>${escapeHtml(data.evidence || '')}</div>
+      <div class="node-actions">
+        <button class="node-action node-action-primary" type="button"
+                onclick="toggleSite('${escapeHtml(data.site_id)}')">${isOpen ? 'Collapse site' : 'Open site'}</button>
+        <span style="font-size:12px;color:#64748b;align-self:center">Tip: double-click any device inside an open site to fold it back.</span>
+      </div>
+      ${editMode && data.site_id !== '__none__' ? `
+      <div class="edit-panel">
+        <label>Site illustration
+          <select id="site-type-select">
+            ${['site','wan','internet','cloud'].map(value =>
+              `<option value="${value}"${value === data.site_type ? ' selected' : ''}>${value}</option>`
+            ).join('')}
+          </select>
+        </label>
+        <div class="edit-actions"><button type="button" onclick="saveSiteType()">Save site type</button></div>
+      </div>` : ''}`;
+      }
       const unresolved = data.kind === 'observed';
       const heading = unresolved && (data.observation === 'routing-adjacency' || data.observation === 'protocol-peer')
         ? 'Unknown router' : data.label;
@@ -168,11 +656,238 @@
       <div class="field"><strong>Last discovered</strong>${escapeHtml(data.last_discovered ?? 'unrecorded')}</div>
       <div class="field"><strong>Configuration collected</strong>${escapeHtml(data.config_collected ?? 'No')}</div>
       <div class="field"><strong>Last configuration change</strong>${escapeHtml(data.last_config_change ?? 'None recorded')}</div>`;
+      const assignment = data.site_assignment || {};
+      const sourceBadge = assignment.source === 'operator'
+        ? '<span class="status-badge operator">Operator assigned</span>'
+        : `<span class="status-badge">${escapeHtml(assignment.source || 'unknown')}</span>`;
+      const conflictBadge = assignment.conflict
+        ? '<span class="status-badge conflict">Evidence conflict</span>' : '';
+      html += `
+      <div class="field"><strong>Effective site</strong>${escapeHtml(assignment.effective_site_name || 'Site not identified')} ${sourceBadge}${conflictBadge}</div>`;
+      if (assignment.conflict) {
+        html += `<div class="field"><strong>Underlying inference</strong>${escapeHtml(assignment.inferred_site_name || 'unknown')}</div>`;
+      }
+      if ((data.ospf_memberships || []).length) {
+        html += `<div class="field"><strong>OSPF membership</strong>${escapeHtml(data.ospf_memberships.map(item => `Area ${item.area_id} (${item.vrf})`).join(', '))}</div>`;
+      }
+      if ((data.bgp_memberships || []).length) {
+        html += `<div class="field"><strong>BGP AS</strong>${escapeHtml(data.bgp_memberships.map(item => `AS ${item.local_as} (${item.vrf})`).join(', '))}</div>`;
+      }
+      if (editMode) {
+        html += `
+      <div class="edit-panel">
+        <label>Persistent site assignment
+          <select id="site-assignment-select">${siteOptionsHtml(assignment.effective_site_id)}</select>
+        </label>
+        <label>Reason <input id="site-assignment-reason" placeholder="Why is this correction needed?"></label>
+        <div class="edit-actions">
+          <button type="button" onclick="saveSelectedSite()">Save assignment</button>
+          ${assignment.source === 'operator' ? '<button type="button" onclick="revertSelectedSite()">Return to automatic</button>' : ''}
+          ${assignment.subject_key ? '<button type="button" onclick="undoSelectedSite()">Undo last change</button>' : ''}
+        </div>
+        <p style="margin:8px 0 0;font-size:11px;color:#475569">Saved corrections survive restarts and future discovery. Discovery evidence remains visible underneath.</p>
+      </div>`;
+      }
+      html += nodeActions(data);
       return html;
+    };
+
+    // PR-044A (CONSOLE): a managed node offers the universal device action.
+    //
+    // Only when Atlas is serving this viewer: a standalone file must not
+    // carry links to an application that is not there. Unresolved peers
+    // never reach here — nodeDetails returns before this for kind ===
+    // 'observed' — so an observed peer can never be offered a session. The
+    // console route re-resolves the device from evidence regardless, so a
+    // stale link is refused by the server, not merely hidden by the viewer.
+    //
+    // SSH eligibility and web endpoints are resolved from evidence at the
+    // moment of asking (/api/device/<id>/actions), never baked into this
+    // artifact — the artifact outlives the discovery that produced it, and
+    // a verification run can change the answer.
+    const actionsCache = new Map();
+    const fetchActions = async (id, hostname) => {
+      if (!servedByAtlas || !id) { return null; }
+      if (actionsCache.has(id)) { return actionsCache.get(id); }
+      let actions = null;
+      try {
+        // The hostname rides along because this artifact's node ids are not
+        // always the scope-level canonical ids: the federated enterprise
+        // graph mints its own ("ent:access1:172.20.20.23"), which the
+        // console resolver has never heard of. The server falls back to the
+        // hostname -- the identity both graphs agree on.
+        const q = hostname ? `?hostname=${encodeURIComponent(hostname)}` : '';
+        const response = await fetch(`/api/device/${encodeURIComponent(id)}/actions${q}`,
+                                     { credentials: 'same-origin' });
+        if (response.ok) { actions = await response.json(); }
+      } catch (error) { /* Atlas unreachable: links stay generic */ }
+      actionsCache.set(id, actions);
+      return actions;
+    };
+
+    // The SSH and web buttons for one device, from the fetched resolution.
+    // Same rules as the in-app macro: HTTPS preferred, HTTP only as an
+    // explicitly-labelled insecure alternative, and an unavailable action is
+    // a greyed reason — "Atlas checked, and here is why not" — never a dead
+    // button and never silence.
+    const accessButtons = actions => {
+      if (!actions) { return ''; }
+      let html = '';
+      const ssh = actions.ssh;
+      if (ssh && ssh.eligible) {
+        html += `<a class="node-action node-action-primary" target="_top" href="/console/${encodeURIComponent(ssh.device_id || actions.device_id)}">Open SSH Console</a>`;
+      } else if (ssh) {
+        html += `<span class="node-action node-action-disabled" title="${escapeHtml(ssh.reason || 'SSH unavailable')}">SSH unavailable</span>`;
+      }
+      const web = actions.web;
+      if (web && web.has_https) {
+        html += `<a class="node-action" target="_blank" rel="noopener noreferrer" href="${escapeHtml(web.https_url)}">Open HTTPS${(web.certificate_warnings || []).length ? ' ⚠' : ''}</a>`;
+      } else if (web && web.http_only) {
+        html += `<a class="node-action node-action-insecure" target="_blank" rel="noopener noreferrer" href="${escapeHtml(web.http_url)}" title="HTTP is insecure; anything you type travels in the clear">Open HTTP — Insecure</a>`;
+      } else if (web) {
+        html += `<span class="node-action node-action-disabled" title="${escapeHtml(web.reason || 'no verified web service')}">Web unavailable</span>`;
+      }
+      return html;
+    };
+
+    const nodeActions = data => {
+      if (!servedByAtlas || !data.id) { return ''; }
+      const id = encodeURIComponent(data.id);
+      const name = encodeURIComponent(data.label || '');
+      // Access buttons arrive async; the placeholder keeps layout stable.
+      return `
+      <div class="node-actions">
+        <span id="access-actions" data-device="${escapeHtml(data.id)}" data-hostname="${escapeHtml(data.hostname || data.label || '')}"></span>
+        <a class="node-action" target="_top" href="/device/${id}">Device Details</a>
+        <a class="node-action" target="_top" href="/configuration/${id}">Configuration History</a>
+        <a class="node-action" target="_top" href="/paths?device=${name}">Investigate</a>
+        <a class="node-action" target="_top" href="/predict?device=${name}">Predict Change</a>
+      </div>`;
+    };
+
+    const hydrateAccessActions = async () => {
+      const slot = document.getElementById('access-actions');
+      if (!slot) { return; }
+      const actions = await fetchActions(slot.getAttribute('data-device'),
+                                         slot.getAttribute('data-hostname'));
+      // The node may have been deselected while the fetch was in flight.
+      const current = document.getElementById('access-actions');
+      if (current === slot && actions) { slot.innerHTML = accessButtons(actions); }
+    };
+
+    const selectedData = () => {
+      if (!selectedDetailNodeId) { return null; }
+      const node = cy.getElementById(selectedDetailNodeId);
+      return node.length ? node.data() : null;
+    };
+    const curationIdentity = data => ({
+      device_id: data.id,
+      hostname: data.hostname || data.label,
+      management_ip: data.management_ip,
+      serial_number: data.serial_number,
+      vendor: data.vendor,
+      expected_revision: siteView.override_revision || 0,
+    });
+    const curationRequest = async (url, method, payload) => {
+      let response;
+      try {
+        response = await fetch(url, {
+          method, credentials: 'same-origin',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(payload),
+        });
+      } catch (error) {
+        window.alert('Atlas could not be reached. The topology change was not saved.');
+        return null;
+      }
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        window.alert(result.error || 'The topology change could not be saved.');
+        return null;
+      }
+      const query = new URLSearchParams(window.location.search);
+      query.set('curation', String(result.revision || Date.now()));
+      window.location.search = query.toString();
+      return result;
+    };
+    window.saveSelectedSite = async () => {
+      const data = selectedData();
+      const select = document.getElementById('site-assignment-select');
+      if (!data || !select) { return; }
+      const target = (siteView.site_options || []).find(
+        item => item.site_id === select.value);
+      if (!target) { return; }
+      if (!window.confirm(`Persistently assign ${data.label} to ${target.name}?\n\nDiscovery evidence will remain visible and future conflicts will be flagged.`)) {
+        return;
+      }
+      const reason = (document.getElementById('site-assignment-reason') || {}).value || '';
+      await curationRequest('/api/topology/site-assignments', 'PUT', {
+        ...curationIdentity(data), site_id: target.site_id, reason,
+      });
+    };
+    window.revertSelectedSite = async () => {
+      const data = selectedData();
+      if (!data || !window.confirm(`Return ${data.label} to evidence-based automatic site assignment?`)) {
+        return;
+      }
+      await curationRequest('/api/topology/site-assignments/revert', 'POST', {
+        ...curationIdentity(data), reason: 'Returned to automatic inference',
+      });
+    };
+    window.undoSelectedSite = async () => {
+      const data = selectedData();
+      const assignment = data && data.site_assignment;
+      if (!assignment || !assignment.subject_key ||
+          !window.confirm(`Undo the last site-assignment change for ${data.label}?`)) {
+        return;
+      }
+      await curationRequest('/api/topology/site-assignments/undo', 'POST', {
+        subject_key: assignment.subject_key,
+        expected_revision: siteView.override_revision || 0,
+      });
+    };
+    window.saveSiteType = async () => {
+      const data = selectedData();
+      const select = document.getElementById('site-type-select');
+      if (!data || !select) { return; }
+      if (!window.confirm(`Use the ${select.value} illustration for ${data.label}?`)) {
+        return;
+      }
+      await curationRequest(
+        `/api/topology/sites/${encodeURIComponent(data.site_id)}`,
+        'PUT', {site_type: select.value});
     };
 
     // PR-043.7 (FUSION): clicking any relationship explains WHY Atlas
     // created it, WHICH evidence supports it, and WHAT confidence it has.
+    const aggregateDetails = data => {
+      const siteName = id => {
+        const s = (siteView.sites || []).find(x => x.id === id);
+        return s ? s.label : id.replace(/^site:/, '');
+      };
+      const nodeLabel = id => {
+        const n = topologyElements.nodes.find(x => x.data.id === id);
+        return n ? n.data.label : id;
+      };
+      const rows = (data.members || []).map(mid => {
+        const e = topologyElements.edges.find(x => x.data.id === mid);
+        if (!e) { return ''; }
+        return `<li>${escapeHtml(nodeLabel(e.data.source))} &harr; ` +
+               `${escapeHtml(nodeLabel(e.data.target))} ` +
+               `<span style="color:#64748b">(${escapeHtml(e.data.relationship || 'unknown')})</span></li>`;
+      }).join('');
+      return `
+      <h2>${escapeHtml(siteName(data.source))} &harr; ${escapeHtml(siteName(data.target))}</h2>
+      <div class="field"><strong>Folded links</strong>${data.count}</div>
+      <div class="field"><strong>Strongest relationship</strong>${escapeHtml(data.relationship || 'unknown')}</div>
+      <div class="field"><strong>The links inside</strong>
+        <ul style="margin:6px 0 0;padding-left:18px;font-size:13px;">${rows}</ul>
+      </div>
+      <p style="font-size:13px;color:#475569;">An aggregated link folds every
+      connection between these two sites into one line. Open either site to
+      see the individual links; each keeps its own evidence.</p>`;
+    };
+
     const edgeDetails = data => {
       const label = id => {
         const node = cy.getElementById(id);
@@ -209,57 +924,795 @@
       return html;
     };
 
-    cy.on('tap', 'node', event => { details.innerHTML = nodeDetails(event.target.data()); });
-    cy.on('tap', 'edge', event => { details.innerHTML = edgeDetails(event.target.data()); });
-
-    // Keyboard alternative to pointer interaction: every node is listed as
-    // a real button that selects it, centres it, and shows its details.
-    const nodeListItems = document.getElementById('node-list-items');
-    cy.nodes().sort((a, b) => String(a.data('label')).localeCompare(String(b.data('label'))))
-      .forEach(node => {
-        const item = document.createElement('li');
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.textContent = `${node.data('label')} (${node.data('management_ip')})`;
-        button.addEventListener('click', () => {
-          cy.elements().unselect();
-          node.select();
-          const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-          cy.animate({ center: { eles: node } }, { duration: reduceMotion ? 0 : 150 });
-          details.innerHTML = nodeDetails(node.data());
-        });
-        item.appendChild(button);
-        nodeListItems.appendChild(item);
-      });
-
-    // Keep the graph valid across container resizes (viewport changes,
-    // iframe remounts, drawer toggles in the host page).
-    let resizeTimer = null;
-    window.addEventListener('resize', () => {
-      window.clearTimeout(resizeTimer);
-      resizeTimer = window.setTimeout(() => { cy.resize(); }, 150);
+    cy.on('tap', 'node', event => {
+      revealDetails();
+      selectedDetailNodeId = event.target.id();
+      details.innerHTML = nodeDetails(event.target.data());
+      hydrateAccessActions();
     });
+    cy.on('tap', 'edge', event => {
+      revealDetails();
+      const data = event.target.data();
+      details.innerHTML = data.kind === 'aggregate'
+        ? aggregateDetails(data) : edgeDetails(data);
+    });
+
+    // Right-click a device: the same universal actions, where the pointer
+    // already is (PR-048A). The menu is built from the SAME resolution the
+    // sidebar uses — one decision, rendered twice — and an unavailable
+    // action shows greyed with its reason rather than disappearing. On a
+    // standalone file (no Atlas behind it) the browser's own menu is left
+    // alone.
+    const contextMenu = document.getElementById('context-menu');
+    const hideContextMenu = () => { contextMenu.style.display = 'none'; };
+    document.addEventListener('click', hideContextMenu);
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape') { hideContextMenu(); }
+    });
+    cy.on('tap pan zoom', hideContextMenu);
+
+    const contextItem = (label, href, options = {}) => {
+      if (options.disabled) {
+        return `<span class="menu-item menu-item-disabled" title="${escapeHtml(options.reason || '')}">${escapeHtml(label)}</span>`;
+      }
+      const external = options.external
+        ? ' target="_blank" rel="noopener noreferrer"' : ' target="_top"';
+      const cls = options.insecure ? ' menu-item-insecure' : '';
+      const title = options.reason ? ` title="${escapeHtml(options.reason)}"` : '';
+      return `<a class="menu-item${cls}"${external}${title} href="${escapeHtml(href)}">${escapeHtml(label)}</a>`;
+    };
+
+    cy.on('cxttap', 'node', async event => {
+      if (!servedByAtlas) { return; }
+      const data = event.target.data();
+      if (data.kind === 'observed' || data.kind === 'site') { return; }
+      const id = encodeURIComponent(data.id);
+      const pos = event.renderedPosition ||
+                  (event.originalEvent && { x: event.originalEvent.offsetX, y: event.originalEvent.offsetY }) ||
+                  { x: 20, y: 20 };
+
+      let items = `<div class="menu-head">${escapeHtml(data.label || data.id)}</div>`;
+      const actions = await fetchActions(data.id, data.hostname || data.label);
+      const ssh = actions && actions.ssh;
+      if (ssh && ssh.eligible) {
+        items += contextItem('Open SSH Console',
+                             `/console/${encodeURIComponent(ssh.device_id || data.id)}`);
+      } else {
+        items += contextItem('Open SSH Console', '', {
+          disabled: true, reason: (ssh && ssh.reason) || 'SSH could not be resolved'
+        });
+      }
+      const web = actions && actions.web;
+      if (web && web.has_https) {
+        items += contextItem(
+          `Open HTTPS${(web.certificate_warnings || []).length ? ' ⚠' : ''}`,
+          web.https_url, { external: true });
+      } else if (web && web.http_only) {
+        items += contextItem('Open HTTP — Insecure', web.http_url, {
+          external: true, insecure: true,
+          reason: 'HTTP is insecure; anything you type travels in the clear'
+        });
+      } else {
+        items += contextItem('Open Web Interface', '', {
+          disabled: true, reason: (web && web.reason) || 'no verified web service'
+        });
+      }
+      items += contextItem('Device Details', `/device/${id}`);
+      items += contextItem('Configuration History', `/configuration/${id}`);
+
+      contextMenu.innerHTML = items;
+      contextMenu.style.display = 'block';
+      // Keep the menu on-canvas: flip left/up when the click is near an edge.
+      const wrap = document.getElementById('cy').getBoundingClientRect();
+      const menuW = contextMenu.offsetWidth, menuH = contextMenu.offsetHeight;
+      const x = Math.min(pos.x, wrap.width - menuW - 8);
+      const y = Math.min(pos.y, wrap.height - menuH - 8);
+      contextMenu.style.left = `${Math.max(8, x)}px`;
+      contextMenu.style.top = `${Math.max(8, y)}px`;
+    });
+
+    // The browser's own context menu would cover ours on the canvas.
+    document.getElementById('cy').addEventListener('contextmenu', event => {
+      if (servedByAtlas) { event.preventDefault(); }
+    });
+
+    // Semantic zoom: higher resolution cannot make 3px text readable. Node
+    // labels have an 11px paint floor in the stylesheet; unresolved peers are
+    // additionally label-free at overview scale and remain discoverable by
+    // shape, link style, hover tooltip, search, and the details panel.
+    const PEER_LABEL_ZOOM = 0.9;
+    const DETAIL_LABEL_ZOOM = 1.15;
+    let peerLabelsHidden = null;
+    let detailedLabelsShown = null;
+    const syncSemanticZoom = () => {
+      const zoom = cy.zoom() || 1;
+      const hidePeers = zoom < PEER_LABEL_ZOOM;
+      if (hidePeers !== peerLabelsHidden) {
+        peerLabelsHidden = hidePeers;
+        const peers = cy.nodes('[kind = "observed"]');
+        if (hidePeers) { peers.addClass('label-suppressed'); }
+        else { peers.removeClass('label-suppressed'); }
+      }
+      const showDetails = zoom >= DETAIL_LABEL_ZOOM;
+      if (showDetails !== detailedLabelsShown) {
+        detailedLabelsShown = showDetails;
+        const devices = cy.nodes('[kind != "site"][kind != "protocol-domain"]');
+        if (showDetails) { devices.addClass('label-detailed'); }
+        else { devices.removeClass('label-detailed'); }
+      }
+    };
+    cy.on('zoom', syncSemanticZoom);
+    cy.ready(syncSemanticZoom);
+    syncSemanticZoom();
+
+
+
+    // ---- PR-050A: the LOGICAL layout -----------------------------------
+    //
+    // Arrange the way an engineer draws it: one vertical band per site,
+    // tiers top-to-bottom inside each band. The top of a band is not a
+    // guess -- it is the devices that hold the links LEAVING the site
+    // (cross-site links, BGP sessions to unresolved WAN peers). Every other
+    // device sits at its hop distance below that edge, so edge -> firewall
+    // -> core -> switches -> access/servers falls out of the graph itself.
+    const TIER_DY = 155, NODE_DX = 155, BAND_GAP = 90;
+
+    // A sharp 5px label is still unreadable. The whole-estate view is the
+    // folded site skyline; any view containing individual devices protects a
+    // scale at which 13px canvas labels actually paint at about 11px. Large
+    // graphs therefore pan instead of shrinking themselves into a thumbnail.
+    const READABLE_DEVICE_ZOOM = 0.86;
+    const READABLE_SITE_ZOOM = 0.84;
+    const viewportHint = document.getElementById('viewport-hint');
+
+    function showEditHint(message) {
+      viewportHint.hidden = false;
+      viewportHint.textContent = message;
+    }
+
+    function applyReadableViewport(isSkyline, elements = cy.elements()) {
+      if (!elements || elements.length === 0) { return; }
+      const floor = isSkyline ? READABLE_SITE_ZOOM : READABLE_DEVICE_ZOOM;
+      const padding = isSkyline ? 56 : 72;
+
+      // Release the previous mode's floor while measuring its natural fit.
+      cy.minZoom(0.2);
+      cy.fit(elements, padding);
+      const fittedZoom = cy.zoom();
+      const needsPan = fittedZoom < floor;
+      cy.minZoom(floor);
+      if (needsPan) {
+        cy.zoom(floor);
+        cy.center(elements);
+      }
+
+      viewportHint.hidden = !needsPan;
+      viewportHint.textContent = needsPan
+        ? (isSkyline
+            ? 'Readable scale - drag to pan across sites'
+            : 'Readable scale - drag to pan; Site overview shows the whole estate')
+        : '';
+      peerLabelsHidden = null;
+      detailedLabelsShown = null;
+      syncSemanticZoom();
+    }
+
+    function logicalPositions(visibleNodes, visibleEdges) {
+      const member = id => (sitesEnabled && siteView.membership[id]) || '__all__';
+      const isSiteNode = n => n.data.kind === 'site';
+
+      // Tiering is a CABLING concept: only physical and verified-routed
+      // links shape it. BGP and OSPF overlays criss-cross sites (an iBGP
+      // mesh would make every router an "edge") and are ignored both for
+      // choosing roots and for measuring depth.
+      const TIER_KINDS = new Set(['physical', 'verified-routed', 'layer-3']);
+      const adj = new Map();
+      const touch = (a, b) => {
+        if (!adj.has(a)) { adj.set(a, new Set()); }
+        adj.get(a).add(b);
+      };
+      const overlay = new Map();   // kept only to place unresolved WAN peers
+      const touchOverlay = (a, b) => {
+        if (!overlay.has(a)) { overlay.set(a, new Set()); }
+        overlay.get(a).add(b);
+      };
+      for (const e of visibleEdges) {
+        const kind = e.data.kind === 'aggregate'
+          ? e.data.relationship : e.data.relationship;
+        if (TIER_KINDS.has(kind) || e.data.kind === 'aggregate') {
+          touch(e.data.source, e.data.target);
+          touch(e.data.target, e.data.source);
+        } else {
+          touchOverlay(e.data.source, e.data.target);
+          touchOverlay(e.data.target, e.data.source);
+        }
+      }
+
+      // Group into bands. Closed site clouds form their own one-node band.
+      const bands = new Map();
+      for (const n of visibleNodes) {
+        const key = isSiteNode(n) ? n.data.id : member(n.data.id);
+        if (!bands.has(key)) { bands.set(key, []); }
+        bands.get(key).push(n);
+      }
+
+      // The roots of a band: devices with an edge that LEAVES the band, or
+      // a BGP session to an unresolved peer (the WAN speaking to us). If a
+      // band is entirely internal, its highest-degree device anchors it.
+      const observedIds = new Set(
+        visibleNodes.filter(n => n.data.kind === 'observed').map(n => n.data.id));
+      const positions = {};
+      // Deterministic band order, the shared estate in the middle.
+      const keys = [...bands.keys()].sort();
+      const noneAt = keys.indexOf('__none__');
+      if (noneAt > 0) {
+        keys.splice(noneAt, 1);
+        keys.splice(Math.floor(keys.length / 2), 0, '__none__');
+      }
+
+      let bandX = 0;
+      for (const key of keys) {
+        const nodes = bands.get(key);
+        const ids = new Set(nodes.map(n => n.data.id));
+        const roots = new Set();
+        for (const n of nodes) {
+          if (isSiteNode(n)) { roots.add(n.data.id); continue; }
+          for (const peer of (adj.get(n.data.id) || [])) {
+            if (!ids.has(peer) || observedIds.has(peer)) {
+              roots.add(n.data.id);
+              break;
+            }
+          }
+          // A BGP session to an UNRESOLVED peer is WAN evidence too -- the
+          // only overlay signal that marks an edge device.
+          if (!roots.has(n.data.id)) {
+            for (const peer of (overlay.get(n.data.id) || [])) {
+              if (observedIds.has(peer)) { roots.add(n.data.id); break; }
+            }
+          }
+        }
+        if (roots.size === 0 && nodes.length) {
+          let best = nodes[0].data.id, bestDeg = -1;
+          for (const n of nodes) {
+            const deg = (adj.get(n.data.id) || new Set()).size;
+            if (deg > bestDeg) { bestDeg = deg; best = n.data.id; }
+          }
+          roots.add(best);
+        }
+        // BFS depth inside the band = the tier. Unreached devices (isolated)
+        // sit one tier below the deepest reached one.
+        const tier = new Map();
+        let frontier = [...roots].sort();
+        frontier.forEach(id => tier.set(id, 0));
+        let depth = 0;
+        while (frontier.length) {
+          const next = [];
+          for (const id of frontier) {
+            for (const peer of (adj.get(id) || [])) {
+              if (ids.has(peer) && !tier.has(peer) && !observedIds.has(peer)) {
+                tier.set(peer, depth + 1);
+                next.push(peer);
+              }
+            }
+          }
+          frontier = next.sort();
+          depth += 1;
+        }
+        let deepest = 0;
+        tier.forEach(v => { deepest = Math.max(deepest, v); });
+        for (const n of nodes) {
+          if (!tier.has(n.data.id)) {
+            // Unresolved peers hang one tier ABOVE the edge that observed
+            // them (they are the WAN); anything else lands at the bottom.
+            tier.set(n.data.id,
+                     observedIds.has(n.data.id) ? -1 : deepest + 1);
+          }
+        }
+        // Servers never sit above the gear that serves them: connectivity
+        // decides everything else, but a server wired straight into a core
+        // still reads wrong above the access tier.
+        let floor = 0;
+        tier.forEach(v => { floor = Math.max(floor, v); });
+        for (const n of nodes) {
+          if ((n.data.role === 'server' || n.data.role === 'linux_host') &&
+              !observedIds.has(n.data.id)) {
+            tier.set(n.data.id, floor);
+          }
+        }
+        // Rows: stable order inside a tier by label.
+        const rows = new Map();
+        for (const n of nodes) {
+          const t = tier.get(n.data.id);
+          if (!rows.has(t)) { rows.set(t, []); }
+          rows.get(t).push(n);
+        }
+        let bandWidth = NODE_DX;
+        for (const row of rows.values()) {
+          bandWidth = Math.max(bandWidth, row.length * NODE_DX);
+        }
+        for (const [t, row] of rows) {
+          row.sort((a, b) => (a.data.label || '').localeCompare(b.data.label || ''));
+          const rowWidth = row.length * NODE_DX;
+          row.forEach((n, i) => {
+            positions[n.data.id] = {
+              x: bandX + (bandWidth - rowWidth) / 2 + i * NODE_DX + NODE_DX / 2,
+              y: (t + 1) * TIER_DY,
+            };
+          });
+        }
+        bandX += bandWidth + BAND_GAP;
+      }
+      return positions;
+    }
+
+    function runLogicalLayout() {
+      const nodes = cy.nodes().map(n => ({ data: n.data() }));
+      const edges = cy.edges().map(e => ({ data: e.data() }));
+      const positions = logicalPositions(nodes, edges);
+      cy.nodes().forEach(n => {
+        const p = positions[n.id()];
+        if (p) { n.position(p); }
+      });
+      applyReadableViewport(false);
+    }
+
+    // ---- PR-050 (SKYLINE): the site level ------------------------------
+    //
+    // Membership and aggregation were computed by the renderer from the
+    // Site Catalog's inference -- this script only decides what is visible.
+    // Default: every site closed (the skyline). Double-click opens a site in
+    // place while the others stay closed; View -> Full topology is the whole
+    // estate, exactly the pre-SKYLINE map.
+    const sitesEnabled = (siteView.sites || []).length >= 2;
+    const ospfEnabled = (routingView.ospf.groups || []).length > 0;
+    const bgpEnabled = (routingView.bgp.groups || []).length > 0;
+    const expandedSites = new Set();
+    const viewSelect = document.getElementById('view-mode');
+    if (!sitesEnabled) {
+      const option = viewSelect.querySelector('option[value="sites"]');
+      if (option) { option.remove(); }
+    }
+    if (!ospfEnabled) {
+      const option = viewSelect.querySelector('option[value="ospf"]');
+      if (option) { option.remove(); }
+    }
+    if (!bgpEnabled) {
+      const option = viewSelect.querySelector('option[value="bgp"]');
+      if (option) { option.remove(); }
+    }
+    if (!sitesEnabled) { viewSelect.value = 'full'; }
+
+    function protocolElements(protocol) {
+      const view = routingView[protocol];
+      const relevantEdges = new Set(view.edge_ids || []);
+      const memberIds = new Set(Object.keys(view.membership || {}));
+      const edges = topologyElements.edges.filter(edge => relevantEdges.has(edge.data.id));
+      for (const edge of edges) {
+        memberIds.add(edge.data.source);
+        memberIds.add(edge.data.target);
+      }
+      const parents = (view.groups || []).map(group => ({data: {...group}}));
+      const nodes = topologyElements.nodes
+        .filter(node => memberIds.has(node.data.id))
+        .map(node => {
+          const domains = view.membership[node.data.id] || [];
+          const data = {...node.data};
+          if (domains.length) {
+            data.parent = domains[0];
+            data.protocol_domains = domains;
+          }
+          return {
+            data,
+            classes: domains.length > 1 ? 'protocol-boundary' : '',
+          };
+        });
+      return [...parents, ...nodes, ...edges.map(edge => ({data: {...edge.data}}))];
+    }
+
+    function siteElements() {
+      const memberOf = siteView.membership;
+      const visible = topologyElements.nodes.filter(
+        n => expandedSites.has(memberOf[n.data.id]));
+      const visibleIds = new Set(visible.map(n => n.data.id));
+      const els = visible.map(n => ({ data: { ...n.data } }));
+      for (const site of siteView.sites) {
+        if (!expandedSites.has(site.site_id)) {
+          const searchText = topologyElements.nodes
+            .filter(n => memberOf[n.data.id] === site.site_id)
+            .map(n => [n.data.label, n.data.management_ip, n.data.vendor,
+                       n.data.platform, n.data.os].join(' '))
+            .join(' ');
+          els.push({ data: { ...site, accent: '#2563eb', role_label: 'Site',
+                             search_text: searchText,
+                             // Count remains in the details pane and tooltip;
+                             // the overview cloud carries only the site name.
+                             display_label: site.label } });
+        }
+      }
+      const stubs = new Map();   // member<->closed-site links, deduplicated
+      for (const e of topologyElements.edges) {
+        const a = e.data.source, b = e.data.target;
+        if (visibleIds.has(a) && visibleIds.has(b)) {
+          els.push({ data: { ...e.data } });
+        } else if (visibleIds.has(a) || visibleIds.has(b)) {
+          const inside = visibleIds.has(a) ? a : b;
+          const outside = visibleIds.has(a) ? b : a;
+          const siteId = memberOf[outside];
+          if (!siteId || expandedSites.has(siteId)) { continue; }
+          const key = inside + '~' + siteId;
+          const stub = stubs.get(key) ||
+            { id: 'stub:' + key, source: inside, target: 'site:' + siteId,
+              kind: 'aggregate', relationship: e.data.relationship, count: 0 };
+          stub.count += 1;
+          stub.display_label = stub.count + ' link' + (stub.count === 1 ? '' : 's');
+          stubs.set(key, stub);
+        }
+      }
+      for (const stub of stubs.values()) { els.push({ data: stub }); }
+      for (const agg of siteView.aggregated_edges) {
+        const sa = agg.source.slice(5), sb = agg.target.slice(5);
+        if (!expandedSites.has(sa) && !expandedSites.has(sb)) {
+          els.push({ data: { ...agg, kind: 'aggregate' } });
+        }
+      }
+      return els;
+    }
+
+    function rebuildView() {
+      const mode = (viewSelect && viewSelect.value) || 'full';
+      const full = mode === 'full';
+      cy.elements().remove();
+      if (mode === 'ospf' || mode === 'bgp') {
+        cy.add(protocolElements(mode));
+        document.getElementById('legend-site').style.display = 'none';
+        document.getElementById('legend-ospf').style.display = mode === 'ospf' ? '' : 'none';
+        document.getElementById('legend-bgp').style.display = mode === 'bgp' ? '' : 'none';
+        const protocolLayout = {
+          name: 'cose', animate: false, fit: false, padding: 64,
+          idealEdgeLength: 145, nodeRepulsion: 18000,
+          nodeOverlap: 35, gravity: 0.18, componentSpacing: 170,
+        };
+        cy.one('layoutstop', () => requestAnimationFrame(() => {
+          applyReadableViewport(false);
+          finishRebuild(mode);
+        }));
+        cy.layout(protocolLayout).run();
+        return;
+      }
+      document.getElementById('legend-site').style.display = mode === 'sites' ? '' : 'none';
+      document.getElementById('legend-ospf').style.display = 'none';
+      document.getElementById('legend-bgp').style.display = 'none';
+      cy.add(full ? [...topologyElements.nodes, ...topologyElements.edges]
+                  : siteElements());
+      // The overview is a WAN-style relationship diagram, not a hierarchy:
+      // site clouds sit on an elliptical ring with the real mesh visible.
+      // Once a site is opened, an organic
+      // force layout keeps its devices clustered beside the closed clouds.
+      let chosen;
+      const wantLogical =
+        ((layoutSelect && layoutSelect.value) || 'logical') === 'logical';
+      if (full) {
+        if (wantLogical) {
+          cy.layout({ name: 'preset', animate: false, fit: false }).run();
+          runLogicalLayout();
+          finishRebuild('full');
+          return;
+        }
+        chosen = LAYOUTS[(layoutSelect && layoutSelect.value) || 'tiered']
+          || LAYOUTS.tiered;
+      } else if (expandedSites.size === 0) {
+        // Only explicit semantics may influence transit placement. Unknown
+        // membership and graph degree never turn an ordinary site into WAN
+        // or Internet. With exactly one explicit transit domain, centre it;
+        // multiple peer domains remain equals.
+        const transitSites = (siteView.sites || []).filter(
+          site => site.site_type === 'wan' || site.site_type === 'internet');
+        const centre = transitSites.length === 1 ? transitSites[0].id : null;
+        // One explicitly typed WAN/Internet domain may occupy the centre,
+        // like a conventional network overview. If this lab has no such
+        // evidence, no centre cloud is invented: all sites remain peers on
+        // the ring and only their observed inter-site links are drawn.
+        const skylineNodes = cy.nodes('[kind = "site"]').sort(
+          (a, b) => String(a.data('label')).localeCompare(String(b.data('label')))
+        );
+        const ordered = skylineNodes.toArray();
+        let centreNode = null;
+        if (centre) {
+          const centreAt = ordered.findIndex(node => node.id() === centre);
+          if (centreAt >= 0) {
+            centreNode = ordered.splice(centreAt, 1)[0];
+          }
+        }
+        const centreX = 390;
+        const centreY = 245;
+        if (centreNode) { centreNode.position({x: centreX, y: centreY}); }
+        if (!centreNode && ordered.length === 1) {
+          ordered[0].position({x: centreX, y: centreY});
+        }
+        const ringCount = ordered.length;
+        const radiusX = Math.max(245, Math.min(390, 78 * ringCount));
+        const radiusY = Math.max(165, Math.min(235, 48 * ringCount));
+        ordered.forEach((node, index) => {
+          if (!centreNode && ringCount === 1) { return; }
+          const angle = -Math.PI / 2 + (2 * Math.PI * index / ringCount);
+          node.position({x: centreX + radiusX * Math.cos(angle),
+                         y: centreY + radiusY * Math.sin(angle)});
+        });
+        applyReadableViewport(true);
+        finishRebuild('sites');
+        return;
+      } else if (wantLogical) {
+        // Open sites keep the same discipline: tier bands per open site,
+        // closed clouds as their own bands.
+        cy.layout({ name: 'preset', animate: false, fit: false }).run();
+        runLogicalLayout();
+        finishRebuild('sites');
+        return;
+      } else {
+        chosen = { name: 'cose', animate: false, fit: true, padding: 60,
+                   idealEdgeLength: 130, nodeRepulsion: 20000,
+                   nodeOverlap: 30, gravity: 0.25, componentSpacing: 140 };
+      }
+      const isSkyline = !full && expandedSites.size === 0;
+      // COSE can complete asynchronously. Register before run so no layout
+      // can auto-fit after the readable floor has been applied.
+      cy.one('layoutstop', () => requestAnimationFrame(() => {
+        applyReadableViewport(isSkyline);
+        finishRebuild(isSkyline ? 'sites' : mode);
+      }));
+      cy.layout({ ...chosen, fit: false }).run();
+    }
+
+    // Every rebuild path ends here -- labels, summary and the open-site
+    // chips must never depend on WHICH layout branch ran.
+    function finishRebuild(viewMode) {
+      peerLabelsHidden = null;
+      detailedLabelsShown = null;
+      syncSemanticZoom();
+      if (window.syncSummary) { window.syncSummary(viewMode); }
+      syncOpenSiteChips();
+    }
+
+    window.toggleSite = siteId => {
+      if (expandedSites.has(siteId)) { expandedSites.delete(siteId); }
+      else { expandedSites.add(siteId); }
+      rebuildView();
+    };
+
+    function syncOpenSiteChips() {
+      const bar = document.getElementById('open-sites');
+      if (!bar) { return; }
+      const full = !sitesEnabled || (viewSelect && viewSelect.value === 'full');
+      if (full || expandedSites.size === 0) { bar.innerHTML = ''; return; }
+      const name = id => {
+        const s = siteView.sites.find(x => x.site_id === id);
+        return s ? s.label : id;
+      };
+      let html = '';
+      for (const id of [...expandedSites].sort()) {
+        html += `<span class="site-chip">${escapeHtml(name(id))}` +
+                `<button type="button" title="Close ${escapeHtml(name(id))}"` +
+                ` onclick="toggleSite('${escapeHtml(id)}')">×</button></span>`;
+      }
+      if (expandedSites.size > 1) {
+        html += `<span class="site-chip site-chip-all">` +
+                `<button type="button" style="width:auto;padding:0 8px;border-radius:6px"` +
+                ` title="Close every open site" onclick="closeAllSites()">Close all</button></span>`;
+      }
+      bar.innerHTML = html;
+    }
+
+    window.closeAllSites = () => { expandedSites.clear(); rebuildView(); };
+
+    // Edit mode has one honest drag meaning: move this device to that site.
+    // Highlight a forgiving destination zone and snap every non-save drag
+    // back into the derived layout so a temporary move never masquerades as
+    // a durable correction.
+    cy.on('grab', 'node', event => {
+      if (!editMode || viewSelect.value !== 'sites') { return; }
+      const data = event.target.data();
+      if (data.kind !== 'discovered') { return; }
+      const current = (data.site_assignment || {}).effective_site_id;
+      cy.nodes('[kind = "site"]').forEach(site => {
+        if (site.data('site_id') !== current) { site.addClass('drop-target'); }
+      });
+      showEditHint('Drop the device anywhere inside a highlighted site cloud to save the assignment.');
+    });
+    cy.on('free', 'node', async event => {
+      if (!editMode || viewSelect.value !== 'sites') { return; }
+      const node = event.target;
+      const data = node.data();
+      cy.nodes('[kind = "site"]').removeClass('drop-target');
+      if (data.kind === 'site') {
+        rebuildView();
+        showEditHint('Site cloud positions are automatic and were not saved. Open a source site and drag its device onto another cloud.');
+        return;
+      }
+      if (data.kind === 'protocol-domain' || data.kind === 'observed') { return; }
+      const point = node.renderedPosition();
+      let target = null;
+      cy.nodes('[kind = "site"]').forEach(site => {
+        const box = site.renderedBoundingBox();
+        const padding = 28;
+        if (point.x >= box.x1 - padding && point.x <= box.x2 + padding &&
+            point.y >= box.y1 - padding && point.y <= box.y2 + padding) {
+          target = site;
+        }
+      });
+      if (!target || target.data('site_id') ===
+          (data.site_assignment || {}).effective_site_id) {
+        rebuildView();
+        showEditHint('Not saved: drop the device onto a different highlighted site cloud.');
+        return;
+      }
+      const targetName = target.data('label');
+      const targetSiteId = target.data('site_id');
+      const assignment = data.site_assignment || {};
+      let result = null;
+      // Returning a device to the unknown group it originally came from is
+      // a REVERT, not an assignment to an imaginary catalog site. This is
+      // the round-trip: unknown -> operator site -> automatic unknown.
+      if (targetSiteId === '__none__' && assignment.source === 'operator' &&
+          !assignment.inferred_site_id) {
+        if (!window.confirm(`Return ${data.label} to automatic site identification?\n\nIts operator override will be removed; discovery evidence remains unchanged.`)) {
+          rebuildView();
+          return;
+        }
+        result = await curationRequest(
+          '/api/topology/site-assignments/revert', 'POST', {
+            ...curationIdentity(data),
+            reason: 'Returned to automatic inference by drag-and-drop',
+          });
+      } else {
+        const action = targetSiteId === '__none__'
+          ? `Mark ${data.label} as Site not identified?`
+          : `Persistently assign ${data.label} to ${targetName}?`;
+        if (!window.confirm(`${action}\n\nThis is an operator override; discovery evidence remains underneath.`)) {
+          rebuildView();
+          return;
+        }
+        result = await curationRequest('/api/topology/site-assignments', 'PUT', {
+          ...curationIdentity(data), site_id: targetSiteId,
+          reason: 'Drag-and-drop site curation',
+        });
+      }
+      if (!result) {
+        rebuildView();
+        showEditHint('The assignment was not saved. Review the error and try again.');
+      }
+    });
+
+    if (sitesEnabled || ospfEnabled || bgpEnabled) {
+      document.getElementById('view-label').style.display = '';
+      viewSelect.addEventListener('change', () => {
+        if (viewSelect.value !== 'sites') { setDetailsOpen(false); }
+        cy.resize();
+        rebuildView();
+      });
+    }
+    if (sitesEnabled) {
+      // Do not let browser form-state restoration reopen the 40-device
+      // thumbnail from a previous visit. Sites are the deliberate overview.
+      viewSelect.value = 'sites';
+      cy.on('dbltap', 'node[kind = "site"]',
+            event => window.toggleSite(event.target.data('site_id')));
+      cy.on('dbltap', 'node[kind != "site"]', event => {
+        if (viewSelect.value !== 'sites') { return; }
+        const siteId = siteView.membership[event.target.id()];
+        if (siteId && expandedSites.has(siteId)) {
+          window.toggleSite(siteId);
+        }
+      });
+      // A unique result may open its closed site. A broad query must not
+      // unfold every matching site and recreate the unreadable estate view.
+      const searchBox = document.getElementById('search');
+      if (searchBox) {
+        searchBox.addEventListener('input', () => {
+          if (viewSelect.value !== 'sites') { return; }
+          const query = searchBox.value.trim().toLowerCase();
+          if (query.length < 2) { return; }
+          const matches = topologyElements.nodes.filter(n => {
+            const hay = (n.data.label + ' ' + (n.data.management_ip || '') +
+                         ' ' + (n.data.platform || '')).toLowerCase();
+            return hay.includes(query);
+          });
+          if (matches.length !== 1) { return; }
+          const siteId = siteView.membership[matches[0].data.id];
+          if (siteId && !expandedSites.has(siteId)) {
+            expandedSites.add(siteId);
+            rebuildView();
+          }
+        });
+      }
+      // Deep link: ?site=<id> opens one site on arrival.
+      const wanted = new URLSearchParams(window.location.search).get('site');
+      if (wanted && siteView.sites.some(s => s.site_id === wanted)) {
+        expandedSites.add(wanted);
+      }
+    }
+    rebuildView();
+
+    // Reachable from the console for debugging and driveable UI tests.
+    window.cy = cy;
+    let hoveredId = null;
     cy.on('mouseover', 'node', event => {
-      tooltip.textContent = `${event.target.data('label')} · ${event.target.data('management_ip')}`;
+      if (event.target.id() === hoveredId) { return; }
+      hoveredId = event.target.id();
+      const hovered = event.target.data();
+      tooltip.textContent = hovered.kind === 'site'
+        ? `${hovered.label} · ${hovered.count} devices · double-click to open`
+        : hovered.kind === 'protocol-domain'
+          ? `${hovered.label} · ${hovered.count} devices`
+          : `${hovered.label} · ${hovered.management_ip}`;
+      tooltip.style.display = 'block';
+      // Hover emphasis: a halo on the focused device, brightened links, and
+      // a fade on everything else. Never a size change -- growing the node
+      // moves its boundary under the cursor and oscillates.
+      const node = event.target;
+      const hood = node.closedNeighborhood();
+      cy.elements().difference(hood).addClass('faded');
+      node.addClass('node-lift');
+      hood.edges().addClass('edge-hi');
+    });
+    cy.on('mouseout', 'node', () => {
+      cy.elements().removeClass('faded node-lift edge-hi');
+    });
+    // Hovering a link reveals its interface names (Packet-Tracer style, on
+    // demand) and names the connection in plain terms — never the internal
+    // evidence kind.
+    const linkLabel = id => { const n = cy.getElementById(id); return n.length ? n.data('label') : id; };
+    cy.on('mouseover', 'edge', event => {
+      const d = event.target.data();
+      event.target.addClass('hover');
+      const tag = d.link_tag ? ` · ${d.link_tag}` : '';
+      tooltip.textContent = `${linkLabel(d.source)} ${d.source_interface || '?'} ↔ ${linkLabel(d.target)} ${d.target_interface || '?'}${tag}`;
       tooltip.style.display = 'block';
     });
+    cy.on('mouseout', 'edge', event => { event.target.removeClass('hover'); tooltip.style.display = 'none'; });
     cy.on('mousemove', event => {
       if (event.originalEvent) {
-        tooltip.style.left = `${event.originalEvent.clientX + 12}px`;
-        tooltip.style.top = `${event.originalEvent.clientY + 12}px`;
+        tooltip.style.transform = `translate(${event.originalEvent.clientX + 14}px, ${event.originalEvent.clientY + 16}px)`;
       }
     });
     cy.on('mouseout', 'node', () => { tooltip.style.display = 'none'; });
-    document.getElementById('fit').addEventListener('click', () => cy.fit(undefined, 40));
+    document.getElementById('fit').addEventListener('click', () => {
+      const isSkyline = sitesEnabled && viewSelect.value === 'sites' &&
+        expandedSites.size === 0;
+      applyReadableViewport(isSkyline);
+    });
     document.getElementById('search').addEventListener('input', event => {
       const query = event.target.value.trim().toLowerCase();
       cy.nodes().removeClass('search-match search-muted');
-      if (!query) return;
+      if (!query) { return; }
+      const matched = [];
       cy.nodes().forEach(node => {
         const data = node.data();
-        const haystack = [data.label, (data.aliases || []).join(' '), data.management_ip, data.vendor, data.platform, data.os].join(' ').toLowerCase();
-        node.addClass(haystack.includes(query) ? 'search-match' : 'search-muted');
+        const haystack = [data.label, (data.aliases || []).join(' '),
+                          data.management_ip, data.vendor, data.platform,
+                          data.os, data.search_text].join(' ').toLowerCase();
+        const isMatch = haystack.includes(query);
+        node.addClass(isMatch ? 'search-match' : 'search-muted');
+        if (isMatch) { matched.push(node); }
       });
+      if (query.length < 2 || matched.length === 0) { return; }
+      const matches = cy.collection(matched);
+      if (matched.length === 1) {
+        // Search is navigation, not just a highlight: move the exact result
+        // to a zoom at which its 13px name clears the 11px paint floor.
+        cy.zoom(Math.max(cy.zoom(), DETAIL_LABEL_ZOOM));
+        cy.center(matches.closedNeighborhood());
+      } else if (matched.length <= 8) {
+        cy.fit(matches.closedNeighborhood(), 96);
+        const searchFloor = matches.nodes('[kind != "site"]').length
+          ? READABLE_DEVICE_ZOOM : READABLE_SITE_ZOOM;
+        if (cy.zoom() < searchFloor) {
+          cy.zoom(searchFloor);
+          cy.center(matches);
+        }
+      }
+      peerLabelsHidden = null;
+      detailedLabelsShown = null;
+      syncSemanticZoom();
     });
   </script>
 </body>

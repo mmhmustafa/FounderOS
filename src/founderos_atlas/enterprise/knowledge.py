@@ -407,7 +407,21 @@ def classify_discovery_visits(
             # reachability probe, timeout, refused, unavailable, lost.
             unreachable += 1
     reachable = connected + auth_failed + unsupported
-    addresses_scanned = reachable + unreachable + skipped
+    # An address Atlas DECLINED to touch was never scanned.
+    #
+    # `skipped` is not a scan outcome — it is a decision not to scan: a BGP or
+    # OSPF peer that is "not a verified management endpoint", a device already
+    # discovered under another address, or the max-device cap. Counting those
+    # as scanned addresses inflated the total past the size of the range
+    # itself: a /24 sweep reported 270 addresses scanned when a /24 holds 254,
+    # and the panel's own numbers did not add up (9 reachable + 245 unused =
+    # 254, not 270). The 16 difference was exactly the 16 protocol peers the
+    # same run reported observing — routing facts, counted as address space.
+    #
+    # That is the rule Atlas states everywhere else: a router ID, BGP peer,
+    # next hop or unresolved peer is a protocol fact, not a way in. It does not
+    # belong in an address-space statistic. Scanned means probed.
+    addresses_scanned = reachable + unreachable
     return DiscoveryStatistics(
         addresses_scanned=addresses_scanned,
         reachable=reachable,

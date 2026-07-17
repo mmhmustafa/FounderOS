@@ -12,9 +12,8 @@
 <section class="card">
   <h2>Possible duplicate networks</h2>
   <p class="muted">These observation points appear to observe the SAME network (evidence-based similarity). Atlas never merges automatically — keep them separate, or review the duplicate.</p>
-  <div class="table-scroll" role="region" aria-label="Possible duplicate networks" tabindex="0">
   <table class="grid">
-    <thead><tr><th>Observation point</th><th>Possible duplicate of</th><th>Similarity</th><th>Evidence</th><th><span class="visually-hidden">Actions</span></th></tr></thead>
+    <thead><tr><th>Observation point</th><th>Possible duplicate of</th><th>Similarity</th><th>Evidence</th><th></th></tr></thead>
     <tbody>
       {% for c in duplicate_candidates %}
       <tr>
@@ -30,45 +29,42 @@
       {% endfor %}
     </tbody>
   </table>
-  </div>
 </section>
 {% endif %}
 
 {% if profiles %}
-<div class="table-scroll" role="region" aria-label="Discovery profiles" tabindex="0">
 <table class="grid">
   <thead>
-    <tr><th>Name</th><th>Site</th><th>Management IP</th><th>Username</th><th>Collect Config</th><th>Last Discovery</th><th>Status</th><th><span class="visually-hidden">Actions</span></th></tr>
+    <tr><th>Name</th><th>Site</th><th>Seed</th><th>Username</th><th>Collect Config</th><th>Last Discovery</th><th>Status</th><th></th></tr>
   </thead>
   <tbody>
     {% for p in profiles %}
     <tr{% if p.archived %} class="row-archived"{% endif %}>
       <td>{{ p.name }}</td>
       <td>{{ p.site }}</td>
-      <td>{{ p.management_ip }}</td>
+      <td>{{ p.seed_label }}</td>
       <td>{{ p.username }}</td>
       <td>{{ 'yes' if p.collect_configuration else 'no' }}</td>
       <td>{{ p.last_discovery }}</td>
       <td>{{ 'Archived' if p.archived else 'Active' }}</td>
       <td class="row-actions">
-        <a class="btn btn-sm btn-primary" href="/discovery?profile={{ p.name | urlencode }}" aria-label="Run discovery for {{ p.name }}">Run</a>
-        <a class="btn btn-sm" href="/profiles/{{ p.name | urlencode }}/edit" aria-label="Edit {{ p.name }}">Edit</a>
+        <a class="btn btn-sm btn-primary" href="/discovery?profile={{ p.name | urlencode }}">Run</a>
+        <a class="btn btn-sm" href="/profiles/{{ p.name | urlencode }}/edit">Edit</a>
         <form method="post" action="/profiles/{{ p.name | urlencode }}/duplicate">
-          <button class="btn btn-sm" type="submit" aria-label="Duplicate {{ p.name }}">Duplicate</button>
+          <button class="btn btn-sm" type="submit">Duplicate</button>
         </form>
         <form method="post" action="/profiles/{{ p.name | urlencode }}/archive">
           {% if p.archived %}<input type="hidden" name="restore" value="1">{% endif %}
-          <button class="btn btn-sm" type="submit" aria-label="{{ 'Restore' if p.archived else 'Archive' }} {{ p.name }}">{{ 'Restore' if p.archived else 'Archive' }}</button>
+          <button class="btn btn-sm" type="submit">{{ 'Restore' if p.archived else 'Archive' }}</button>
         </form>
         <form method="post" action="/profiles/{{ p.name | urlencode }}/delete" onsubmit="return confirm('Delete only the discovery profile {{ p.name }}? The network and its enterprise knowledge stay if another profile observes it.');">
-          <button class="btn btn-sm btn-danger" type="submit" aria-label="Delete {{ p.name }}">Delete</button>
+          <button class="btn btn-sm btn-danger" type="submit">Delete</button>
         </form>
       </td>
     </tr>
     {% endfor %}
   </tbody>
 </table>
-</div>
 {% else %}
 <p class="muted">No profiles saved yet. Passwords are stored securely in your OS keyring — never here.</p>
 {% endif %}

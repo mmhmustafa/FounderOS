@@ -86,11 +86,19 @@ def _device_entry(graph: EnterpriseGraph, device) -> dict:
                 "status": interface.status,
                 "protocol_status": interface.protocol_status,
                 "description": interface.description,
-                "metadata": {"observed_by": list(interface.observed_by)},
+                "metadata": {
+                    **dict(interface.metadata),
+                    "observed_by": list(interface.observed_by),
+                },
             }
             for interface in interfaces
         ),
         "metadata": {
+            **dict(
+                (graph.attributes.get("device_metadata") or {}).get(
+                    device.enterprise_id, {}
+                )
+            ),
             "enterprise_id": device.enterprise_id,
             "aliases": list(device.aliases),
             "management_ips": list(device.management_ips),
@@ -113,8 +121,10 @@ def _edge_entry(link) -> dict:
         "remote_management_ip": None,
         "protocol": link.protocol,
         "metadata": {
+            **dict(link.metadata),
             "observed_by": list(link.observed_by),
             "cross_profile": link.cross_profile,
             "boundary": link.is_boundary,
+            "observations": [item.to_dict() for item in link.observations],
         },
     }
