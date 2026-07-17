@@ -7,169 +7,234 @@
   <span class="actions muted">{{ report.pack.name }} v{{ report.pack.version }} · {{ report.pack.policy_count }} policies</span>
 </div>
 <p class="muted">
-  Atlas does not hard-code compliance — it evaluates policies. Every verdict below is reached the
-  same way: evidence is drawn from what Atlas actually collected, a rule declares what compliant
-  looks like, and the engine scores confidence and explains itself. A device whose configuration
-  Atlas has not collected is reported <strong>Unknown</strong>, never guessed.
+  Every verdict is evidence-based and explained. This page is the investigation:
+  filter, group, page, assign, except, and export — the full reasoning behind any
+  verdict is one click away on its own page. Filters live in the URL, so a
+  filtered view is a shareable link.
 </p>
 
 <div class="tiles">
-  <div class="tile"><strong>Compliance score</strong><span>{{ report.score }}%</span></div>
-  <div class="tile"><strong>Passed</strong><span>{{ report.passed }}</span></div>
-  <div class="tile"><strong>Warnings</strong><span>{{ report.warnings }}</span></div>
-  <div class="tile"><strong>Failed</strong><span>{{ report.failed }}</span></div>
-  <div class="tile"><strong>Unknown</strong><span>{{ report.unknown }}</span></div>
-  <div class="tile"><strong>Devices</strong><span>{{ report.device_count }}</span></div>
+  <div class="tile"><strong>Compliance score</strong><span>{{ posture.score }}%</span></div>
+  <div class="tile"><strong>Passed</strong><span>{{ overall.pass }}</span></div>
+  <div class="tile"><strong>Failed</strong><span>{{ overall.fail }}</span></div>
+  <div class="tile"><strong>Warnings</strong><span>{{ overall.warning }}</span></div>
+  <div class="tile" title="The engine reached Unknown and recorded WHICH evidence is missing — collectable."><strong>Missing evidence</strong><span>{{ overall['missing-evidence'] }}</span></div>
+  <div class="tile" title="The engine reached Unknown with no recorded gap — evidence existed but was inconclusive."><strong>Unknown</strong><span>{{ overall.unknown }}</span></div>
+  <div class="tile" title="Failures covered by an active, audited exception."><strong>Excepted</strong><span>{{ overall.excepted }}</span></div>
+  <div class="tile" title="The policy's antecedent is absent on the device — never counted as compliance earned."><strong>Not applicable</strong><span>{{ overall['not-applicable'] }}</span></div>
 </div>
 <p class="muted" style="margin-top:-8px;">
-  Score is passed ÷ judged, over the {{ report.judged }} evaluation(s) where a verdict was reached;
-  the {{ report.unknown }} Unknown result(s) are excluded from the denominator rather than counted
-  as pass or fail. Evaluated for <strong>{{ report.scope_label }}</strong>{% if generated_at %} · {{ generated_at }}{% endif %}.
+  Score is passed ÷ judged over {{ posture.judged }} judged evaluation(s) of
+  {{ overall.total }} total; missing evidence, unknown, not-applicable, and
+  excepted are excluded from the denominator, never counted as pass or fail.
+  Evaluated for
+  <strong>{{ report.scope_label }}</strong>{% if generated_at %} · {{ generated_at }}{% endif %}.
 </p>
 
+{% if trend | length > 1 %}
 <section class="card">
-  <h2>Policy Results</h2>
-  {% if device_filter %}
-  <p class="flash flash-info">Showing results for <strong>{{ device_filter }}</strong> only.
-    <a href="{{ scoped_url('/policy', link_scope()) }}">Show every device</a></p>
-  {% endif %}
-  {% if report.evaluations %}
-  <p class="muted">Select a result to see the evidence, reasoning, configuration, recommendation and confidence behind it.</p>
-  <div class="path-timeline">
-    {% for e in report.evaluations %}
-    {% set status_class = 'pass' if e.status == 'pass' else ('failed' if e.status == 'fail' else ('warning' if e.status == 'warning' else 'unknown')) %}
-    {# Confidence is shown only when it should change what the reader does.
-       A confident, deterministic verdict speaks for itself. #}
-    {% set conf = confidence_display(e.result.confidence, conflicting=e.result.evidence_conflicting|length > 0) %}
-    <details id="result-{{ e.policy.policy_id }}-{{ e.hostname }}">
-      <summary>
-        <span class="badge hop-badge hop-badge-{{ status_class }}">{{ e.status_label }}</span>
-        <strong>{{ e.policy.name }}</strong>
-        <span class="muted">· {{ e.hostname }}</span>
-        <span class="muted">· {{ e.policy.category | title }}</span>
-        <span class="muted">· severity {{ e.policy.severity }}</span>
-        {% if conf %}
-        <span class="hop-badge hop-badge-{{ conf.tone }}" style="margin-left:auto;"
-              title="{{ conf.why }}">{{ conf.label }}{% if conf.percent %} ({{ conf.percent }}%){% endif %}</span>
-        {% endif %}
-      </summary>
-      <div style="padding:8px 4px 14px 4px;">
-        <p><strong>Conclusion.</strong> {{ e.result.conclusion }}</p>
-
-        <p class="muted" style="margin-bottom:4px;"><strong>Why (reasoning path)</strong></p>
-        <ul>
-          {% for step in e.result.reasoning_path %}
-          <li>{{ step.statement }}</li>
-          {% endfor %}
-        </ul>
-
-        {% if e.config_snippet %}
-        <p class="muted" style="margin-bottom:4px;"><strong>Configuration (masked)</strong></p>
-        <pre style="overflow-x:auto;background:var(--panel);padding:10px;border-radius:6px;font-size:12px;">{% for line in e.config_snippet %}{{ line }}
-{% endfor %}</pre>
-        {% endif %}
-
-        <p class="muted" style="margin-bottom:4px;"><strong>Evidence used</strong></p>
-        {% if e.result.evidence_used %}
-        <ul>
-          {% for ev in e.result.evidence_used %}
-          <li>
-            <code>{{ ev.kind }}</code> — {{ ev.summary }}
-            {% if ev.provenance and ev.provenance.command %}<span class="muted">(<code>{{ ev.provenance.command }}</code>{% if ev.provenance.session_id %}, session {{ ev.provenance.session_id }}{% endif %})</span>{% endif %}
-          </li>
-          {% endfor %}
-        </ul>
-        {% else %}
-        <p class="muted">None — no evidence of the required kind was available.</p>
-        {% endif %}
-
-        {% if e.result.evidence_missing %}
-        <p class="muted" style="margin-bottom:4px;"><strong>Evidence missing</strong></p>
-        <ul>
-          {% for gap in e.result.evidence_missing %}
-          <li><code>{{ gap.kind }}</code> — {{ gap.detail or gap.why }}</li>
-          {% endfor %}
-        </ul>
-        {% endif %}
-
-        {% if e.result.recommendations %}
-        <p class="muted" style="margin-bottom:4px;"><strong>Recommendation</strong></p>
-        <ul>
-          {% for rec in e.result.recommendations %}
-          <li>{{ rec.action }} <span class="muted">— {{ rec.rationale }}</span></li>
-          {% endfor %}
-        </ul>
-        {% endif %}
-
-        {% if e.result.alternatives_rejected %}
-        <p class="muted" style="margin-bottom:4px;"><strong>Alternatives considered and rejected</strong></p>
-        <ul>
-          {% for alt in e.result.alternatives_rejected %}
-          <li>{{ alt.statement }} <span class="muted">— {{ alt.why_not }}</span></li>
-          {% endfor %}
-        </ul>
-        {% endif %}
-
-        {# Opened detail = the reader asked for the reasoning. Full disclosure here. #}
-        <p class="muted" style="margin-bottom:4px;"><strong>Confidence</strong> — {{ confidence_detail(e.result.confidence) }}</p>
-        {% if e.result.confidence.factors %}
-        <ul>
-          {% for f in e.result.confidence.factors %}
-          <li>{{ f.name }}: {{ '%+.2f' % f.points }} <span class="muted">— {{ f.why }}</span></li>
-          {% endfor %}
-        </ul>
-        {% endif %}
-
-        <p class="muted" style="font-size:12px;">
-          Rule set {{ e.result.provenance.rule_set_version }} · engine {{ e.result.provenance.engine_version }} ·
-          expected state: {{ e.policy.expected_state }}
-        </p>
-
-        {# The workflow OUT of a verdict: the device, the exact configuration
-           bytes the verdict was reached on, remediation planning, and the
-           full canonical action set — a failure is a starting point, not a
-           dead end. #}
-        <div class="actions" style="border-top:1px solid var(--line);padding-top:10px;">
-          <a class="btn btn-sm" href="{{ entity_url('device', device_id=e.hostname, scope_id=link_scope()) }}"
-             aria-label="Open device details for {{ e.hostname }}">Device details</a>
-          <a class="btn btn-sm" href="{{ entity_url('configuration', device_id=e.device_id, scope_id=link_scope()) }}"
-             aria-label="Open the configuration of {{ e.hostname }}">Exact configuration</a>
-          {% set config_evidence = (e.result.evidence_used | selectattr('payload.config_sha256') | list) %}
-          {% if config_evidence %}
-          <a class="btn btn-sm"
-             href="{{ entity_url('evidence_record', device_id=e.device_id, sha=config_evidence[0].payload.config_sha256, scope_id=link_scope()) }}"
-             aria-label="Open the exact evidence record this verdict was reached on">Exact evidence record</a>
-          {% else %}
-          <a class="btn btn-sm" href="{{ entity_url('evidence_device', device_id=e.device_id, scope_id=link_scope()) }}"
-             aria-label="Open the evidence for {{ e.hostname }}">Evidence</a>
-          {% endif %}
-          {% if e.status in ('fail', 'warning') %}
-          <a class="btn btn-sm" href="{{ scoped_url('/predict', link_scope(), device=e.hostname) }}"
-             aria-label="Predict the impact of remediating {{ e.hostname }}">Predict remediation impact</a>
-          <a class="btn btn-sm" href="{{ scoped_url('/compass', link_scope(), device=e.hostname, reason='Remediate policy: ' + e.policy.name) }}"
-             aria-label="Plan the remediation of {{ e.hostname }} in Compass">Add remediation to Compass</a>
-          {% endif %}
-          {{ entity_menu(device_menu(hostname=e.hostname, device_id=e.device_id), e.hostname, label='More') }}
-        </div>
-      </div>
-    </details>
+  <h2>Compliance Trend</h2>
+  <p class="muted">A point is recorded whenever posture changes — never on mere page views.</p>
+  <div class="trend-row" role="img" aria-label="Compliance trend: {% for point in trend %}{{ point.score }}%{{ ', ' if not loop.last }}{% endfor %}">
+    {% for point in trend %}
+    <div class="trend-point" title="{{ point.recorded_at }}: {{ point.score }}% ({{ point.failed }} failed)">
+      <div class="trend-bar" style="height: {{ [point.score, 4] | max }}%"></div>
+      <span class="trend-value">{{ point.score }}%</span>
+    </div>
     {% endfor %}
   </div>
+</section>
+{% endif %}
+
+<section class="card">
+  <h2>Failure Heatmap</h2>
+  <p class="muted">Every policy's posture at a glance, worst first. Numbers, never color alone.</p>
+  <div class="table-scroll" role="region" aria-label="Policy failure heatmap" tabindex="0">
+    <table class="grid heatmap">
+      <thead><tr><th>Policy</th><th>Severity</th>{% for status in statuses %}<th>{{ status_labels[status] }}</th>{% endfor %}</tr></thead>
+      <tbody>
+        {% for cell in heatmap %}
+        <tr>
+          <td><a href="{{ scoped_url('/policy', link_scope(), policy=cell.policy_id) }}"
+                 aria-label="Filter results to policy {{ cell.name }}">{{ cell.name }}</a></td>
+          <td>{{ cell.severity }}</td>
+          {% for status in statuses %}
+          <td class="heat-{{ status }} {{ 'heat-zero' if not cell.counts[status] }}">{{ cell.counts[status] or '' }}</td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="card" id="results">
+  <h2>Policy Results</h2>
+
+  <form method="get" action="/policy" class="filter-bar">
+    <input type="hidden" name="scope" value="{{ active_scope_id }}">
+    <label>Search
+      <input type="search" name="q" value="{{ filters.query }}" placeholder="device, policy, conclusion…">
+    </label>
+    <label>Status
+      <select name="status">
+        <option value="">any</option>
+        {% for status in statuses %}
+        <option value="{{ status }}" {{ 'selected' if filters.status == status }}>{{ status_labels[status] }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Severity
+      <select name="severity">
+        <option value="">any</option>
+        {% for severity in option_severities %}
+        <option value="{{ severity }}" {{ 'selected' if filters.severity == severity }}>{{ severity }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Policy
+      <select name="policy">
+        <option value="">any</option>
+        {% for policy_id, name in option_policies %}
+        <option value="{{ policy_id }}" {{ 'selected' if filters.policy_id == policy_id }}>{{ name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Site
+      <select name="site">
+        <option value="">any</option>
+        {% for site in option_sites %}
+        <option value="{{ site }}" {{ 'selected' if filters.site == site }}>{{ site }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Platform
+      <select name="platform">
+        <option value="">any</option>
+        {% for platform in option_platforms %}
+        <option value="{{ platform }}" {{ 'selected' if filters.platform == platform }}>{{ platform }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Evidence
+      <select name="freshness">
+        <option value="">any age</option>
+        <option value="fresh" {{ 'selected' if filters.freshness == 'fresh' }}>fresh (≤24h)</option>
+        <option value="stale" {{ 'selected' if filters.freshness == 'stale' }}>stale</option>
+      </select>
+    </label>
+    <label>Device
+      <input name="device" value="{{ filters.device }}" placeholder="exact hostname">
+    </label>
+    <label>Group by
+      <select name="group">
+        <option value="">no grouping</option>
+        {% for option in ('policy', 'device', 'site', 'severity') %}
+        <option value="{{ option }}" {{ 'selected' if filters.group_by == option }}>{{ option }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button class="btn btn-sm btn-primary" type="submit">Apply filters</button>
+    <a class="btn btn-sm" href="{{ scoped_url('/policy', active_scope_id) }}">Clear</a>
+    <a class="btn btn-sm" href="/policy/export.csv?{{ (filter_args | urlencode) }}&scope={{ active_scope_id }}"
+       aria-label="Export the {{ page.total }} filtered results as CSV">Export CSV</a>
+  </form>
+
+  <p class="muted" role="status" aria-live="polite">
+    {{ page.total }} result(s) match{% if page.total != overall.total %} of {{ overall.total }} total{% endif %} —
+    showing {{ page.start }}–{{ page.end }}{% if page.pages > 1 %} (page {{ page.page }} of {{ page.pages }}){% endif %}.
+  </p>
+
+  {% if groups %}
+  <div class="table-scroll" role="region" aria-label="Grouped results" tabindex="0">
+    <table class="grid">
+      <thead><tr><th>{{ filters.group_by | title }}</th><th>Total</th>{% for status in statuses %}<th>{{ status_labels[status] }}</th>{% endfor %}</tr></thead>
+      <tbody>
+        {% for group in groups %}
+        <tr>
+          <td>{{ group.label }}</td>
+          <td>{{ group.total }}</td>
+          {% for status in statuses %}<td class="heat-{{ status }} {{ 'heat-zero' if not group.counts[status] }}">{{ group.counts[status] or '' }}</td>{% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  {% if page.items %}
+  <form method="post" action="/policy/assign">
+    <input type="hidden" name="next" value="{{ request.full_path }}">
+    <div class="table-scroll table-scroll-wide" role="region" aria-label="Policy results" tabindex="0">
+      <table class="grid">
+        <thead>
+          <tr>
+            <th><span class="visually-hidden">Select</span></th>
+            <th>Status</th><th>Policy</th><th>Device</th><th>Site</th>
+            <th>Severity</th><th>Evidence</th><th>Owner</th>
+            <th><span class="visually-hidden">Actions</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for e in page.items %}
+          <tr id="result-{{ e.policy.policy_id }}-{{ e.hostname }}">
+            <td><input type="checkbox" name="subjects" value="{{ e.subject }}"
+                       aria-label="Select {{ e.policy.name }} on {{ e.hostname }}"></td>
+            <td><span class="badge hop-badge status-chip-{{ e.effective_status }}">{{ status_labels[e.effective_status] }}</span></td>
+            <td>{{ e.policy.name }}</td>
+            <td>{{ e.hostname }}</td>
+            <td>{{ e.site }}</td>
+            <td>{{ e.policy.severity }}</td>
+            <td>{% if e.evidence_fresh is true %}fresh{% elif e.evidence_fresh is false %}<span class="warn">stale</span>{% else %}—{% endif %}</td>
+            <td>{{ e.owner or '—' }}</td>
+            <td class="row-actions">
+              <a class="btn btn-sm"
+                 href="{{ scoped_url('/policy/result/' + e.policy.policy_id + '/' + (e.hostname | urlencode), link_scope()) }}"
+                 aria-label="Open the full verdict for {{ e.policy.name }} on {{ e.hostname }}">Open verdict</a>
+              {{ entity_menu(device_menu(hostname=e.hostname, device_id=e.device_id), e.hostname, label='Device') }}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="actions" style="margin-top:10px;">
+      <label class="bulk-owner">Assign selected to
+        <input name="owner" placeholder="owner (e.g. netops)" aria-label="Owner for the selected results">
+      </label>
+      <button class="btn btn-sm" type="submit">Assign owner</button>
+      <span class="muted">Bulk actions are audited under one correlation id.</span>
+    </div>
+  </form>
+
+  {% if page.pages > 1 %}
+  <nav class="pager" aria-label="Result pages">
+    {% set base_args = filter_args %}
+    {% if page.page > 1 %}
+    <a class="btn btn-sm" href="{{ scoped_url('/policy', active_scope_id, page=page.page - 1, **base_args) }}#results" rel="prev">← Previous</a>
+    {% endif %}
+    <span class="muted">Page {{ page.page }} of {{ page.pages }}</span>
+    {% if page.page < page.pages %}
+    <a class="btn btn-sm" href="{{ scoped_url('/policy', active_scope_id, page=page.page + 1, **base_args) }}#results" rel="next">Next →</a>
+    {% endif %}
+  </nav>
+  {% endif %}
+
   {% else %}
   <p class="muted">
-    Nothing to evaluate in this scope yet. Run a discovery with configuration collection enabled —
-    Atlas records each device's configuration automatically, and policy evaluation reads it from the
-    <a href="/evidence">Evidence</a> it collected.
+    {% if overall.total %}
+    No result matches these filters. <a href="{{ scoped_url('/policy', active_scope_id) }}">Clear the filters</a> to see all {{ overall.total }}.
+    {% else %}
+    Nothing to evaluate in this scope yet. Run a discovery with configuration
+    collection enabled — policy evaluation reads what the
+    <a href="{{ scoped_url('/evidence', link_scope()) }}">Evidence</a> holds.
+    {% endif %}
   </p>
   {% endif %}
 </section>
 
 <section class="card">
   <h2>Installed Policy Packs</h2>
-  <p class="muted">
-    A policy pack is data, not code. Compliance is one pack; Security, CIS, STIG, PCI-DSS and
-    customer packs install the same way, over the same unchanged reasoning engine.
-  </p>
   <table class="grid">
     <thead><tr><th>Pack</th><th>Version</th><th>Author</th><th>Policies</th><th>Categories</th></tr></thead>
     <tbody>

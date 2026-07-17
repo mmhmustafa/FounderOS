@@ -1,0 +1,183 @@
+{% extends "base.html" %}
+{% from "_entity_actions.html" import entity_menu %}
+{% from "_breadcrumbs.html" import breadcrumbs %}
+{% block title %}Policy — {{ e.policy.name }} on {{ e.hostname }}{% endblock %}
+{% block content %}
+{{ breadcrumbs([
+  {'label': 'Policy', 'href': scoped_url('/policy', link_scope())},
+  {'label': e.policy.name, 'href': scoped_url('/policy', link_scope(), policy=e.policy.policy_id)},
+  {'label': e.hostname},
+]) }}
+
+<div class="page-head">
+  <h1>{{ e.policy.name }} — {{ e.hostname }}</h1>
+  <span class="actions">
+    <span class="badge hop-badge status-chip-{{ e.effective_status }}">{{ e.effective_status | replace('-', ' ') | title }}</span>
+    {{ entity_menu(device_menu(hostname=e.hostname, device_id=e.device_id), e.hostname, label='Device') }}
+  </span>
+</div>
+<p class="muted">
+  {{ e.policy.category | title }} · severity {{ e.policy.severity }} · {{ e.network }}
+  · site {{ e.site }} · evidence
+  {% if e.evidence_fresh is true %}fresh{% elif e.evidence_fresh is false %}stale{% else %}age unknown{% endif %}
+  {% if e.owner %} · owner {{ e.owner }}{% endif %}
+</p>
+
+{% set conf = confidence_display(e.result.confidence, conflicting=e.result.evidence_conflicting|length > 0) %}
+<section class="card">
+  <h2>Conclusion</h2>
+  <p><strong>{{ e.result.conclusion }}</strong>
+    {% if conf %}<span class="hop-badge hop-badge-{{ conf.tone }}" title="{{ conf.why }}">{{ conf.label }}{% if conf.percent %} ({{ conf.percent }}%){% endif %}</span>{% endif %}
+  </p>
+
+  <h3>Why (reasoning path)</h3>
+  <ul>
+    {% for step in e.result.reasoning_path %}<li>{{ step.statement }}</li>{% endfor %}
+  </ul>
+
+  {% if e.config_snippet %}
+  <h3>Configuration (masked)</h3>
+  <pre class="log-output" style="max-height:280px;">{% for line in e.config_snippet %}{{ line }}
+{% endfor %}</pre>
+  {% endif %}
+
+  <h3>Evidence used</h3>
+  {% if e.result.evidence_used %}
+  <ul>
+    {% for ev in e.result.evidence_used %}
+    <li>
+      <code>{{ ev.kind }}</code> — {{ ev.summary }}
+      {% if ev.provenance and ev.provenance.command %}<span class="muted">(<code>{{ ev.provenance.command }}</code>{% if ev.provenance.session_id %}, session {{ ev.provenance.session_id }}{% endif %})</span>{% endif %}
+      {% if ev.payload and ev.payload.config_sha256 %}
+      <a href="{{ entity_url('evidence_record', device_id=e.device_id, sha=ev.payload.config_sha256, scope_id=link_scope()) }}">exact record</a>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="muted">None — no evidence of the required kind was available.</p>
+  {% endif %}
+
+  {% if e.result.evidence_missing %}
+  <h3>Evidence missing</h3>
+  <ul>
+    {% for gap in e.result.evidence_missing %}
+    <li><code>{{ gap.kind }}</code> — {{ gap.detail or gap.why }}</li>
+    {% endfor %}
+  </ul>
+  <p class="muted">A verdict with recorded gaps is answerable: collect the named
+    evidence and re-evaluate. This is why Missing evidence is a separate bucket
+    from Unknown.</p>
+  {% endif %}
+
+  {% if e.result.recommendations %}
+  <h3>Remediation</h3>
+  <ul>
+    {% for rec in e.result.recommendations %}
+    <li>{{ rec.action }} <span class="muted">— {{ rec.rationale }}</span></li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+
+  {% if e.result.alternatives_rejected %}
+  <h3>Alternatives considered and rejected</h3>
+  <ul>
+    {% for alt in e.result.alternatives_rejected %}
+    <li>{{ alt.statement }} <span class="muted">— {{ alt.why_not }}</span></li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+
+  <h3>Confidence</h3>
+  <p class="muted">{{ confidence_detail(e.result.confidence) }}</p>
+  {% if e.result.confidence.factors %}
+  <ul>
+    {% for f in e.result.confidence.factors %}
+    <li>{{ f.name }}: {{ '%+.2f' % f.points }} <span class="muted">— {{ f.why }}</span></li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+
+  <p class="muted" style="font-size:12px;">
+    Rule set {{ e.result.provenance.rule_set_version }} · engine {{ e.result.provenance.engine_version }} ·
+    expected state: {{ e.policy.expected_state }}
+  </p>
+
+  <div class="actions" style="border-top:1px solid var(--line);padding-top:10px;">
+    <a class="btn btn-sm" href="{{ entity_url('device', device_id=e.hostname, scope_id=link_scope()) }}">Device details</a>
+    <a class="btn btn-sm" href="{{ entity_url('configuration', device_id=e.device_id, scope_id=link_scope()) }}">Exact configuration</a>
+    <a class="btn btn-sm" href="{{ entity_url('evidence_device', device_id=e.device_id, scope_id=link_scope()) }}">Evidence</a>
+    {% if e.effective_status in ('fail', 'warning', 'excepted') %}
+    <a class="btn btn-sm" href="{{ scoped_url('/predict', link_scope(), device=e.hostname) }}">Predict remediation impact</a>
+    <a class="btn btn-sm" href="{{ scoped_url('/compass', link_scope(), device=e.hostname, reason='Remediate policy: ' + e.policy.name) }}">Add remediation to Compass</a>
+    {% endif %}
+  </div>
+</section>
+
+<section class="card" id="exception">
+  <h2>Exception</h2>
+  {% if exception and exception_active %}
+  <p>
+    <span class="badge hop-badge status-chip-excepted">Active exception</span>
+    granted {{ exception.created_at }} by {{ exception.created_by }}
+    · owner <strong>{{ exception.owner }}</strong>
+    {% if exception.approved_by %} · approved by {{ exception.approved_by }}{% endif %}
+    {% if exception.expires_at %} · expires {{ exception.expires_at }}{% else %} · no expiry (until revoked){% endif %}
+  </p>
+  <p><strong>Reason.</strong> {{ exception.reason }}</p>
+  <form method="post" action="/policy/exceptions/revoke" class="actions">
+    <input type="hidden" name="policy_id" value="{{ e.policy.policy_id }}">
+    <input type="hidden" name="hostname" value="{{ e.hostname }}">
+    <input type="hidden" name="next" value="{{ request.full_path }}">
+    <label>Revocation reason <input name="reason" placeholder="why the exception ends"></label>
+    <button class="btn btn-sm btn-danger" type="submit"
+            aria-label="Revoke the exception for {{ e.policy.name }} on {{ e.hostname }}">Revoke exception</button>
+  </form>
+  {% elif exception %}
+  <p class="muted">An exception existed but has <strong>expired</strong>
+    ({{ exception.expires_at }}) — the engine's verdict stands. Its full history
+    is preserved in the <a href="/audit?category=policy-exception">audit log</a>.</p>
+  {% else %}
+  <p class="muted">No exception covers this result. An exception reclassifies a
+    failure as Excepted without touching the engine's verdict; every grant and
+    revocation is audited with reason, owner, approval, and expiry.</p>
+  {% endif %}
+  {% if not (exception and exception_active) and e.effective_status in ('fail', 'warning') %}
+  <form method="post" action="/policy/exceptions" class="form" style="max-width:640px;">
+    <input type="hidden" name="policy_id" value="{{ e.policy.policy_id }}">
+    <input type="hidden" name="hostname" value="{{ e.hostname }}">
+    <input type="hidden" name="next" value="{{ request.full_path }}">
+    <div class="form-row">
+      <label>Reason (required)
+        <input name="reason" required placeholder="compensating control, accepted risk…">
+      </label>
+      <label>Owner (required)
+        <input name="owner" required placeholder="who owns this risk">
+      </label>
+    </div>
+    <div class="form-row">
+      <label>Approved by (optional)
+        <input name="approved_by" placeholder="approver">
+      </label>
+      <label>Expires (optional, ISO date/time)
+        <input name="expires_at" placeholder="2026-12-31T00:00:00+00:00">
+      </label>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-sm btn-primary" type="submit">Grant exception</button>
+    </div>
+  </form>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Ownership</h2>
+  <form method="post" action="/policy/assign" class="actions">
+    <input type="hidden" name="subjects" value="{{ e.subject }}">
+    <input type="hidden" name="next" value="{{ request.full_path }}">
+    <label>Owner <input name="owner" value="{{ e.owner }}" placeholder="e.g. netops"></label>
+    <button class="btn btn-sm" type="submit" aria-label="Assign an owner to this result">Assign</button>
+    <span class="muted">Assignment is audited with before/after.</span>
+  </form>
+</section>
+{% endblock %}

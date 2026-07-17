@@ -1,5 +1,4 @@
 {% extends "base.html" %}
-{% from "_device_actions.html" import device_actions %}
 {% from "_entity_actions.html" import entity_menu %}
 {% block title %}Timeline{% endblock %}
 {% block content %}
@@ -7,9 +6,11 @@
   <h1>Timeline</h1>
 </div>
 <p class="muted">
-  Everything Atlas remembers happening, in one chronology: configurations that changed and
-  discoveries that ran. Each entry links to the evidence behind it — Atlas records what it observed,
-  never what it assumed.
+  Everything Atlas remembers happening, in one chronology: discoveries,
+  configuration / topology / operational changes, incidents, predictions,
+  Compass activity, compliance posture shifts, and every audited operator
+  mutation — site and identity curation included, undo operations and all.
+  Each event links to its exact object and names its provenance.
 </p>
 
 <div class="tiles">
@@ -20,75 +21,131 @@
   <div class="tile"><strong>Evidence records</strong><span>{{ evidence_totals.evidence_records }}</span></div>
 </div>
 
-<section class="card">
-  <h2>Recent Activity</h2>
+<section class="card" id="events">
+  <h2>Events</h2>
+
+  <form method="get" action="/timeline" class="filter-bar">
+    <input type="hidden" name="scope" value="{{ active_scope_id }}">
+    <label>Search
+      <input type="search" name="q" value="{{ filters.query }}" placeholder="device, title, actor…">
+    </label>
+    <label>Category
+      <select name="kind">
+        <option value="">any</option>
+        {% for kind, count in kind_counts | dictsort %}
+        <option value="{{ kind }}" {{ 'selected' if filters.kind == kind }}>{{ kind }} ({{ count }})</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Device
+      <input name="device" value="{{ filters.device }}" placeholder="exact hostname">
+    </label>
+    <label>Site
+      <select name="site">
+        <option value="">any</option>
+        {% for site in option_sites %}<option value="{{ site }}" {{ 'selected' if filters.site == site }}>{{ site }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Actor
+      <select name="actor">
+        <option value="">any</option>
+        {% for actor in option_actors %}<option value="{{ actor }}" {{ 'selected' if filters.actor == actor }}>{{ actor }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Severity
+      <select name="severity">
+        <option value="">any</option>
+        {% for severity in ('high', 'medium', 'low', 'info') %}
+        <option value="{{ severity }}" {{ 'selected' if filters.severity == severity }}>{{ severity }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>From (ISO date)
+      <input name="from" value="{{ filters.date_from }}" placeholder="2026-07-01">
+    </label>
+    <label>To (ISO date)
+      <input name="to" value="{{ filters.date_to }}" placeholder="2026-07-17">
+    </label>
+    <button class="btn btn-sm btn-primary" type="submit">Apply filters</button>
+    <a class="btn btn-sm" href="{{ scoped_url('/timeline', active_scope_id) }}">Clear</a>
+  </form>
+
+  <p class="muted" role="status" aria-live="polite">
+    {{ page.total }} event(s) match — showing {{ page.start }}–{{ page.end }}{% if page.pages > 1 %} (page {{ page.page }} of {{ page.pages }}){% endif %}.
+  </p>
+
   {% if activity %}
-  <table class="grid">
-    <thead>
-      <tr><th>When</th><th>What</th><th>Detail</th><th>Device</th><th></th></tr>
-    </thead>
-    <tbody>
-      {% for entry in activity %}
-      <tr>
-        <td>{{ entry.occurred_at }}</td>
-        <td>
-          {% if entry.kind == 'configuration' %}
-          <span class="hop-badge hop-badge-{{ 'failed' if entry.severity == 'high' else ('warning' if entry.severity == 'medium' else 'unknown') }}">Configuration</span>
-          {% else %}
-          <span class="hop-badge badge-muted">Discovery</span>
-          {% endif %}
-        </td>
-        <td>
-          {{ entry.title }}
-          {% if entry.detail %}<div class="muted">{{ entry.detail }}</div>{% endif %}
-        </td>
-        <td>
-          {% if entry.hostname %}
-          {{ entry.hostname }}
-          {# One compact menu — the same canonical actions every entity gets. #}
-          {{ entity_menu(device_menu(hostname=entry.hostname, device_id=entry.device_id), entry.hostname) }}
-          {% else %}<span class="muted">—</span>{% endif %}
-        </td>
-        <td class="row-actions">
-          {# The event links to its EXACT record, and the label says where it goes. #}
-          <a class="btn btn-sm" href="{{ entry.href }}"
-             aria-label="Open the {{ 'configuration change' if entry.kind == 'configuration' else 'discovery record' }}{% if entry.hostname %} for {{ entry.hostname }}{% endif %}">
-            {{ 'Open change' if entry.kind == 'configuration' else 'Open discovery' }}
-          </a>
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+  <div class="table-scroll table-scroll-wide" role="region" aria-label="Timeline events" tabindex="0">
+    <table class="grid">
+      <thead>
+        <tr><th>When</th><th>Category</th><th>Event</th><th>Device</th><th>Actor</th><th>Provenance</th><th><span class="visually-hidden">Open</span></th></tr>
+      </thead>
+      <tbody>
+        {% for entry in activity %}
+        <tr>
+          <td>{{ entry.when }}</td>
+          <td>
+            <span class="hop-badge badge-muted">{{ entry.kind }}</span>
+            {% if entry.severity and entry.severity not in ('info', 'low') %}
+            <div><span class="badge hop-badge hop-badge-{{ 'failed' if entry.severity in ('high', 'critical') else 'warning' }}">{{ entry.severity }}</span></div>
+            {% endif %}
+          </td>
+          <td>
+            {{ entry.title }}
+            {% if entry.detail %}<div class="muted">{{ entry.detail }}</div>{% endif %}
+          </td>
+          <td>
+            {% if entry.hostname %}
+            {{ entry.hostname }}
+            {{ entity_menu(device_menu(hostname=entry.hostname, device_id=entry.device_id), entry.hostname) }}
+            {% else %}<span class="muted">—</span>{% endif %}
+          </td>
+          <td>{{ entry.actor or '—' }}</td>
+          <td class="muted">{{ entry.provenance }}</td>
+          <td class="row-actions">
+            <a class="btn btn-sm" href="{{ entry.href }}"
+               aria-label="Open the exact record behind: {{ entry.title }}">Open record</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if page.pages > 1 %}
+  <nav class="pager" aria-label="Timeline pages">
+    {% if page.page > 1 %}
+    <a class="btn btn-sm" href="{{ scoped_url('/timeline', active_scope_id, page=page.page - 1, **filter_args) }}#events" rel="prev">← Previous</a>
+    {% endif %}
+    <span class="muted">Page {{ page.page }} of {{ page.pages }}</span>
+    {% if page.page < page.pages %}
+    <a class="btn btn-sm" href="{{ scoped_url('/timeline', active_scope_id, page=page.page + 1, **filter_args) }}#events" rel="next">Next →</a>
+    {% endif %}
+  </nav>
+  {% endif %}
+
   {% else %}
   <p class="muted">
+    {% if page.total == 0 and (filters.query or filters.kind or filters.device or filters.actor or filters.severity or filters.date_from or filters.date_to or filters.site) %}
+    No event matches these filters. <a href="{{ scoped_url('/timeline', active_scope_id) }}">Clear the filters</a>.
+    {% else %}
     Nothing recorded yet. Run a discovery with configuration collection enabled — Atlas records each
     device's configuration automatically, and every later change appears here.
+    {% endif %}
   </p>
   {% endif %}
 </section>
 
 <section class="card">
   <h2>Views</h2>
-  <p class="muted">The same history, from four angles. Each answers a different question.</p>
+  <p class="muted">The same history, from five angles. Each answers a different question.</p>
   <table class="grid">
     <tbody>
-      <tr>
-        <td><strong><a href="/changes">Changes</a></strong></td>
-        <td>What the last discovery found different — topology, configuration, operational state.</td>
-      </tr>
-      <tr>
-        <td><strong><a href="/configuration">Configuration</a></strong></td>
-        <td>Every device's configuration history: versions, diffs, and what each change did.</td>
-      </tr>
-      <tr>
-        <td><strong><a href="/history">Discoveries</a></strong></td>
-        <td>Every discovery Atlas has run, and what each one saw.</td>
-      </tr>
-      <tr>
-        <td><strong><a href="/evidence">Evidence</a></strong></td>
-        <td>The raw bytes each device returned, preserved verbatim and content-addressed.</td>
-      </tr>
+      <tr><td><strong><a href="/changes">Changes</a></strong></td><td>What the last discovery found different — filter, acknowledge, compare runs.</td></tr>
+      <tr><td><strong><a href="/configuration">Configuration</a></strong></td><td>Every device's configuration history: versions, diffs, and what each change did.</td></tr>
+      <tr><td><strong><a href="/history">Discoveries</a></strong></td><td>Every discovery Atlas has run, and what each one saw.</td></tr>
+      <tr><td><strong><a href="/evidence">Evidence</a></strong></td><td>The raw bytes each device returned, preserved verbatim and content-addressed.</td></tr>
+      <tr><td><strong><a href="/audit">Audit</a></strong></td><td>Every operator mutation: who, what, before/after, why — exportable.</td></tr>
     </tbody>
   </table>
 </section>

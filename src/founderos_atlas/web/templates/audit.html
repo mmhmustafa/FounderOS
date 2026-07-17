@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% import "_fmt.html" as fmt %}
+{% block title %}Audit{% endblock %}
+{% block content %}
+<h1>Audit</h1>
+<p class="muted">
+  Every operator mutation Atlas has recorded, in one model: actor, timestamp,
+  scope, operation, before/after, reason, source, and correlation id. Site
+  overrides and identity resolutions are read from their own trails (their
+  undo semantics stay exactly where they were); exceptions, assignments,
+  acknowledgements, notes, and suppressions write here directly. Secret
+  values never enter an audit event — references only.
+</p>
+
+<section class="card" id="audit-events">
+  <form method="get" action="/audit" class="filter-bar">
+    <label>Category
+      <select name="category">
+        <option value="">any</option>
+        {% for option in option_categories %}
+        <option value="{{ option }}" {{ 'selected' if category == option }}>{{ option }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Actor
+      <select name="actor">
+        <option value="">any</option>
+        {% for option in option_actors %}
+        <option value="{{ option }}" {{ 'selected' if actor == option }}>{{ option }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Subject contains
+      <input name="subject" value="{{ subject }}" placeholder="device, policy, peer…">
+    </label>
+    <button class="btn btn-sm btn-primary" type="submit">Apply filters</button>
+    <a class="btn btn-sm" href="/audit">Clear</a>
+    <a class="btn btn-sm" href="/audit/export.csv?category={{ category | urlencode }}&actor={{ actor | urlencode }}&subject={{ subject | urlencode }}"
+       aria-label="Export the {{ page.total }} filtered audit events as CSV">Export CSV</a>
+  </form>
+
+  <p class="muted" role="status" aria-live="polite">
+    {{ page.total }} event(s) match — showing {{ page.start }}–{{ page.end }}{% if page.pages > 1 %} (page {{ page.page }} of {{ page.pages }}){% endif %}.
+  </p>
+
+  {% if page.items %}
+  <div class="table-scroll table-scroll-wide" role="region" aria-label="Audit events" tabindex="0">
+    <table class="grid">
+      <thead>
+        <tr><th>When</th><th>Actor</th><th>Category</th><th>Operation</th><th>Subject</th><th>Before → After</th><th>Reason</th><th>Correlation</th></tr>
+      </thead>
+      <tbody>
+        {% for event in page.items %}
+        <tr id="{{ event.event_id }}">
+          <td>{{ fmt.when(event.occurred_at) }}</td>
+          <td>{{ event.actor }}</td>
+          <td><span class="hop-badge badge-muted">{{ event.category }}</span></td>
+          <td>{{ event.operation }}</td>
+          <td><code>{{ event.subject }}</code></td>
+          <td class="diff-pair">
+            {% if event.before or event.after %}
+            {% for key in ((event.before | list) + (event.after | list)) | unique %}
+            <div>{{ key }}: <del>{{ event.before.get(key, '∅') }}</del> → <ins>{{ event.after.get(key, '∅') }}</ins></div>
+            {% endfor %}
+            {% else %}—{% endif %}
+          </td>
+          <td class="muted">{{ event.reason or '—' }}</td>
+          <td class="muted">{% if event.correlation_id %}<code>{{ event.correlation_id }}</code>{% else %}—{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if page.pages > 1 %}
+  <nav class="pager" aria-label="Audit pages">
+    {% if page.page > 1 %}
+    <a class="btn btn-sm" href="/audit?category={{ category | urlencode }}&actor={{ actor | urlencode }}&subject={{ subject | urlencode }}&page={{ page.page - 1 }}#audit-events" rel="prev">← Previous</a>
+    {% endif %}
+    <span class="muted">Page {{ page.page }} of {{ page.pages }}</span>
+    {% if page.page < page.pages %}
+    <a class="btn btn-sm" href="/audit?category={{ category | urlencode }}&actor={{ actor | urlencode }}&subject={{ subject | urlencode }}&page={{ page.page + 1 }}#audit-events" rel="next">Next →</a>
+    {% endif %}
+  </nav>
+  {% endif %}
+
+  {% else %}
+  <p class="muted">
+    {% if category or actor or subject %}
+    No audit event matches these filters. <a href="/audit">Clear the filters</a>.
+    {% else %}
+    No operator mutation has been recorded yet. Site assignments, identity
+    resolutions, policy exceptions, ownership changes, acknowledgements, and
+    suppressions will all appear here the moment they happen.
+    {% endif %}
+  </p>
+  {% endif %}
+</section>
+{% endblock %}

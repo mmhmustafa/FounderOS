@@ -7,14 +7,32 @@
 {% if run %}
 <section class="card root-cause" id="run-{{ run.record_id }}">
   <h2>Discovery Run — {{ run.profile }} · {{ run.started_display }}</h2>
+  <div class="status-banner status-{{ 'healthy' if run.state == 'completed' else ('critical' if run.state == 'failed' else 'warning') }}">
+    <span class="badge">{{ run.state | title }}</span>
+    <span>
+      {% if run.state == 'completed' %}Every attempted host was managed.
+      {% elif run.state == 'partial' %}{{ run.failures | length }} host(s) could not be managed; the rest completed.
+      {% elif run.state == 'failed' %}No device could be managed on this run.
+      {% else %}The run did not finish normally — its record is preserved as-is.{% endif %}
+    </span>
+  </div>
   <div class="tiles">
     <div class="tile"><strong>Devices</strong><span>{{ run.device_count }}</span></div>
     <div class="tile"><strong>Relationships</strong><span>{{ run.relationship_count }}</span></div>
-    <div class="tile"><strong>Configured</strong><span>{{ run.configured_device_count }}</span></div>
-    <div class="tile"><strong>Warnings</strong><span>{{ run.warning_count }}</span></div>
-    <div class="tile"><strong>Status</strong><span class="tile-text">{{ run.network_status }}</span></div>
+    <div class="tile" title="Configurations held over devices seen ({{ run.evidence_coverage.status }})."><strong>Evidence coverage</strong><span class="tile-text">{{ run.evidence_coverage.numerator }}/{{ run.evidence_coverage.denominator }}</span></div>
+    <div class="tile" title="Reconciliation warnings recorded while building the topology."><strong>Warnings</strong><span>{{ run.warning_count }}</span></div>
+    <div class="tile"><strong>Changes vs previous</strong><span class="tile-text">{% if run.changes_detected is defined and run.changes_detected is not none %}{{ run.changes_detected }}{% else %}—{% endif %}</span></div>
     <div class="tile"><strong>Duration</strong><span class="tile-text">{{ '%.1f' | format(run.duration_seconds) }}s</span></div>
   </div>
+  {% if run.collection.available %}
+  <p class="muted">Command collection in this run's evidence session:
+    {{ run.collection.collected }} collected · {{ run.collection.empty }} empty
+    (an empty response is an answer, not a failure) ·
+    {% if run.collection.failed %}<span class="warn">{{ run.collection.failed }} failed</span>{% else %}0 failed{% endif %}.</p>
+  {% else %}
+  <p class="muted">No per-run evidence session is recorded under this run id —
+    command-level collection detail is unavailable for this run.</p>
+  {% endif %}
   <ul class="kv">
     <li><span>Record</span><span><code>{{ run.record_id }}</code></span></li>
     <li><span>Snapshot</span><span><code>{{ run.snapshot_id }}</code></span></li>
@@ -35,8 +53,12 @@
     <a class="btn btn-sm btn-primary"
        href="{{ scoped_url('/discovery', run.scope_id, profile=run.profile) }}"
        aria-label="Run discovery again for {{ run.profile }}">Rerun discovery</a>
-    <a class="btn btn-sm" href="{{ scoped_url('/changes', run.scope_id) }}"
-       aria-label="Compare against the previous run">Compare with previous (Changes)</a>
+    {% if run.previous_record_id %}
+    <a class="btn btn-sm" href="{{ scoped_url('/changes/compare', run.scope_id, left=run.previous_record_id, right=run.record_id) }}"
+       aria-label="Compare this run against the previous run">Compare with previous run</a>
+    {% else %}
+    <button class="btn btn-sm" disabled title="This is the oldest archived run for this scope — nothing earlier to compare against.">Compare with previous run</button>
+    {% endif %}
     <a class="btn btn-sm" href="{{ scoped_url('/evidence', run.scope_id) }}"
        aria-label="Open the evidence this run collected">Evidence</a>
     <a class="btn btn-sm" href="{{ scoped_url('/topology', run.scope_id) }}"

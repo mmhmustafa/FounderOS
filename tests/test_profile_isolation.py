@@ -755,10 +755,12 @@ class WebScopeTests(unittest.TestCase):
             )
             page = client.get("/changes?scope=lab-b").data
             self.assertIn(b"0 change(s)", page)
-            self.assertIn(b".atlas/profiles/lab-b/change_report.md", page)
-            # No Lab A artifacts on Lab B's page (the scope dropdown may
-            # legitimately name every profile).
-            self.assertNotIn(b".atlas/profiles/lab-a/", page)
+            # The page reads as Lab B's change intelligence, with only
+            # Lab B's archived runs offered for comparison (the scope
+            # dropdown may legitimately name every profile).
+            self.assertIn("Change Intelligence — Lab B".encode(), page)
+            self.assertIn(b"Lab B \xc2\xb7 2026-07-10T", page)
+            self.assertNotIn(b"Lab A \xc2\xb7 2026-07-10T", page)
 
     def test_scope_selector_lists_all_options(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

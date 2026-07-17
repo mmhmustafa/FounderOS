@@ -141,8 +141,9 @@ class TimelineWorkflowTests(unittest.TestCase):
     def test_timeline_page_renders_and_offers_the_four_views(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             page = _client(Path(tmp)).get("/timeline").get_data(as_text=True)
-            self.assertIn("Recent Activity", page)
-            for href in ("/changes", "/configuration", "/history", "/evidence"):
+            self.assertIn("Events", page)
+            for href in ("/changes", "/configuration", "/history",
+                         "/evidence", "/audit"):
                 self.assertIn(href, page)
 
     def test_activity_merges_configuration_changes_and_discoveries(self) -> None:
@@ -200,13 +201,25 @@ class TimelineWorkflowTests(unittest.TestCase):
                     "discovery_session": "sess-1",
                     "change_count": 3,
                     "href": "/configuration/frr%3Acore1",
+                    "when": "15-Jul-2026 06:15",
+                    "actor": None,
+                    "provenance": "configuration memory · session sess-1",
                 }
                 for severity in ("high", "medium", "low")
             ]
+            from founderos_atlas.listing import paginate
+            from founderos_atlas.web.chronicle import ChronicleFilter
+
             with app.test_request_context("/timeline"):
                 html = render_template(
                     "timeline.html",
                     activity=activity,
+                    page=paginate(activity, 1, 50),
+                    filters=ChronicleFilter(),
+                    filter_args={},
+                    kind_counts={"configuration": 3},
+                    option_actors=[],
+                    option_sites=[],
                     change_count=3,
                     discovery_count=0,
                     totals={"devices": 1, "versions": 2},

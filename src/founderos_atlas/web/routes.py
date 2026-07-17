@@ -1926,50 +1926,343 @@ def register_routes(app) -> None:
             url_for("evidence_config_download", device_id=device_id, sha=sha), code=302
         )
 
-    # -- Enterprise Policy (PR-047, SENTINEL) ------------------------------
+    # -- Enterprise Policy (PR-047 SENTINEL; PR-053 scale) ------------------
+
+    # The engine's report is deterministic over the memories it read, so
+    # one in-process cache entry keyed on the memory stamps keeps the page
+    # fast across the paginated/filtered requests an investigation makes.
+    _policy_report_cache: dict = {"key": None, "report": None}
+
+    def _policy_cache_key(scopes, scope_id) -> tuple:
+        parts: list[tuple] = [("scope", scope_id)]
+        for scope in memory_scopes(scopes, scope_id):
+            records = (
+                scope.output_dir / "enterprise-memory" / "evidence"
+                / "records.json"
+            )
+            configs = (
+                scope.output_dir / "enterprise-memory" / "configurations"
+                / "index.json"
+            )
+            for path in (records, configs):
+                try:
+                    stat = path.stat()
+                    parts.append((str(path), stat.st_mtime_ns, stat.st_size))
+                except OSError:
+                    parts.append((str(path), None))
+        return tuple(parts)
+
+    def _policy_report_dict(scopes, scope_id, scope_label) -> dict:
+        from founderos_atlas.policy import PolicyEngine
+
+        key = _policy_cache_key(scopes, scope_id)
+        if _policy_report_cache["key"] == key:
+            return _policy_report_cache["report"]
+        report = PolicyEngine().evaluate_scopes(
+            [
+                (scope.label, memory_service(scope))
+                for scope in memory_scopes(scopes, scope_id)
+            ],
+            scope_label=scope_label,
+        )
+        report_dict = report.to_dict()
+        _policy_report_cache.update(key=key, report=report_dict)
+        return report_dict
+
+    def _device_maps() -> tuple[dict, dict]:
+        """hostname → site and hostname → platform, from the graph."""
+
+        graph, _snapshot = enterprise_world()
+        sites: dict[str, str] = {}
+        platforms: dict[str, str] = {}
+        for row in get_enterprise_inventory(graph):
+            hostname = str(row.get("hostname") or "")
+            if hostname:
+                sites[hostname] = str(row.get("site") or "unknown")
+                platforms[hostname] = str(row.get("platform") or "unknown")
+        return sites, platforms
+
+    def _policy_rows(scopes, scope_id, scope_label):
+        """Annotated, investigation-ready rows plus their supporting state."""
+
+        from founderos_atlas.audit import AnnotationStore
+        from founderos_atlas.policy.exceptions import PolicyExceptionRepository
+        from founderos_atlas.policy.explorer import annotate_evaluations
+
+        report_dict = _policy_report_dict(scopes, scope_id, scope_label)
+        workspace = cfg("ATLAS_WORKSPACE_ROOT")
+        now = now_iso()
+        exception_repo = PolicyExceptionRepository(workspace)
+        active_subjects = exception_repo.active_subjects(now)
+        owners = {
+            subject: str(fields.get("owner") or "")
+            for subject, fields in AnnotationStore(workspace).all(
+                "policy-assignment"
+            ).items()
+        }
+        sites, platforms = _device_maps()
+        rows = annotate_evaluations(
+            report_dict["evaluations"],
+            now=now,
+            exception_subjects=active_subjects,
+            sites_by_device=sites,
+            platforms_by_device=platforms,
+            owners_by_subject=owners,
+        )
+        return rows, report_dict, exception_repo
 
     @app.route("/policy")
     def policy_page():
-        """Enterprise Policy — evaluate the installed policy pack against every
-        device Atlas remembers, entirely through the CORTEX reasoning engine.
+        """Enterprise Policy at scale (PR-053).
 
-        Compliance is one policy pack; the engine is the reusable reasoning
-        framework (PR-046). Every verdict is evidence-based, confidence-scored,
-        and explained — a device with no configuration in memory is reported
-        Unknown, never guessed."""
+        The engine's verdicts stay authoritative; this page is an
+        INVESTIGATION over them — filtered, grouped, and paginated
+        server-side, so a thousand-device estate renders one page of
+        result rows, never a thousand expanded reasoning bodies. Every
+        filter lives in the URL and is therefore shareable; the full
+        reasoning body renders on each result's own page.
+        """
 
-        from founderos_atlas.policy import PolicyEngine, list_packs
+        from founderos_atlas.policy import list_packs
+        from founderos_atlas.policy.explorer import (
+            EFFECTIVE_STATUSES,
+            STATUS_LABELS,
+            ResultFilter,
+            filter_rows,
+            group_rows,
+            heatmap,
+            paginate,
+            posture_score,
+            sort_rows,
+            summarize,
+        )
+        from founderos_atlas.policy.trend import PolicyTrend
 
         from .timefmt import format_timestamp
 
         context, scopes, scope_id = scoped_context("policy")
-        engine = PolicyEngine()
-        memories = [
-            (scope.label, memory_service(scope))
-            for scope in memory_scopes(scopes, scope_id)
-        ]
-        report = engine.evaluate_scopes(
-            memories, scope_label=context["active_scope_label"]
+        rows, report_dict, _repo = _policy_rows(
+            scopes, scope_id, context["active_scope_label"]
         )
-        report_dict = report.to_dict()
-        # Deep link: ?device=<hostname> narrows the results to one device
-        # (the device menu's "Policy" action). The tiles stay scope-wide;
-        # the narrowed list says so and offers the way back.
-        device_filter = request.args.get("device", "").strip()
-        if device_filter:
-            wanted = device_filter.casefold()
-            report_dict["evaluations"] = [
-                evaluation for evaluation in report_dict["evaluations"]
-                if str(evaluation.get("hostname") or "").casefold() == wanted
-            ]
+        filters = ResultFilter.from_args(request.args)
+        filtered = sort_rows(filter_rows(rows, filters))
+        page = paginate(filtered, filters.page, filters.per_page)
+        groups = (
+            group_rows(filtered, filters.group_by)
+            if filters.group_by else []
+        )
+
+        # Record the trend point (only when posture changed) and read the
+        # series for the sparkline. Score and trend both use the effective
+        # buckets the tiles display, so every number on the page reconciles.
+        overall = summarize(rows)
+        posture = posture_score(overall)
+        trend = PolicyTrend(cfg("ATLAS_WORKSPACE_ROOT"))
+        trend.record(
+            scope_id=scope_id,
+            recorded_at=report_dict["generated_at"],
+            score=posture["score"],
+            passed=overall["pass"],
+            failed=overall["fail"],
+            warnings=overall["warning"],
+            unknown=overall["unknown"] + overall["missing-evidence"],
+        )
+
+        option_policies = sorted(
+            {
+                (
+                    str((row.get("policy") or {}).get("policy_id")),
+                    str((row.get("policy") or {}).get("name")),
+                )
+                for row in rows
+            },
+            key=lambda pair: pair[1].casefold(),
+        )
         return render_template(
             "policy.html",
             report=report_dict,
-            device_filter=device_filter,
+            filters=filters,
+            filter_args=filters.to_args(),
+            page=page,
+            groups=groups,
+            summary=summarize(filtered),
+            overall=overall,
+            posture=posture,
+            heatmap=heatmap(rows),
+            trend=trend.series(scope_id)[-12:],
+            statuses=EFFECTIVE_STATUSES,
+            status_labels=STATUS_LABELS,
+            option_policies=option_policies,
+            option_sites=sorted({str(r.get("site")) for r in rows} - {""}),
+            option_platforms=sorted(
+                {str(r.get("platform")) for r in rows} - {""}
+            ),
+            option_severities=sorted(
+                {str((r.get("policy") or {}).get("severity")) for r in rows}
+                - {""}
+            ),
             packs=[p.to_dict() for p in list_packs()],
-            generated_at=format_timestamp(report.generated_at, tz=display_timezone()),
+            generated_at=format_timestamp(
+                report_dict["generated_at"], tz=display_timezone()
+            ),
             **context,
         )
+
+    @app.route("/policy/result/<policy_id>/<path:hostname>")
+    def policy_result_page(policy_id: str, hostname: str):
+        """One verdict, fully disclosed: reasoning, evidence, confidence,
+        remediation, exception state, and ownership — the heavy body that
+        the list page deliberately no longer renders."""
+
+        context, scopes, scope_id = scoped_context("policy")
+        rows, _report, exception_repo = _policy_rows(
+            scopes, scope_id, context["active_scope_label"]
+        )
+        wanted = hostname.casefold()
+        evaluation = next(
+            (
+                row for row in rows
+                if str((row.get("policy") or {}).get("policy_id")) == policy_id
+                and str(row.get("hostname") or "").casefold() == wanted
+            ),
+            None,
+        )
+        if evaluation is None:
+            flash(
+                f"No result for policy '{policy_id}' on '{hostname}' exists "
+                "in this scope — the estate may have changed since this "
+                "link was made.",
+                "warning",
+            )
+            return redirect(scoped_url("/policy", scope_id))
+        from founderos_atlas.policy.explorer import result_subject
+
+        exception = exception_repo.find(
+            result_subject(policy_id, evaluation["hostname"])
+        )
+        return render_template(
+            "policy_result.html",
+            e=evaluation,
+            exception=exception.to_dict() if exception else None,
+            exception_active=(
+                exception.is_active(now_iso()) if exception else False
+            ),
+            **context,
+        )
+
+    @app.route("/policy/export.csv")
+    def policy_export():
+        """The FILTERED result set as CSV — same query params as the page."""
+
+        import csv
+        import io
+
+        from founderos_atlas.policy.explorer import (
+            ResultFilter,
+            export_rows,
+            filter_rows,
+            sort_rows,
+        )
+
+        context, scopes, scope_id = scoped_context("policy")
+        rows, _report, _repo = _policy_rows(
+            scopes, scope_id, context["active_scope_label"]
+        )
+        filters = ResultFilter.from_args(request.args)
+        exported = export_rows(sort_rows(filter_rows(rows, filters)))
+        buffer = io.StringIO()
+        writer = csv.DictWriter(
+            buffer,
+            fieldnames=list(exported[0].keys()) if exported else [
+                "policy_id", "policy", "category", "severity", "device",
+                "site", "platform", "status", "owner", "evidence_fresh",
+                "conclusion", "network",
+            ],
+        )
+        writer.writeheader()
+        writer.writerows(exported)
+        return app.response_class(
+            buffer.getvalue(),
+            mimetype="text/csv",
+            headers={
+                "Content-Disposition":
+                    "attachment; filename=policy-results.csv"
+            },
+        )
+
+    @app.route("/policy/exceptions", methods=["POST"])
+    def policy_exception_grant():
+        from founderos_atlas.policy.exceptions import PolicyExceptionRepository
+
+        try:
+            PolicyExceptionRepository(cfg("ATLAS_WORKSPACE_ROOT")).grant(
+                policy_id=str(request.form.get("policy_id") or ""),
+                hostname=str(request.form.get("hostname") or ""),
+                reason=str(request.form.get("reason") or ""),
+                owner=str(request.form.get("owner") or ""),
+                approved_by=str(request.form.get("approved_by") or "") or None,
+                expires_at=str(request.form.get("expires_at") or "") or None,
+                occurred_at=now_iso(),
+            )
+        except ValueError as error:
+            flash(str(error), "error")
+        else:
+            flash(
+                "Exception granted — the result is reclassified as Excepted "
+                "until it expires or is revoked, and the grant is audited.",
+                "success",
+            )
+        return redirect(request.form.get("next") or scoped_url("/policy"))
+
+    @app.route("/policy/exceptions/revoke", methods=["POST"])
+    def policy_exception_revoke():
+        from founderos_atlas.policy.exceptions import PolicyExceptionRepository
+
+        try:
+            PolicyExceptionRepository(cfg("ATLAS_WORKSPACE_ROOT")).revoke(
+                policy_id=str(request.form.get("policy_id") or ""),
+                hostname=str(request.form.get("hostname") or ""),
+                reason=str(request.form.get("reason") or "") or None,
+                occurred_at=now_iso(),
+            )
+        except ValueError as error:
+            flash(str(error), "error")
+        else:
+            flash("Exception revoked — the engine's verdict stands again.",
+                  "success")
+        return redirect(request.form.get("next") or scoped_url("/policy"))
+
+    @app.route("/policy/assign", methods=["POST"])
+    def policy_assign():
+        """Bulk ownership: the selected results get an owner, audited under
+        one correlation id."""
+
+        from uuid import uuid4
+
+        from founderos_atlas.audit import AnnotationStore
+
+        owner = str(request.form.get("owner") or "").strip()
+        subjects = [
+            subject for subject in request.form.getlist("subjects")
+            if str(subject or "").strip()
+        ]
+        if not owner or not subjects:
+            flash("Select at least one result and name an owner.", "error")
+            return redirect(request.form.get("next") or scoped_url("/policy"))
+        store = AnnotationStore(cfg("ATLAS_WORKSPACE_ROOT"))
+        correlation = f"bulk:{uuid4().hex}"
+        for subject in subjects:
+            store.set(
+                kind="policy-assignment", subject=subject,
+                fields={"owner": owner}, correlation_id=correlation,
+                occurred_at=now_iso(),
+            )
+        flash(
+            f"{len(subjects)} result(s) assigned to {owner} "
+            "(audited under one correlation id).",
+            "success",
+        )
+        return redirect(request.form.get("next") or scoped_url("/policy"))
 
     # -- Timeline (PR-047A FOCUS) ------------------------------------------
 
@@ -2017,18 +2310,150 @@ def register_routes(app) -> None:
                 if key in evidence_totals:
                     evidence_totals[key] += value
 
-        activity = timeline_activity(config_events, discovery_rows)
-        for entry in activity:
-            entry["occurred_at"] = format_with_relative(entry["occurred_at"], tz=tz)
+        # PR-053: the unified chronology — every event source, one filter
+        # model, server-side pagination, exact-object links, provenance.
+        from founderos_atlas.audit import unified_audit_events
+        from founderos_atlas.compass import PlanRepository
+        from founderos_atlas.policy.trend import PolicyTrend
+
+        from .chronicle import (
+            ChronicleFilter,
+            chronicle_events,
+            filter_events,
+            summarize_kinds,
+        )
+        from founderos_atlas.listing import paginate
+
+        report_scopes = (
+            aggregation_scopes(scopes)
+            if scope_id == GLOBAL_SCOPE_ID else (scopes[scope_id],)
+        )
+        incident_reports = [
+            (scope.label, load_json(scope.output_dir / "incident_report.json"))
+            for scope in report_scopes
+        ]
+        prediction_reports = [
+            (scope.label,
+             load_json(scope.output_dir / "prediction_report.json"))
+            for scope in report_scopes
+        ]
+        try:
+            plans = [
+                plan.to_dict()
+                for plan in PlanRepository(output_dir()).list_plans()
+            ]
+        except Exception:  # noqa: BLE001 - plans are optional evidence
+            plans = []
+        trend_store = PolicyTrend(cfg("ATLAS_WORKSPACE_ROOT"))
+        trend_points = [
+            (scope.scope_id, point)
+            for scope in report_scopes
+            for point in trend_store.series(scope.scope_id)
+        ]
+        events = chronicle_events(
+            config_events=config_events,
+            discovery_rows=discovery_rows,
+            change_rows=_change_rows_for(scopes, scope_id),
+            incident_reports=incident_reports,
+            prediction_reports=prediction_reports,
+            compass_plans=plans,
+            audit_events=unified_audit_events(cfg("ATLAS_WORKSPACE_ROOT")),
+            policy_trend=trend_points,
+        )
+        filters = ChronicleFilter.from_args(request.args)
+        sites, _platforms = _device_maps()
+        filtered = filter_events(events, filters, sites_by_device=sites)
+        page = paginate(filtered, filters.page, filters.per_page)
+        activity = []
+        for entry in page.items:
+            shaped = dict(entry)
+            shaped["when"] = format_with_relative(entry["occurred_at"], tz=tz)
+            activity.append(shaped)
 
         return render_template(
             "timeline.html",
             activity=activity,
+            page=page,
+            filters=filters,
+            filter_args=filters.to_args(),
+            kind_counts=summarize_kinds(events),
+            option_actors=sorted(
+                {str(e.get("actor")) for e in events if e.get("actor")}
+            ),
+            option_sites=sorted(set(sites.values())),
             change_count=len(config_events),
             discovery_count=len(discovery_rows),
             totals=totals,
             evidence_totals=evidence_totals,
             **context,
+        )
+
+    @app.route("/audit")
+    def audit_page():
+        """The consolidated mutation audit: every operator change, one
+        filterable view — site overrides and identity resolutions read
+        through adapters (their undo semantics stay in their own files),
+        everything newer straight from the unified log."""
+
+        from founderos_atlas.audit import unified_audit_events
+        from founderos_atlas.listing import int_arg, paginate
+
+        context, _scopes, _scope_id = scoped_context("audit")
+        category = request.args.get("category", "").strip()
+        actor = request.args.get("actor", "").strip()
+        subject = request.args.get("subject", "").strip()
+        events = unified_audit_events(
+            cfg("ATLAS_WORKSPACE_ROOT"),
+            category=category or None,
+            actor=actor or None,
+            subject_contains=subject or None,
+        )
+        page = paginate(
+            [event.to_dict() for event in events],
+            int_arg(request.args, "page", 1, 100000),
+            int_arg(request.args, "per_page", 50, 200),
+        )
+        all_events = unified_audit_events(cfg("ATLAS_WORKSPACE_ROOT"))
+        return render_template(
+            "audit.html",
+            page=page,
+            category=category,
+            actor=actor,
+            subject=subject,
+            option_categories=sorted({e.category for e in all_events}),
+            option_actors=sorted({e.actor for e in all_events}),
+            **context,
+        )
+
+    @app.route("/audit/export.csv")
+    def audit_export():
+        import csv
+        import io
+
+        from founderos_atlas.audit import export_rows, unified_audit_events
+
+        events = unified_audit_events(
+            cfg("ATLAS_WORKSPACE_ROOT"),
+            category=request.args.get("category", "").strip() or None,
+            actor=request.args.get("actor", "").strip() or None,
+            subject_contains=request.args.get("subject", "").strip() or None,
+        )
+        rows = export_rows(events)
+        buffer = io.StringIO()
+        writer = csv.DictWriter(
+            buffer,
+            fieldnames=list(rows[0].keys()) if rows else [
+                "occurred_at", "actor", "scope", "category", "operation",
+                "subject", "before", "after", "reason", "source",
+                "correlation_id", "event_id",
+            ],
+        )
+        writer.writeheader()
+        writer.writerows(rows)
+        return app.response_class(
+            buffer.getvalue(),
+            mimetype="text/csv",
+            headers={"Content-Disposition": "attachment; filename=audit.csv"},
         )
 
     @app.route("/configuration")
@@ -2682,19 +3107,84 @@ def register_routes(app) -> None:
             if scope_id == GLOBAL_SCOPE_ID else (scopes[scope_id],)
         )
         for scope in candidates:
-            index = HistoryRepository(scope.history_root).load()
-            for record in index.records:
-                if record.record_id == record_id:
-                    from .timefmt import format_timestamp
+            repo = HistoryRepository(scope.history_root)
+            index = repo.load()
+            for position, record in enumerate(index.records):
+                if record.record_id != record_id:
+                    continue
+                from .timefmt import format_timestamp
 
-                    run = record.to_dict()
-                    run["scope_label"] = scope.label
-                    run["scope_id"] = scope.scope_id
-                    run["started_display"] = format_timestamp(
-                        record.started_at, tz=display_timezone()
-                    )
-                    run["profile"] = record.profile_name or scope.label
-                    return run, scope
+                run = record.to_dict()
+                run["scope_label"] = scope.label
+                run["scope_id"] = scope.scope_id
+                run["started_display"] = format_timestamp(
+                    record.started_at, tz=display_timezone()
+                )
+                run["profile"] = record.profile_name or scope.label
+
+                # Explicit run state, derived honestly from what the
+                # record proves — never a guess at what a scheduler meant.
+                if record.device_count == 0 and record.failures:
+                    run["state"] = "failed"
+                elif record.failures:
+                    run["state"] = "partial"
+                elif record.network_status.casefold() == "interrupted":
+                    run["state"] = "interrupted"
+                else:
+                    run["state"] = "completed"
+
+                # Evidence coverage: configurations held over devices seen.
+                run["evidence_coverage"] = {
+                    "numerator": record.configured_device_count,
+                    "denominator": record.device_count,
+                    "status": record.configuration_status,
+                }
+
+                # Collection failures within this run's evidence session,
+                # when the memory holds one under this record id; absence
+                # is stated, not invented.
+                collection = {"available": False, "failed": 0, "empty": 0,
+                              "collected": 0}
+                try:
+                    for evidence in memory_store(scope).evidence_records(
+                        discovery_session=record.record_id
+                    ):
+                        collection["available"] = True
+                        status = str(evidence.collection_status or "")
+                        if status == "ok":
+                            collection["collected"] += 1
+                        elif status == "empty":
+                            collection["empty"] += 1
+                        else:
+                            collection["failed"] += 1
+                except Exception:  # noqa: BLE001 - memory is optional
+                    pass
+                run["collection"] = collection
+
+                # Changes against the PREVIOUS run of the same scope: count
+                # plus the compare deep link (records are newest-first).
+                previous = (
+                    index.records[position + 1]
+                    if position + 1 < len(index.records) else None
+                )
+                run["previous_record_id"] = (
+                    previous.record_id if previous else None
+                )
+                if previous is not None:
+                    try:
+                        from founderos_atlas.change import ChangeDetector
+
+                        left = load_json(
+                            repo.snapshot_path(previous.record_id)
+                        )
+                        right = load_json(repo.snapshot_path(record.record_id))
+                        if left is not None and right is not None:
+                            run["changes_detected"] = ChangeDetector().compare(
+                                left, right
+                            ).change_count
+                    except Exception:  # noqa: BLE001 - diff is best-effort
+                        run["changes_detected"] = None
+                return run, scope
         return None, None
 
     @app.route("/history")
@@ -2734,34 +3224,265 @@ def register_routes(app) -> None:
             **context,
         )
 
+    def _change_rows_for(scopes, scope_id):
+        """Unified, annotated change rows across the visible scope(s)."""
+
+        from founderos_atlas.audit import AnnotationStore
+        from founderos_atlas.change.explorer import annotate_rows, unified_rows
+
+        candidates = (
+            aggregation_scopes(scopes)
+            if scope_id == GLOBAL_SCOPE_ID else (scopes[scope_id],)
+        )
+        rows: list[dict] = []
+        for scope in candidates:
+            out = scope.output_dir
+            incident = load_json(out / "incident_report.json") or {}
+            rows.extend(unified_rows(
+                topology_report=load_json(out / "change_report.json"),
+                config_report=load_json(out / "config_change_report.json"),
+                state_report=load_json(out / "state_change_report.json"),
+                network=scope.label,
+                incident_devices=frozenset(
+                    str(name) for name in incident.get("affected_devices") or ()
+                ),
+            ))
+        store = AnnotationStore(cfg("ATLAS_WORKSPACE_ROOT"))
+        return annotate_rows(
+            rows,
+            acks=store.all("change-ack"),
+            assignments=store.all("change-assignment"),
+            notes=store.all("change-note"),
+            suppressions=store.all("change-suppression"),
+        )
+
     @app.route("/changes")
     def changes():
+        """Change Intelligence as an investigation (PR-053): one filtered,
+        paginated row model over the topology, configuration, and
+        operational change reports — with before/after, acknowledgement,
+        ownership, notes, suppression, incident correlation, export, and
+        run-to-run comparison. Filters live in the URL."""
+
+        from founderos_atlas.change.explorer import (
+            ChangeFilter,
+            filter_rows,
+            summarize,
+        )
+        from founderos_atlas.listing import paginate
+
         context, scopes, scope_id = scoped_context("changes")
-        if scope_id == GLOBAL_SCOPE_ID:
-            networks = [
-                {
-                    "label": scope.label,
+        rows = _change_rows_for(scopes, scope_id)
+        filters = ChangeFilter.from_args(request.args)
+        filtered, hidden_suppressed = filter_rows(rows, filters)
+        page = paginate(filtered, filters.page, filters.per_page)
+        run_options = []
+        for scope in (
+            aggregation_scopes(scopes)
+            if scope_id == GLOBAL_SCOPE_ID else (scopes[scope_id],)
+        ):
+            index = HistoryRepository(scope.history_root).load()
+            for record in index.records[:20]:
+                run_options.append({
+                    "record_id": record.record_id,
+                    "label": (
+                        f"{record.profile_name or scope.label} · "
+                        f"{record.started_at}"
+                    ),
                     "scope_id": scope.scope_id,
-                    "summaries": change_summaries(scope.output_dir),
-                    "artifact_prefix": artifact_prefix(scope),
-                }
-                for scope in aggregation_scopes(scopes)
-            ]
-            return render_template(
-                "changes.html",
-                global_view=True,
-                networks=networks,
-                summaries=None,
-                **context,
-            )
-        scope = scopes[scope_id]
+                })
         return render_template(
             "changes.html",
-            global_view=False,
-            summaries=change_summaries(scope.output_dir),
-            artifact_prefix=artifact_prefix(scope),
+            filters=filters,
+            filter_args=filters.to_args(),
+            page=page,
+            summary=summarize(rows),
+            hidden_suppressed=hidden_suppressed,
+            option_kinds=sorted({str(r.get("kind")) for r in rows}),
+            option_categories=sorted({str(r.get("category")) for r in rows}),
+            option_severities=sorted({str(r.get("severity")) for r in rows}),
+            run_options=run_options,
+            comparison=None,
             **context,
         )
+
+    @app.route("/changes/compare")
+    def changes_compare():
+        """Any two archived discovery runs, diffed on demand — the change
+        reports cover consecutive runs; this covers ANY pair."""
+
+        from founderos_atlas.change import ChangeDetector
+        from founderos_atlas.change.explorer import (
+            ChangeFilter,
+            annotate_rows,
+            filter_rows,
+            summarize,
+            unified_rows,
+        )
+        from founderos_atlas.listing import paginate
+
+        context, scopes, scope_id = scoped_context("changes")
+        left_id = request.args.get("left", "").strip()
+        right_id = request.args.get("right", "").strip()
+        comparison = None
+        rows: list[dict] = []
+        if left_id and right_id:
+            left_snapshot = right_snapshot = None
+            left_scope_label = ""
+            for scope in (
+                aggregation_scopes(scopes)
+                if scope_id == GLOBAL_SCOPE_ID else (scopes[scope_id],)
+            ):
+                repo = HistoryRepository(scope.history_root)
+                left_path = repo.snapshot_path(left_id)
+                if left_path.is_file():
+                    left_snapshot = load_json(left_path)
+                    left_scope_label = scope.label
+                right_path = repo.snapshot_path(right_id)
+                if right_path.is_file():
+                    right_snapshot = load_json(right_path)
+            if left_snapshot is None or right_snapshot is None:
+                flash(
+                    "One or both runs could not be found in this scope — "
+                    "they may belong to another scope or have been removed.",
+                    "warning",
+                )
+            else:
+                report = ChangeDetector().compare(left_snapshot, right_snapshot)
+                rows = annotate_rows(unified_rows(
+                    topology_report=report.to_dict(),
+                    config_report=None,
+                    state_report=None,
+                    network=left_scope_label,
+                ))
+                comparison = {"left": left_id, "right": right_id,
+                              "count": len(rows)}
+        filters = ChangeFilter.from_args(request.args)
+        filtered, hidden_suppressed = filter_rows(rows, filters)
+        page = paginate(filtered, filters.page, filters.per_page)
+        run_options = []
+        for scope in (
+            aggregation_scopes(scopes)
+            if scope_id == GLOBAL_SCOPE_ID else (scopes[scope_id],)
+        ):
+            index = HistoryRepository(scope.history_root).load()
+            for record in index.records[:20]:
+                run_options.append({
+                    "record_id": record.record_id,
+                    "label": (
+                        f"{record.profile_name or scope.label} · "
+                        f"{record.started_at}"
+                    ),
+                    "scope_id": scope.scope_id,
+                })
+        return render_template(
+            "changes.html",
+            filters=filters,
+            filter_args=filters.to_args(),
+            page=page,
+            summary=summarize(rows),
+            hidden_suppressed=hidden_suppressed,
+            option_kinds=sorted({str(r.get("kind")) for r in rows}),
+            option_categories=sorted({str(r.get("category")) for r in rows}),
+            option_severities=sorted({str(r.get("severity")) for r in rows}),
+            run_options=run_options,
+            comparison=comparison,
+            **context,
+        )
+
+    @app.route("/changes/export.csv")
+    def changes_export():
+        import csv
+        import io
+
+        from founderos_atlas.change.explorer import (
+            ChangeFilter,
+            export_rows,
+            filter_rows,
+        )
+
+        context, scopes, scope_id = scoped_context("changes")
+        rows = _change_rows_for(scopes, scope_id)
+        filters = ChangeFilter.from_args(request.args)
+        filtered, _hidden = filter_rows(rows, filters)
+        exported = export_rows(filtered)
+        buffer = io.StringIO()
+        writer = csv.DictWriter(
+            buffer,
+            fieldnames=list(exported[0].keys()) if exported else [
+                "kind", "category", "severity", "device", "field", "before",
+                "after", "description", "recommendation", "network",
+                "occurred_at", "acknowledged", "owner", "suppressed",
+                "subject",
+            ],
+        )
+        writer.writeheader()
+        writer.writerows(exported)
+        return app.response_class(
+            buffer.getvalue(),
+            mimetype="text/csv",
+            headers={"Content-Disposition": "attachment; filename=changes.csv"},
+        )
+
+    @app.route("/changes/annotate", methods=["POST"])
+    def changes_annotate():
+        """Acknowledge, assign, note, or suppress one change — audited."""
+
+        from founderos_atlas.audit import AnnotationStore
+
+        action = str(request.form.get("action") or "").strip()
+        subject = str(request.form.get("subject") or "").strip()
+        if not subject or action not in (
+            "acknowledge", "unacknowledge", "assign", "note", "suppress",
+            "unsuppress",
+        ):
+            flash("Unknown change action.", "error")
+            return redirect(request.form.get("next") or scoped_url("/changes"))
+        store = AnnotationStore(cfg("ATLAS_WORKSPACE_ROOT"))
+        reason = str(request.form.get("reason") or "").strip() or None
+        try:
+            if action == "acknowledge":
+                store.set(kind="change-ack", subject=subject,
+                          fields={"acknowledged": True}, reason=reason,
+                          occurred_at=now_iso())
+                flash("Change acknowledged (audited).", "success")
+            elif action == "unacknowledge":
+                store.clear(kind="change-ack", subject=subject,
+                            reason=reason, occurred_at=now_iso())
+                flash("Acknowledgement removed (audited).", "success")
+            elif action == "assign":
+                owner = str(request.form.get("owner") or "").strip()
+                if not owner:
+                    raise ValueError("an assignment needs an owner")
+                store.set(kind="change-assignment", subject=subject,
+                          fields={"owner": owner}, reason=reason,
+                          occurred_at=now_iso())
+                flash(f"Change assigned to {owner} (audited).", "success")
+            elif action == "note":
+                note = str(request.form.get("note") or "").strip()
+                if not note:
+                    raise ValueError("a note needs text")
+                store.set(kind="change-note", subject=subject,
+                          fields={"note": note}, occurred_at=now_iso())
+                flash("Note attached (audited).", "success")
+            elif action == "suppress":
+                if not reason:
+                    raise ValueError("suppressing a change requires a reason")
+                store.set(kind="change-suppression", subject=subject,
+                          fields={"reason": reason}, reason=reason,
+                          occurred_at=now_iso())
+                flash(
+                    "Change suppressed — hidden by default, always countable, "
+                    "and audited.",
+                    "success",
+                )
+            elif action == "unsuppress":
+                store.clear(kind="change-suppression", subject=subject,
+                            reason=reason, occurred_at=now_iso())
+                flash("Suppression removed (audited).", "success")
+        except ValueError as error:
+            flash(str(error), "error")
+        return redirect(request.form.get("next") or scoped_url("/changes"))
 
     # -- Prediction (PR-036B: what happens if I make this change?) -----------
 

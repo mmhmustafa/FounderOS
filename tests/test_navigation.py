@@ -241,9 +241,18 @@ class PolicyWorkflowTests(unittest.TestCase):
 
             policy_page = client.get("/policy?scope=all").data.decode("utf-8")
             self.assertIn("result-", policy_page)
-            self.assertIn("Exact configuration", policy_page)
-            self.assertIn("Predict remediation impact", policy_page)
-            self.assertIn("Add remediation to Compass", policy_page)
+            self.assertIn("Open verdict", policy_page)
+            # The heavy body moved to the per-result page (PR-053): follow
+            # the first failed verdict there and find the workflow exits.
+            match = re.search(
+                r'href="(/policy/result/[^"]+)"', policy_page
+            )
+            self.assertIsNotNone(match, "no verdict link on the list page")
+            verdict = client.get(
+                match.group(1).replace("&amp;", "&")
+            ).data.decode("utf-8")
+            self.assertIn("Exact configuration", verdict)
+            self.assertIn("reasoning path", verdict)
 
             # Exact evidence record: the verdict's config sha addresses it.
             record = client.get(
