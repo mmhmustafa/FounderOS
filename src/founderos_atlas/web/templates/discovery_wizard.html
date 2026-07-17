@@ -91,6 +91,7 @@
   {% endif %}
   <details>
     <summary class="muted">Candidate addresses ({{ plan.candidate_count }})</summary>
+    <div class="table-scroll" role="region" aria-label="Candidate addresses" tabindex="0">
     <table class="grid">
       <thead><tr><th>Address</th><th>Source</th><th>Confidence</th><th>Status</th><th>Reason</th></tr></thead>
       <tbody>
@@ -99,6 +100,7 @@
         {% endfor %}
       </tbody>
     </table>
+    </div>
     {% if plan.candidate_count > 200 %}<p class="muted">Showing the first 200 of {{ plan.candidate_count }}.</p>{% endif %}
   </details>
 

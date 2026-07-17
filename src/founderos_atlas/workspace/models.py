@@ -78,10 +78,23 @@ class DiscoveryProfile:
     archived: bool = False
 
     def __post_init__(self) -> None:
-        for field_name in ("profile_id", "name", "username", "credential_ref"):
+        for field_name in ("profile_id", "name"):
             value = getattr(self, field_name)
             if not isinstance(value, str) or not value.strip():
                 raise InvalidProfileError(f"{field_name} must be a non-empty string")
+        # A profile authenticates either with its own credential (username +
+        # credential_ref) or through referenced credential sets (schema
+        # 1.1.0 wizard profiles); both fields may be empty only in the
+        # credential-set case.
+        for field_name in ("username", "credential_ref"):
+            value = getattr(self, field_name)
+            if not isinstance(value, str):
+                raise InvalidProfileError(f"{field_name} must be a string")
+            if not value.strip() and not self.credential_sets:
+                raise InvalidProfileError(
+                    f"{field_name} must be a non-empty string unless the "
+                    "profile references credential sets"
+                )
         try:
             object.__setattr__(self, "management_ip", str(ip_address(str(self.management_ip).strip())))
         except ValueError as error:

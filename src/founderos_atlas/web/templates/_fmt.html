@@ -1,0 +1,21 @@
+{#- Atlas shared formatting macros.
+
+    when(value)  — renders an ISO-8601 timestamp in the standard Atlas
+    display format (DD-Mon-YYYY HH:MM) while preserving the precise
+    original timestamp in the datetime attribute and tooltip.
+    Values that are not parseable ISO timestamps render unchanged, so
+    pre-formatted strings pass through safely.
+-#}
+{%- macro when(value, fallback='—') -%}
+{%- if value -%}<time datetime="{{ value }}" title="{{ value }}">{{ value | timestamp }}</time>{%- else -%}{{ fallback }}{%- endif -%}
+{%- endmacro -%}
+
+{#- risk_badge(level) — a labelled risk badge; never color alone. -#}
+{%- macro risk_badge(level) -%}
+<span class="badge hop-badge hop-badge-{{ 'failed' if level in ('high', 'critical') else ('warning' if level == 'medium' else ('pass' if level in ('low', 'none') else 'unknown')) }}">Risk: {{ (level or 'unknown') | title }}</span>
+{%- endmacro -%}
+
+{#- confidence(band, percent) — a labelled confidence statement. -#}
+{%- macro confidence(band, percent) -%}
+<span class="confidence muted">Confidence: {{ (band | title) if band else 'Unknown' }}{% if percent is not none %} ({{ percent }}%){% endif %}</span>
+{%- endmacro -%}

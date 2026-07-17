@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_fmt.html" as fmt %}
 {% block title %}Compass{% endblock %}
 {% block content %}
 <h1>Compass — Maintenance Plans</h1>
@@ -30,8 +31,9 @@
 <section class="card">
   <h2>Plans</h2>
   {% if plans %}
+  <div class="table-scroll" role="region" aria-label="Maintenance plans" tabindex="0">
   <table class="grid">
-    <thead><tr><th>Title</th><th>Window</th><th>Engineer</th><th>CAB</th><th>Changes</th><th>Status</th><th>Plan risk</th><th>Updated</th><th></th></tr></thead>
+    <thead><tr><th>Title</th><th>Window</th><th>Engineer</th><th>CAB</th><th>Changes</th><th>Status</th><th>Plan risk</th><th>Updated</th><th><span class="visually-hidden">Actions</span></th></tr></thead>
     <tbody>
       {% for row in plans %}
       <tr>
@@ -40,14 +42,15 @@
         <td>{{ row.plan.engineer or '—' }}</td>
         <td>{{ row.plan.cab_reference or '—' }}</td>
         <td>{{ row.plan.changes | length }}</td>
-        <td><span class="badge hop-badge hop-badge-{{ 'pass' if row.plan.status == 'analysed' else 'unknown' }}">{{ row.plan.status }}</span></td>
-        <td>{% if row.risk %}<span class="badge hop-badge hop-badge-{{ 'failed' if row.risk.overall_risk in ('high', 'critical') else ('warning' if row.risk.overall_risk == 'medium' else 'pass') }}">{{ row.risk.overall_risk }}</span>{% else %}—{% endif %}</td>
-        <td>{{ row.plan.updated_at }}</td>
-        <td><a class="btn btn-sm" href="/compass/{{ row.plan.plan_id }}">Open</a></td>
+        <td><span class="badge hop-badge hop-badge-{{ 'pass' if row.plan.status == 'analysed' else 'unknown' }}">{{ row.plan.status | title }}</span></td>
+        <td>{% if row.risk %}<span class="badge hop-badge hop-badge-{{ 'failed' if row.risk.overall_risk in ('high', 'critical') else ('warning' if row.risk.overall_risk == 'medium' else 'pass') }}">{{ row.risk.overall_risk | title }}</span>{% else %}—{% endif %}</td>
+        <td>{{ fmt.when(row.plan.updated_at) }}</td>
+        <td><a class="btn btn-sm" href="/compass/{{ row.plan.plan_id }}" aria-label="Open plan {{ row.plan.title }}">Open</a></td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
+  </div>
   {% else %}
   <p class="muted">No maintenance plans yet — create one above.</p>
   {% endif %}

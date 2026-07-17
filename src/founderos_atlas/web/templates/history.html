@@ -4,6 +4,7 @@
 <h1>Discovery History — {{ active_scope_label }}</h1>
 
 {% if records %}
+<div class="table-scroll" role="region" aria-label="Discovery history" tabindex="0">
 <table class="grid">
   <thead>
     <tr>
@@ -26,6 +27,7 @@
     {% endfor %}
   </tbody>
 </table>
+</div>
 {% else %}
 <section class="card">
   <h2>What is discovery history?</h2>

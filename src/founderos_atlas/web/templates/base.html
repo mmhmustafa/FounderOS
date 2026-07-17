@@ -7,16 +7,23 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='atlas.css') }}">
 </head>
 <body>
+{% import "_icons.html" as icons %}
   <a class="skip-link" href="#atlas-main">Skip to content</a>
   <header class="topbar">
+    <button type="button" class="nav-toggle" id="atlas-nav-toggle"
+            aria-expanded="false" aria-controls="atlas-sidebar"
+            aria-label="Open navigation menu">
+      {{ icons.icon('menu', 22) }}
+    </button>
     <div class="brand">
       <span class="brand-name">Atlas</span>
       <span class="brand-tag">Enterprise Network Intelligence</span>
     </div>
     <button type="button" class="search-trigger" id="atlas-search-trigger"
             aria-label="Search the enterprise (Ctrl+K)">
-      <span>Search the enterprise…</span>
-      <kbd>Ctrl</kbd><kbd>K</kbd>
+      {{ icons.icon('search', 16) }}
+      <span class="search-trigger-text">Search the enterprise…</span>
+      <span class="search-trigger-keys"><kbd>Ctrl</kbd><kbd>K</kbd></span>
     </button>
     {% if scope_selector %}
     <form class="scope-form" method="get" action="">
@@ -35,20 +42,21 @@
     </form>
   </header>
   <div class="layout">
-    <nav class="sidebar">
+    <div class="sidebar-backdrop" id="atlas-sidebar-backdrop" hidden></div>
+    <nav class="sidebar" id="atlas-sidebar" aria-label="Primary">
       <ul>
         {% for key, label, href in nav_items %}
-        <li><a class="{{ 'active' if active == key else '' }}"{% if active == key %} aria-current="page"{% endif %} href="{{ href }}">{{ label }}</a></li>
+        <li><a class="{{ 'active' if active == key else '' }}"{% if active == key %} aria-current="page"{% endif %} href="{{ href }}">{{ icons.icon(key) }}<span>{{ label }}</span></a></li>
         {% endfor %}
       </ul>
       <div class="sidebar-note">Local alpha GUI · 127.0.0.1</div>
     </nav>
-    <main class="content" id="atlas-main">
+    <main class="content" id="atlas-main" tabindex="-1">
       {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
           <div class="flashes">
             {% for category, message in messages %}
-              <div class="flash flash-{{ category }}">{{ message }}</div>
+              <div class="flash flash-{{ category }}" role="status">{{ message }}</div>
             {% endfor %}
           </div>
         {% endif %}
@@ -60,6 +68,7 @@
   <div class="search-overlay" id="atlas-search" hidden aria-hidden="true">
     <div class="search-panel" role="dialog" aria-modal="true" aria-label="Enterprise search">
       <input type="search" id="atlas-search-input" autocomplete="off"
+             aria-label="Search devices, interfaces, IPs, sites, and predictions"
              placeholder="Search devices, interfaces, IPs, sites, predictions… (Esc to close)">
       <div class="search-status muted" id="atlas-search-status" aria-live="polite" hidden></div>
       <div class="search-recent" id="atlas-search-recent" hidden>

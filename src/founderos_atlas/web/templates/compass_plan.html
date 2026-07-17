@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_fmt.html" as fmt %}
 {% block title %}Compass Plan{% endblock %}
 {% block content %}
 <a class="back-link" href="/compass">← All maintenance plans</a>
@@ -11,14 +12,15 @@
   Engineer: {{ plan.engineer or '—' }} ·
   CAB: {{ plan.cab_reference or '—' }} ·
   Scope: enterprise ({{ enterprise_device_count }} canonical device(s) from {{ enterprise_contributions | length }} profile(s)) ·
-  Updated: {{ plan.updated_at }}
+  Updated: {{ fmt.when(plan.updated_at) }}
 </p>
 
 <section class="card">
   <h2>Planned Changes ({{ plan.changes | length }})</h2>
   {% if plan.changes %}
+  <div class="table-scroll" role="region" aria-label="Planned changes" tabindex="0">
   <table class="grid">
-    <thead><tr><th>#</th><th>Change</th><th>Reason</th><th>Duration</th><th>Rollback</th><th>Notes</th><th></th></tr></thead>
+    <thead><tr><th>#</th><th>Change</th><th>Reason</th><th>Duration</th><th>Rollback</th><th>Notes</th><th><span class="visually-hidden">Actions</span></th></tr></thead>
     <tbody>
       {% for change in plan.changes %}
       <tr>
@@ -30,13 +32,14 @@
         <td>{{ change.notes or '—' }}</td>
         <td>
           <form method="post" action="/compass/{{ plan.plan_id }}/changes/{{ change.change_id }}/remove">
-            <button class="btn btn-sm" type="submit">Remove</button>
+            <button class="btn btn-sm" type="submit" aria-label="Remove change {{ change.title }}">Remove</button>
           </form>
         </td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
+  </div>
   <form method="post" action="/compass/{{ plan.plan_id }}/analyse" class="form-actions" style="margin-top: 12px;">
     <button class="btn btn-primary" type="submit">Analyse Plan</button>
   </form>
@@ -111,7 +114,7 @@
     {% if assessment.risk.largest_blast_title %}<li>Largest blast radius: <strong>{{ assessment.risk.largest_blast_title }}</strong> ({{ assessment.risk.largest_blast_device_count }} device(s))</li>{% endif %}
     <li>Rollback: {{ assessment.risk.rollback_covered }} covered · {{ assessment.risk.rollback_missing }} unavailable · {{ assessment.risk.rollback_unknown }} unknown</li>
   </ul>
-  <p class="muted">Analysed {{ assessment.generated_at }} against {{ assessment.evidence_refs | join('; ') if assessment.evidence_refs else 'the available evidence' }}.</p>
+  <p class="muted">Analysed {{ fmt.when(assessment.generated_at) }} against {{ assessment.evidence_refs | join('; ') if assessment.evidence_refs else 'the available evidence' }}.</p>
 </section>
 
 <section class="card">
@@ -121,8 +124,8 @@
     <li class="hop hop-{{ 'failed' if step.risk_level in ('high', 'critical') else ('warning' if step.risk_level == 'medium' else 'pass') }}">
       <details {% if step.separate_window or step.risk_level in ('high', 'critical') %}open{% endif %}>
         <summary><span class="hop-dot"></span><strong>{{ step.order }}. {{ step.title }}</strong>
-          <span class="badge hop-badge hop-badge-{{ 'failed' if step.risk_level in ('high', 'critical') else ('warning' if step.risk_level == 'medium' else 'pass') }}">{{ step.risk_level | title }}</span>
-          <span class="muted">{{ step.confidence_band | title }} ({{ step.confidence_percent }}%)</span>
+          <span class="badge hop-badge hop-badge-{{ 'failed' if step.risk_level in ('high', 'critical') else ('warning' if step.risk_level == 'medium' else 'pass') }}">Risk: {{ step.risk_level | title }}</span>
+          {{ fmt.confidence(step.confidence_band, step.confidence_percent) }}
           {% if step.separate_window %}<span class="badge hop-badge hop-badge-warning">separate window</span>{% endif %}
         </summary>
         <p>{{ step.reason }}</p>

@@ -12,6 +12,45 @@
 
   function byId(id) { return document.getElementById(id); }
 
+  // -- Responsive navigation drawer ------------------------------------------
+  // Below 1024px the sidebar is an off-canvas drawer. The toggle button
+  // reflects state via aria-expanded; Escape, the backdrop, and following
+  // a navigation link all close it. Focus returns to the toggle on close.
+  // Escape is dispatched from the SINGLE document-level keydown handler
+  // in the search section below (one handler, one lifecycle).
+  var closeNavDrawer = null;
+  var navToggle = byId("atlas-nav-toggle");
+  var sidebar = byId("atlas-sidebar");
+  var navBackdrop = byId("atlas-sidebar-backdrop");
+  if (navToggle && sidebar && navBackdrop) {
+    var navOpen = function () {
+      document.body.classList.add("nav-open");
+      navBackdrop.hidden = false;
+      navToggle.setAttribute("aria-expanded", "true");
+      navToggle.setAttribute("aria-label", "Close navigation menu");
+      var first = sidebar.querySelector("a");
+      if (first) first.focus();
+    };
+    var navClose = function (restoreFocus) {
+      document.body.classList.remove("nav-open");
+      navBackdrop.hidden = true;
+      navToggle.setAttribute("aria-expanded", "false");
+      navToggle.setAttribute("aria-label", "Open navigation menu");
+      if (restoreFocus) navToggle.focus();
+    };
+    navToggle.addEventListener("click", function () {
+      if (document.body.classList.contains("nav-open")) navClose(true);
+      else navOpen();
+    });
+    navBackdrop.addEventListener("click", function () { navClose(false); });
+    sidebar.addEventListener("click", function (event) {
+      // Following a nav link navigates away; close so back-navigation
+      // via bfcache never restores a stale open drawer.
+      if (event.target.closest && event.target.closest("a")) navClose(false);
+    });
+    closeNavDrawer = navClose;
+  }
+
   function setText(id, value) {
     var node = byId(id);
     if (node) node.textContent = value === null || value === undefined ? "—" : String(value);
@@ -236,6 +275,24 @@
       }
     };
 
+    // Focus trap: while the search dialog is open, Tab cycles within it.
+    searchOverlay.addEventListener("keydown", function (event) {
+      if (event.key !== "Tab" || searchOverlay.hidden) return;
+      var focusable = searchOverlay.querySelectorAll(
+        "input, a[href], button:not([disabled])"
+      );
+      if (!focusable.length) return;
+      var first = focusable[0];
+      var last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    });
+
     var recentSearches = function () {
       try {
         var raw = window.localStorage.getItem(RECENT_KEY);
@@ -385,6 +442,9 @@
         if (searchOverlay.hidden) openSearch(); else closeSearch();
       } else if (event.key === "Escape" && !searchOverlay.hidden) {
         closeSearch();
+      } else if (event.key === "Escape" && closeNavDrawer &&
+                 document.body.classList.contains("nav-open")) {
+        closeNavDrawer(true);
       }
     });
     var trigger = byId("atlas-search-trigger");

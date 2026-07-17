@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_icons.html" as icons %}
 {% block title %}Mission{% endblock %}
 {% block content %}
 <h1>Mission{% if active_scope_label %} — {{ active_scope_label }}{% endif %}</h1>
@@ -12,27 +13,27 @@
   <h2>What would you like to do?</h2>
   <div class="mission-grid">
     <a class="mission-action" href="/paths">
-      <span class="mission-icon">🔍</span>
+      <span class="mission-icon">{{ icons.icon('paths') }}</span>
       <strong>Investigate an Issue</strong>
       <span class="muted">Walk a path through this scope's evidence.</span>
     </a>
     <a class="mission-action" href="/predict">
-      <span class="mission-icon">🛠</span>
+      <span class="mission-icon">{{ icons.icon('wrench') }}</span>
       <strong>Plan a Change</strong>
       <span class="muted">Predict the impact before touching anything.</span>
     </a>
     <a class="mission-action" href="/discovery">
-      <span class="mission-icon">🌐</span>
+      <span class="mission-icon">{{ icons.icon('discovery') }}</span>
       <strong>Run Discovery</strong>
       <span class="muted">Refresh this scope's evidence.</span>
     </a>
     <a class="mission-action" href="/changes">
-      <span class="mission-icon">📋</span>
+      <span class="mission-icon">{{ icons.icon('clipboard') }}</span>
       <strong>Review Changes</strong>
       <span class="muted">What changed since the last discovery?</span>
     </a>
     <button type="button" class="mission-action js-open-search">
-      <span class="mission-icon">🔎</span>
+      <span class="mission-icon">{{ icons.icon('search') }}</span>
       <strong>Search Enterprise</strong>
       <span class="muted">Ctrl+K — devices, interfaces, plans, history.</span>
     </button>

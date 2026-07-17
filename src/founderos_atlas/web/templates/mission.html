@@ -1,4 +1,6 @@
 {% extends "base.html" %}
+{% import "_icons.html" as icons %}
+{% import "_fmt.html" as fmt %}
 {% block title %}Mission — Enterprise{% endblock %}
 {% block content %}
 <h1>Mission — Enterprise</h1>
@@ -14,32 +16,32 @@
   <h2>What would you like to do?</h2>
   <div class="mission-grid">
     <a class="mission-action" href="/paths?scope=all">
-      <span class="mission-icon">🔍</span>
+      <span class="mission-icon">{{ icons.icon('paths') }}</span>
       <strong>Investigate an Issue</strong>
       <span class="muted">Why can't A reach B? Walk the evidence hop by hop.</span>
     </a>
     <a class="mission-action" href="/compass">
-      <span class="mission-icon">🛠</span>
+      <span class="mission-icon">{{ icons.icon('wrench') }}</span>
       <strong>Plan a Change</strong>
       <span class="muted">Order tonight's window safely with Compass.</span>
     </a>
     <a class="mission-action" href="/discovery">
-      <span class="mission-icon">🌐</span>
+      <span class="mission-icon">{{ icons.icon('discovery') }}</span>
       <strong>Run Discovery</strong>
       <span class="muted">Refresh or extend the enterprise evidence.</span>
     </a>
     <a class="mission-action" href="/changes?scope=all">
-      <span class="mission-icon">📋</span>
+      <span class="mission-icon">{{ icons.icon('clipboard') }}</span>
       <strong>Review Changes</strong>
       <span class="muted">What changed since the last discovery?</span>
     </a>
     <button type="button" class="mission-action js-open-search">
-      <span class="mission-icon">🔎</span>
+      <span class="mission-icon">{{ icons.icon('search') }}</span>
       <strong>Search Enterprise</strong>
       <span class="muted">Ctrl+K — devices, interfaces, plans, history.</span>
     </button>
     <a class="mission-action" href="/advisor">
-      <span class="mission-icon">💬</span>
+      <span class="mission-icon">{{ icons.icon('advisor') }}</span>
       <strong>Ask Atlas Advisor</strong>
       <span class="muted">Evidence-cited answers that guide you to a workflow.</span>
     </a>
@@ -63,14 +65,14 @@
     {% if latest_plan %}
     <li>
       <span class="activity-kind">Maintenance plan</span>
-      <span><strong>{{ latest_plan.plan.title }}</strong> <span class="muted">{{ latest_plan.plan.maintenance_window or 'no window set' }} · {{ latest_plan.plan.changes | length }} change(s) · {{ latest_plan.plan.status }}</span>{% if latest_plan.risk %} <span class="badge hop-badge hop-badge-{{ 'failed' if latest_plan.risk in ('high', 'critical') else ('warning' if latest_plan.risk == 'medium' else 'pass') }}">{{ latest_plan.risk }}</span>{% endif %}</span>
+      <span><strong>{{ latest_plan.plan.title }}</strong> <span class="muted">{{ latest_plan.plan.maintenance_window or 'no window set' }} · {{ latest_plan.plan.changes | length }} change(s) · {{ latest_plan.plan.status }}</span>{% if latest_plan.risk %} {{ fmt.risk_badge(latest_plan.risk) }}{% endif %}</span>
       <a class="btn btn-sm" href="/compass/{{ latest_plan.plan.plan_id }}">Resume Plan</a>
     </li>
     {% endif %}
     {% if latest_prediction %}
     <li>
       <span class="activity-kind">Prediction</span>
-      <span><strong>{{ latest_prediction.subject }}</strong> <span class="badge hop-badge hop-badge-{{ 'failed' if latest_prediction.risk in ('high', 'critical') else ('warning' if latest_prediction.risk == 'medium' else 'pass') }}">{{ latest_prediction.risk }}</span> <span class="muted">{{ latest_prediction.confidence_band | title if latest_prediction.confidence_band else '?' }} ({{ latest_prediction.confidence_percent }}%)</span></span>
+      <span><strong>{{ latest_prediction.subject }}</strong> {{ fmt.risk_badge(latest_prediction.risk) }} {{ fmt.confidence(latest_prediction.confidence_band, latest_prediction.confidence_percent) }}</span>
       <a class="btn btn-sm" href="{{ latest_prediction.href }}">Review Prediction</a>
     </li>
     {% endif %}
@@ -130,9 +132,10 @@
     {% endfor %}
   </p>
   {% endif %}
+  <div class="table-scroll" role="region" aria-label="Networks" tabindex="0">
   <table class="grid">
     <thead>
-      <tr><th>Network</th><th>Status</th><th>Health</th><th>Devices</th><th>Last Discovery</th><th></th></tr>
+      <tr><th>Network</th><th>Status</th><th>Health</th><th>Devices</th><th>Last Discovery</th><th><span class="visually-hidden">Actions</span></th></tr>
     </thead>
     <tbody>
       {% for network in summary.networks %}
@@ -143,12 +146,13 @@
         <td>{{ network.summary.device_count if network.summary.device_count is not none else '—' }}</td>
         <td>{{ network.summary.last_discovery }}</td>
         <td class="row-actions">
-          <a class="btn btn-sm" href="/?scope={{ network.scope_id | urlencode }}">Open</a>
+          <a class="btn btn-sm" href="/?scope={{ network.scope_id | urlencode }}" aria-label="Open {{ network.label }}">Open</a>
         </td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
+  </div>
   <p class="muted">Metrics support decisions — the workflows above are the point. <a href="/topology?scope=all">Open the enterprise topology</a> for the full graph.</p>
 </section>
 {% else %}

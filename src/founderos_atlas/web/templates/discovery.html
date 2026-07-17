@@ -13,6 +13,7 @@
 {% if profiles %}
 <section class="card">
   <h2>Networks</h2>
+  <div class="table-scroll" role="region" aria-label="Networks" tabindex="0">
   <table class="grid">
     <thead>
       <tr><th>Network</th><th>Site</th><th>Seed IP</th><th>Last Discovery</th><th>Status</th></tr>
@@ -29,6 +30,7 @@
       {% endfor %}
     </tbody>
   </table>
+  </div>
 </section>
 
 <section class="card">

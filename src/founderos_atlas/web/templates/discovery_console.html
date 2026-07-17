@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_icons.html" as icons %}
 {% block title %}Discovery Console{% endblock %}
 {% block content %}
 <div class="ops-header" role="region" aria-label="Discovery status">
@@ -22,12 +23,12 @@
 </div>
 
 <div class="ops-actionbar" role="toolbar" aria-label="Discovery controls">
-  <button class="btn" id="ops-resume" title="Resume (r)">▶ Resume</button>
-  <button class="btn" id="ops-pause" title="Pause (p)">⏸ Pause</button>
-  <button class="btn" id="ops-stop" title="Stop (s)">■ Stop</button>
-  <button class="btn" id="ops-restart" title="Restart">↻ Restart</button>
-  <a class="btn" href="#ops-log" title="Jump to log">📄 Logs</a>
-  <a class="btn" href="/discovery/wizard" title="Discovery settings">⚙ Settings</a>
+  <button class="btn" id="ops-resume" title="Resume (r)">{{ icons.icon('play', 15) }} Resume</button>
+  <button class="btn" id="ops-pause" title="Pause (p)">{{ icons.icon('pause', 15) }} Pause</button>
+  <button class="btn" id="ops-stop" title="Stop (s)">{{ icons.icon('stop', 15) }} Stop</button>
+  <button class="btn" id="ops-restart" title="Restart">{{ icons.icon('refresh', 15) }} Restart</button>
+  <a class="btn" href="#ops-log" title="Jump to log">{{ icons.icon('document', 15) }} Logs</a>
+  <a class="btn" href="/discovery/wizard" title="Discovery settings">{{ icons.icon('settings', 15) }} Settings</a>
   <span class="muted" id="ops-control-note" aria-live="polite"></span>
 </div>
 

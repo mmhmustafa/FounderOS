@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_fmt.html" as fmt %}
 {% block title %}Device Details{% endblock %}
 {% block content %}
 <a class="back-link" href="/topology?scope=all">← Enterprise inventory</a>
@@ -39,7 +40,7 @@
     <h2>Observations</h2>
     <ul>
       {% for obs in device.observations %}
-      <li class="muted">Observed by {{ obs.profile_name }}{% if obs.observed_at %} at {{ obs.observed_at }}{% endif %}{% if obs.run_id %} (run {{ obs.run_id }}){% endif %}{% if obs.management_ip %} via {{ obs.management_ip }}{% endif %}</li>
+      <li class="muted">Observed by {{ obs.profile_name }}{% if obs.observed_at %} at {{ fmt.when(obs.observed_at) }}{% endif %}{% if obs.run_id %} (run {{ obs.run_id }}){% endif %}{% if obs.management_ip %} via {{ obs.management_ip }}{% endif %}</li>
       {% endfor %}
     </ul>
   </section>
@@ -48,6 +49,7 @@
 <section class="card" id="interfaces">
   <h2>Interfaces</h2>
   {% if interfaces %}
+  <div class="table-scroll" role="region" aria-label="Interfaces" tabindex="0">
   <table class="grid">
     <thead><tr><th>Interface</th><th>Status</th><th>IP address</th><th>Description</th><th>Neighbor</th><th>Observed by</th></tr></thead>
     <tbody>
@@ -63,6 +65,7 @@
       {% endfor %}
     </tbody>
   </table>
+  </div>
   {% else %}
   <p class="muted">No interface table collected for this device yet.</p>
   {% endif %}

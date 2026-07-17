@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_fmt.html" as fmt %}
 {% block title %}Topology{% endblock %}
 {% block content %}
 {% if global_view %}
@@ -24,13 +25,14 @@
     <a href="/profiles">Review</a> — Atlas never merges automatically.
   </div>
   {% endif %}
+  <div class="table-scroll" role="region" aria-label="Contributing profiles" tabindex="0">
   <table class="grid">
     <thead><tr><th>Contributing profile</th><th>Last observed</th><th>Devices</th><th>Links</th><th>Freshness</th></tr></thead>
     <tbody>
       {% for c in enterprise_contributions %}
       <tr>
         <td>{{ c.profile_name }}</td>
-        <td>{{ c.observed_at or '—' }}</td>
+        <td>{{ fmt.when(c.observed_at) }}</td>
         <td>{{ c.device_count }}</td>
         <td>{{ c.edge_count }}</td>
         <td>{% if c.fresh %}<span class="ok">fresh</span>{% elif c.fresh is sameas false %}<span class="warn">stale</span>{% else %}unknown{% endif %}</td>
@@ -38,6 +40,7 @@
       {% endfor %}
     </tbody>
   </table>
+  </div>
   <p class="muted">One enterprise observed from multiple discovery points. Profiles are observation points, not network boundaries; their isolated per-profile evidence is federated here after discovery.</p>
 </section>
 
@@ -66,6 +69,7 @@
 {% if inventory %}
 <section class="card">
   <h2>{{ 'Enterprise Device Inventory' if enterprise else 'Device Inventory' }}</h2>
+  <div class="table-scroll" role="region" aria-label="Device inventory" tabindex="0">
   <table class="grid">
     <thead>
       {% if enterprise %}
@@ -92,7 +96,7 @@
             <ul>
               {% for item in device.merge_evidence %}<li class="muted">Evidence: {{ item }}</li>{% endfor %}
               {% for obs in device.observations %}
-              <li class="muted">Observed by {{ obs.profile_name }}{% if obs.observed_at %} at {{ obs.observed_at }}{% endif %}{% if obs.run_id %} (run {{ obs.run_id }}){% endif %}{% if obs.management_ip %} via {{ obs.management_ip }}{% endif %}</li>
+              <li class="muted">Observed by {{ obs.profile_name }}{% if obs.observed_at %} at {{ fmt.when(obs.observed_at) }}{% endif %}{% if obs.run_id %} (run {{ obs.run_id }}){% endif %}{% if obs.management_ip %} via {{ obs.management_ip }}{% endif %}</li>
               {% endfor %}
             </ul>
           </details>
@@ -110,6 +114,7 @@
       {% endfor %}
     </tbody>
   </table>
+  </div>
   {% if enterprise %}
   <p class="muted">Canonical enterprise devices with full observation provenance. Merging is strictly evidence-based: serial numbers always merge; hostname+IP merges only within a declared administrative domain; a hostname alone or an IP alone never merges. Site assignment is evidence-based and may honestly be unknown.</p>
   {% else %}
@@ -125,6 +130,7 @@
 {% if enterprise and merge_decisions %}
 <section class="card">
   <h2>Merge Decisions</h2>
+  <div class="table-scroll" role="region" aria-label="Merge decisions" tabindex="0">
   <table class="grid">
     <thead><tr><th>Device</th><th>Observations</th><th>Profiles</th><th>Why merged</th><th>Confidence</th></tr></thead>
     <tbody>
@@ -139,6 +145,7 @@
       {% endfor %}
     </tbody>
   </table>
+  </div>
   <p class="muted">Every merge is explainable: Atlas states the deterministic evidence that proved two observations describe one object. Without such evidence, observations remain separate.</p>
 </section>
 {% endif %}

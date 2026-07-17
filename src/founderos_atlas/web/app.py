@@ -20,6 +20,7 @@ from founderos_atlas.workspace import (
 )
 
 from .jobs import DiscoveryJobManager
+from .models import format_timestamp
 from .routes import make_pipeline_runner, register_routes
 
 
@@ -89,6 +90,11 @@ def create_app(
         ATLAS_HOST=DEFAULT_HOST,
     )
     app.secret_key = "atlas-local-alpha"  # only used for flash messages, local-only
+
+    # Shared formatting: `{{ value | timestamp }}` renders any ISO-8601
+    # timestamp in the standard Atlas display format; non-ISO values pass
+    # through unchanged (see templates/_fmt.html for the tooltip macro).
+    app.add_template_filter(format_timestamp, "timestamp")
 
     if job_manager is None:
         # In-process background executor for GUI discoveries. Job history

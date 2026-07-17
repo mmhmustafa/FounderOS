@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_fmt.html" as fmt %}
 {% block title %}Incidents{% endblock %}
 {% block content %}
 <h1>Incident Investigation — {{ active_scope_label }}</h1>
@@ -18,7 +19,7 @@
     <li><strong>Title:</strong> {{ entry.report.title }}</li>
     <li><strong>Confidence:</strong> {{ entry.report.confidence | title }}</li>
     <li><strong>Affected devices:</strong> {{ entry.report.affected_devices | join(', ') or 'none matched' }}</li>
-    <li><strong>Generated:</strong> {{ entry.report.generated_at }}</li>
+    <li><strong>Generated:</strong> {{ fmt.when(entry.report.generated_at) }}</li>
   </ul>
   <a class="btn btn-sm" href="{{ entry.href }}">Open full report</a>
 </section>
@@ -74,7 +75,7 @@
     <li><strong>Title:</strong> {{ report.title }}</li>
     <li><strong>Confidence:</strong> {{ report.confidence | title }}</li>
     <li><strong>Affected devices:</strong> {{ report.affected_devices | join(', ') or 'none matched' }}</li>
-    <li><strong>Generated:</strong> {{ report.generated_at }}</li>
+    <li><strong>Generated:</strong> {{ fmt.when(report.generated_at) }}</li>
   </ul>
   <a class="btn btn-sm" href="/artifacts/{{ artifact_prefix or '' }}incident_report.md">Open full report</a>
 </section>

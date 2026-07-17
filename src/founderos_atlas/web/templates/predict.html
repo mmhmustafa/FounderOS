@@ -63,12 +63,14 @@
   </form>
   {% if devices %}
   <details><summary class="muted">Known devices and interfaces</summary>
+    <div class="table-scroll" role="region" aria-label="Known devices and interfaces" tabindex="0">
     <table class="grid">
       <thead><tr><th>Device</th><th>Interfaces</th></tr></thead>
       <tbody>
         {% for d in devices %}<tr><td>{{ d.hostname }}</td><td>{{ d.interface_names or '—' }}</td></tr>{% endfor %}
       </tbody>
     </table>
+    </div>
   </details>
   {% else %}
   <p class="muted">No topology yet — <a href="/discovery">run a discovery</a> first.</p>
