@@ -152,6 +152,15 @@
       .layout-label select { width: 100%; }
       #legend { display: none; }
     }
+    /* Keyboard alternative to pointer interaction on the canvas. */
+    #node-list { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; }
+    #node-list summary { cursor: pointer; color: #475569; font-size: 13px; }
+    #node-list ul { list-style: none; margin: 8px 0 0; padding: 0; max-height: 300px; overflow-y: auto; }
+    #node-list button { display: block; width: 100%; text-align: left; margin: 2px 0; padding: 6px 8px; border: 0; border-radius: 5px; background: transparent; font-size: 13px; cursor: pointer; }
+    #node-list button:hover { background: #e2e8f0; }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; }
+    }
   </style>
 </head>
 <body>
@@ -206,9 +215,15 @@
         <div class="row" id="legend-bgp" style="display:none"><span class="dot" style="background:#f5f3ff;border:1px solid #a78bfa"></span> BGP AS boundary</div>
       </div>
     </div>
-    <aside id="details">
-      <h2>Details</h2>
-      <p>Click a node to inspect its normalized information, or a connection to see why Atlas created it, which evidence supports it, and what confidence it has.</p>
+    <aside id="details-panel" aria-label="Topology details">
+      <div id="details">
+        <h2>Details</h2>
+        <p>Click a node to inspect its normalized information, or a connection to see why Atlas created it, which evidence supports it, and what confidence it has.</p>
+      </div>
+      <details id="node-list">
+        <summary>Device list (keyboard alternative)</summary>
+        <ul id="node-list-items"></ul>
+      </details>
     </aside>
   </main>
   <div id="tooltip"></div>
@@ -236,8 +251,15 @@
     window.syncSummary = viewMode => {
       const el = document.getElementById('summary');
       if (viewMode === 'sites' && (typeof siteView !== 'undefined')) {
+        // The canonical inter-site count (topology/vocabulary.py): links
+        // between two KNOWN sites. Lines drawn into the "no site evidence"
+        // cloud stay on the map but are not inter-site links, so this
+        // number always matches the page tables and the API.
+        const interSite = (typeof snapshotSummary.inter_site_links === 'number')
+          ? snapshotSummary.inter_site_links
+          : (siteView.inter_site_links || []).length;
         el.textContent = siteView.sites.length + ' sites · ' +
-          siteView.aggregated_edges.length + ' inter-site links · ' +
+          interSite + ' inter-site links · ' +
           fullSummaryText;
       } else if ((viewMode === 'ospf' || viewMode === 'bgp') && routingView[viewMode]) {
         const view = routingView[viewMode];
@@ -516,6 +538,8 @@
     });
 
     const resizeGraph = () => requestAnimationFrame(() => cy.resize());
+    // Keep the canvas valid across viewport changes and iframe remounts.
+    window.addEventListener('resize', resizeGraph);
     detailsToggle.addEventListener('click', () => {
       const opening = viewerMain.classList.contains('details-collapsed');
       setDetailsOpen(opening);
@@ -930,6 +954,36 @@
       details.innerHTML = nodeDetails(event.target.data());
       hydrateAccessActions();
     });
+
+    // Keyboard alternative to pointer interaction: every device is a real
+    // button that selects it, centres it, and shows its details — the graph
+    // is never the only way in.
+    (() => {
+      const list = document.getElementById('node-list-items');
+      if (!list) return;
+      const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      cy.nodes()
+        .filter(node => node.data('kind') !== 'removed' && node.data('kind') !== 'site')
+        .sort((a, b) => String(a.data('label')).localeCompare(String(b.data('label'))))
+        .forEach(node => {
+          const item = document.createElement('li');
+          const button = document.createElement('button');
+          button.type = 'button';
+          const address = node.data('management_ip');
+          button.textContent = node.data('label') + (address && address !== 'Unknown' ? ` (${address})` : '');
+          button.addEventListener('click', () => {
+            revealDetails();
+            cy.elements().unselect();
+            node.select();
+            cy.animate({ center: { eles: node } }, { duration: reduceMotion ? 0 : 150 });
+            selectedDetailNodeId = node.id();
+            details.innerHTML = nodeDetails(node.data());
+            hydrateAccessActions();
+          });
+          item.appendChild(button);
+          list.appendChild(item);
+        });
+    })();
     cy.on('tap', 'edge', event => {
       revealDetails();
       const data = event.target.data();

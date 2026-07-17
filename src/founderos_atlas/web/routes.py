@@ -42,6 +42,11 @@ from founderos_atlas.federation import (
     write_enterprise_artifacts,
 )
 from founderos_atlas.history import HistoryRepository, generate_timeline
+from founderos_atlas.identity import (
+    PeerResolutionConflictError,
+    PeerResolutionRepository,
+    resolution_candidates,
+)
 from founderos_atlas.search import SearchService, search_enterprise
 from founderos_atlas.sites import (
     SITE_TYPES,
@@ -101,7 +106,9 @@ def _viewer_has_current_visual_style(path: Path) -> bool:
         return False
 
 
-def _viewer_has_site_override_revision(path: Path, revision: int) -> bool:
+def _viewer_has_site_override_revision(
+    path: Path, revision: int, identity_revision: int = 0
+) -> bool:
     if not path.is_file():
         return False
     try:
@@ -109,7 +116,13 @@ def _viewer_has_site_override_revision(path: Path, revision: int) -> bool:
             header = handle.read(1024)
     except (OSError, UnicodeError):
         return False
-    return f"<!-- ATLAS_SITE_OVERRIDE_REVISION={revision} -->" in header
+    return (
+        f"<!-- ATLAS_SITE_OVERRIDE_REVISION={revision} -->" in header
+        and (
+            f"<!-- ATLAS_IDENTITY_RESOLUTION_REVISION={identity_revision} -->"
+            in header
+        )
+    )
 
 
 def _current_topology_viewer_url(
@@ -185,6 +198,7 @@ def _refresh_current_topology_viewer(
     viewer_path = output / "atlas_topology.html"
     try:
         override_revision = SiteOverrideRepository(workspace_root).load().revision
+        identity_revision = PeerResolutionRepository(workspace_root).load().revision
     except AtlasWorkspaceError:
         # Preserve an existing readable viewer when workspace state is
         # corrupt; the curation API will report the underlying error.
@@ -192,7 +206,9 @@ def _refresh_current_topology_viewer(
     if (
         not force
         and _viewer_has_current_visual_style(viewer_path)
-        and _viewer_has_site_override_revision(viewer_path, override_revision)
+        and _viewer_has_site_override_revision(
+            viewer_path, override_revision, identity_revision
+        )
     ):
         return False
 
@@ -228,6 +244,7 @@ def _refresh_current_topology_viewer(
             # upgraded.
             site_catalog=SiteCatalogRepository(workspace).load(),
             site_overrides=SiteOverrideRepository(workspace).load(),
+            identity_resolutions=PeerResolutionRepository(workspace).load(),
         ).render()
         temporary_path.write_text(html, encoding="utf-8")
         temporary_path.replace(viewer_path)
@@ -240,6 +257,99 @@ def _refresh_current_topology_viewer(
             pass
         return False
     return True
+
+
+def _topology_operational_facts(
+    output: Path,
+    *,
+    workspace_root: str | Path,
+    last_discovered: str | None = None,
+) -> dict | None:
+    """Canonical topology facts for one scope, straight off the renderer.
+
+    The SAME renderer that draws the viewer computes these — the page
+    header, the tables, and the viewer summary line can never disagree,
+    because they are one calculation (topology/vocabulary.py).
+    """
+
+    snapshot_data = load_json(output / "topology_snapshot.json")
+    if snapshot_data is None:
+        return None
+    try:
+        from founderos_atlas.topology.vocabulary import DEFINITIONS
+
+        snapshot = TopologySnapshot.from_dict(snapshot_data)
+        configured, config_changes, routing_facts = (
+            _configuration_viewer_context(output)
+        )
+        workspace = Path(workspace_root)
+        resolution_repo = PeerResolutionRepository(workspace)
+        resolution_catalog = resolution_repo.load()
+        renderer = TopologyRenderer(
+            snapshot,
+            viewer_context={
+                "last_discovered": last_discovered
+                or snapshot.created_at
+                or "unrecorded",
+                "configured_hostnames": configured,
+                "config_changes": config_changes,
+                "routing_facts": routing_facts,
+            },
+            site_catalog=SiteCatalogRepository(workspace).load(),
+            site_overrides=SiteOverrideRepository(workspace).load(),
+            identity_resolutions=resolution_catalog,
+        )
+        elements = renderer.elements()
+        site_view = renderer.site_view(elements)
+        routing_view = renderer.routing_view(elements)
+        counts = renderer.relationship_summary(
+            elements, site_membership=site_view.get("membership")
+        )
+        devices = tuple(
+            device for device in snapshot_data.get("devices") or ()
+            if isinstance(device, dict)
+        )
+        unresolved = []
+        for node in elements["nodes"]:
+            data = node["data"]
+            if data.get("kind") != "observed":
+                continue
+            unresolved.append({
+                "peer": str(data.get("label") or data.get("id")),
+                "observed_via": data.get("observed_via"),
+                "observation": data.get("observation"),
+                "router_id": data.get("router_id"),
+                "management_ip": data.get("management_ip"),
+                "why_unresolved": (
+                    "announced through "
+                    + str(data.get("observed_via") or "protocol evidence")
+                    + " only — no discovered device owns this identity"
+                ),
+                "candidates": resolution_candidates(data, devices),
+            })
+        identity = {
+            "revision": resolution_catalog.revision,
+            "active": [
+                item.to_dict() for item in resolution_catalog.resolutions
+            ],
+            "unresolved": sorted(unresolved, key=lambda item: item["peer"]),
+            "history": [
+                event.to_dict() for event in resolution_repo.history()[-12:]
+            ],
+            "device_options": sorted(
+                {str(device.get("hostname") or "") for device in devices} - {""}
+            ),
+        }
+        return {
+            "counts": counts,
+            "definitions": DEFINITIONS,
+            "site_view": site_view,
+            "routing_view": routing_view,
+            "identity": identity,
+            "observed_at": snapshot.created_at,
+        }
+    except (AtlasWorkspaceError, KeyError, OSError, TypeError, ValueError):
+        return None
 
 
 def register_routes(app) -> None:
@@ -597,6 +707,51 @@ def register_routes(app) -> None:
             link_base=out,
         )
 
+    def policy_summary_for(scope) -> dict | None:
+        """Aggregate policy verdict counts for the canonical health model,
+        or ``None`` when the policy engine has nothing to say (no memory)."""
+
+        store_dir = scope.output_dir / "enterprise-memory"
+        if not store_dir.is_dir():
+            return None
+        try:
+            from founderos_atlas.policy import PolicyEngine
+
+            report = PolicyEngine().evaluate_scopes(
+                [(scope.label, memory_service(scope))], scope_label=scope.label
+            )
+        except Exception:  # noqa: BLE001 - health degrades, pages never 500
+            return None
+        if report.total == 0:
+            return None
+        return {
+            "total": report.total,
+            "judged": report.judged,
+            "passed": report.passed,
+            "failed": report.failed,
+            "warnings": report.warnings,
+            "unknown": report.unknown,
+            "generated_at": report.generated_at,
+        }
+
+    def health_for(scope, summary) -> "HealthAssessment":
+        """The canonical health assessment for one scope (see health/)."""
+
+        from founderos_atlas.health import assess_network_health
+
+        out = scope.output_dir
+        return assess_network_health(
+            scope_id=scope.scope_id,
+            scope_label=scope.label,
+            now=now_iso(),
+            snapshot=load_json(out / "topology_snapshot.json"),
+            configurations_collected=summary.configurations_collected,
+            config_change_report=load_json(out / "config_change_report.json"),
+            state_change_report=load_json(out / "state_change_report.json"),
+            incident_report=load_json(out / "incident_report.json"),
+            policy_summary=policy_summary_for(scope),
+        )
+
     def merged_history_rows(scopes) -> tuple[list[dict], tuple[str, ...]]:
         rows: list[dict] = []
         issues: list[str] = []
@@ -615,9 +770,11 @@ def register_routes(app) -> None:
         if scope_id == GLOBAL_SCOPE_ID:
             return mission_workspace(context, scopes)
         scope = scopes[scope_id]
+        summary = summary_for(scope)
         return render_template(
             "dashboard.html",
-            summary=summary_for(scope),
+            summary=summary,
+            health=health_for(scope, summary).to_dict(),
             artifact_prefix=artifact_prefix(scope),
             **context,
         )
@@ -642,6 +799,8 @@ def register_routes(app) -> None:
             shape_prediction,
         )
 
+        from founderos_atlas.health import aggregate_assessments
+
         aggregated = aggregation_scopes(scopes)
         networks = tuple(
             NetworkSummary(
@@ -652,6 +811,17 @@ def register_routes(app) -> None:
             for scope in aggregated
         )
         summary = aggregate_dashboard_summaries(networks)
+        # Canonical enterprise health: per-network assessments, aggregated
+        # worst-of per dimension — the same definitions every page uses.
+        health = aggregate_assessments(
+            [
+                health_for(scope, network.summary)
+                for scope, network in zip(aggregated, networks)
+            ],
+            scope_id=GLOBAL_SCOPE_ID,
+            scope_label=GLOBAL_SCOPE_LABEL,
+            generated_at=now_iso(),
+        ).to_dict()
         recent, _ = merged_history_rows(aggregated)
         graph, _snapshot = enterprise_world()
         now = now_iso()
@@ -782,6 +952,7 @@ def register_routes(app) -> None:
         return render_template(
             "mission.html",
             summary=summary,
+            health=health,
             recent=recent[:6],
             plans=plans,
             investigations=investigations,
@@ -2062,6 +2233,13 @@ def register_routes(app) -> None:
                     for decision in graph.merge_decisions
                     if decision.merged and decision.enterprise_id in visible_ids
                 ]
+                facts = _topology_operational_facts(
+                    enterprise_scope_dir(output_dir()),
+                    workspace_root=cfg("ATLAS_WORKSPACE_ROOT"),
+                    last_discovered=(
+                        snapshot.get("created_at") if snapshot else None
+                    ),
+                )
                 return render_template(
                     "topology.html",
                     global_view=True,
@@ -2072,6 +2250,7 @@ def register_routes(app) -> None:
                     site_filter=site_filter,
                     viewers=viewers,
                     has_topology=snapshot is not None,
+                    facts=facts,
                     topology_src=_current_topology_viewer_url(
                         f"/artifacts/{ENTERPRISE_ARTIFACT_PREFIX}atlas_topology.html",
                         enterprise_scope_dir(output_dir()) / "atlas_topology.html",
@@ -2098,12 +2277,64 @@ def register_routes(app) -> None:
             "topology.html",
             global_view=False,
             has_topology=exists,
+            facts=_topology_operational_facts(
+                scope.output_dir,
+                workspace_root=cfg("ATLAS_WORKSPACE_ROOT"),
+            ),
             topology_src=_current_topology_viewer_url(
                 f"/artifacts/{artifact_prefix(scope)}atlas_topology.html",
                 scope.output_dir / "atlas_topology.html",
             ),
             **context,
         )
+
+    @app.route("/api/topology/counts")
+    def api_topology_counts():
+        """The canonical topology counts and their definitions, per scope."""
+
+        context, scopes, scope_id = scoped_context("topology")
+        if scope_id == GLOBAL_SCOPE_ID:
+            target = enterprise_scope_dir(output_dir())
+            enterprise_world()  # ensure the federated snapshot exists
+        else:
+            target = scopes[scope_id].output_dir
+        facts = _topology_operational_facts(
+            target, workspace_root=cfg("ATLAS_WORKSPACE_ROOT")
+        )
+        if facts is None:
+            return jsonify({
+                "scope": scope_id, "counts": None,
+                "detail": "no topology snapshot exists for this scope",
+            })
+        return jsonify({
+            "scope": scope_id,
+            "counts": facts["counts"],
+            "definitions": facts["definitions"],
+            "observed_at": facts["observed_at"],
+        })
+
+    @app.route("/api/health")
+    def api_health():
+        """The canonical health assessment for the requested scope."""
+
+        from founderos_atlas.health import aggregate_assessments
+
+        context, scopes, scope_id = scoped_context("dashboard")
+        if scope_id == GLOBAL_SCOPE_ID:
+            aggregated = aggregation_scopes(scopes)
+            assessment = aggregate_assessments(
+                [
+                    health_for(scope, summary_for(scope))
+                    for scope in aggregated
+                ],
+                scope_id=GLOBAL_SCOPE_ID,
+                scope_label=GLOBAL_SCOPE_LABEL,
+                generated_at=now_iso(),
+            )
+        else:
+            scope = scopes[scope_id]
+            assessment = health_for(scope, summary_for(scope))
+        return jsonify(assessment.to_dict())
 
     def refresh_curated_topologies() -> None:
         """Re-render current artifacts only; immutable history stays frozen."""
@@ -2238,6 +2469,149 @@ def register_routes(app) -> None:
             revision=result.revision,
             event=event.to_dict(),
             message="Last site assignment change undone.",
+        )
+
+    # -- Peer identity resolution (operator workflow) ----------------------
+    #
+    # Same contract as site curation: durable, audited, revision-checked,
+    # undoable. Atlas suggests candidates with evidence; only the operator
+    # merges. The form endpoints keep the workflow fully usable without
+    # JavaScript; the JSON API mirrors them for the viewer.
+
+    def _resolution_repo() -> PeerResolutionRepository:
+        return PeerResolutionRepository(cfg("ATLAS_WORKSPACE_ROOT"))
+
+    def _expected_revision(raw) -> int | None:
+        text = str(raw or "").strip()
+        return int(text) if text else None
+
+    @app.route("/topology/identity/resolve", methods=["POST"])
+    def topology_identity_resolve():
+        try:
+            _, event = _resolution_repo().resolve(
+                peer_label=str(request.form.get("peer_label") or ""),
+                resolved_hostname=str(
+                    request.form.get("resolved_hostname") or ""
+                ),
+                reason=str(request.form.get("reason") or "").strip() or None,
+                expected_revision=_expected_revision(
+                    request.form.get("expected_revision")
+                ),
+            )
+        except PeerResolutionConflictError as error:
+            flash(str(error), "error")
+        except ValueError as error:
+            flash(str(error), "error")
+        else:
+            refresh_curated_topologies()
+            flash(
+                f"Resolved {event.peer_label} to {event.after_hostname}. "
+                "Every future view applies this decision until reverted.",
+                "success",
+            )
+        return redirect("/topology#identity")
+
+    @app.route("/topology/identity/revert", methods=["POST"])
+    def topology_identity_revert():
+        try:
+            _, event = _resolution_repo().revert(
+                peer_label=str(request.form.get("peer_label") or ""),
+                reason=str(request.form.get("reason") or "").strip() or None,
+                expected_revision=_expected_revision(
+                    request.form.get("expected_revision")
+                ),
+            )
+        except (PeerResolutionConflictError, ValueError) as error:
+            flash(str(error), "error")
+        else:
+            refresh_curated_topologies()
+            flash(
+                f"{event.peer_label} is unresolved again — the audit trail "
+                "keeps the full history.",
+                "success",
+            )
+        return redirect("/topology#identity")
+
+    @app.route("/topology/identity/undo", methods=["POST"])
+    def topology_identity_undo():
+        try:
+            _, event = _resolution_repo().undo(
+                subject_key=str(request.form.get("subject_key") or ""),
+            )
+        except (PeerResolutionConflictError, ValueError) as error:
+            flash(str(error), "error")
+        else:
+            refresh_curated_topologies()
+            flash(
+                f"Undid {event.undoes_event_id} for {event.peer_label}.",
+                "success",
+            )
+        return redirect("/topology#identity")
+
+    @app.route("/api/topology/identity-resolutions", methods=["PUT"])
+    def api_resolve_peer_identity():
+        payload = curation_payload()
+        try:
+            result, event = _resolution_repo().resolve(
+                peer_label=str(payload.get("peer_label") or ""),
+                resolved_hostname=str(payload.get("resolved_hostname") or ""),
+                resolved_device_id=(
+                    str(payload.get("resolved_device_id") or "").strip() or None
+                ),
+                reason=str(payload.get("reason") or "").strip() or None,
+                expected_revision=_expected_revision(
+                    payload.get("expected_revision")
+                ),
+            )
+        except PeerResolutionConflictError as error:
+            return jsonify(error=str(error)), 409
+        except ValueError as error:
+            return jsonify(error=str(error)), 400
+        refresh_curated_topologies()
+        return jsonify(
+            revision=result.revision,
+            event=event.to_dict(),
+            message="Peer identity resolution saved.",
+        )
+
+    @app.route("/api/topology/identity-resolutions/revert", methods=["POST"])
+    def api_revert_peer_identity():
+        payload = curation_payload()
+        try:
+            result, event = _resolution_repo().revert(
+                peer_label=str(payload.get("peer_label") or ""),
+                reason=str(payload.get("reason") or "").strip() or None,
+                expected_revision=_expected_revision(
+                    payload.get("expected_revision")
+                ),
+            )
+        except PeerResolutionConflictError as error:
+            return jsonify(error=str(error)), 409
+        except ValueError as error:
+            return jsonify(error=str(error)), 400
+        refresh_curated_topologies()
+        return jsonify(
+            revision=result.revision,
+            event=event.to_dict(),
+            message="The peer is unresolved again.",
+        )
+
+    @app.route("/api/topology/identity-resolutions/undo", methods=["POST"])
+    def api_undo_peer_identity():
+        payload = curation_payload()
+        try:
+            result, event = _resolution_repo().undo(
+                subject_key=str(payload.get("subject_key") or ""),
+            )
+        except PeerResolutionConflictError as error:
+            return jsonify(error=str(error)), 409
+        except ValueError as error:
+            return jsonify(error=str(error)), 400
+        refresh_curated_topologies()
+        return jsonify(
+            revision=result.revision,
+            event=event.to_dict(),
+            message="Last identity resolution change undone.",
         )
 
     @app.route("/api/topology/sites/<site_id>", methods=["PUT"])

@@ -1,15 +1,13 @@
 {% extends "base.html" %}
 {% import "_icons.html" as icons %}
 {% import "_fmt.html" as fmt %}
+{% import "_health.html" as health_ui %}
 {% block title %}Mission — Enterprise{% endblock %}
 {% block content %}
 <h1>Mission — Enterprise</h1>
 
 {% if summary.networks %}
-<div class="status-banner status-{{ summary.status | lower }} mission-status">
-  <span class="badge">{{ summary.status }}</span>
-  <span>{{ summary.status_detail }}</span>
-</div>
+{{ health_ui.banner(health) }}
 {% endif %}
 
 <section class="card mission-actions">

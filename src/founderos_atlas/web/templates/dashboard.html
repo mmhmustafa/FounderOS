@@ -1,13 +1,11 @@
 {% extends "base.html" %}
 {% import "_icons.html" as icons %}
+{% import "_health.html" as health_ui %}
 {% block title %}Mission{% endblock %}
 {% block content %}
 <h1>Mission{% if active_scope_label %} — {{ active_scope_label }}{% endif %}</h1>
 
-<div class="status-banner status-{{ summary.status | lower }} mission-status">
-  <span class="badge">{{ summary.status }}</span>
-  <span>{{ summary.status_detail }}</span>
-</div>
+{{ health_ui.banner(health) }}
 
 <section class="card mission-actions">
   <h2>What would you like to do?</h2>

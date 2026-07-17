@@ -322,6 +322,15 @@ def _build() -> dict[str, str]:
         "site-wan": _wan_site(),
         "site-internet": _internet_site(),
         "site-cloud": _cloud_site(),
+        # Premises refinements share the premises glyph; transit shares the
+        # WAN glyph; an explicitly unclassified or custom site renders with
+        # the same quality as a regular site — never as a lesser shape.
+        "site-branch": _site(),
+        "site-campus": _site(),
+        "site-datacenter": _site(),
+        "site-transit": _wan_site(),
+        "site-unclassified": _site(),
+        "site-custom": _site(),
     }
 
 
@@ -343,9 +352,10 @@ def stencil_data_uri(role: str) -> str:
 def role_accent(role: str) -> str:
     """The role's accent colour, for legends and chips."""
 
-    if role == "site":
+    if role in ("site", "site-branch", "site-campus", "site-datacenter",
+                "site-unclassified", "site-custom"):
         return _SITE_PALETTE[0]
-    if role == "site-wan":
+    if role in ("site-wan", "site-transit"):
         return _WAN_PALETTE[0]
     if role == "site-internet":
         return _INTERNET_PALETTE[0]

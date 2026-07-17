@@ -48,17 +48,17 @@
       <td>{{ p.last_discovery }}</td>
       <td>{{ 'Archived' if p.archived else 'Active' }}</td>
       <td class="row-actions">
-        <a class="btn btn-sm btn-primary" href="/discovery?profile={{ p.name | urlencode }}">Run</a>
-        <a class="btn btn-sm" href="/profiles/{{ p.name | urlencode }}/edit">Edit</a>
+        <a class="btn btn-sm btn-primary" href="/discovery?profile={{ p.name | urlencode }}" aria-label="Run discovery for {{ p.name }}">Run</a>
+        <a class="btn btn-sm" href="/profiles/{{ p.name | urlencode }}/edit" aria-label="Edit {{ p.name }}">Edit</a>
         <form method="post" action="/profiles/{{ p.name | urlencode }}/duplicate">
-          <button class="btn btn-sm" type="submit">Duplicate</button>
+          <button class="btn btn-sm" type="submit" aria-label="Duplicate {{ p.name }}">Duplicate</button>
         </form>
         <form method="post" action="/profiles/{{ p.name | urlencode }}/archive">
           {% if p.archived %}<input type="hidden" name="restore" value="1">{% endif %}
-          <button class="btn btn-sm" type="submit">{{ 'Restore' if p.archived else 'Archive' }}</button>
+          <button class="btn btn-sm" type="submit" aria-label="{{ 'Restore' if p.archived else 'Archive' }} {{ p.name }}">{{ 'Restore' if p.archived else 'Archive' }}</button>
         </form>
         <form method="post" action="/profiles/{{ p.name | urlencode }}/delete" onsubmit="return confirm('Delete only the discovery profile {{ p.name }}? The network and its enterprise knowledge stay if another profile observes it.');">
-          <button class="btn btn-sm btn-danger" type="submit">Delete</button>
+          <button class="btn btn-sm btn-danger" type="submit" aria-label="Delete {{ p.name }}">Delete</button>
         </form>
       </td>
     </tr>

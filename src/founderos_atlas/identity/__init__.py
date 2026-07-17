@@ -19,8 +19,24 @@ from .matching import (
     SerialNumberMatch,
 )
 from .resolver import IdentityResolution, IdentityResolver
+from .resolutions import (
+    PeerIdentityResolution,
+    PeerResolutionCatalog,
+    PeerResolutionConflictError,
+    PeerResolutionEvent,
+    PeerResolutionRepository,
+    peer_subject_key,
+    resolution_candidates,
+)
 
 __all__ = [
+    "PeerIdentityResolution",
+    "PeerResolutionCatalog",
+    "PeerResolutionConflictError",
+    "PeerResolutionEvent",
+    "PeerResolutionRepository",
+    "peer_subject_key",
+    "resolution_candidates",
     "CanonicalDevice",
     "DEFAULT_MATCH_RULES",
     "DeviceIdentity",

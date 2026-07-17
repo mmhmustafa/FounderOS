@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_icons.html" as icons %}
 {% from "_device_actions.html" import device_actions %}
 {% block title %}Advisor{% endblock %}
 {% block content %}
@@ -12,11 +13,11 @@
     <button class="btn btn-primary" type="submit">Ask</button>
   </form>
   <div class="advisor-quick">
-    <form method="post" action="/advisor/ask"><input type="hidden" name="question" value="Investigate an issue"><button class="btn btn-sm" type="submit">🔍 Investigate an Issue</button></form>
-    <form method="post" action="/advisor/ask"><input type="hidden" name="question" value="Help me plan maintenance"><button class="btn btn-sm" type="submit">🛠 Plan a Change</button></form>
-    <form method="post" action="/advisor/ask"><input type="hidden" name="question" value="Summarize discovery"><button class="btn btn-sm" type="submit">🌐 Discover Infrastructure</button></form>
-    <form method="post" action="/advisor/ask"><input type="hidden" name="question" value="What changed?"><button class="btn btn-sm" type="submit">📈 Explain Recent Changes</button></form>
-    <form method="post" action="/advisor/ask"><input type="hidden" name="question" value="Explain enterprise health"><button class="btn btn-sm" type="submit">📊 Summarize Enterprise Health</button></form>
+    <form method="post" action="/advisor/ask"><input type="hidden" name="question" value="Investigate an issue"><button class="btn btn-sm" type="submit">{{ icons.icon('paths', 15) }} Investigate an Issue</button></form>
+    <form method="post" action="/advisor/ask"><input type="hidden" name="question" value="Help me plan maintenance"><button class="btn btn-sm" type="submit">{{ icons.icon('wrench', 15) }} Plan a Change</button></form>
+    <form method="post" action="/advisor/ask"><input type="hidden" name="question" value="Summarize discovery"><button class="btn btn-sm" type="submit">{{ icons.icon('discovery', 15) }} Discover Infrastructure</button></form>
+    <form method="post" action="/advisor/ask"><input type="hidden" name="question" value="What changed?"><button class="btn btn-sm" type="submit">{{ icons.icon('trending', 15) }} Explain Recent Changes</button></form>
+    <form method="post" action="/advisor/ask"><input type="hidden" name="question" value="Explain enterprise health"><button class="btn btn-sm" type="submit">{{ icons.icon('chart', 15) }} Summarize Enterprise Health</button></form>
   </div>
 </section>
 
@@ -36,7 +37,7 @@
     <summary class="muted">Evidence used ({{ response.evidence | length }})</summary>
     <ul>
       {% for item in response.evidence %}
-      <li>✓ {% if item.href %}<a href="{{ item.href }}">{{ item.label }}</a>{% else %}{{ item.label }}{% endif %} <span class="muted">— {{ item.detail }}</span></li>
+      <li>{{ icons.icon('check', 14) }} {% if item.href %}<a href="{{ item.href }}">{{ item.label }}</a>{% else %}{{ item.label }}{% endif %} <span class="muted">— {{ item.detail }}</span></li>
       {% endfor %}
     </ul>
   </details>

@@ -12,6 +12,30 @@
 
   function byId(id) { return document.getElementById(id); }
 
+  // -- Responsive tables ------------------------------------------------------
+  // Any .grid table not already inside a labelled scroll region gets one:
+  // deliberate horizontal scrolling on narrow screens, keyboard-reachable,
+  // named after its nearest heading. Future pages inherit this without
+  // remembering a wrapper.
+  Array.prototype.forEach.call(
+    document.querySelectorAll("table.grid"),
+    function (table) {
+      if (table.closest(".table-scroll")) return;
+      var wrapper = document.createElement("div");
+      wrapper.className = "table-scroll";
+      wrapper.setAttribute("role", "region");
+      wrapper.setAttribute("tabindex", "0");
+      var section = table.closest("section, .card, main");
+      var heading = section && section.querySelector("h1, h2, h3");
+      wrapper.setAttribute(
+        "aria-label",
+        (heading && heading.textContent.trim()) || "Data table"
+      );
+      table.parentNode.insertBefore(wrapper, table);
+      wrapper.appendChild(table);
+    }
+  );
+
   // -- Responsive navigation drawer ------------------------------------------
   // Below 1024px the sidebar is an off-canvas drawer. The toggle button
   // reflects state via aria-expanded; Escape, the backdrop, and following

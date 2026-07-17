@@ -1,0 +1,253 @@
+{#- Canonical topology facts (topology/vocabulary.py + renderer site/routing
+    views). Rendered identically wherever topology numbers appear, so the
+    page can never disagree with the viewer: both read one calculation.
+
+    Usage: {% import "_topology_facts.html" as topo %} {{ topo.facts(facts) }}
+-#}
+{% import "_fmt.html" as fmt %}
+
+{%- macro counts(facts) -%}
+<section class="card">
+  <h2>Topology Counts</h2>
+  <p class="muted">Canonical definitions — hover any tile for the exact rule.
+    Counted {{ fmt.when(facts.observed_at) }} from the same calculation the viewer uses.</p>
+  <div class="tiles">
+    <div class="tile" title="{{ facts.definitions.relationships }}"><strong>Relationships</strong><span>{{ facts.counts.relationships }}</span></div>
+    <div class="tile" title="{{ facts.definitions.physical_links }}"><strong>Physical links</strong><span>{{ facts.counts.physical_links }}</span></div>
+    <div class="tile" title="{{ facts.definitions.logical_adjacencies }}"><strong>Logical adjacencies</strong><span>{{ facts.counts.logical_adjacencies }}</span></div>
+    <div class="tile" title="{{ facts.definitions.routing_adjacencies }}"><strong>Routing adjacencies</strong><span>{{ facts.counts.routing_adjacencies }}</span></div>
+    <div class="tile" title="{{ facts.definitions.bgp_peerings }}"><strong>BGP peerings</strong><span>{{ facts.counts.bgp_peerings }}</span></div>
+    <div class="tile" title="{{ facts.definitions.inter_site_links }}"><strong>Inter-site links</strong><span>{{ facts.counts.inter_site_links }}</span></div>
+    <div class="tile" title="{{ facts.definitions.unresolved_peer_identities }}"><strong>Unresolved identities</strong><span>{{ facts.counts.unresolved_peer_identities }}</span></div>
+  </div>
+</section>
+{%- endmacro -%}
+
+{%- macro sites_overview(facts) -%}
+{% if facts.site_view.sites %}
+<section class="card" id="sites-overview">
+  <h2>Sites</h2>
+  <p class="muted">The table equivalent of the site-level map — same membership,
+    same links, keyboard-first. Membership: operator override first, then
+    multi-signal inference; every row explains its classification.</p>
+  <div class="table-scroll" role="region" aria-label="Sites overview" tabindex="0">
+    <table class="grid">
+      <thead><tr><th>Site</th><th>Type</th><th>Devices</th><th>Role mix</th><th>Why classified</th></tr></thead>
+      <tbody>
+        {% for site in facts.site_view.sites %}
+        <tr>
+          <td>{{ site.label }}</td>
+          <td><span class="badge hop-badge site-type-{{ site.site_type }}">{{ site.site_type | title }}</span></td>
+          <td>{{ site.count }}</td>
+          <td class="muted">{% for role, n in site.roles.items() %}{{ role }}: {{ n }}{{ ", " if not loop.last }}{% endfor %}</td>
+          <td class="muted">{{ site.evidence }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Inter-Site Links</h3>
+  {% if facts.site_view.inter_site_links %}
+  <div class="table-scroll" role="region" aria-label="Inter-site links" tabindex="0">
+    <table class="grid">
+      <thead><tr><th>Between</th><th>Endpoints</th><th>Kind</th><th>Verification</th><th>Confidence</th><th>Evidence</th><th>Observed</th></tr></thead>
+      <tbody>
+        {% for link in facts.site_view.inter_site_links %}
+        <tr>
+          <td>{{ link.sites | join(' ↔ ') }}</td>
+          <td>{{ link.left }} {{ link.left_interface or '' }} ↔ {{ link.right }} {{ link.right_interface or '' }}</td>
+          <td>{{ link.relationship }}</td>
+          <td><span class="badge hop-badge hop-badge-{{ 'pass' if link.verification == 'verified' else 'unknown' }}">{{ link.verification | title }}</span></td>
+          <td>{% if link.confidence %}{{ link.confidence }}%{% else %}—{% endif %}</td>
+          <td class="muted">{% for item in link.evidence %}{{ item }}{{ "; " if not loop.last }}{% endfor %}</td>
+          <td>{{ fmt.when(link.observed_at) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No relationship joins two different known sites yet.</p>
+  {% endif %}
+  {% if facts.site_view.candidate_inter_site_peers %}
+  <details>
+    <summary class="muted">Possible inter-site links awaiting identity resolution ({{ facts.site_view.candidate_inter_site_peers | length }})</summary>
+    <ul>
+      {% for candidate in facts.site_view.candidate_inter_site_peers %}
+      <li class="muted"><strong>{{ candidate.peer }}</strong> — observed from {{ candidate.observed_from_site }}: {{ candidate.detail }}</li>
+      {% endfor %}
+    </ul>
+    <p class="muted">These WAN peers carry no far-end site evidence, so Atlas
+      does not count them as inter-site links — resolving a peer's identity
+      below confirms or rules the link out. Nothing is invented.</p>
+  </details>
+  {% endif %}
+</section>
+{% endif %}
+{%- endmacro -%}
+
+{%- macro routing_views(facts, topology_src=None) -%}
+{% set ospf = facts.routing_view.ospf %}
+{% set bgp = facts.routing_view.bgp %}
+<div class="columns">
+  <section class="card" id="ospf-view">
+    <h2>OSPF</h2>
+    {% if ospf.groups %}
+    <p class="muted">{{ ospf.covered_devices }} of {{ ospf.total_devices }} devices carry OSPF evidence,
+      observed {{ fmt.when(facts.observed_at) }}.</p>
+    <div class="table-scroll" role="region" aria-label="OSPF areas" tabindex="0">
+      <table class="grid">
+        <thead><tr><th>Area</th><th>VRF</th><th>Routers</th><th>Roles</th><th>Adjacency states</th></tr></thead>
+        <tbody>
+          {% for group in ospf.groups %}
+          <tr>
+            <td>{{ group.label }}</td>
+            <td>{{ group.vrf or 'default' }}</td>
+            <td>{{ group.count }}</td>
+            <td class="muted">{{ group.roles | join('; ') if group.roles else 'no boundary evidence' }}</td>
+            <td class="muted">{{ group.states | join(', ') if group.states else 'unknown' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if topology_src %}<a class="btn btn-sm" href="{{ topology_src }}?view=ospf" target="_blank">Open OSPF view</a>{% endif %}
+    {% else %}
+    <p class="muted">No OSPF adjacency has been observed in this scope. Unknown stays unknown — Atlas never draws an area it did not see.</p>
+    {% endif %}
+  </section>
+  <section class="card" id="bgp-view">
+    <h2>BGP</h2>
+    {% if bgp.groups %}
+    <p class="muted">{{ bgp.covered_devices }} of {{ bgp.total_devices }} devices carry BGP evidence,
+      observed {{ fmt.when(facts.observed_at) }}.</p>
+    <div class="table-scroll" role="region" aria-label="BGP autonomous systems" tabindex="0">
+      <table class="grid">
+        <thead><tr><th>Autonomous system</th><th>VRF</th><th>Routers</th><th>eBGP / iBGP</th><th>Session states</th></tr></thead>
+        <tbody>
+          {% for group in bgp.groups %}
+          <tr>
+            <td>{{ group.label }}</td>
+            <td>{{ group.vrf or 'default' }}</td>
+            <td>{{ group.count }}</td>
+            <td class="muted">{{ group.session_kinds | join(', ') if group.session_kinds else 'unknown' }}</td>
+            <td class="muted">{{ group.states | join(', ') if group.states else 'unknown' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if topology_src %}<a class="btn btn-sm" href="{{ topology_src }}?view=bgp" target="_blank">Open BGP view</a>{% endif %}
+    {% else %}
+    <p class="muted">No BGP session has been observed in this scope. Unknown stays unknown — Atlas never draws an AS it did not see.</p>
+    {% endif %}
+  </section>
+</div>
+{%- endmacro -%}
+
+{%- macro identity_workflow(facts) -%}
+{% set identity = facts.identity %}
+<section class="card" id="identity">
+  <h2>Unresolved Peer Identities</h2>
+  {% if identity.unresolved %}
+  <p class="muted">Endpoints observed through protocol evidence that no discovered
+    device owns. Atlas suggests candidates with the evidence for each — it never
+    merges on its own. Resolving is durable, audited, and undoable.</p>
+  <div class="table-scroll table-scroll-wide" role="region" aria-label="Unresolved peer identities" tabindex="0">
+    <table class="grid">
+      <thead><tr><th>Observed peer</th><th>Seen via</th><th>Why unresolved</th><th>Candidates (with evidence)</th><th>Resolve</th></tr></thead>
+      <tbody>
+        {% for peer in identity.unresolved %}
+        <tr>
+          <td>{{ peer.peer }}{% if peer.router_id %}<div class="muted">router ID {{ peer.router_id }}</div>{% endif %}</td>
+          <td>{{ peer.observed_via or peer.observation or 'protocol evidence' }}</td>
+          <td class="muted">{{ peer.why_unresolved }}</td>
+          <td>
+            {% if peer.candidates %}
+            <ul>
+              {% for candidate in peer.candidates %}
+              <li class="muted"><strong>{{ candidate.hostname }}</strong> — {{ candidate.signal }}: {{ candidate.detail }}</li>
+              {% endfor %}
+            </ul>
+            {% else %}
+            <span class="muted">no deterministic candidate — Atlas holds no evidence tying this identity to a discovered device</span>
+            {% endif %}
+          </td>
+          <td>
+            <form method="post" action="/topology/identity/resolve" class="row-actions">
+              <input type="hidden" name="peer_label" value="{{ peer.peer }}">
+              <input type="hidden" name="expected_revision" value="{{ identity.revision }}">
+              <label class="visually-hidden" for="resolve-{{ loop.index }}">Resolve {{ peer.peer }} to device</label>
+              <select id="resolve-{{ loop.index }}" name="resolved_hostname" required>
+                <option value="" selected disabled>— device —</option>
+                {% for hostname in identity.device_options %}
+                <option value="{{ hostname }}" {{ 'data-candidate' if peer.candidates and peer.candidates[0].hostname == hostname }}>{{ hostname }}{% if peer.candidates and peer.candidates[0].hostname == hostname %} (suggested){% endif %}</option>
+                {% endfor %}
+              </select>
+              <button class="btn btn-sm" type="submit" aria-label="Resolve {{ peer.peer }}">Resolve</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">Every observed endpoint resolves to a discovered device.</p>
+  {% endif %}
+
+  {% if identity.active %}
+  <h3>Active Resolutions</h3>
+  <div class="table-scroll" role="region" aria-label="Active identity resolutions" tabindex="0">
+    <table class="grid">
+      <thead><tr><th>Peer</th><th>Resolved to</th><th>By</th><th>When</th><th>Reason</th><th><span class="visually-hidden">Actions</span></th></tr></thead>
+      <tbody>
+        {% for resolution in identity.active %}
+        <tr>
+          <td>{{ resolution.peer_label }}</td>
+          <td>{{ resolution.resolved_hostname }}</td>
+          <td>{{ resolution.created_by }}</td>
+          <td>{{ fmt.when(resolution.created_at) }}</td>
+          <td class="muted">{{ resolution.reason or '—' }}</td>
+          <td class="row-actions">
+            <form method="post" action="/topology/identity/revert">
+              <input type="hidden" name="peer_label" value="{{ resolution.peer_label }}">
+              <input type="hidden" name="expected_revision" value="{{ identity.revision }}">
+              <button class="btn btn-sm" type="submit" aria-label="Revert resolution of {{ resolution.peer_label }}">Revert</button>
+            </form>
+            <form method="post" action="/topology/identity/undo">
+              <input type="hidden" name="subject_key" value="{{ resolution.subject_key }}">
+              <button class="btn btn-sm" type="submit" aria-label="Undo last change for {{ resolution.peer_label }}">Undo last change</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  {% if identity.history %}
+  <details>
+    <summary class="muted">Resolution audit trail ({{ identity.history | length }} recent)</summary>
+    <ul>
+      {% for event in identity.history | reverse %}
+      <li class="muted">{{ fmt.when(event.occurred_at) }} — {{ event.action }} {{ event.peer_label }}:
+        {{ event.before_hostname or 'unresolved' }} → {{ event.after_hostname or 'unresolved' }}
+        (revision {{ event.revision }}{% if event.undoes_event_id %}, undoes {{ event.undoes_event_id }}{% endif %})</li>
+      {% endfor %}
+    </ul>
+  </details>
+  {% endif %}
+</section>
+{%- endmacro -%}
+
+{%- macro facts_sections(facts, topology_src=None) -%}
+{% if facts %}
+{{ counts(facts) }}
+{{ sites_overview(facts) }}
+{{ routing_views(facts, topology_src) }}
+{{ identity_workflow(facts) }}
+{% endif %}
+{%- endmacro -%}

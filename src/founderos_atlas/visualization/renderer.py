@@ -97,6 +97,7 @@ class TopologyRenderer:
         viewer_context: Mapping[str, Any] | None = None,
         site_catalog: Any | None = None,
         site_overrides: Any | None = None,
+        identity_resolutions: Any | None = None,
     ) -> None:
         if not isinstance(snapshot, TopologySnapshot):
             raise TypeError("snapshot must be a TopologySnapshot")
@@ -109,6 +110,24 @@ class TopologyRenderer:
         # the operator's workspace catalog.
         self._site_catalog = site_catalog
         self._site_overrides = site_overrides
+        # Operator peer-identity resolutions (identity/resolutions.py):
+        # "this observed peer IS that discovered device". Applied when
+        # resolving edge endpoints, with full provenance on the edge.
+        self._identity_resolutions = identity_resolutions
+        self._identity_loaded = identity_resolutions is not None
+
+    def _identity_catalog(self):
+        """The peer-resolution catalog: injected, else the workspace's."""
+
+        if not self._identity_loaded:
+            try:
+                from founderos_atlas.identity import PeerResolutionRepository
+
+                self._identity_resolutions = PeerResolutionRepository().load()
+            except Exception:  # noqa: BLE001 - absent curation is a state
+                self._identity_resolutions = None
+            self._identity_loaded = True
+        return self._identity_resolutions
 
     def elements(self) -> dict[str, list[dict[str, Any]]]:
         """Return deterministic Cytoscape nodes and edges without rendering HTML.
@@ -239,11 +258,16 @@ class TopologyRenderer:
             pair = (str(fused["left_device_id"]), str(fused["right_device_id"]))
             fused_pairs[pair] = fused
 
+        resolutions = self._identity_catalog()
+        operator_resolved: dict[str, dict[str, str]] = {}
+
         def _resolve_target(edge: Mapping, edge_metadata: dict) -> str | None:
             """Remote endpoint via hostname/alias/management map, then the
             enterprise address ownership index (an owned interface,
             loopback, secondary, or router-id address resolves onto its
-            owner — never onto a phantom node)."""
+            owner — never onto a phantom node), then any operator
+            peer-identity resolution (identity/resolutions.py) — a durable
+            audited decision, never a guess of Atlas's own."""
 
             direct = hostname_to_id.get(str(edge["remote_hostname"]).casefold())
             if direct is not None:
@@ -257,6 +281,30 @@ class TopologyRenderer:
                 claim = ownership.get(str(candidate or "").strip())
                 if claim is not None:
                     return str(claim["device_id"])
+            if resolutions is not None:
+                for candidate in (
+                    edge.get("remote_hostname"),
+                    edge_metadata.get("adjacency_address"),
+                    edge_metadata.get("peer_address"),
+                    edge.get("remote_management_ip"),
+                ):
+                    label = str(candidate or "").strip()
+                    if not label:
+                        continue
+                    resolution = resolutions.find(label)
+                    if resolution is None:
+                        continue
+                    resolved = hostname_to_id.get(
+                        resolution.resolved_hostname.casefold()
+                    )
+                    if resolved is not None:
+                        operator_resolved[resolved] = {
+                            "peer_label": resolution.peer_label,
+                            "resolved_by": resolution.created_by,
+                            "resolved_at": resolution.created_at,
+                            "reason": resolution.reason or "",
+                        }
+                        return resolved
             return None
 
         logical_edges: dict[tuple, dict[str, Any]] = {}
@@ -265,7 +313,13 @@ class TopologyRenderer:
             remote_hostname = str(edge["remote_hostname"])
             edge_metadata = dict(edge.get("metadata") or {})
             relation = relationship_kind(str(edge["protocol"]), edge_metadata)
+            operator_resolved.clear()
             target_id = _resolve_target(edge, edge_metadata)
+            edge_resolution = (
+                operator_resolved.get(target_id) if target_id else None
+            )
+            if edge_resolution is not None:
+                edge_metadata["identity_resolution"] = edge_resolution
             source_for_pair = str(edge["local_device_id"])
             if target_id is not None:
                 pair = tuple(sorted((source_for_pair, target_id)))
@@ -353,6 +407,10 @@ class TopologyRenderer:
                 "relationship": relation,
                 "observations": 1,
             }
+            if edge_resolution is not None:
+                # Provenance: this endpoint was joined by an audited
+                # operator decision, and the edge says so on click.
+                logical_edges[key]["identity_resolution"] = dict(edge_resolution)
 
         # One edge per fused enterprise relationship (Part 9): the line
         # style is the relationship type, and the edge carries WHY it
@@ -458,39 +516,38 @@ class TopologyRenderer:
             return "changed"
         return "none"
 
-    def relationship_summary(self) -> dict[str, int]:
-        """Honest relationship-type counts — never a bare "edges" number.
+    def relationship_summary(
+        self,
+        elements: dict | None = None,
+        *,
+        site_membership: Mapping[str, str] | None = None,
+    ) -> dict[str, int]:
+        """The canonical topology counts (see topology/vocabulary.py).
 
-        Physical links are verified link-layer evidence; routing
-        adjacencies and protocol peers are logical observations;
-        unresolved peers are observed identities Atlas has not
-        discovered (and never counts as devices).
+        Every surface showing a topology number counts through the one
+        vocabulary module, so the viewer summary, Mission tiles, the
+        topology page, exports, and APIs can never disagree. The legacy
+        key names (``protocol_peers``, ``verified_routed``,
+        ``unresolved_peers``) are kept alongside the canonical ones.
         """
 
-        elements = self.elements()
-        counts = {
-            "physical_links": 0,
-            "routing_adjacencies": 0,
-            "protocol_peers": 0,
-            "verified_routed": 0,
-            "unresolved_peers": 0,
+        from founderos_atlas.topology.vocabulary import count_topology
+
+        if elements is None:
+            elements = self.elements()
+        if site_membership is None:
+            try:
+                site_membership = self.site_view(elements).get("membership")
+            except Exception:  # noqa: BLE001 - no site data is a state
+                site_membership = None
+        counts = count_topology(elements, site_membership=site_membership)
+        return {
+            **counts.to_dict(),
+            # Long-standing aliases consumed by existing templates/tests.
+            "protocol_peers": counts.bgp_peerings,
+            "verified_routed": counts.verified_routed_links,
+            "unresolved_peers": counts.unresolved_peer_identities,
         }
-        for edge in elements["edges"]:
-            relation = edge["data"].get("relationship")
-            if relation == RELATION_PHYSICAL:
-                counts["physical_links"] += 1
-            elif relation == RELATION_ROUTING:
-                counts["routing_adjacencies"] += 1
-            elif relation == RELATION_PEER:
-                counts["protocol_peers"] += 1
-            elif relation == "verified-routed":
-                counts["verified_routed"] += 1
-        counts["unresolved_peers"] = sum(
-            1
-            for node in elements["nodes"]
-            if node["data"].get("kind") == "observed"
-        )
-        return counts
 
 
     def site_view(self, elements) -> dict:
@@ -579,8 +636,34 @@ class TopologyRenderer:
                 "orphaned": orphaned,
                 "evidence": verdict.to_dict(),
             }
-        # An unresolved peer belongs where it was seen: the site of the first
-        # discovered device that observed it.
+        # An unresolved peer: FIRST try assigning evidence about the far end
+        # itself — the peer announced a name, and if that name matches a site
+        # convention the link it carries is honestly inter-site. Only when no
+        # far-end evidence exists does the peer stay drawn beside the first
+        # discovered device that observed it. This is the fix for the old
+        # contradiction where every WAN peer inherited its observer's site and
+        # the site view therefore reported zero inter-site links while the
+        # interface evidence plainly named the far city.
+        observed_nodes = {
+            node["data"]["id"]: node["data"]
+            for node in elements["nodes"]
+            if node["data"].get("kind") == "observed"
+        }
+        for observed_id, data in observed_nodes.items():
+            if observed_id in membership:
+                continue
+            verdict = engine.assign(hostname=data.get("hostname"))
+            if verdict.status == "assigned" and verdict.site_id:
+                membership[observed_id] = verdict.site_id
+                data["site_assignment"] = {
+                    "source": "far-end-evidence",
+                    "effective_site_id": verdict.site_id,
+                    "effective_site_name": names.get(
+                        verdict.site_id, verdict.site_id
+                    ),
+                    "confidence": verdict.confidence,
+                    "evidence": verdict.to_dict(),
+                }
         for edge in elements["edges"]:
             data = edge["data"]
             for observed, seen_by in ((data["target"], data["source"]),
@@ -589,6 +672,20 @@ class TopologyRenderer:
                     owner = membership.get(seen_by)
                     if owner:
                         membership[observed] = owner
+                        node = observed_nodes.get(observed)
+                        if node is not None and "site_assignment" not in node:
+                            node["site_assignment"] = {
+                                "source": "observed-from",
+                                "effective_site_id": owner,
+                                "effective_site_name": names.get(owner, owner),
+                                "confidence": None,
+                                "evidence": {
+                                    "detail": (
+                                        "no far-end site evidence; drawn "
+                                        "beside the device that observed it"
+                                    )
+                                },
+                            }
 
         by_site: dict[str, list] = {}
         for node in elements["nodes"]:
@@ -638,33 +735,102 @@ class TopologyRenderer:
 
         strength = {"physical": 4, "verified-routed": 3,
                     "routing-adjacency": 2, "protocol-peer": 1, "unknown": 0}
+        observed_at = str(self._context.get("last_discovered") or "") or str(
+            getattr(self._snapshot, "created_at", "") or ""
+        )
         aggregates: dict = {}
+        inter_site_links: list[dict[str, Any]] = []
+        node_labels = {
+            node["data"]["id"]: str(node["data"].get("label") or node["data"]["id"])
+            for node in elements["nodes"]
+        }
         for edge in elements["edges"]:
             data = edge["data"]
             a = membership.get(data["source"])
             b = membership.get(data["target"])
             if not a or not b or a == b:
                 continue
+            # A link into the "no site evidence" cloud is drawn on the map
+            # (aggregated below) but is NOT an inter-site link — the
+            # canonical definition requires two KNOWN sites, and the page
+            # table must agree with the counted tile to the row.
+            crosses_known_sites = "__none__" not in (a, b)
+            # Verified: both endpoints are discovered devices whose sites are
+            # known. Observed: one endpoint is an unresolved peer whose site
+            # comes from far-end evidence — real, but resting on the peer's
+            # announced identity rather than a completed discovery.
+            unresolved_end = (
+                data["source"] if str(data["source"]).startswith("observed:")
+                else data["target"] if str(data["target"]).startswith("observed:")
+                else None
+            )
+            verification = "verified" if unresolved_end is None else "observed"
             key = tuple(sorted((a, b)))
             entry = aggregates.setdefault(key, {
                 "id": "agg:" + key[0] + "~" + key[1],
                 "source": "site:" + key[0], "target": "site:" + key[1],
                 "count": 0, "relationship": "unknown", "members": [],
+                "verification": "observed",
+                "observed_at": observed_at or None,
             })
             entry["count"] += 1
             entry["members"].append(data["id"])
+            if verification == "verified":
+                entry["verification"] = "verified"
             kind = str(data.get("relationship") or "unknown")
             if strength.get(kind, 0) > strength.get(entry["relationship"], 0):
                 entry["relationship"] = kind
+            if not crosses_known_sites:
+                continue
+            inter_site_links.append({
+                "sites": list(key),
+                "edge_id": data["id"],
+                "left": node_labels.get(str(data["source"]), str(data["source"])),
+                "right": node_labels.get(str(data["target"]), str(data["target"])),
+                "left_interface": data.get("source_interface"),
+                "right_interface": data.get("target_interface"),
+                "relationship": kind,
+                "verification": verification,
+                "confidence": data.get("confidence"),
+                "evidence": [
+                    str(item.get("detail") or "")
+                    for item in (data.get("evidence") or ())
+                ][:4] or [
+                    f"observed via {str(data.get('protocol') or 'unknown').upper()}"
+                ],
+                "observed_at": observed_at or None,
+            })
         for entry in aggregates.values():
             plural = "s" if entry["count"] != 1 else ""
             entry["display_label"] = str(entry["count"]) + " link" + plural
             entry["members"] = sorted(entry["members"])
 
+        # WAN peers with NO far-end site evidence are candidate inter-site
+        # links: shown as an explanation, never as a counted link — resolving
+        # the peer's identity is what turns a candidate into a link.
+        candidates = []
+        for observed_id, data in observed_nodes.items():
+            assignment = data.get("site_assignment") or {}
+            if assignment.get("source") == "observed-from":
+                candidates.append({
+                    "peer": str(data.get("label") or observed_id),
+                    "observed_from_site": assignment.get("effective_site_id"),
+                    "detail": (
+                        "far-end identity unresolved — resolve this peer to "
+                        "a device to confirm or rule out an inter-site link"
+                    ),
+                })
+
         return {
             "sites": sites,
             "membership": membership,
             "aggregated_edges": [aggregates[k] for k in sorted(aggregates)],
+            "inter_site_links": sorted(
+                inter_site_links, key=lambda item: (item["sites"], item["edge_id"])
+            ),
+            "candidate_inter_site_peers": sorted(
+                candidates, key=lambda item: item["peer"]
+            ),
             "site_options": [
                 {"site_id": site.site_id, "name": site.name,
                  "site_type": site.site_type}
@@ -712,6 +878,71 @@ class TopologyRenderer:
             protocol="bgp", members=bgp_members,
             elements=elements, relevant_edges=bgp_edge_ids,
         )
+
+        # Operational enrichment — everything below is read from observed
+        # evidence on the member devices; nothing is inferred beyond it.
+        for group in ospf_groups:
+            vrf = str(group.get("vrf") or "default")
+            states: set[str] = set()
+            abrs: list[str] = []
+            dual_speakers: list[str] = []
+            for node_id in group["members"]:
+                data = nodes.get(node_id) or {}
+                for adjacency in data.get("ospf_adjacencies") or ():
+                    if str(adjacency.get("vrf") or "default") == vrf:
+                        state = str(adjacency.get("state") or "").strip()
+                        if state:
+                            states.add(state)
+                areas = {
+                    str(item.get("area_id"))
+                    for item in data.get("ospf_memberships") or ()
+                    if str(item.get("vrf") or "default") == vrf
+                    and str(item.get("area_id") or "") not in ("", "unobserved")
+                }
+                label = str(data.get("label") or node_id)
+                if len(areas) > 1:
+                    # Membership in two or more areas IS the ABR definition.
+                    abrs.append(label)
+                if data.get("bgp_memberships"):
+                    # Honest wording: an OSPF router that also speaks BGP is
+                    # an ASBR *candidate*; redistribution is not observed.
+                    dual_speakers.append(label)
+            group["states"] = sorted(states)
+            group["roles"] = (
+                [f"ABR: {name}" for name in sorted(abrs)]
+                + [f"ASBR candidate (also BGP): {name}"
+                   for name in sorted(dual_speakers)]
+            )
+        for group in bgp_groups:
+            vrf = str(group.get("vrf") or "default")
+            local_as = str(group.get("local_as") or "")
+            states = set()
+            ebgp = ibgp = unknown_kind = 0
+            for node_id in group["members"]:
+                data = nodes.get(node_id) or {}
+                for session in data.get("bgp_sessions") or ():
+                    if str(session.get("vrf") or "default") != vrf:
+                        continue
+                    state = str(session.get("state") or "").strip()
+                    if state:
+                        states.add(state)
+                    remote = str(session.get("remote_as") or "").strip()
+                    if not remote or not local_as:
+                        unknown_kind += 1
+                    elif remote == local_as:
+                        ibgp += 1
+                    else:
+                        ebgp += 1
+            group["states"] = sorted(states)
+            kinds = []
+            if ebgp:
+                kinds.append(f"{ebgp} eBGP")
+            if ibgp:
+                kinds.append(f"{ibgp} iBGP")
+            if unknown_kind:
+                kinds.append(f"{unknown_kind} unknown kind")
+            group["session_kinds"] = kinds
+
         return {
             "ospf": {
                 "groups": ospf_groups,
@@ -734,9 +965,12 @@ class TopologyRenderer:
         elements = self.elements()
         site_view = self.site_view(elements)
         routing_view = self.routing_view(elements)
+        identity_catalog = self._identity_catalog()
         curation_marker = (
             "<!-- ATLAS_SITE_OVERRIDE_REVISION="
             + str(site_view.get("override_revision") or 0)
+            + " -->\n<!-- ATLAS_IDENTITY_RESOLUTION_REVISION="
+            + str(getattr(identity_catalog, "revision", 0) or 0)
             + " -->"
         )
         if template.startswith("<!doctype html>"):
@@ -757,7 +991,9 @@ class TopologyRenderer:
                 "device_count": self._snapshot.device_count,
                 "edge_count": self._snapshot.edge_count,
                 "warning_count": len(self._snapshot.warnings),
-                **self.relationship_summary(),
+                **self.relationship_summary(
+                    elements, site_membership=site_view.get("membership")
+                ),
             }
         )
         site_json = _script_json(site_view)

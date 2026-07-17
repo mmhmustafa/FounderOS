@@ -938,8 +938,12 @@ class LegacyScopePolicyTests(unittest.TestCase):
             )
             client = self.build_client(workdir, service)
             page = client.get("/?scope=all").data
-            self.assertIn(b"status-banner status-healthy", page)
+            # The canonical health model may honestly report Degraded or
+            # Stale here (old evidence, missing configurations) — the point
+            # of this test is narrower: the LEGACY scope's Critical must
+            # never leak into the All Networks verdict.
             self.assertNotIn(b"status-banner status-critical", page)
+            self.assertNotIn(b"interface(s) down", page)
             # The legacy scope itself still faithfully reports its state.
             page = client.get("/?scope=default").data
             self.assertIn(b"status-banner status-critical", page)

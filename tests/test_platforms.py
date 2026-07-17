@@ -755,6 +755,11 @@ class StencilAndPresentationTests(unittest.TestCase):
 
         expected_roles = set(DEVICE_ROLES) | {
             "site", "site-wan", "site-internet", "site-cloud",
+            # Site-type refinements: premises kinds share the premises
+            # glyph, transit shares WAN, unclassified/custom render with
+            # full site quality (see sites/models.py SITE_TYPES).
+            "site-branch", "site-campus", "site-datacenter", "site-transit",
+            "site-unclassified", "site-custom",
         }
         self.assertEqual(expected_roles, set(STENCILS))
         # Ordinary sites are overview clouds now; their names are overlaid in

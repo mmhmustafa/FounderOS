@@ -1,5 +1,7 @@
 {% extends "base.html" %}
 {% from "_device_actions.html" import device_actions %}
+{% import "_topology_facts.html" as topo %}
+{% import "_fmt.html" as fmt %}
 {% block title %}Topology{% endblock %}
 {% block content_class %} content-wide content-topology{% endblock %}
 {% block content %}
@@ -15,6 +17,8 @@
   <p class="muted">One federated graph: cross-profile links appear only where deterministic identity evidence connects them. Connectivity is never invented.</p>
 </section>
 {% endif %}
+
+{{ topo.facts_sections(facts, topology_src if has_topology else None) }}
 
 {% if enterprise %}
 <section class="card">
@@ -43,7 +47,7 @@
         {% for c in enterprise_contributions %}
         <tr>
           <td>{{ c.profile_name }}</td>
-          <td>{{ c.observed_at or '—' }}</td>
+          <td>{{ fmt.when(c.observed_at) }}</td>
           <td>{{ c.device_count }}</td>
           <td>{{ c.edge_count }}</td>
           <td>{% if c.fresh %}<span class="ok">fresh</span>{% elif c.fresh is sameas false %}<span class="warn">stale</span>{% else %}unknown{% endif %}</td>
@@ -96,7 +100,7 @@
               <ul>
                 {% for item in device.merge_evidence %}<li class="muted">Evidence: {{ item }}</li>{% endfor %}
                 {% for obs in device.observations %}
-                <li class="muted">Observed by {{ obs.profile_name }}{% if obs.observed_at %} at {{ obs.observed_at }}{% endif %}{% if obs.run_id %} (run {{ obs.run_id }}){% endif %}{% if obs.management_ip %} via {{ obs.management_ip }}{% endif %}</li>
+                <li class="muted">Observed by {{ obs.profile_name }}{% if obs.observed_at %} at {{ fmt.when(obs.observed_at) }}{% endif %}{% if obs.run_id %} (run {{ obs.run_id }}){% endif %}{% if obs.management_ip %} via {{ obs.management_ip }}{% endif %}</li>
                 {% endfor %}
               </ul>
             </details>
@@ -190,5 +194,6 @@
 {% else %}
 <p class="muted">No topology has been generated yet for this network. <a href="/discovery">Run a discovery</a> to build the interactive topology viewer.</p>
 {% endif %}
+{{ topo.facts_sections(facts, topology_src if has_topology else None) }}
 {% endif %}
 {% endblock %}

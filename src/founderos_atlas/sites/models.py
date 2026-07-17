@@ -29,15 +29,41 @@ ASSIGNMENT_AMBIGUOUS = "ambiguous"
 
 SITE_CATALOG_SCHEMA_VERSION = "1.1.0"
 
+# The visual/semantic class of a site. A generic "site" stays the default;
+# branch/campus/datacenter refine it; wan/internet/transit/cloud mark
+# non-premises estates; "unclassified" is the honest explicit choice for a
+# site whose kind is not known; "custom" opts out of the taxonomy entirely.
 SITE_TYPE_SITE = "site"
+SITE_TYPE_BRANCH = "branch"
+SITE_TYPE_CAMPUS = "campus"
+SITE_TYPE_DATACENTER = "datacenter"
 SITE_TYPE_WAN = "wan"
 SITE_TYPE_INTERNET = "internet"
+SITE_TYPE_TRANSIT = "transit"
 SITE_TYPE_CLOUD = "cloud"
+SITE_TYPE_UNCLASSIFIED = "unclassified"
+SITE_TYPE_CUSTOM = "custom"
 SITE_TYPES = (
     SITE_TYPE_SITE,
+    SITE_TYPE_BRANCH,
+    SITE_TYPE_CAMPUS,
+    SITE_TYPE_DATACENTER,
     SITE_TYPE_WAN,
     SITE_TYPE_INTERNET,
+    SITE_TYPE_TRANSIT,
     SITE_TYPE_CLOUD,
+    SITE_TYPE_UNCLASSIFIED,
+    SITE_TYPE_CUSTOM,
+)
+
+# Premises types host devices an operator walks to; estate types (WAN,
+# Internet, transit, cloud) are drawn and counted differently — an
+# Internet cloud in particular must never appear without evidence.
+SITE_TYPES_PREMISES = (
+    SITE_TYPE_SITE,
+    SITE_TYPE_BRANCH,
+    SITE_TYPE_CAMPUS,
+    SITE_TYPE_DATACENTER,
 )
 
 _SLUG = re.compile(r"[^a-z0-9]+")

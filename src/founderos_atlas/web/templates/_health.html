@@ -1,0 +1,52 @@
+{#- The canonical health banner (see founderos_atlas/health/).
+
+    Every page that reports health renders THIS macro over a
+    HealthAssessment.to_dict() — one definition, one rendering. The
+    banner states the worst-of overall verdict; the collapsible panel
+    shows every dimension's state, measured ratio, evidence timestamp,
+    and the sentence explaining how the verdict was reached.
+-#}
+{% import "_fmt.html" as fmt %}
+
+{%- macro state_badge(state) -%}
+<span class="badge hop-badge health-state-{{ state }}">{{ state | title }}</span>
+{%- endmacro -%}
+
+{%- macro banner(health) -%}
+<div class="status-banner status-{{ health.overall }} mission-status">
+  <span class="badge">{{ health.overall | title }}</span>
+  <span>{{ health.overall_detail }}</span>
+</div>
+<details class="card health-panel">
+  <summary>Health dimensions — how this verdict was calculated</summary>
+  <p class="muted">Assessed {{ fmt.when(health.generated_at) }} for {{ health.scope_label }}.
+     Each dimension is calculated independently; the overall verdict is the worst
+     dimension (critical &gt; degraded &gt; stale &gt; unknown &gt; healthy).
+     Dimensions a subsystem never produced are Unavailable and never count as a pass.</p>
+  <div class="table-scroll" role="region" aria-label="Health dimensions" tabindex="0">
+  <table class="grid">
+    <thead>
+      <tr><th>Dimension</th><th>State</th><th>Measure</th><th>Evidence as of</th><th>Why</th></tr>
+    </thead>
+    <tbody>
+      {% for dim in health.dimensions %}
+      <tr>
+        <td>{{ dim.label }}</td>
+        <td>{{ state_badge(dim.state) }}</td>
+        <td title="{{ dim.label }}: {{ dim.ratio }}">{{ dim.ratio }}</td>
+        <td>{% if dim.observed_at %}{{ fmt.when(dim.observed_at) }}{% else %}—{% endif %}</td>
+        <td>
+          {{ dim.summary }}
+          {% if dim.evidence %}
+          <details><summary class="muted">Evidence ({{ dim.evidence | length }})</summary>
+            <ul>{% for item in dim.evidence %}<li class="muted">{{ item }}</li>{% endfor %}</ul>
+          </details>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</details>
+{%- endmacro -%}

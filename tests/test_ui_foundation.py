@@ -154,8 +154,12 @@ class TopologyViewerTests(unittest.TestCase):
         self.assertIn("keyboard alternative", text.lower())
         self.assertIn("addEventListener('resize'", text)
         self.assertIn("prefers-reduced-motion", text)
-        # The details panel is never display:none'd away on small screens.
-        self.assertNotIn("aside { display: none; }", text)
+        # The details panel is never hidden BY A BREAKPOINT — on small
+        # screens it overlays the graph. (The operator's own collapse
+        # toggle, `main.details-collapsed aside`, is deliberate and fine.)
+        import re
+        for media_block in re.findall(r"@media[^{]+\{(.*?)\n    \}", text, re.S):
+            self.assertNotIn("aside { display: none", media_block)
 
     def test_rendered_viewer_carries_the_fixes(self) -> None:
         from founderos_atlas.demo import run_atlas_discovery_demo
