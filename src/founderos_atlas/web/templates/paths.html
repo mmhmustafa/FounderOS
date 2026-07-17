@@ -33,9 +33,9 @@
     <div class="form-row">
       <label>Source device
         <select name="source" required>
-          <option value="" selected disabled>— Select a device —</option>
+          <option value="" {{ '' if request.args.get('device') else 'selected' }} disabled>— Select a device —</option>
           {% for d in devices %}
-          <option value="{{ d.hostname }}">{{ d.hostname }}</option>
+          <option value="{{ d.hostname }}" {{ 'selected' if request.args.get('device') == d.hostname }}>{{ d.hostname }}</option>
           {% endfor %}
         </select>
       </label>

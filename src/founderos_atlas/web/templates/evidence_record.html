@@ -1,6 +1,13 @@
 {% extends "base.html" %}
+{% from "_breadcrumbs.html" import breadcrumbs %}
 {% block title %}{{ row.command }} — {{ row.hostname }}{% endblock %}
 {% block content %}
+{{ breadcrumbs([
+  {'label': 'Timeline', 'href': scoped_url('/timeline', link_scope())},
+  {'label': 'Evidence', 'href': scoped_url('/evidence', link_scope())},
+  {'label': row.hostname, 'href': scoped_url('/evidence/device/' + (device_id | urlencode), link_scope())},
+  {'label': row.command},
+]) }}
 <div class="page-head">
   {# Part 4: the command is the identifier. The content hash addresses the blob
      and is real provenance, but nobody looks for "0825788d" — they look for

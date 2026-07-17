@@ -871,8 +871,11 @@ class ConsoleGuiTests(unittest.TestCase):
     def test_the_universal_action_renders_on_topology(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             page = self._client(Path(tmp)).get("/topology").get_data(as_text=True)
+            # PR-052: list rows render the canonical entity menu; the SSH
+            # console action (and its reason when unavailable) lives there.
+            # Copy-SSH-command remains on the device and console pages.
             self.assertIn("/console/", page)
-            self.assertIn("Copy SSH Command", page)
+            self.assertIn("Open SSH console to", page)
 
     def test_the_universal_action_renders_on_the_enterprise_inventory(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

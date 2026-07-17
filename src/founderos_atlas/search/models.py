@@ -23,6 +23,13 @@ RANK_PREFIX = 2
 RANK_PARTIAL = 3
 HISTORICAL_PENALTY = 10
 
+# A match through a SECONDARY key (an interface found via its parent
+# device's name, not its own) ranks one step behind the same match on a
+# primary key — an exact device stays ahead of the wall of interfaces
+# that merely belong to it. Relevance ranking only; identity confidence
+# is carried separately in each result's detail and never reordered.
+SECONDARY_PENALTY = 1
+
 RANK_LABELS = {
     RANK_EXACT: "exact",
     RANK_CANONICAL: "canonical",
@@ -36,6 +43,10 @@ GROUPS = (
     ("interfaces", "Interfaces"),
     ("sites", "Sites"),
     ("topology", "Topology"),
+    ("policies", "Policies"),
+    ("evidence", "Evidence"),
+    ("configurations", "Configurations"),
+    ("incidents", "Incidents"),
     ("predictions", "Predictions"),
     ("investigations", "Investigations"),
     ("changes", "Changes"),
@@ -60,6 +71,9 @@ class SearchKey:
     field: str
     value: str
     canonical: bool = False
+    # A key that names the entry only through its parent (an interface's
+    # device name). Matches through it are real but rank one step lower.
+    secondary: bool = False
 
 
 @dataclass(frozen=True)

@@ -22,6 +22,7 @@ from founderos_atlas.workspace import profile_scope
 
 from .builder import (
     entries_from_graph,
+    entries_from_operational,
     entries_from_workspace,
     health_by_profile_from_scopes,
 )
@@ -60,7 +61,7 @@ def build_search_index(
         health_by_profile=health_by_profile_from_scopes(base_output_dir, profiles),
     ) + entries_from_workspace(
         base_output_dir, profiles, credential_sets=credential_sets
-    )
+    ) + entries_from_operational(base_output_dir, profiles)
     return SearchIndex(entries)
 
 
@@ -103,6 +104,12 @@ def workspace_fingerprint(
         parts.append(("profile", profile.profile_id, profile.name))
         for name in _SCOPE_ARTIFACTS:
             parts.append(_file_stamp(scope.output_dir / name))
+        # Enterprise Memory metadata: new evidence, configurations, or
+        # policy-relevant snapshots must surface in search immediately.
+        memory_dir = scope.output_dir / "enterprise-memory"
+        parts.append(_file_stamp(memory_dir / "evidence" / "records.json"))
+        parts.append(_file_stamp(memory_dir / "configurations" / "index.json"))
+        parts.append(_file_stamp(scope.output_dir / "incident_report.json"))
         root = scope.history_root
         runs = (
             tuple(sorted(entry.name for entry in root.iterdir() if entry.is_dir()))

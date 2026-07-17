@@ -1,8 +1,14 @@
 {% extends "base.html" %}
+{% from "_entity_actions.html" import entity_menu %}
+{% from "_breadcrumbs.html" import breadcrumbs %}
 {% from "_device_actions.html" import device_actions, device_ssh_state %}
 {% block title %}Device Details{% endblock %}
 {% block content %}
-<a class="back-link" href="/topology?scope=all">← Enterprise inventory</a>
+{{ breadcrumbs([
+  {'label': 'Topology', 'href': scoped_url('/topology', link_scope())},
+  {'label': 'Devices', 'href': scoped_url('/topology', link_scope()) + '#inventory'},
+  {'label': device.hostname if found else enterprise_id},
+]) }}
 {% if not found %}
 <h1>Device not found</h1>
 <p class="muted">No canonical enterprise device matches <code>{{ enterprise_id }}</code>. It may have been re-identified by a newer discovery — <a href="/topology?scope=all">open the enterprise inventory</a> or search again.</p>
@@ -10,7 +16,8 @@
 {% set ssh_target = device_target(hostname=device.hostname) %}
 <div class="page-head">
   <h1>{{ device.hostname }}</h1>
-  <span class="actions">{{ device_actions(ssh_target, web=web_access(hostname=device.hostname)) }}</span>
+  <span class="actions">{{ device_actions(ssh_target, web=web_access(hostname=device.hostname)) }}
+    {{ entity_menu(device_menu(hostname=device.hostname, device_id=device.enterprise_id), device.hostname, label='More actions') }}</span>
 </div>
 <p class="muted">canonical enterprise device</p>
 {{ device_ssh_state(ssh_target) }}

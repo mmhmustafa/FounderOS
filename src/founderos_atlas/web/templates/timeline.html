@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_device_actions.html" import device_actions %}
+{% from "_entity_actions.html" import entity_menu %}
 {% block title %}Timeline{% endblock %}
 {% block content %}
 <div class="page-head">
@@ -44,13 +45,17 @@
         <td>
           {% if entry.hostname %}
           {{ entry.hostname }}
-          {# Any device list offers the same device actions (PR-047A decision 3). #}
-          {% set target = device_target(device_id=entry.device_id) %}
-          {% if target %}<div>{{ device_actions(target, compact=True, show_label=False,
-                                               web=web_access(device_id=entry.device_id)) }}</div>{% endif %}
+          {# One compact menu — the same canonical actions every entity gets. #}
+          {{ entity_menu(device_menu(hostname=entry.hostname, device_id=entry.device_id), entry.hostname) }}
           {% else %}<span class="muted">—</span>{% endif %}
         </td>
-        <td class="row-actions"><a class="btn btn-sm" href="{{ entry.href }}">View</a></td>
+        <td class="row-actions">
+          {# The event links to its EXACT record, and the label says where it goes. #}
+          <a class="btn btn-sm" href="{{ entry.href }}"
+             aria-label="Open the {{ 'configuration change' if entry.kind == 'configuration' else 'discovery record' }}{% if entry.hostname %} for {{ entry.hostname }}{% endif %}">
+            {{ 'Open change' if entry.kind == 'configuration' else 'Open discovery' }}
+          </a>
+        </td>
       </tr>
       {% endfor %}
     </tbody>

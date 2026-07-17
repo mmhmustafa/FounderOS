@@ -354,9 +354,9 @@ class ConsistencyTests(unittest.TestCase):
             "configuration.html", "paths.html", "advisor.html",
             "console_index.html",
         ):
-            self.assertIn(
-                "device_actions(",
-                (templates / filename).read_text(encoding="utf-8"),
+            text = (templates / filename).read_text(encoding="utf-8")
+            self.assertTrue(
+                "device_actions(" in text or "device_menu(" in text,
                 f"{filename} shows devices but offers no device actions",
             )
 

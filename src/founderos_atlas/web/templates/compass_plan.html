@@ -1,8 +1,12 @@
 {% extends "base.html" %}
+{% from "_breadcrumbs.html" import breadcrumbs %}
 {% import "_fmt.html" as fmt %}
 {% block title %}Compass Plan{% endblock %}
 {% block content %}
-<a class="back-link" href="/compass">← All maintenance plans</a>
+{{ breadcrumbs([
+  {'label': 'Compass', 'href': scoped_url('/compass', link_scope())},
+  {'label': plan.title},
+]) }}
 <div class="page-head">
   <h1>{{ plan.title }}</h1>
   <span class="badge hop-badge hop-badge-{{ 'pass' if plan.status == 'analysed' else 'unknown' }}">{{ plan.status }}</span>
@@ -54,8 +58,8 @@
     <div class="form-row">
       <label>Device
         <select name="device" id="compass-device" required>
-          <option value="" selected disabled>— Select a device —</option>
-          {% for d in devices %}<option value="{{ d.hostname }}">{{ d.hostname }}</option>{% endfor %}
+          <option value="" {{ '' if request.args.get('device') else 'selected' }} disabled>— Select a device —</option>
+          {% for d in devices %}<option value="{{ d.hostname }}" {{ 'selected' if request.args.get('device') == d.hostname }}>{{ d.hostname }}</option>{% endfor %}
         </select>
       </label>
       <label>Interface (optional)
@@ -75,7 +79,7 @@
       </label>
     </div>
     <label>Reason
-      <input name="reason" placeholder="Decommission access switch uplink">
+      <input name="reason" value="{{ request.args.get('reason', '') }}" placeholder="Decommission access switch uplink">
     </label>
     <div class="form-row">
       <label>Estimated duration (minutes)

@@ -1,7 +1,13 @@
 {% extends "base.html" %}
+{% from "_breadcrumbs.html" import breadcrumbs %}
 {% from "_device_actions.html" import device_actions %}
 {% block title %}Evidence — {{ device.hostname }}{% endblock %}
 {% block content %}
+{{ breadcrumbs([
+  {'label': 'Timeline', 'href': scoped_url('/timeline', link_scope())},
+  {'label': 'Evidence', 'href': scoped_url('/evidence', link_scope())},
+  {'label': device.hostname},
+]) }}
 <div class="page-head">
   <h1>{{ device.hostname }}</h1>
   <span class="actions">

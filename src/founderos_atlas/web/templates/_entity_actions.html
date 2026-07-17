@@ -1,0 +1,48 @@
+{#- The shared contextual-action menu (web/linking.py).
+
+    ONE compact control per entity row, everywhere: a keyboard-accessible
+    <details> popover listing the canonical actions in the canonical
+    order. Unavailable actions stay visible, greyed, and carry their
+    reason — never a dead button, never a silently missing action, and
+    never a page-specific row of repeated buttons.
+
+    Usage:
+      {% from "_entity_actions.html" import entity_menu %}
+      {{ entity_menu(actions, name) }}
+    where ``actions`` is a list of EntityAction.to_dict() dicts and
+    ``name`` names the entity for the accessible label.
+-#}
+{% macro entity_menu(actions, name, label='Actions') %}
+{% if actions %}
+<details class="action-menu">
+  <summary class="btn btn-sm" role="button"
+           aria-haspopup="menu" aria-label="{{ label }} for {{ name }}">
+    {{ label }} <svg class="icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m6 9 6 6 6-6"/></svg>
+  </summary>
+  <ul class="action-menu-list">
+    {% for action in actions %}
+    <li>
+      {% if action.available and action.key == 'ssh-copy' %}
+      <button type="button" class="action-menu-item js-copy-ssh"
+              data-ssh-command="{{ action.command }}"
+              title="Copy '{{ action.command }}' — never includes a password"
+              aria-label="{{ action.label }}">{{ action.label }}</button>
+      {% elif action.available and action.key == 'copy-link' %}
+      <button type="button" class="action-menu-item js-copy-link"
+              data-copy-url="{{ action.href }}"
+              aria-label="{{ action.label }}">{{ action.label }}</button>
+      {% elif action.available %}
+      <a class="action-menu-item" href="{{ action.href }}"
+         {% if action.external %}target="_blank" rel="noopener noreferrer"{% endif %}
+         aria-label="{{ action.label }}">{{ action.label }}</a>
+      {% else %}
+      <span class="action-menu-item action-menu-disabled"
+            title="{{ action.reason }}">{{ action.label }}
+        <span class="visually-hidden">— unavailable: {{ action.reason }}</span></span>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+</details>
+{% endif %}
+{% endmacro %}

@@ -36,6 +36,40 @@
     }
   );
 
+  // -- Entity action menus (_entity_actions.html) ----------------------------
+  // Plain <details> popovers, enhanced: outside click and Escape close
+  // them, only one stays open, and "Copy link" copies an ABSOLUTE stable
+  // URL so a pasted link works from any browser.
+  var closeMenus = function (except) {
+    Array.prototype.forEach.call(
+      document.querySelectorAll("details.action-menu[open]"),
+      function (menu) { if (menu !== except) menu.removeAttribute("open"); }
+    );
+  };
+  document.addEventListener("click", function (event) {
+    var menu = event.target.closest && event.target.closest("details.action-menu");
+    closeMenus(menu);
+    var copy = event.target.closest && event.target.closest(".js-copy-link");
+    if (copy) {
+      var url = new URL(
+        copy.getAttribute("data-copy-url") || "", window.location.origin
+      ).toString();
+      var done = function () {
+        var original = copy.textContent;
+        copy.textContent = "Link copied";
+        window.setTimeout(function () { copy.textContent = original; }, 1200);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(url).then(done, done);
+      } else {
+        window.prompt("Copy this link:", url);
+      }
+      if (menu) menu.removeAttribute("open");
+    }
+  });
+  // Escape handling lives in the SINGLE document-level keydown handler in
+  // the search section below (one handler, one lifecycle).
+
   // -- Responsive navigation drawer ------------------------------------------
   // Below 1024px the sidebar is an off-canvas drawer. The toggle button
   // reflects state via aria-expanded; Escape, the backdrop, and following
@@ -448,6 +482,16 @@
           ? "No evidence matches “" + payload.query + "”. Atlas never invents results — try a hostname, IP, interface, site, or serial."
           : payload.total + " result(s) across " + payload.groups.length + " group(s).";
       }
+      if (payload.expanded_group) {
+        var back = document.createElement("button");
+        back.type = "button";
+        back.className = "btn btn-sm search-show-all";
+        back.textContent = "← All result groups";
+        back.addEventListener("click", function () {
+          runSearch(searchInput.value.trim());
+        });
+        container.appendChild(back);
+      }
       payload.groups.forEach(function (group) {
         var head = document.createElement("div");
         head.className = "search-group-head";
@@ -479,15 +523,35 @@
           container.appendChild(link);
           resultLinks.push(link);
         });
+        // "Show all": a truncated group can expand in place. The count is
+        // always shown; the control appears only when there is more.
+        if (!payload.expanded_group && group.count > group.results.length) {
+          var more = document.createElement("button");
+          more.type = "button";
+          more.className = "btn btn-sm search-show-all";
+          more.setAttribute(
+            "aria-label",
+            "Show all " + group.count + " " + group.label + " results"
+          );
+          more.textContent = "Show all " + group.count;
+          more.addEventListener("click", function () {
+            runSearch(searchInput.value.trim(), group.group_id || group.id);
+          });
+          container.appendChild(more);
+        }
       });
     };
 
-    var runSearch = function (query) {
+    var runSearch = function (query, expandGroup) {
       var status = byId("atlas-search-status");
       renderRecent();
       if (!query) { renderResults(null); return; }
       if (status) { status.hidden = false; status.textContent = "Searching…"; }
-      fetch("/api/search?q=" + encodeURIComponent(query))
+      var url = "/api/search?q=" + encodeURIComponent(query);
+      if (expandGroup) {
+        url += "&group=" + encodeURIComponent(expandGroup) + "&limit=200";
+      }
+      fetch(url)
         .then(function (response) { return response.json(); })
         .then(function (payload) {
           if (searchInput.value.trim() === payload.query) renderResults(payload);
@@ -533,6 +597,8 @@
       } else if (event.key === "Escape" && closeNavDrawer &&
                  document.body.classList.contains("nav-open")) {
         closeNavDrawer(true);
+      } else if (event.key === "Escape") {
+        closeMenus(null);
       }
     });
     var trigger = byId("atlas-search-trigger");

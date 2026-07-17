@@ -21,6 +21,7 @@ from .models import (
     GROUP_ORDER,
     GROUPS,
     HISTORICAL_PENALTY,
+    SECONDARY_PENALTY,
     RANK_CANONICAL,
     RANK_EXACT,
     RANK_PARTIAL,
@@ -100,6 +101,8 @@ def _best_match(entry: SearchEntry, needle: str) -> SearchHit | None:
             rank = RANK_PARTIAL
         else:
             continue
+        if key.secondary:
+            rank += SECONDARY_PENALTY
         if best is None or rank < best[0]:
             best = (rank, key.field, key.value)
             if rank == RANK_EXACT:

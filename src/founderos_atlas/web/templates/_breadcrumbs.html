@@ -1,0 +1,21 @@
+{#- Breadcrumbs for detail pages: orientation and a way up, without
+    duplicating the sidebar. Items: [{label, href}] — the last item is the
+    current page and renders unlinked with aria-current.
+-#}
+{% macro breadcrumbs(items) %}
+{% if items %}
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+  <ol>
+    {% for item in items %}
+    <li>
+      {% if loop.last or not item.href %}
+      <span {% if loop.last %}aria-current="page"{% endif %}>{{ item.label }}</span>
+      {% else %}
+      <a href="{{ item.href }}">{{ item.label }}</a>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ol>
+</nav>
+{% endif %}
+{% endmacro %}

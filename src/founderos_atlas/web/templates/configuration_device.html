@@ -1,7 +1,13 @@
 {% extends "base.html" %}
+{% from "_breadcrumbs.html" import breadcrumbs %}
 {% from "_device_actions.html" import device_actions %}
 {% block title %}Configuration — {{ history.hostname }}{% endblock %}
 {% block content %}
+{{ breadcrumbs([
+  {'label': 'Timeline', 'href': scoped_url('/timeline', link_scope())},
+  {'label': 'Configuration', 'href': scoped_url('/configuration', link_scope())},
+  {'label': history.hostname},
+]) }}
 <div class="page-head">
   <h1>Configuration — {{ history.hostname }}</h1>
   <span class="actions">{{ device_actions(device_target(device_id=history.device_id), compact=True, web=web_access(device_id=history.device_id)) }}<a class="btn" href="/configuration">All Configuration</a></span>

@@ -87,15 +87,17 @@ class NavigationTests(unittest.TestCase):
                 g for g in payload["groups"] if g["id"] == "devices"
             )["results"][0]["href"]
             device_page = client.get(href).data
-            self.assertIn(b"back-link", device_page)
-            self.assertIn(b"Enterprise inventory", device_page)
+            # Back navigation is breadcrumbs now (PR-052): a way up to the
+            # inventory without duplicating the sidebar.
+            self.assertIn(b'aria-label="Breadcrumb"', device_page)
+            self.assertIn(b"/topology?scope=all", device_page)
             create_plan(
                 PlanRepository(workdir), title="Window", maintenance_window="Sat",
                 engineer="netops", created_at="2026-07-12T08:00:00+00:00",
             )
             plan_page = client.get("/compass/window").data
-            self.assertIn(b"back-link", plan_page)
-            self.assertIn(b"All maintenance plans", plan_page)
+            self.assertIn(b'aria-label="Breadcrumb"', plan_page)
+            self.assertIn(b"/compass?scope=", plan_page)
 
     def test_incidents_enterprise_scope_is_not_a_dead_end(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

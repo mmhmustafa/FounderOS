@@ -1,7 +1,49 @@
 {% extends "base.html" %}
+{% import "_fmt.html" as fmt %}
 {% block title %}Discoveries{% endblock %}
 {% block content %}
 <h1>Discoveries — {{ active_scope_label }}</h1>
+
+{% if run %}
+<section class="card root-cause" id="run-{{ run.record_id }}">
+  <h2>Discovery Run — {{ run.profile }} · {{ run.started_display }}</h2>
+  <div class="tiles">
+    <div class="tile"><strong>Devices</strong><span>{{ run.device_count }}</span></div>
+    <div class="tile"><strong>Relationships</strong><span>{{ run.relationship_count }}</span></div>
+    <div class="tile"><strong>Configured</strong><span>{{ run.configured_device_count }}</span></div>
+    <div class="tile"><strong>Warnings</strong><span>{{ run.warning_count }}</span></div>
+    <div class="tile"><strong>Status</strong><span class="tile-text">{{ run.network_status }}</span></div>
+    <div class="tile"><strong>Duration</strong><span class="tile-text">{{ '%.1f' | format(run.duration_seconds) }}s</span></div>
+  </div>
+  <ul class="kv">
+    <li><span>Record</span><span><code>{{ run.record_id }}</code></span></li>
+    <li><span>Snapshot</span><span><code>{{ run.snapshot_id }}</code></span></li>
+    <li><span>Configuration</span><span>{{ run.configuration_status }}</span></li>
+    <li><span>Discovery version</span><span>{{ run.discovery_version }}</span></li>
+  </ul>
+  {% if run.failures %}
+  <h3>Hosts that could not be managed ({{ run.failures | length }})</h3>
+  <p class="muted">Each failure names the address Atlas tried. Retry with a fresh
+    discovery, or check credentials and reachability from the console page.</p>
+  <ul>
+    {% for failure in run.failures %}<li><code>{{ failure }}</code></li>{% endfor %}
+  </ul>
+  {% else %}
+  <p class="muted">Every attempted host was managed — no gaps recorded in this run.</p>
+  {% endif %}
+  <div class="actions">
+    <a class="btn btn-sm btn-primary"
+       href="{{ scoped_url('/discovery', run.scope_id, profile=run.profile) }}"
+       aria-label="Run discovery again for {{ run.profile }}">Rerun discovery</a>
+    <a class="btn btn-sm" href="{{ scoped_url('/changes', run.scope_id) }}"
+       aria-label="Compare against the previous run">Compare with previous (Changes)</a>
+    <a class="btn btn-sm" href="{{ scoped_url('/evidence', run.scope_id) }}"
+       aria-label="Open the evidence this run collected">Evidence</a>
+    <a class="btn btn-sm" href="{{ scoped_url('/topology', run.scope_id) }}"
+       aria-label="Open the topology this run produced">Topology</a>
+  </div>
+</section>
+{% endif %}
 
 {% if records %}
 <div class="table-scroll" role="region" aria-label="Discovery history" tabindex="0">
@@ -9,7 +51,7 @@
   <thead>
     <tr>
       {% if show_profile %}<th>Network</th>{% endif %}
-      <th>Started</th><th>Devices</th><th>Relationships</th><th>Status</th><th>Duration</th><th>Config</th><th>Record</th>
+      <th>Started</th><th>Devices</th><th>Relationships</th><th>Status</th><th>Duration</th><th>Config</th><th>Record</th><th><span class="visually-hidden">Actions</span></th>
     </tr>
   </thead>
   <tbody>
@@ -23,6 +65,10 @@
       <td>{{ r.duration_seconds }}s</td>
       <td>{{ r.configuration_status }}</td>
       <td><code>{{ r.record_id }}</code></td>
+      <td class="row-actions">
+        <a class="btn btn-sm" href="{{ scoped_url('/history', link_scope(), run=r.record_id) }}"
+           aria-label="Open discovery run {{ r.record_id }} from {{ r.started_at }}">Open run</a>
+      </td>
     </tr>
     {% endfor %}
   </tbody>

@@ -400,12 +400,30 @@ def register_routes(app) -> None:
         return scopes
 
     def active_scope_id(scopes: dict[str, DiscoveryScope]) -> str:
-        """Resolve the selected scope: ?scope= wins, then session, then All."""
+        """Resolve the selected scope: ?scope= wins, then session, then All.
+
+        A URL-carried scope that no longer exists is answered EXPLICITLY:
+        the page falls back to the Enterprise view and says so, rather than
+        silently substituting whatever this browser last looked at — a
+        pasted link must never quietly show a different scope than it
+        names. (Access control does not apply: this is a local single-user
+        GUI; when scoping gains users, the same branch is where "no
+        access" is stated.)
+        """
 
         requested = request.args.get("scope", "").strip()
         if requested == GLOBAL_SCOPE_ID or requested in scopes:
             session["scope"] = requested
             return requested
+        if requested:
+            if not request.path.startswith("/api/"):
+                flash(
+                    f"The scope '{requested}' in this link no longer exists "
+                    "— showing the Enterprise view instead.",
+                    "warning",
+                )
+            session["scope"] = GLOBAL_SCOPE_ID
+            return GLOBAL_SCOPE_ID
         saved = session.get("scope")
         if saved == GLOBAL_SCOPE_ID or saved in scopes:
             return saved
@@ -1933,9 +1951,21 @@ def register_routes(app) -> None:
         report = engine.evaluate_scopes(
             memories, scope_label=context["active_scope_label"]
         )
+        report_dict = report.to_dict()
+        # Deep link: ?device=<hostname> narrows the results to one device
+        # (the device menu's "Policy" action). The tiles stay scope-wide;
+        # the narrowed list says so and offers the way back.
+        device_filter = request.args.get("device", "").strip()
+        if device_filter:
+            wanted = device_filter.casefold()
+            report_dict["evaluations"] = [
+                evaluation for evaluation in report_dict["evaluations"]
+                if str(evaluation.get("hostname") or "").casefold() == wanted
+            ]
         return render_template(
             "policy.html",
-            report=report.to_dict(),
+            report=report_dict,
+            device_filter=device_filter,
             packs=[p.to_dict() for p in list_packs()],
             generated_at=format_timestamp(report.generated_at, tz=display_timezone()),
             **context,
@@ -2641,9 +2671,48 @@ def register_routes(app) -> None:
             message="Site type saved.",
         )
 
+    def _find_history_run(scopes, scope_id, record_id: str):
+        """One discovery run by id, searched in the visible scopes.
+
+        Returns ``(record_dict, scope)`` or ``(None, None)`` — an unknown
+        run renders an honest not-found note, never a 500."""
+
+        candidates = (
+            aggregation_scopes(scopes)
+            if scope_id == GLOBAL_SCOPE_ID else (scopes[scope_id],)
+        )
+        for scope in candidates:
+            index = HistoryRepository(scope.history_root).load()
+            for record in index.records:
+                if record.record_id == record_id:
+                    from .timefmt import format_timestamp
+
+                    run = record.to_dict()
+                    run["scope_label"] = scope.label
+                    run["scope_id"] = scope.scope_id
+                    run["started_display"] = format_timestamp(
+                        record.started_at, tz=display_timezone()
+                    )
+                    run["profile"] = record.profile_name or scope.label
+                    return run, scope
+        return None, None
+
     @app.route("/history")
     def history():
         context, scopes, scope_id = scoped_context("history")
+        # Deep link: ?run=<record_id> opens one discovery run's detail —
+        # the stable address every "Open discovery" link points at.
+        run = None
+        requested_run = request.args.get("run", "").strip()
+        if requested_run:
+            run, _run_scope = _find_history_run(scopes, scope_id, requested_run)
+            if run is None:
+                flash(
+                    f"No discovery run '{requested_run}' exists in this "
+                    "scope — it may belong to another scope or have been "
+                    "removed.",
+                    "warning",
+                )
         if scope_id == GLOBAL_SCOPE_ID:
             records, issues = merged_history_rows(aggregation_scopes(scopes))
             return render_template(
@@ -2651,6 +2720,7 @@ def register_routes(app) -> None:
                 records=records,
                 issues=issues,
                 show_profile=True,
+                run=run,
                 **context,
             )
         scope = scopes[scope_id]
@@ -2660,6 +2730,7 @@ def register_routes(app) -> None:
             records=history_rows(index, scope_label=scope.label),
             issues=index.issues,
             show_profile=False,
+            run=run,
             **context,
         )
 
@@ -2992,6 +3063,17 @@ def register_routes(app) -> None:
             created_at=now_iso(),
         )
         flash(f"Plan '{plan.title}' created.", "success")
+        # "Add to Compass" carried a device here; it rides into the plan
+        # page so the Add-a-Change form arrives preselected.
+        device = request.form.get("device", "").strip()
+        reason = request.form.get("reason", "").strip()
+        if device:
+            return redirect(
+                url_for(
+                    "compass_plan_page", plan_id=plan.plan_id,
+                    device=device, reason=reason or None,
+                )
+            )
         return redirect(url_for("compass_plan_page", plan_id=plan.plan_id))
 
     @app.route("/compass/<plan_id>")
@@ -3212,14 +3294,43 @@ def register_routes(app) -> None:
     @app.route("/api/search")
     def api_search():
         query = request.args.get("q", "").strip()
-        response = search_enterprise(current_search_index(), query)
-        return jsonify(response.to_dict())
+        # "Show all": ?group=<id> expands one group past the default
+        # per-group limit; the cap keeps a runaway query bounded.
+        group = request.args.get("group", "").strip()
+        try:
+            limit = int(request.args.get("limit", "") or 8)
+        except ValueError:
+            limit = 8
+        limit = max(1, min(limit, 200))
+        response = search_enterprise(
+            current_search_index(), query, limit_per_group=limit
+        )
+        payload = response.to_dict()
+        if group:
+            payload["groups"] = [
+                item for item in payload["groups"] if item["id"] == group
+            ]
+            payload["expanded_group"] = group
+        return jsonify(payload)
 
     @app.route("/devices/<path:enterprise_id>")
     def device_details(enterprise_id: str):
         context, _scopes, _scope_id = scoped_context("topology")
         graph, _snapshot = enterprise_world()
         device = graph.device_by_id(enterprise_id)
+        if device is None:
+            # Stable hostname addressing: an enterprise id embeds a
+            # management address that can change between discoveries, so
+            # /devices/<hostname> is the shareable form. It resolves only
+            # when exactly one canonical device carries the name — an
+            # ambiguous name is answered with not-found, never a guess.
+            wanted = enterprise_id.strip().casefold()
+            matches = [
+                candidate for candidate in graph.devices
+                if str(candidate.hostname).casefold() == wanted
+            ]
+            if len(matches) == 1:
+                device = matches[0]
         if device is None:
             return (
                 render_template(
@@ -3759,6 +3870,58 @@ def register_routes(app) -> None:
         # here — so no page invents its own idea of when a score is worth the
         # reader's attention. See web/confidence.py.
         from .confidence import confidence_detail, confidence_display
+        from .linking import device_entity_actions, entity_url, scoped_url
+
+        def _active_scope_for_links() -> str:
+            cache = getattr(g, "_link_scope", None)
+            if cache is None:
+                try:
+                    cache = active_scope_id(known_scopes())
+                except Exception:  # noqa: BLE001 - a link must not 500 a page
+                    cache = GLOBAL_SCOPE_ID
+                g._link_scope = cache
+            return cache
+
+        def _draft_plan_for_links() -> str | None:
+            cache = getattr(g, "_link_draft_plan", "unset")
+            if cache == "unset":
+                cache = None
+                try:
+                    from founderos_atlas.compass import PlanRepository
+
+                    for plan in PlanRepository(output_dir()).list_plans():
+                        if plan.status != "analysed":
+                            cache = plan.plan_id
+                            break
+                except Exception:  # noqa: BLE001 - a link must not 500 a page
+                    cache = None
+                g._link_draft_plan = cache
+            return cache
+
+        def device_menu(hostname=None, device_id=None, name=None):
+            """The canonical contextual-action menu for one device.
+
+            The ONE builder every template uses (see web/linking.py): same
+            actions, same order, same availability rules everywhere. The
+            active scope is baked into every generated href so a copied
+            link reopens the same entity in the same scope.
+            """
+
+            hostname = str(hostname or "").strip()
+            if not hostname and not device_id:
+                return []
+            target = device_target(device_id=device_id, hostname=hostname)
+            if not hostname and target:
+                hostname = str(target.get("hostname") or "")
+            actions = device_entity_actions(
+                device_id=str(device_id or "").strip() or hostname or None,
+                hostname=hostname or str(device_id or ""),
+                scope_id=_active_scope_for_links(),
+                ssh_target=target,
+                draft_plan_id=_draft_plan_for_links(),
+                entity_label=name,
+            )
+            return [action.to_dict() for action in actions]
 
         return {
             "device_target": device_target,
@@ -3766,6 +3929,10 @@ def register_routes(app) -> None:
             "web_access": web_access,
             "confidence_display": confidence_display,
             "confidence_detail": confidence_detail,
+            "device_menu": device_menu,
+            "entity_url": entity_url,
+            "scoped_url": scoped_url,
+            "link_scope": _active_scope_for_links,
         }
 
     @app.route("/console")

@@ -141,7 +141,12 @@ def entries_from_graph(
             )
             interface_keys = [
                 SearchKey("interface", interface.name),
-                SearchKey("interface", f"{device.hostname} {interface.name}"),
+                # Found through its parent's name: real, but one rank behind
+                # the device itself so exact devices outrank their interfaces.
+                SearchKey(
+                    "device", f"{device.hostname} {interface.name}",
+                    secondary=True,
+                ),
             ]
             alias = interface_alias(interface.name)
             if alias:
@@ -192,11 +197,34 @@ def entries_from_graph(
             )
         )
 
+    # Address ownership: an "unknown boundary" whose far end is an address a
+    # canonical device owns is not unknown — normalized evidence resolves it,
+    # and the search result says so instead of crying boundary.
+    owned_addresses: dict[str, str] = {}
+    for device in graph.devices:
+        for address in device.management_ips:
+            owned_addresses.setdefault(str(address).strip(), device.hostname)
+    for enterprise_id, interfaces in graph.interfaces.items():
+        owner_device = graph.device_by_id(enterprise_id)
+        owner = owner_device.hostname if owner_device else None
+        if not owner:
+            continue
+        for interface in interfaces:
+            raw = str(getattr(interface, "ip_address", "") or "").strip()
+            address = raw.partition("/")[0]
+            if address:
+                owned_addresses.setdefault(address, owner)
+
     for link in graph.links:
         left = f"{link.local_hostname} {link.local_interface or '?'}"
         right = f"{link.remote_hostname} {link.remote_interface or '?'}"
+        resolved_owner = (
+            owned_addresses.get(str(link.remote_hostname).strip())
+            if link.is_boundary else None
+        )
         subtitle = (
-            "unknown boundary"
+            (f"resolves to {resolved_owner} (address ownership)"
+             if resolved_owner else "unknown boundary")
             if link.is_boundary
             else ("cross-profile link" if link.cross_profile else "link")
         )
@@ -470,3 +498,201 @@ def _read_json(path: Path):
         return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
+
+
+def entries_from_operational(
+    base_output_dir: str | Path, profiles
+) -> tuple[SearchEntry, ...]:
+    """Policies (and their failures), evidence records, configuration
+    histories, and incident reports — the operational layer of search.
+
+    Everything is read from stored metadata (never a blob), each entry
+    carries its scope in the href, and identity confidence is never
+    mixed into relevance: it travels in ``detail`` for display only.
+    """
+
+    from urllib.parse import quote
+
+    entries: list[SearchEntry] = []
+
+    # The installed policy pack: policies are addressable objects.
+    try:
+        from founderos_atlas.policy import list_packs
+
+        for pack in list_packs():
+            for policy in pack.policies:
+                entries.append(
+                    SearchEntry(
+                        group="policies",
+                        title=policy.name,
+                        subtitle=(
+                            f"{policy.category} · severity {policy.severity}"
+                        ),
+                        href=f"/policy?scope=all#policy-{quote(policy.policy_id, safe='')}",
+                        keys=(
+                            SearchKey("policy", policy.name),
+                            SearchKey("policy id", policy.policy_id, canonical=True),
+                            SearchKey("category", policy.category),
+                        ),
+                        detail={"pack": pack.name, "severity": policy.severity},
+                    )
+                )
+    except Exception:  # noqa: BLE001 - packs are optional evidence
+        pass
+
+    for profile in profiles:
+        scope = profile_scope(base_output_dir, profile.profile_id, profile.name)
+        scope_query = quote(profile.profile_id, safe="")
+
+        # Incident report of the scope.
+        report = _read_json(scope.output_dir / "incident_report.json")
+        if isinstance(report, dict) and report.get("title"):
+            affected = [str(item) for item in report.get("affected_devices") or ()]
+            entries.append(
+                SearchEntry(
+                    group="incidents",
+                    title=str(report["title"]),
+                    subtitle=(
+                        f"{str(report.get('confidence') or 'unknown')} confidence"
+                        + (f" · {len(affected)} affected" if affected else "")
+                    ),
+                    href=f"/incidents?scope={scope_query}",
+                    keys=tuple(
+                        [SearchKey("incident", str(report["title"]))]
+                        + [SearchKey("device", name, secondary=True)
+                           for name in affected]
+                    ),
+                    detail={
+                        "network": profile.name,
+                        "generated_at": report.get("generated_at"),
+                    },
+                )
+            )
+
+        # Evidence records + configuration histories + policy failures live
+        # in Enterprise Memory. Metadata only — listings never read a blob.
+        store_dir = scope.output_dir / "enterprise-memory"
+        if not store_dir.is_dir():
+            continue
+        try:
+            from founderos_atlas.enterprise_memory import (
+                EnterpriseMemory,
+                EnterpriseMemoryStore,
+            )
+
+            store = EnterpriseMemoryStore(store_dir)
+            memory = EnterpriseMemory(store)
+        except Exception:  # noqa: BLE001 - memory is optional evidence
+            continue
+
+        try:
+            for record in store.evidence_records():
+                if not record.content_sha256:
+                    continue
+                entries.append(
+                    SearchEntry(
+                        group="evidence",
+                        title=f"{record.hostname} · {record.command}",
+                        subtitle=(
+                            f"{record.source} · {record.collection_status} · "
+                            f"session {record.discovery_session}"
+                        ),
+                        href=(
+                            f"/evidence/device/{quote(record.device_id, safe='')}"
+                            f"/record/{quote(record.content_sha256, safe='')}"
+                            f"?scope={scope_query}"
+                        ),
+                        keys=(
+                            SearchKey("device", record.hostname),
+                            SearchKey("command", record.command),
+                            SearchKey(
+                                "content hash", record.content_sha256,
+                                canonical=True,
+                            ),
+                        ),
+                        detail={
+                            "network": profile.name,
+                            "collected_at": record.collected_at,
+                        },
+                    )
+                )
+        except Exception:  # noqa: BLE001
+            pass
+
+        try:
+            # Configuration histories come from Configuration Memory — the
+            # SAME store the /configuration pages read, so a search hit can
+            # never land on an empty page.
+            from founderos_atlas.config_memory import ConfigMemoryStore
+
+            config_store = ConfigMemoryStore(
+                scope.output_dir / "config-memory"
+            )
+            for history in config_store.histories():
+                entries.append(
+                    SearchEntry(
+                        group="configurations",
+                        title=f"{history.hostname} configuration",
+                        subtitle=(
+                            f"{len(history.versions)} version(s) · "
+                            f"{history.network or profile.name}"
+                        ),
+                        href=(
+                            f"/configuration/{quote(history.device_id, safe='')}"
+                            f"?scope={scope_query}"
+                        ),
+                        keys=(
+                            SearchKey("device", history.hostname),
+                            SearchKey(
+                                "device id", history.device_id, canonical=True
+                            ),
+                            SearchKey("configuration", "configuration",
+                                      secondary=True),
+                        ),
+                        detail={"network": history.network or profile.name},
+                    )
+                )
+        except Exception:  # noqa: BLE001
+            pass
+
+        try:
+            from founderos_atlas.policy import PolicyEngine
+
+            report = PolicyEngine().evaluate_scopes(
+                [(profile.name, memory)], scope_label=profile.name
+            )
+            for evaluation in report.evaluations:
+                if evaluation.status not in ("fail", "warning"):
+                    continue
+                entries.append(
+                    SearchEntry(
+                        group="policies",
+                        title=(
+                            f"{evaluation.policy.name} — {evaluation.hostname}"
+                        ),
+                        subtitle=(
+                            f"{evaluation.status_label} · "
+                            f"{evaluation.policy.category} · {profile.name}"
+                        ),
+                        href=(
+                            f"/policy?scope={scope_query}"
+                            f"&device={quote(evaluation.hostname, safe='')}"
+                            f"#result-{quote(evaluation.policy.policy_id, safe='')}"
+                            f"-{quote(evaluation.hostname, safe='')}"
+                        ),
+                        keys=(
+                            SearchKey("policy", evaluation.policy.name),
+                            SearchKey("device", evaluation.hostname),
+                            SearchKey("status", evaluation.status_label,
+                                      secondary=True),
+                        ),
+                        detail={
+                            "network": profile.name,
+                            "status": evaluation.status,
+                        },
+                    )
+                )
+        except Exception:  # noqa: BLE001
+            pass
+
+    return tuple(entries)

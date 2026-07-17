@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_entity_actions.html" import entity_menu %}
 {% import "_fmt.html" as fmt %}
 {% block title %}Incidents{% endblock %}
 {% block content %}
@@ -74,10 +75,24 @@
   <ul>
     <li><strong>Title:</strong> {{ report.title }}</li>
     <li><strong>Confidence:</strong> {{ report.confidence | title }}</li>
-    <li><strong>Affected devices:</strong> {{ report.affected_devices | join(', ') or 'none matched' }}</li>
+    <li><strong>Affected devices:</strong>
+      {% if report.affected_devices %}
+      {% for hostname in report.affected_devices %}
+      {{ hostname }} {{ entity_menu(device_menu(hostname=hostname), hostname) }}{{ ", " if not loop.last }}
+      {% endfor %}
+      {% else %}none matched{% endif %}</li>
     <li><strong>Generated:</strong> {{ fmt.when(report.generated_at) }}</li>
   </ul>
-  <a class="btn btn-sm" href="/artifacts/{{ artifact_prefix or '' }}incident_report.md">Open full report</a>
+  {# An incident is a starting point: the changes that preceded it, the
+     evidence behind it, the paths through it, and where it sits. #}
+  <div class="actions">
+    <a class="btn btn-sm" href="/artifacts/{{ artifact_prefix or '' }}incident_report.md">Open full report</a>
+    <a class="btn btn-sm" href="{{ scoped_url('/changes', link_scope()) }}" aria-label="Review the changes recorded around this incident">Recent changes</a>
+    <a class="btn btn-sm" href="{{ scoped_url('/evidence', link_scope()) }}" aria-label="Open the evidence for this scope">Evidence</a>
+    <a class="btn btn-sm" href="{{ scoped_url('/paths', link_scope(), device=(report.affected_devices[0] if report.affected_devices else None)) }}" aria-label="Investigate a path through the affected devices">Investigate paths</a>
+    <a class="btn btn-sm" href="{{ scoped_url('/topology', link_scope(), focus=(report.affected_devices[0] if report.affected_devices else None)) }}" aria-label="Focus the affected devices in topology">Topology</a>
+    <a class="btn btn-sm" href="{{ scoped_url('/timeline', link_scope()) }}" aria-label="Open the timeline around this incident">Timeline</a>
+  </div>
 </section>
 {% else %}
 <p class="muted">No incident report generated yet for this network.</p>

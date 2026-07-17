@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_entity_actions.html" import entity_menu %}
 {% block title %}Enterprise Policy{% endblock %}
 {% block content %}
 <div class="page-head">
@@ -28,6 +29,10 @@
 
 <section class="card">
   <h2>Policy Results</h2>
+  {% if device_filter %}
+  <p class="flash flash-info">Showing results for <strong>{{ device_filter }}</strong> only.
+    <a href="{{ scoped_url('/policy', link_scope()) }}">Show every device</a></p>
+  {% endif %}
   {% if report.evaluations %}
   <p class="muted">Select a result to see the evidence, reasoning, configuration, recommendation and confidence behind it.</p>
   <div class="path-timeline">
@@ -36,7 +41,7 @@
     {# Confidence is shown only when it should change what the reader does.
        A confident, deterministic verdict speaks for itself. #}
     {% set conf = confidence_display(e.result.confidence, conflicting=e.result.evidence_conflicting|length > 0) %}
-    <details>
+    <details id="result-{{ e.policy.policy_id }}-{{ e.hostname }}">
       <summary>
         <span class="badge hop-badge hop-badge-{{ status_class }}">{{ e.status_label }}</span>
         <strong>{{ e.policy.name }}</strong>
@@ -119,6 +124,33 @@
           Rule set {{ e.result.provenance.rule_set_version }} · engine {{ e.result.provenance.engine_version }} ·
           expected state: {{ e.policy.expected_state }}
         </p>
+
+        {# The workflow OUT of a verdict: the device, the exact configuration
+           bytes the verdict was reached on, remediation planning, and the
+           full canonical action set — a failure is a starting point, not a
+           dead end. #}
+        <div class="actions" style="border-top:1px solid var(--line);padding-top:10px;">
+          <a class="btn btn-sm" href="{{ entity_url('device', device_id=e.hostname, scope_id=link_scope()) }}"
+             aria-label="Open device details for {{ e.hostname }}">Device details</a>
+          <a class="btn btn-sm" href="{{ entity_url('configuration', device_id=e.device_id, scope_id=link_scope()) }}"
+             aria-label="Open the configuration of {{ e.hostname }}">Exact configuration</a>
+          {% set config_evidence = (e.result.evidence_used | selectattr('payload.config_sha256') | list) %}
+          {% if config_evidence %}
+          <a class="btn btn-sm"
+             href="{{ entity_url('evidence_record', device_id=e.device_id, sha=config_evidence[0].payload.config_sha256, scope_id=link_scope()) }}"
+             aria-label="Open the exact evidence record this verdict was reached on">Exact evidence record</a>
+          {% else %}
+          <a class="btn btn-sm" href="{{ entity_url('evidence_device', device_id=e.device_id, scope_id=link_scope()) }}"
+             aria-label="Open the evidence for {{ e.hostname }}">Evidence</a>
+          {% endif %}
+          {% if e.status in ('fail', 'warning') %}
+          <a class="btn btn-sm" href="{{ scoped_url('/predict', link_scope(), device=e.hostname) }}"
+             aria-label="Predict the impact of remediating {{ e.hostname }}">Predict remediation impact</a>
+          <a class="btn btn-sm" href="{{ scoped_url('/compass', link_scope(), device=e.hostname, reason='Remediate policy: ' + e.policy.name) }}"
+             aria-label="Plan the remediation of {{ e.hostname }} in Compass">Add remediation to Compass</a>
+          {% endif %}
+          {{ entity_menu(device_menu(hostname=e.hostname, device_id=e.device_id), e.hostname, label='More') }}
+        </div>
       </div>
     </details>
     {% endfor %}

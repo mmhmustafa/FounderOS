@@ -396,7 +396,12 @@ def timeline_activity(
                 "severity": "low",
                 "discovery_session": row.get("record_id"),
                 "change_count": 0,
-                "href": "/history",
+                # The EXACT run, not the list page: a timeline event opens
+                # the record it describes.
+                "href": (
+                    f"/history?run={quote(str(row.get('record_id')), safe='')}"
+                    if row.get("record_id") else "/history"
+                ),
             }
         )
     entries.sort(key=lambda item: item["occurred_at"] or "", reverse=True)

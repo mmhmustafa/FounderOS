@@ -1335,6 +1335,15 @@
       if (option) { option.remove(); }
     }
     if (!sitesEnabled) { viewSelect.value = 'full'; }
+    // Deep link: ?view=<sites|full|ospf|bgp> selects the view on arrival, so
+    // a copied link reopens the same picture (routing tables link here).
+    {
+      const wantedView = new URLSearchParams(window.location.search).get('view');
+      if (wantedView &&
+          viewSelect.querySelector(`option[value="${CSS.escape(wantedView)}"]`)) {
+        viewSelect.value = wantedView;
+      }
+    }
 
     function protocolElements(protocol) {
       const view = routingView[protocol];
@@ -1684,7 +1693,43 @@
         expandedSites.add(wanted);
       }
     }
+    // Deep link: ?focus=<hostname|id> selects a device on arrival — the
+    // "Focus in topology" action every entity menu offers. The containing
+    // site opens first so the node actually exists on the stage.
+    const focusWanted = new URLSearchParams(window.location.search).get('focus');
+    if (focusWanted) {
+      const focusKey = focusWanted.trim().toLowerCase();
+      const match = (topologyElements.nodes || []).find(node => {
+        const data = node.data || {};
+        return String(data.id || '').toLowerCase() === focusKey
+          || String(data.hostname || '').toLowerCase() === focusKey
+          || String(data.label || '').toLowerCase() === focusKey;
+      });
+      if (match) {
+        const siteId = (siteView.membership || {})[match.data.id];
+        if (siteId && siteId !== '__none__') { expandedSites.add(siteId); }
+      }
+    }
     rebuildView();
+    if (focusWanted) {
+      const focusKey = focusWanted.trim().toLowerCase();
+      const node = cy.nodes().filter(n =>
+        String(n.id()).toLowerCase() === focusKey
+        || String(n.data('hostname') || '').toLowerCase() === focusKey
+        || String(n.data('label') || '').toLowerCase() === focusKey
+      );
+      if (node.length) {
+        const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        cy.elements().unselect();
+        node.first().select();
+        cy.animate({ center: { eles: node.first() }, zoom: Math.max(cy.zoom(), 1) },
+                   { duration: reduceMotion ? 0 : 200 });
+        revealDetails();
+        selectedDetailNodeId = node.first().id();
+        details.innerHTML = nodeDetails(node.first().data());
+        hydrateAccessActions();
+      }
+    }
 
     // Reachable from the console for debugging and driveable UI tests.
     window.cy = cy;

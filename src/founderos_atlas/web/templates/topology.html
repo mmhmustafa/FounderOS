@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_device_actions.html" import device_actions %}
+{% from "_entity_actions.html" import entity_menu %}
 {% import "_topology_facts.html" as topo %}
 {% import "_fmt.html" as fmt %}
 {% block title %}Topology{% endblock %}
@@ -105,7 +106,7 @@
               </ul>
             </details>
           </td>
-          <td class="row-actions">{% set _t = device_target(hostname=device.hostname) %}{{ device_actions(_t, compact=True, web=web_access(hostname=device.hostname)) }}</td>
+          <td class="row-actions">{{ entity_menu(device_menu(hostname=device.hostname, device_id=device.enterprise_id), device.hostname) }}</td>
         </tr>
         {% else %}
         <tr>
@@ -114,8 +115,7 @@
           <td>{{ device.management_ip }}</td>
           <td>{{ device.platform }}</td>
           <td>{{ device.os_version }}</td>
-          <td class="row-actions">{{ device_actions(device_target(hostname=device.hostname), compact=True,
-                                                   web=web_access(hostname=device.hostname)) }}</td>
+          <td class="row-actions">{{ entity_menu(device_menu(hostname=device.hostname), device.hostname) }}</td>
         </tr>
         {% endif %}
         {% endfor %}

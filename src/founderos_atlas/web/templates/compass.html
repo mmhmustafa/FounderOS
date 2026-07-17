@@ -5,9 +5,16 @@
 <h1>Compass — Maintenance Plans</h1>
 <p class="muted">Plan many changes for one maintenance window. Compass analyses every change with the prediction engine, derives dependencies from evidence only, and recommends a safer execution order — an advisor, never an approval gate. The engineer remains in control.</p>
 
+{% if request.args.get('device') %}
+<p class="flash flash-info">Adding <strong>{{ request.args.get('device') }}</strong> to a plan:
+  open an existing plan below, or create a new one — the device carries through.</p>
+{% endif %}
+
 <section class="card">
   <h2>New Plan</h2>
   <form class="form" method="post" action="/compass/new">
+    <input type="hidden" name="device" value="{{ request.args.get('device', '') }}">
+    <input type="hidden" name="reason" value="{{ request.args.get('reason', '') }}">
     <label>Title
       <input name="title" required placeholder="July core maintenance">
     </label>
@@ -45,7 +52,7 @@
         <td><span class="badge hop-badge hop-badge-{{ 'pass' if row.plan.status == 'analysed' else 'unknown' }}">{{ row.plan.status | title }}</span></td>
         <td>{% if row.risk %}<span class="badge hop-badge hop-badge-{{ 'failed' if row.risk.overall_risk in ('high', 'critical') else ('warning' if row.risk.overall_risk == 'medium' else 'pass') }}">{{ row.risk.overall_risk | title }}</span>{% else %}—{% endif %}</td>
         <td>{{ fmt.when(row.plan.updated_at) }}</td>
-        <td><a class="btn btn-sm" href="/compass/{{ row.plan.plan_id }}" aria-label="Open plan {{ row.plan.title }}">Open</a></td>
+        <td><a class="btn btn-sm" href="/compass/{{ row.plan.plan_id }}{% if request.args.get('device') %}?device={{ request.args.get('device') | urlencode }}{% if request.args.get('reason') %}&reason={{ request.args.get('reason') | urlencode }}{% endif %}{% endif %}" aria-label="Open plan {{ row.plan.title }}">Open</a></td>
       </tr>
       {% endfor %}
     </tbody>
