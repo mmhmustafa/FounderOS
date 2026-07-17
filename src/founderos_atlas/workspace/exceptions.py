@@ -27,3 +27,7 @@ class CredentialStoreUnavailableError(AtlasWorkspaceError):
 
 class CredentialNotFoundError(AtlasWorkspaceError):
     """The secure credential for a profile could not be resolved."""
+
+
+class ProfileConflictError(AtlasWorkspaceError):
+    """The caller edited an older revision of the profile catalog."""

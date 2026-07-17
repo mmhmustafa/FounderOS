@@ -29,7 +29,7 @@
 
 <section class="card">
   <h2>Investigate device-to-device connectivity</h2>
-  <form class="form" method="post" action="/paths/run">
+  <form class="form" method="post" action="/paths/run">{{ csrf_field() }}
     <div class="form-row">
       <label>Source device
         <select name="source" required>

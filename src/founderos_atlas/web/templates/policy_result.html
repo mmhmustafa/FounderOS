@@ -125,7 +125,8 @@
     {% if exception.expires_at %} · expires {{ exception.expires_at }}{% else %} · no expiry (until revoked){% endif %}
   </p>
   <p><strong>Reason.</strong> {{ exception.reason }}</p>
-  <form method="post" action="/policy/exceptions/revoke" class="actions">
+  <form method="post" action="/policy/exceptions/revoke" class="actions">{{ csrf_field() }}
+    <input type="hidden" name="expected_revision" value="{{ exception_revision }}">
     <input type="hidden" name="policy_id" value="{{ e.policy.policy_id }}">
     <input type="hidden" name="hostname" value="{{ e.hostname }}">
     <input type="hidden" name="next" value="{{ request.full_path }}">
@@ -143,7 +144,8 @@
     revocation is audited with reason, owner, approval, and expiry.</p>
   {% endif %}
   {% if not (exception and exception_active) and e.effective_status in ('fail', 'warning') %}
-  <form method="post" action="/policy/exceptions" class="form" style="max-width:640px;">
+  <form method="post" action="/policy/exceptions" class="form" style="max-width:640px;">{{ csrf_field() }}
+    <input type="hidden" name="expected_revision" value="{{ exception_revision }}">
     <input type="hidden" name="policy_id" value="{{ e.policy.policy_id }}">
     <input type="hidden" name="hostname" value="{{ e.hostname }}">
     <input type="hidden" name="next" value="{{ request.full_path }}">
@@ -172,7 +174,8 @@
 
 <section class="card">
   <h2>Ownership</h2>
-  <form method="post" action="/policy/assign" class="actions">
+  <form method="post" action="/policy/assign" class="actions">{{ csrf_field() }}
+    <input type="hidden" name="expected_revision" value="{{ exception_revision }}">
     <input type="hidden" name="subjects" value="{{ e.subject }}">
     <input type="hidden" name="next" value="{{ request.full_path }}">
     <label>Owner <input name="owner" value="{{ e.owner }}" placeholder="e.g. netops"></label>

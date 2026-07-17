@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}{{ status }} — Atlas{% endblock %}
+{% block content %}
+<section class="card" style="max-width: 640px;">
+  <h1>
+    {% if status == 403 %}Not permitted
+    {% elif status == 404 %}Not found
+    {% elif status == 409 %}Edit conflict
+    {% elif status == 429 %}Slow down
+    {% else %}Something went wrong{% endif %}
+  </h1>
+  <p>{{ message }}</p>
+  {% if status == 403 %}
+  <p class="muted">
+    Authorization is enforced on the server for every request — if you
+    believe you need this capability, a system administrator can adjust
+    your roles. The attempt has been recorded in the audit log.
+  </p>
+  {% endif %}
+  {% if correlation_id %}
+  <p class="muted">Correlation id: <code>{{ correlation_id }}</code></p>
+  {% endif %}
+  <p><a class="btn" href="/">Back to the overview</a></p>
+</section>
+{% endblock %}

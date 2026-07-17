@@ -9,7 +9,7 @@
 ]) }}
 <div class="page-head">
   <h1>{{ plan.title }}</h1>
-  <span class="badge hop-badge hop-badge-{{ 'pass' if plan.status == 'analysed' else 'unknown' }}">{{ plan.status }}</span>
+  <span class="badge hop-badge hop-badge-{{ 'pass' if plan.status in ('analysed', 'approved') else ('failed' if plan.status == 'rejected' else 'unknown') }}">{{ plan.status }}</span>
 </div>
 <p class="muted">
   Window: {{ plan.maintenance_window or '—' }} ·
@@ -18,6 +18,35 @@
   Scope: enterprise ({{ enterprise_device_count }} canonical device(s) from {{ enterprise_contributions | length }} profile(s)) ·
   Updated: {{ fmt.when(plan.updated_at) }}
 </p>
+
+{% if plan.status in ('analysed', 'approved', 'rejected') %}
+<section class="card" id="approval">
+  <h2>Approval</h2>
+  {% if plan.approval %}
+  <p>
+    <strong>{{ plan.approval.decision | title }}</strong> by
+    {{ plan.approval.actor }} · {{ plan.approval.decided_at | timestamp }}
+    {% if plan.approval.reason %}<span class="muted">— {{ plan.approval.reason }}</span>{% endif %}
+  </p>
+  {% endif %}
+  {% if plan.status == 'analysed' %}
+  <p class="muted">
+    The decision covers exactly this analysed revision — any later edit
+    returns the plan to draft and clears the way for a fresh decision.
+    {% if not can('plans.approve') %}Your roles cannot approve plans; an
+    approver has been notified.{% endif %}
+  </p>
+  {% if can('plans.approve') %}
+  <form method="post" action="/compass/{{ plan.plan_id }}/decision" class="filter-bar">{{ csrf_field() }}
+    <input type="hidden" name="expected_revision" value="{{ plan.revision }}">
+    <label>Reason (required to reject)<input name="reason"></label>
+    <button class="btn btn-primary" type="submit" name="decision" value="approve">Approve plan</button>
+    <button class="btn" type="submit" name="decision" value="reject">Reject plan</button>
+  </form>
+  {% endif %}
+  {% endif %}
+</section>
+{% endif %}
 
 <section class="card">
   <h2>Planned Changes ({{ plan.changes | length }})</h2>
@@ -35,7 +64,8 @@
         <td>{% if change.rollback_available is sameas true %}<span class="ok">yes</span>{% elif change.rollback_available is sameas false %}<span class="warn">no</span>{% else %}unknown{% endif %}</td>
         <td>{{ change.notes or '—' }}</td>
         <td>
-          <form method="post" action="/compass/{{ plan.plan_id }}/changes/{{ change.change_id }}/remove">
+          <form method="post" action="/compass/{{ plan.plan_id }}/changes/{{ change.change_id }}/remove">{{ csrf_field() }}
+      <input type="hidden" name="expected_revision" value="{{ plan.revision }}">
             <button class="btn btn-sm" type="submit" aria-label="Remove change {{ change.title }}">Remove</button>
           </form>
         </td>
@@ -44,7 +74,8 @@
     </tbody>
   </table>
   </div>
-  <form method="post" action="/compass/{{ plan.plan_id }}/analyse" class="form-actions" style="margin-top: 12px;">
+  <form method="post" action="/compass/{{ plan.plan_id }}/analyse" class="form-actions" style="margin-top: 12px;">{{ csrf_field() }}
+      <input type="hidden" name="expected_revision" value="{{ plan.revision }}">
     <button class="btn btn-primary" type="submit">Analyse Plan</button>
   </form>
   {% else %}
@@ -54,7 +85,8 @@
 
 <section class="card">
   <h2>Add a Change</h2>
-  <form class="form" method="post" action="/compass/{{ plan.plan_id }}/changes">
+  <form class="form" method="post" action="/compass/{{ plan.plan_id }}/changes">{{ csrf_field() }}
+      <input type="hidden" name="expected_revision" value="{{ plan.revision }}">
     <div class="form-row">
       <label>Device
         <select name="device" id="compass-device" required>

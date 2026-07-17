@@ -5,9 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Atlas — {% block title %}Enterprise Network Intelligence{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='atlas.css') }}">
+  <meta name="atlas-csrf" content="{{ csrf_token() }}">
   {% block head %}{% endblock %}
 </head>
-<body>
+<body data-theme="{{ ui_theme or 'system' }}" data-density="{{ ui_density or 'comfortable' }}">
 {% import "_icons.html" as icons %}
   <a class="skip-link" href="#atlas-main">Skip to content</a>
   <header class="topbar">
@@ -41,6 +42,20 @@
     <form class="run-form" method="get" action="/discovery">
       <button class="btn btn-primary" type="submit">Run Discovery</button>
     </form>
+    {% if current_principal %}
+    <div class="user-chip">
+      <a class="inbox-link" href="/inbox" aria-label="Inbox{% if inbox_unread %} — {{ inbox_unread }} unread{% endif %}">
+        {{ icons.icon('timeline', 16) }}
+        {% if inbox_unread %}<span class="inbox-badge" aria-hidden="true">{{ inbox_unread }}</span>{% endif %}
+      </a>
+      <span class="user-name" title="Roles: {{ current_principal.roles | join(', ') }}">{{ current_principal.display_name }}</span>
+      {% if auth_mode != 'local' %}
+      <form method="post" action="/logout" style="display:inline">{{ csrf_field() }}
+        <button class="btn btn-sm" type="submit">Sign out</button>
+      </form>
+      {% endif %}
+    </div>
+    {% endif %}
   </header>
   <div class="layout">
     <div class="sidebar-backdrop" id="atlas-sidebar-backdrop" hidden></div>
@@ -78,7 +93,10 @@
         </li>
         {% endfor %}
       </ul>
-      <div class="sidebar-note">Local alpha GUI · 127.0.0.1</div>
+      <div class="sidebar-note">
+        {% if auth_mode == 'local' %}Local development mode · loopback only
+        {% else %}Authenticated · {{ auth_mode }} mode{% endif %}
+      </div>
     </nav>
     <main class="content{% block content_class %}{% endblock %}" id="atlas-main" tabindex="-1">
       {% with messages = get_flashed_messages(with_categories=true) %}

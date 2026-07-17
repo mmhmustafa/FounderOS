@@ -26,7 +26,7 @@
 
 <section class="card">
   <h2>Proposed change: shutdown interface</h2>
-  <form class="form" method="post" action="/predict/run">
+  <form class="form" method="post" action="/predict/run">{{ csrf_field() }}
     <div class="form-row">
       <label>Device
         <select name="device" id="predict-device" required>

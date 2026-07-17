@@ -48,6 +48,8 @@ class CredentialSetService:
         password: str,
         priority: int = 100,
         scope: CredentialScope | None = None,
+        rotation_due_at: str | None = None,
+        expires_at: str | None = None,
     ) -> CredentialSet:
         """Add one credential entry, creating its set on first use."""
 
@@ -77,6 +79,9 @@ class CredentialSetService:
             credential_ref=credential_ref,
             priority=priority,
             scope=scope or CredentialScope(),
+            created_at=self._clock().isoformat(timespec="seconds"),
+            rotation_due_at=(rotation_due_at or None),
+            expires_at=(expires_at or None),
         )
         updated = CredentialSet(
             set_id=set_id,
@@ -122,20 +127,14 @@ class CredentialSetService:
         if existing is None:
             return
         when = self._clock().isoformat(timespec="seconds")
-        entries = tuple(
-            CredentialEntry(
-                entry_id=entry.entry_id,
-                label=entry.label,
-                username=entry.username,
-                credential_ref=entry.credential_ref,
-                priority=entry.priority,
-                scope=entry.scope,
-                kind=entry.kind,
-                enabled=entry.enabled,
-                last_success=when if entry.entry_id == entry_id else entry.last_success,
-            )
-            for entry in existing.entries
-        )
+        from dataclasses import replace
+        entries = tuple(replace(
+            entry,
+            last_success=when if entry.entry_id == entry_id else entry.last_success,
+            last_used=when if entry.entry_id == entry_id else entry.last_used,
+            last_failure=None if entry.entry_id == entry_id else entry.last_failure,
+            last_failure_reason=None if entry.entry_id == entry_id else entry.last_failure_reason,
+        ) for entry in existing.entries)
         self._repository.save(
             CredentialSet(
                 set_id=existing.set_id,
@@ -144,3 +143,40 @@ class CredentialSetService:
                 entries=entries,
             )
         )
+
+    def test_store_access(self, set_id: str, entry_id: str) -> bool:
+        """Verify the referenced secret is readable without returning it.
+
+        This deliberately does not claim device authentication succeeded: no
+        target is required and the secret never leaves the provider boundary.
+        """
+        from dataclasses import replace
+        existing = self._repository.get(set_id)
+        if existing is None:
+            raise InvalidProfileError("The credential set does not exist.")
+        target = next((e for e in existing.entries if e.entry_id == entry_id), None)
+        if target is None:
+            raise InvalidProfileError("The credential entry does not exist.")
+        when = self._clock().isoformat(timespec="seconds")
+        try:
+            secret = self._provider.get(target.credential_ref)
+            ok = bool(secret)
+        except Exception:
+            ok = False
+        finally:
+            secret = None
+        entries = tuple(replace(
+            entry,
+            last_used=when if entry.entry_id == entry_id else entry.last_used,
+            last_test_status=("store-readable" if ok else "store-unavailable")
+                if entry.entry_id == entry_id else entry.last_test_status,
+            last_failure_reason=(None if ok else "Secure provider could not read the reference")
+                if entry.entry_id == entry_id else entry.last_failure_reason,
+            last_failure=(None if ok else when)
+                if entry.entry_id == entry_id else entry.last_failure,
+        ) for entry in existing.entries)
+        self._repository.save(CredentialSet(
+            set_id=existing.set_id, name=existing.name,
+            description=existing.description, entries=entries,
+        ))
+        return ok

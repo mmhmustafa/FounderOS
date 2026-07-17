@@ -9,7 +9,7 @@ from typing import Any
 from uuid import uuid4
 
 
-AUDIT_SCHEMA_VERSION = "1.0.0"
+AUDIT_SCHEMA_VERSION = "1.1.0"
 
 # Field names that must never appear in an audit payload. A caller that
 # needs to audit a credential change records the credential REFERENCE.
@@ -59,6 +59,8 @@ class AuditEvent:
     reason: str | None = None
     source: str = "web"
     correlation_id: str | None = None
+    outcome: str = "success"          # success | denied | conflict | failed
+    actor_roles: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         for name in ("event_id", "occurred_at", "actor", "category",
@@ -84,6 +86,8 @@ class AuditEvent:
         source: str = "web",
         correlation_id: str | None = None,
         occurred_at: str | None = None,
+        outcome: str = "success",
+        actor_roles=(),
     ) -> "AuditEvent":
         return cls(
             event_id=f"audit:{uuid4().hex}",
@@ -99,6 +103,8 @@ class AuditEvent:
             reason=(str(reason).strip() or None) if reason else None,
             source=source,
             correlation_id=correlation_id,
+            outcome=outcome,
+            actor_roles=tuple(str(role) for role in actor_roles),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -116,6 +122,8 @@ class AuditEvent:
             "reason": self.reason,
             "source": self.source,
             "correlation_id": self.correlation_id,
+            "outcome": self.outcome,
+            "actor_roles": list(self.actor_roles),
         }
 
     @classmethod
@@ -135,5 +143,9 @@ class AuditEvent:
             correlation_id=(
                 str(value["correlation_id"])
                 if value.get("correlation_id") else None
+            ),
+            outcome=str(value.get("outcome") or "success"),
+            actor_roles=tuple(
+                str(role) for role in value.get("actor_roles") or ()
             ),
         )

@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% from "_device_actions.html" import device_actions %}
 {% from "_entity_actions.html" import entity_menu %}
-{% import "_topology_facts.html" as topo %}
+{% import "_topology_facts.html" as topo with context %}
 {% import "_fmt.html" as fmt %}
 {% block title %}Topology{% endblock %}
 {% block content_class %} content-wide content-topology{% endblock %}

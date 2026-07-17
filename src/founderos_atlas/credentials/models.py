@@ -18,7 +18,7 @@ import re
 from typing import Any
 
 
-CREDENTIAL_SETS_SCHEMA_VERSION = "1.0.0"
+CREDENTIAL_SETS_SCHEMA_VERSION = "1.1.0"
 KIND_SSH_PASSWORD = "ssh-password"
 
 _SLUG = re.compile(r"[^a-z0-9]+")
@@ -237,6 +237,13 @@ class CredentialEntry:
     kind: str = KIND_SSH_PASSWORD
     enabled: bool = True
     last_success: str | None = None
+    created_at: str | None = None
+    last_used: str | None = None
+    last_failure: str | None = None
+    last_failure_reason: str | None = None
+    rotation_due_at: str | None = None
+    expires_at: str | None = None
+    last_test_status: str | None = None
 
     def __post_init__(self) -> None:
         for name in ("entry_id", "label", "username", "credential_ref", "kind"):
@@ -259,6 +266,13 @@ class CredentialEntry:
             "kind": self.kind,
             "enabled": self.enabled,
             "last_success": self.last_success,
+            "created_at": self.created_at,
+            "last_used": self.last_used,
+            "last_failure": self.last_failure,
+            "last_failure_reason": self.last_failure_reason,
+            "rotation_due_at": self.rotation_due_at,
+            "expires_at": self.expires_at,
+            "last_test_status": self.last_test_status,
         }
 
     @classmethod
@@ -274,6 +288,13 @@ class CredentialEntry:
                 kind=str(value.get("kind", KIND_SSH_PASSWORD)),
                 enabled=bool(value.get("enabled", True)),
                 last_success=value.get("last_success"),
+                created_at=value.get("created_at"),
+                last_used=value.get("last_used"),
+                last_failure=value.get("last_failure"),
+                last_failure_reason=value.get("last_failure_reason"),
+                rotation_due_at=value.get("rotation_due_at"),
+                expires_at=value.get("expires_at"),
+                last_test_status=value.get("last_test_status"),
             )
         except KeyError as error:
             raise ValueError(f"credential entry is missing field {error}") from error

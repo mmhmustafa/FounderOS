@@ -37,7 +37,7 @@
 </section>
 
 <section class="card">
-  <form id="discovery-form" class="form" method="post" action="/discovery/run">
+  <form id="discovery-form" class="form" method="post" action="/discovery/run">{{ csrf_field() }}
     <label>Discovery profile
       <select name="profile" id="discovery-profile" required>
         {% if not selected %}<option value="" selected disabled>— Select a network —</option>{% endif %}
@@ -95,6 +95,7 @@
     <div class="actions" id="job-actions">
       <a class="btn" id="action-topology" href="/topology{% if job %}?scope={{ job.profile_id | urlencode }}{% endif %}">View Topology</a>
       <a class="btn" id="action-changes" href="/changes{% if job %}?scope={{ job.profile_id | urlencode }}{% endif %}">View Changes</a>
+      <a class="btn" id="action-evidence" href="/evidence{% if job %}?scope={{ job.profile_id | urlencode }}{% endif %}">Review Evidence &amp; Gaps</a>
       <a class="btn" id="action-dashboard" href="/{% if job %}?scope={{ job.profile_id | urlencode }}{% endif %}">View Dashboard</a>
     </div>
   </div>

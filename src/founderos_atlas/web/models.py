@@ -68,6 +68,7 @@ NAV_GROUPS: tuple[NavGroup, ...] = (
     NavGroup("mission", "Mission", "/", (
         NavItem("dashboard", "Overview", "/"),
         NavItem("incidents", "Incidents", "/incidents"),
+        NavItem("inbox", "Inbox", "/inbox"),
     )),
     NavGroup("network", "Network", "/topology", (
         NavItem("topology", "Topology", "/topology"),
@@ -103,6 +104,7 @@ NAV_GROUPS: tuple[NavGroup, ...] = (
         NavItem("profiles", "Profiles", "/profiles"),
         NavItem("credentials", "Credentials", "/credentials"),
         NavItem("audit", "Audit", "/audit"),
+        NavItem("users", "Users", "/users"),
         NavItem("settings", "Settings", "/settings"),
     )),
 )
@@ -161,6 +163,7 @@ def profile_row(profile) -> dict[str, Any]:
         "max_devices": profile.max_devices,
         "collect_configuration": profile.collect_configuration,
         "last_discovery": format_timestamp(profile.last_discovery),
+        "last_discovery_iso": profile.last_discovery,
         "created_at": format_timestamp(profile.created_at),
         "updated_at": format_timestamp(profile.updated_at),
         "description": getattr(profile, "description", None) or "",
@@ -172,6 +175,18 @@ def profile_row(profile) -> dict[str, Any]:
         "site_hint": getattr(profile, "site_hint", None) or "",
         "domain_hint": getattr(profile, "domain_hint", None) or "",
         "archived": bool(getattr(profile, "archived", False)),
+        "owner": getattr(profile, "owner", None) or "Unassigned",
+        "tags": tuple(getattr(profile, "tags", ())),
+        "tags_text": ", ".join(getattr(profile, "tags", ())),
+        "credential_sets": tuple(getattr(profile, "credential_sets", ())),
+        "boundary_summary": (
+            boundary.summary() if boundary and hasattr(boundary, "summary")
+            else (
+                f"{len(boundary.include_cidrs)} include / "
+                f"{len(boundary.exclude_cidrs)} exclude"
+                if boundary else "Unrestricted"
+            )
+        ),
     }
 
 
@@ -239,6 +254,12 @@ def credential_set_rows(sets) -> list[dict[str, Any]]:
                         "priority": entry.priority,
                         "scope_summary": entry.scope.summary(),
                         "last_success": format_timestamp(entry.last_success),
+                        "created_at": format_timestamp(getattr(entry, "created_at", None)),
+                        "last_used": format_timestamp(getattr(entry, "last_used", None)),
+                        "last_failure": format_timestamp(getattr(entry, "last_failure", None)),
+                        "rotation_due_at": format_timestamp(getattr(entry, "rotation_due_at", None)),
+                        "expires_at": format_timestamp(getattr(entry, "expires_at", None)),
+                        "last_test_status": getattr(entry, "last_test_status", None) or "not tested",
                         "enabled": entry.enabled,
                     }
                     for entry in credential_set.entries

@@ -7,17 +7,17 @@
 <p class="muted">How can I help today? Advisor answers only from collected evidence — every response cites its sources, states its confidence, and recommends the workflow to act on it. It never guesses.</p>
 
 <section class="card">
-  <form class="advisor-ask" method="post" action="/advisor/ask">
+  <form class="advisor-ask" method="post" action="/advisor/ask">{{ csrf_field() }}
     <input type="text" name="question" id="advisor-question" autocomplete="off"
            placeholder="Ask Atlas Advisor… (e.g. Explain enterprise health · Find SW2 · What changed?)" required>
     <button class="btn btn-primary" type="submit">Ask</button>
   </form>
   <div class="advisor-quick">
-    <form method="post" action="/advisor/ask"><input type="hidden" name="question" value="Investigate an issue"><button class="btn btn-sm" type="submit">{{ icons.icon('paths', 15) }} Investigate an Issue</button></form>
-    <form method="post" action="/advisor/ask"><input type="hidden" name="question" value="Help me plan maintenance"><button class="btn btn-sm" type="submit">{{ icons.icon('wrench', 15) }} Plan a Change</button></form>
-    <form method="post" action="/advisor/ask"><input type="hidden" name="question" value="Summarize discovery"><button class="btn btn-sm" type="submit">{{ icons.icon('discovery', 15) }} Discover Infrastructure</button></form>
-    <form method="post" action="/advisor/ask"><input type="hidden" name="question" value="What changed?"><button class="btn btn-sm" type="submit">{{ icons.icon('trending', 15) }} Explain Recent Changes</button></form>
-    <form method="post" action="/advisor/ask"><input type="hidden" name="question" value="Explain enterprise health"><button class="btn btn-sm" type="submit">{{ icons.icon('chart', 15) }} Summarize Enterprise Health</button></form>
+    <form method="post" action="/advisor/ask">{{ csrf_field() }}<input type="hidden" name="question" value="Investigate an issue"><button class="btn btn-sm" type="submit">{{ icons.icon('paths', 15) }} Investigate an Issue</button></form>
+    <form method="post" action="/advisor/ask">{{ csrf_field() }}<input type="hidden" name="question" value="Help me plan maintenance"><button class="btn btn-sm" type="submit">{{ icons.icon('wrench', 15) }} Plan a Change</button></form>
+    <form method="post" action="/advisor/ask">{{ csrf_field() }}<input type="hidden" name="question" value="Summarize discovery"><button class="btn btn-sm" type="submit">{{ icons.icon('discovery', 15) }} Discover Infrastructure</button></form>
+    <form method="post" action="/advisor/ask">{{ csrf_field() }}<input type="hidden" name="question" value="What changed?"><button class="btn btn-sm" type="submit">{{ icons.icon('trending', 15) }} Explain Recent Changes</button></form>
+    <form method="post" action="/advisor/ask">{{ csrf_field() }}<input type="hidden" name="question" value="Explain enterprise health"><button class="btn btn-sm" type="submit">{{ icons.icon('chart', 15) }} Summarize Enterprise Health</button></form>
   </div>
 </section>
 
@@ -82,7 +82,7 @@
   <div class="advisor-quick">
     {% for item in response.followups %}
     {% if item.question %}
-    <form method="post" action="/advisor/ask"><input type="hidden" name="question" value="{{ item.question }}"><button class="btn btn-sm" type="submit">{{ item.label }}</button></form>
+    <form method="post" action="/advisor/ask">{{ csrf_field() }}<input type="hidden" name="question" value="{{ item.question }}"><button class="btn btn-sm" type="submit">{{ item.label }}</button></form>
     {% else %}
     <a class="btn btn-sm" href="{{ item.href }}">{{ item.label }}</a>
     {% endif %}

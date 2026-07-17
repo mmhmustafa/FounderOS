@@ -16,6 +16,7 @@ from .exceptions import (
     WorkspaceCorruptedError,
 )
 from .models import DiscoveryProfile, credential_ref_for, profile_id_for
+from .administration import AdministrationRepository, WorkspacePreferences
 from .repository import ProfileRepository, atlas_home, default_workspace_root
 from .scopes import (
     DEFAULT_SCOPE_ID,
@@ -53,6 +54,8 @@ __all__ = [
     "active_scopes",
     "atlas_home",
     "credential_ref_for",
+    "AdministrationRepository",
+    "WorkspacePreferences",
     "default_scope",
     "default_workspace_root",
     "profile_id_for",

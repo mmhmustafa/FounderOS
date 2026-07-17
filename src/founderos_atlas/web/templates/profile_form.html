@@ -4,7 +4,8 @@
 <h1>{{ 'Edit' if mode == 'edit' else 'Add' }} Discovery Profile</h1>
 
 <form class="form" method="post"
-      action="{% if mode == 'edit' %}/profiles/{{ profile.name | urlencode }}{% else %}/profiles{% endif %}">
+      action="{% if mode == 'edit' %}/profiles/{{ profile.name | urlencode }}{% else %}/profiles{% endif %}">{{ csrf_field() }}
+  {% if mode == 'edit' %}<input type="hidden" name="expected_revision" value="{{ profile_revision }}">{% endif %}
   {% if mode != 'edit' %}
   <label>Profile name
     <input name="name" required placeholder="Hyderabad Lab">
@@ -18,6 +19,10 @@
   <label>Site name (optional)
     <input name="site" value="{{ profile.site if profile and profile.site != '-' else '' }}" placeholder="CML Lab">
   </label>
+  <div class="form-row">
+    <label>Owner<input name="owner" value="{{ profile.owner if profile else '' }}" placeholder="Network Operations"></label>
+    <label>Tags<input name="tags" value="{{ profile.tags_text if profile else '' }}" placeholder="production, campus, critical"></label>
+  </div>
   <label>Management IP
     <input name="management_ip" value="{{ profile.management_ip if profile else '' }}"
            placeholder="192.168.1.12" {{ 'required' if mode != 'edit' else '' }}>
@@ -74,10 +79,12 @@
     <label>Do not follow hostnames (globs, optional)
       <input name="deny_hostnames" value="{{ profile.deny_hostnames_text if profile else '' }}" placeholder="isp-*, provider-*">
     </label>
-    <label>Credential sets (comma separated set ids)
-      <input name="credential_sets" value="{{ profile.credential_sets_text if profile else '' }}"
-             placeholder="enterprise-network-access" class="js-credential-set">
-    </label>
+    <fieldset>
+      <legend>Credential sets</legend>
+      {% for credential_set in credential_sets %}
+      <label class="checkbox"><input type="checkbox" name="credential_sets" value="{{ credential_set.set_id }}" class="js-credential-set" {{ 'checked' if profile and credential_set.set_id in profile.credential_sets else '' }}> {{ credential_set.name }} ({{ credential_set.entries|length }} entries)</label>
+      {% else %}<p class="muted">No shared credential sets exist. <a href="/credentials">Create one</a>.</p>{% endfor %}
+    </fieldset>
     <div class="form-row">
       <label>Site hint (optional)
         <input name="site_hint" value="{{ profile.site_hint if profile else '' }}" placeholder="hyderabad">
@@ -94,4 +101,17 @@
   </div>
   <p class="muted">The password is stored securely in your OS keyring, never in profile files.</p>
 </form>
+<script>
+(() => {
+  const form = document.querySelector('form.form');
+  if (!form) return;
+  let dirty = false;
+  form.addEventListener('input', () => { dirty = true; });
+  form.addEventListener('submit', () => { dirty = false; });
+  window.addEventListener('beforeunload', event => {
+    if (!dirty) return;
+    event.preventDefault(); event.returnValue = '';
+  });
+})();
+</script>
 {% endblock %}

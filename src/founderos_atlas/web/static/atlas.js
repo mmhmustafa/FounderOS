@@ -10,6 +10,35 @@
 
   var POLL_MS = 1500;
 
+  // -- CSRF -------------------------------------------------------------------
+  // In production auth mode every mutating request must carry the session's
+  // CSRF token (double submit against the server-side session). Wrapping
+  // fetch here means every existing and future call site complies without
+  // remembering to. Cross-origin requests are left untouched.
+  (function installCsrf() {
+    function token() {
+      var meta = document.querySelector('meta[name="atlas-csrf"]');
+      if (meta && meta.content) { return meta.content; }
+      var match = document.cookie.match(/(?:^|; )atlas_csrf=([^;]*)/);
+      return match ? decodeURIComponent(match[1]) : "";
+    }
+    var original = window.fetch;
+    if (!original) { return; }
+    window.fetch = function (input, init) {
+      init = init || {};
+      var method = (init.method || (input && input.method) || "GET").toUpperCase();
+      var url = typeof input === "string" ? input : (input && input.url) || "";
+      var sameOrigin = url.indexOf("://") === -1 || url.indexOf(window.location.origin) === 0;
+      var value = token();
+      if (value && sameOrigin && method !== "GET" && method !== "HEAD") {
+        var headers = new Headers(init.headers || (input && input.headers) || {});
+        if (!headers.has("X-Atlas-CSRF")) { headers.set("X-Atlas-CSRF", value); }
+        init.headers = headers;
+      }
+      return original.call(window, input, init);
+    };
+  })();
+
   function byId(id) { return document.getElementById(id); }
 
   // -- Responsive tables ------------------------------------------------------

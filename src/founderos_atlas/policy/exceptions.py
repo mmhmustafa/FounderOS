@@ -77,6 +77,10 @@ class PolicyException:
         )
 
 
+class PolicyExceptionConflictError(RuntimeError):
+    """The caller edited an older revision of the exception catalog."""
+
+
 class PolicyExceptionRepository:
     _locks: dict[str, RLock] = {}
     _locks_guard = RLock()
@@ -94,6 +98,28 @@ class PolicyExceptionRepository:
     @property
     def path(self) -> Path:
         return self._root / POLICY_EXCEPTIONS_FILENAME
+
+    def revision(self) -> int:
+        """Catalog revision for optimistic concurrency (bumped per write)."""
+
+        if not self.path.is_file():
+            return 0
+        try:
+            value = json.loads(self.path.read_text(encoding="utf-8"))
+            return int(value.get("revision") or 0)
+        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+            return 0
+
+    def check_revision(self, expected_revision: int | None) -> None:
+        if expected_revision is None:
+            return
+        current = self.revision()
+        if int(expected_revision) != current:
+            raise PolicyExceptionConflictError(
+                "The exception catalog changed while you were editing "
+                f"(revision {current}, you edited {expected_revision}). "
+                "Nothing was overwritten — reload and reapply your change."
+            )
 
     def load(self) -> tuple[PolicyException, ...]:
         if not self.path.is_file():
@@ -215,6 +241,7 @@ class PolicyExceptionRepository:
                 json.dumps(
                     {
                         "schema_version": POLICY_EXCEPTIONS_SCHEMA_VERSION,
+                        "revision": self.revision() + 1,
                         "exceptions": [
                             item.to_dict() for item in exceptions
                         ],

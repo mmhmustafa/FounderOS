@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Inbox{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Inbox</h1></div>
+<p class="muted">
+  Everything addressed to you or your roles: assignments, failed
+  discoveries, policy regressions, edit conflicts, and approval
+  requests. Nothing here leaves Atlas — there is no email integration
+  to configure or to leak into.
+</p>
+
+<section class="card">
+  <p class="muted" role="status" aria-live="polite">
+    {{ notifications | length }} notification(s){% if not include_done %}
+    · <a href="/inbox?done=1">include done</a>{% else %}
+    · <a href="/inbox">hide done</a>{% endif %}
+  </p>
+  {% if notifications %}
+  <div class="table-scroll" role="region" aria-label="Notifications" tabindex="0">
+    <table class="grid">
+      <thead>
+        <tr><th>When</th><th>Kind</th><th>Notification</th><th>Status</th><th><span class="visually-hidden">Actions</span></th></tr>
+      </thead>
+      <tbody>
+        {% for item in notifications %}
+        <tr {% if item.status == 'unread' %}class="row-unread"{% endif %}>
+          <td>{{ item.created_at | timestamp }}</td>
+          <td><span class="hop-badge badge-muted">{{ item.kind }}</span></td>
+          <td>
+            <strong>{{ item.title }}</strong>
+            {% if item.detail %}<div class="muted">{{ item.detail }}</div>{% endif %}
+          </td>
+          <td>{{ item.status }}</td>
+          <td class="row-actions">
+            {% if item.href %}
+            <a class="btn btn-sm" href="{{ item.href }}">Open</a>
+            {% endif %}
+            {% if item.status == 'unread' %}
+            <form method="post" action="/inbox/{{ item.notification_id }}" style="display:inline">{{ csrf_field() }}
+              <input type="hidden" name="status" value="read">
+              <button class="btn btn-sm" type="submit">Mark read</button>
+            </form>
+            {% endif %}
+            {% if item.status != 'done' %}
+            <form method="post" action="/inbox/{{ item.notification_id }}" style="display:inline">{{ csrf_field() }}
+              <input type="hidden" name="status" value="done">
+              <button class="btn btn-sm" type="submit">Done</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">Nothing needs your attention right now.</p>
+  {% endif %}
+</section>
+{% endblock %}

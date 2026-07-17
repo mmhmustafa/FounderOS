@@ -35,7 +35,8 @@
           {% if version.version > 1 %}
           <a class="btn btn-sm" href="/configuration/{{ history.device_id | urlencode }}?current={{ version.version }}&previous={{ version.version - 1 }}">Compare to v{{ version.version - 1 }}</a>
           {% endif %}
-          <a class="btn btn-sm" href="/configuration/{{ history.device_id | urlencode }}/export/{{ version.version }}">Export</a>
+          <a class="btn btn-sm" href="/configuration/{{ history.device_id | urlencode }}/export/{{ version.version }}/redacted">Redacted export</a>
+          <a class="btn btn-sm" href="/configuration/{{ history.device_id | urlencode }}/export/{{ version.version }}" title="Sensitive raw export">Raw export</a>
         </td>
       </tr>
       {% endfor %}
@@ -196,8 +197,9 @@
 {% if viewer %}
 <section class="card">
   <h2>Configuration — {{ current.label }}</h2>
+  <form class="form" method="get"><input type="hidden" name="current" value="{{ current.version }}"><label>Search within configuration<input type="search" name="config_q" value="{{ config_query }}" placeholder="interface, router bgp, access-list…"></label><button class="btn" type="submit">Search</button></form>
   <p class="muted">
-    {{ viewer.line_count }} line(s) as remembered on this device.
+    {{ viewer.visible_line_count }} shown of {{ viewer.line_count }} line(s) as remembered on this device.
     {% if viewer.masked_count %}{{ viewer.masked_count }} line(s) containing a secret are masked — use Export if you need the raw text.{% else %}No line in this configuration contains a secret.{% endif %}
   </p>
   <div class="config-view-scroll">
@@ -206,14 +208,17 @@
         {% for line in viewer.lines %}
         <tr{% if line.masked %} class="line-masked"{% endif %}>
           <td class="muted">{{ line.number }}</td>
-          <td><code>{{ line.text }}</code></td>
+          <td><code class="{{ line.syntax_class }}">{{ line.text }}</code></td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
+    {% if viewer.truncated %}<p class="muted">The on-screen view is capped at {{ viewer.lines|length }} lines for browser performance. Search narrows the full stored configuration; exports remain complete.</p>{% endif %}
   </div>
 </section>
 {% endif %}
+
+<section class="card"><h2>Baseline and deviation annotation</h2>{% if annotation %}<p><span class="badge">{{ annotation.status }}</span> {{ annotation.note }}</p><p class="muted">Updated {{ annotation.updated_at }} by {{ annotation.updated_by }}</p>{% endif %}<form class="form" method="post" action="/configuration/{{ history.device_id|urlencode }}/annotation">{{ csrf_field() }}<label>Status<select name="status"><option value="note">Note</option><option value="approved-baseline">Approved baseline</option><option value="approved-deviation">Approved deviation</option><option value="needs-review">Needs review</option></select></label><label>Annotation<textarea name="note" required></textarea></label><label>Reason<input name="reason" required></label><button class="btn" type="submit">Save audited annotation</button></form></section>
 
 <section class="card">
   <h2>Timeline</h2>

@@ -25,7 +25,7 @@ from founderos_atlas.discovery.policy import BoundaryPolicy
 from .exceptions import InvalidProfileError
 
 
-PROFILE_SCHEMA_VERSION = "1.1.0"
+PROFILE_SCHEMA_VERSION = "1.2.0"
 CREDENTIAL_REF_PREFIX = "atlas-profile"
 
 _SLUG_PATTERN = re.compile(r"[^a-z0-9]+")
@@ -90,6 +90,8 @@ class DiscoveryProfile:
     # decides (True -> always, False -> disabled).
     collection_policy: str | None = None
     collection_schedule_hours: int = 24
+    owner: str | None = None
+    tags: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         for field_name in ("profile_id", "name"):
@@ -175,6 +177,17 @@ class DiscoveryProfile:
                 object.__setattr__(self, field_name, value.strip() or None)
             elif value is not None:
                 raise InvalidProfileError(f"{field_name} must be a string or None")
+        if isinstance(self.owner, str):
+            object.__setattr__(self, "owner", self.owner.strip() or None)
+        elif self.owner is not None:
+            raise InvalidProfileError("owner must be a string or None")
+        if not isinstance(self.tags, tuple) or not all(
+            isinstance(item, str) and item.strip() for item in self.tags
+        ):
+            raise InvalidProfileError("tags must be a tuple of non-empty strings")
+        object.__setattr__(self, "tags", tuple(dict.fromkeys(
+            item.strip() for item in self.tags if item.strip()
+        )))
 
     @property
     def normalized_name(self) -> str:
@@ -211,6 +224,8 @@ class DiscoveryProfile:
             "archived": self.archived,
             "collection_policy": self.collection_policy,
             "collection_schedule_hours": self.collection_schedule_hours,
+            "owner": self.owner,
+            "tags": list(self.tags),
         }
 
     @classmethod
@@ -251,6 +266,8 @@ class DiscoveryProfile:
                 collection_schedule_hours=int(
                     value.get("collection_schedule_hours", 24)
                 ),
+                owner=value.get("owner"),
+                tags=tuple(str(item) for item in (value.get("tags") or ())),
             )
         except KeyError as error:
             raise InvalidProfileError(f"profile is missing field {error}") from error

@@ -175,7 +175,7 @@
             {% endif %}
           </td>
           <td>
-            <form method="post" action="/topology/identity/resolve" class="row-actions">
+            <form method="post" action="/topology/identity/resolve" class="row-actions">{{ csrf_field() }}
               <input type="hidden" name="peer_label" value="{{ peer.peer }}">
               <input type="hidden" name="expected_revision" value="{{ identity.revision }}">
               <label class="visually-hidden" for="resolve-{{ loop.index }}">Resolve {{ peer.peer }} to device</label>
@@ -211,12 +211,12 @@
           <td>{{ fmt.when(resolution.created_at) }}</td>
           <td class="muted">{{ resolution.reason or '—' }}</td>
           <td class="row-actions">
-            <form method="post" action="/topology/identity/revert">
+            <form method="post" action="/topology/identity/revert">{{ csrf_field() }}
               <input type="hidden" name="peer_label" value="{{ resolution.peer_label }}">
               <input type="hidden" name="expected_revision" value="{{ identity.revision }}">
               <button class="btn btn-sm" type="submit" aria-label="Revert resolution of {{ resolution.peer_label }}">Revert</button>
             </form>
-            <form method="post" action="/topology/identity/undo">
+            <form method="post" action="/topology/identity/undo">{{ csrf_field() }}
               <input type="hidden" name="subject_key" value="{{ resolution.subject_key }}">
               <button class="btn btn-sm" type="submit" aria-label="Undo last change for {{ resolution.peer_label }}">Undo last change</button>
             </form>

@@ -42,6 +42,7 @@ from founderos_atlas.federation import (
     write_enterprise_artifacts,
 )
 from founderos_atlas.history import HistoryRepository, generate_timeline
+from founderos_atlas.web.linking import scoped_url
 from founderos_atlas.identity import (
     PeerResolutionConflictError,
     PeerResolutionRepository,
@@ -80,6 +81,7 @@ from founderos_atlas.workspace import (
     default_scope,
     profile_scope,
     resolve_credential_provider,
+    AdministrationRepository,
 )
 
 from .models import (
@@ -353,6 +355,15 @@ def _topology_operational_facts(
 
 
 def register_routes(app) -> None:
+    def current_actor() -> str:
+        """The authenticated username for audit trails ("local-operator"
+        in local development mode)."""
+
+        from flask import g as _g
+
+        principal = getattr(_g, "principal", None)
+        return principal.username if principal else "local-operator"
+
     from flask import (
         abort,
         flash,
@@ -378,11 +389,19 @@ def register_routes(app) -> None:
     def base_context(active: str) -> dict:
         # ``active`` is the view key a route already passed; the sidebar derives
         # which workflow to open from it, so no route had to change.
+        try:
+            preferences = AdministrationRepository(
+                cfg("ATLAS_WORKSPACE_ROOT")
+            ).preferences()
+        except Exception:
+            preferences = None
         return {
             "nav_groups": NAV_GROUPS,
             "active": active,
             "active_group": nav_group_for(active),
             "product": "Atlas",
+            "ui_theme": preferences.theme if preferences else "system",
+            "ui_density": preferences.density if preferences else "comfortable",
         }
 
     # -- Scopes ---------------------------------------------------------------
@@ -985,6 +1004,13 @@ def register_routes(app) -> None:
 
     # -- Profiles -----------------------------------------------------------
 
+    def _profile_audit(operation: str, subject: str, *, before=None, after=None, reason=None):
+        from founderos_atlas.audit import AuditEvent, AuditLog
+        return AuditLog(cfg("ATLAS_WORKSPACE_ROOT")).append(AuditEvent.create(
+            category="discovery-profile", operation=operation, subject=subject,
+            scope_id="all", before=before or {}, after=after or {}, reason=reason,
+        ))
+
     @app.route("/profiles")
     def profiles():
         # Management lists every observation point, archived included, and
@@ -993,29 +1019,66 @@ def register_routes(app) -> None:
             profile_row(p)
             for p in profile_service().list_profiles(include_archived=True)
         ]
+        now = datetime.now(timezone.utc)
+        for row in rows:
+            stamp = row.get("last_discovery_iso")
+            age_hours = None
+            if stamp:
+                try:
+                    observed = datetime.fromisoformat(stamp)
+                    if observed.tzinfo is None:
+                        observed = observed.replace(tzinfo=timezone.utc)
+                    age_hours = max(0, int((now - observed).total_seconds() // 3600))
+                except (TypeError, ValueError):
+                    pass
+            row["freshness"] = "never" if age_hours is None else (
+                "fresh" if age_hours < 24 else f"stale · {age_hours}h"
+            )
+            row["health"] = "archived" if row["archived"] else (
+                "unknown" if age_hours is None else ("ready" if age_hours < 24 else "stale")
+            )
+        query = (request.args.get("q") or "").strip().casefold()
+        status = (request.args.get("status") or "").strip().casefold()
+        tag = (request.args.get("tag") or "").strip().casefold()
+        if query:
+            rows = [row for row in rows if query in " ".join((
+                row["name"], row["site"], row["owner"], row["description"],
+                " ".join(row["tags"]), row["seed_label"],
+            )).casefold()]
+        if status == "active":
+            rows = [row for row in rows if not row["archived"]]
+        elif status == "archived":
+            rows = [row for row in rows if row["archived"]]
+        if tag:
+            rows = [row for row in rows if tag in {t.casefold() for t in row["tags"]}]
         resolution = network_resolution()
         return render_template(
             "profiles.html",
+            profile_revision=profile_service().repository.revision(),
             profiles=rows,
             networks=[network.to_dict() for network in resolution.networks],
             duplicate_candidates=[
                 candidate.to_dict()
                 for candidate in resolution.duplicate_candidates
             ],
+            filters={"q": query, "status": status, "tag": tag},
+            all_tags=sorted({t for row in rows for t in row["tags"]}, key=str.casefold),
             **base_context("profiles"),
         )
 
     @app.route("/profiles/new")
     def profile_new():
         return render_template(
-            "profile_form.html", mode="add", profile=None, **base_context("profiles")
+            "profile_form.html", mode="add", profile=None,
+            credential_sets=credential_service().list_sets(),
+            **base_context("profiles")
         )
 
     @app.route("/profiles", methods=["POST"])
     def profile_create():
         form = request.form
         try:
-            profile_service().add_profile(
+            created = profile_service().add_profile(
                 name=form.get("name", "").strip(),
                 site=(form.get("site", "").strip() or None),
                 management_ip=form.get("management_ip", "").strip(),
@@ -1027,14 +1090,22 @@ def register_routes(app) -> None:
                 description=(form.get("description", "").strip() or None),
                 seeds=_csv(form.get("seeds")),
                 boundary=_boundary_from_form(form),
-                credential_sets=_csv(form.get("credential_sets")),
+                credential_sets=tuple(form.getlist("credential_sets")) or _csv(form.get("credential_sets")),
                 site_hint=(form.get("site_hint", "").strip() or None),
                 domain_hint=(form.get("domain_hint", "").strip() or None),
+                owner=(form.get("owner", "").strip() or None),
+                tags=_csv(form.get("tags")),
             )
+            _profile_audit("create", created.profile_id, after={
+                "name": created.name, "owner": created.owner,
+                "tags": list(created.tags), "credential_refs": list(created.credential_sets),
+            }, reason="Discovery profile created")
         except (AtlasWorkspaceError, ValueError) as error:
             flash(str(error), "error")
             return render_template(
-                "profile_form.html", mode="add", profile=None, **base_context("profiles")
+                "profile_form.html", mode="add", profile=None,
+                credential_sets=credential_service().list_sets(),
+                **base_context("profiles")
             )
         flash("Profile saved.", "success")
         return redirect(url_for("profiles"))
@@ -1047,17 +1118,40 @@ def register_routes(app) -> None:
             abort(404)
         return render_template(
             "profile_form.html",
+            profile_revision=profile_service().repository.revision(),
             mode="edit",
             profile=profile_row(profile),
+            credential_sets=credential_service().list_sets(),
             **base_context("profiles"),
         )
+
+    def _check_profile_revision():
+        """Optimistic concurrency for profile mutations: a form that was
+        rendered against an older catalog revision is refused with a 409
+        instead of silently overwriting someone else's change."""
+
+        from founderos_atlas.workspace.exceptions import ProfileConflictError
+
+        raw = request.form.get("expected_revision", "")
+        if raw == "":
+            return
+        try:
+            expected = int(raw)
+        except ValueError:
+            return
+        try:
+            profile_service().repository.check_revision(expected)
+        except ProfileConflictError as error:
+            abort(409, description=str(error))
 
     @app.route("/profiles/<name>", methods=["POST"])
     def profile_update(name: str):
         form = request.form
+        _check_profile_revision()
         try:
             boundary = _boundary_from_form(form)
-            profile_service().update_profile(
+            existing = profile_service().get_profile(name)
+            updated = profile_service().update_profile(
                 name,
                 new_name=(form.get("name", "").strip() or None),
                 management_ip=(form.get("management_ip", "").strip() or None),
@@ -1071,10 +1165,16 @@ def register_routes(app) -> None:
                 seeds=_csv(form.get("seeds")),
                 boundary=boundary,
                 clear_boundary=boundary is None,
-                credential_sets=_csv(form.get("credential_sets")),
+                credential_sets=tuple(form.getlist("credential_sets")) or _csv(form.get("credential_sets")),
                 site_hint=(form.get("site_hint", "").strip() or None),
                 domain_hint=(form.get("domain_hint", "").strip() or None),
+                owner=(form.get("owner", "").strip() or None),
+                tags=_csv(form.get("tags")),
             )
+            _profile_audit("update", updated.profile_id,
+                before={"name": existing.name, "owner": existing.owner, "tags": list(existing.tags)},
+                after={"name": updated.name, "owner": updated.owner, "tags": list(updated.tags)},
+                reason=form.get("reason") or "Discovery profile updated")
         except (AtlasWorkspaceError, ValueError) as error:
             flash(str(error), "error")
             return redirect(url_for("profile_edit", name=name))
@@ -1083,8 +1183,12 @@ def register_routes(app) -> None:
 
     @app.route("/profiles/<name>/delete", methods=["POST"])
     def profile_delete(name: str):
+        _check_profile_revision()
         try:
-            profile_service().delete_profile(name)
+            removed = profile_service().delete_profile(name)
+            _profile_audit("delete", removed.profile_id,
+                           before={"name": removed.name, "credential_ref": removed.credential_ref},
+                           reason=request.form.get("reason") or "Operator confirmed deletion")
             flash(
                 "Discovery profile deleted. The network's enterprise "
                 "knowledge is unaffected if another profile observes it.",
@@ -1099,6 +1203,9 @@ def register_routes(app) -> None:
         try:
             new_name = request.form.get("new_name", "").strip() or None
             clone = profile_service().duplicate_profile(name, new_name=new_name)
+            _profile_audit("duplicate", clone.profile_id,
+                           after={"name": clone.name, "source_name": name},
+                           reason="Operator duplicated observation profile")
             flash(
                 f"Profile duplicated as {clone.name!r}. It observes the same "
                 "estate — Atlas will flag it as a duplicate-network "
@@ -1111,9 +1218,13 @@ def register_routes(app) -> None:
 
     @app.route("/profiles/<name>/archive", methods=["POST"])
     def profile_archive(name: str):
+        _check_profile_revision()
         restore = request.form.get("restore") == "1"
         try:
-            profile_service().archive_profile(name, archived=not restore)
+            changed = profile_service().archive_profile(name, archived=not restore)
+            _profile_audit("restore" if restore else "archive", changed.profile_id,
+                           after={"name": changed.name, "archived": changed.archived},
+                           reason=request.form.get("reason") or "Profile lifecycle change")
             flash(
                 "Profile restored." if restore else
                 "Profile archived — hidden from discovery and enterprise "
@@ -1122,6 +1233,37 @@ def register_routes(app) -> None:
             )
         except AtlasWorkspaceError as error:
             flash(str(error), "error")
+        return redirect(url_for("profiles"))
+
+    @app.route("/profiles/<name>/test", methods=["POST"])
+    def profile_test(name: str):
+        """Validate profile readiness without contacting network devices."""
+        try:
+            profile = profile_service().get_profile(name)
+            provider = profile_service().credential_provider
+            readable = False
+            if profile.credential_ref:
+                secret = provider.get(profile.credential_ref)
+                readable = bool(secret)
+                secret = None
+            for credential_set in credential_service().list_sets():
+                if credential_set.set_id not in profile.credential_sets:
+                    continue
+                for entry in credential_set.entries:
+                    secret = provider.get(entry.credential_ref)
+                    readable = readable or bool(secret)
+                    secret = None
+            if not readable:
+                raise AtlasWorkspaceError("No readable credential is associated with this profile.")
+            flash(
+                "Profile readiness verified: targets, boundaries, and secure-store references are valid. No device was contacted.",
+                "success",
+            )
+            _profile_audit("readiness-test", profile.profile_id,
+                           after={"result": "ready", "device_contacted": False},
+                           reason="Targets, boundaries, and secure references validated")
+        except (AtlasWorkspaceError, ValueError, OSError) as error:
+            flash(f"Profile readiness check failed: {error}", "error")
         return redirect(url_for("profiles"))
 
     # -- Credential sets ------------------------------------------------------
@@ -1134,10 +1276,51 @@ def register_routes(app) -> None:
 
     @app.route("/credentials")
     def credentials():
-        rows = credential_set_rows(credential_service().list_sets())
+        sets = credential_service().list_sets()
+        rows = credential_set_rows(sets)
+        profiles_using = {
+            credential_set.set_id: sorted(
+                p.name for p in profile_service().list_profiles(include_archived=True)
+                if credential_set.set_id in p.credential_sets
+            ) for credential_set in sets
+        }
+        # A conservative preview: equal priority plus unrestricted/identical
+        # scope can make ordering surprising.  It does not expose a secret.
+        conflicts = []
+        for credential_set in sets:
+            entries = list(credential_set.entries)
+            for index, left in enumerate(entries):
+                for right in entries[index + 1:]:
+                    if left.priority == right.priority and (
+                        left.scope.is_unrestricted or right.scope.is_unrestricted
+                        or left.scope == right.scope
+                    ):
+                        conflicts.append({
+                            "set": credential_set.name,
+                            "left": left.label,
+                            "right": right.label,
+                            "priority": left.priority,
+                        })
+        provider = profile_service().credential_provider
+        try:
+            provider_available = provider.available()
+        except Exception:
+            provider_available = False
         return render_template(
-            "credentials.html", credential_sets=rows, **base_context("credentials")
+            "credentials.html", credential_sets=rows,
+            profiles=profile_service().list_profiles(include_archived=True),
+            profiles_using=profiles_using, conflicts=conflicts,
+            provider_name=type(provider).__name__, provider_available=provider_available,
+            **base_context("credentials")
         )
+
+    def _credential_audit(operation: str, subject: str, *, before=None, after=None, reason=None):
+        from founderos_atlas.audit import AuditEvent, AuditLog
+        return AuditLog(cfg("ATLAS_WORKSPACE_ROOT")).append(AuditEvent.create(
+            category="credential-metadata", operation=operation,
+            subject=subject, scope_id="all", before=before or {}, after=after or {},
+            reason=reason,
+        ))
 
     @app.route("/credentials", methods=["POST"])
     def credentials_add():
@@ -1149,15 +1332,27 @@ def register_routes(app) -> None:
                 hostname_patterns=_csv(form.get("hostname_patterns")),
                 cidrs=_csv(form.get("cidrs")),
                 sites=_csv(form.get("sites")),
+                roles=_csv(form.get("roles")),
+                profile_ids=tuple(form.getlist("profile_ids")),
+                device_ids=_csv(form.get("device_ids")),
             )
-            credential_service().add_entry(
+            created = credential_service().add_entry(
                 set_name=form.get("set_name", "").strip(),
                 label=form.get("label", "").strip(),
                 username=form.get("username", "").strip(),
                 password=form.get("password", ""),
                 priority=_int(form.get("priority"), 100),
                 scope=scope,
+                rotation_due_at=(form.get("rotation_due_at", "").strip() or None),
+                expires_at=(form.get("expires_at", "").strip() or None),
             )
+            entry = created.entries[-1]
+            _credential_audit("create", f"{created.set_id}:{entry.entry_id}", after={
+                "label": entry.label, "username": entry.username,
+                "priority": entry.priority, "scope": entry.scope.to_dict(),
+                "rotation_due_at": entry.rotation_due_at, "expires_at": entry.expires_at,
+                "credential_ref": entry.credential_ref,
+            }, reason="Credential reference created in secure provider")
             flash("Credential saved securely.", "success")
         except (AtlasWorkspaceError, ValueError) as error:
             flash(str(error), "error")
@@ -1165,8 +1360,34 @@ def register_routes(app) -> None:
 
     @app.route("/credentials/<set_id>/<entry_id>/delete", methods=["POST"])
     def credentials_delete(set_id: str, entry_id: str):
+        impacted = [p.name for p in profile_service().list_profiles(include_archived=True)
+                    if set_id in p.credential_sets]
+        if impacted and request.form.get("confirm_impact") != "yes":
+            flash(
+                "Deletion blocked: this credential set is used by "
+                + ", ".join(impacted)
+                + ". Confirm the dependency warning before deleting.",
+                "error",
+            )
+            return redirect(url_for("credentials"))
         credential_service().delete_entry(set_id, entry_id)
+        _credential_audit("delete", f"{set_id}:{entry_id}",
+                          before={"credential_ref": f"atlas-credset:{set_id}:{entry_id}"},
+                          reason=request.form.get("reason") or "Operator confirmed deletion")
         flash("Credential deleted.", "success")
+        return redirect(url_for("credentials"))
+
+    @app.route("/credentials/<set_id>/<entry_id>/test", methods=["POST"])
+    def credentials_test(set_id: str, entry_id: str):
+        ok = credential_service().test_store_access(set_id, entry_id)
+        _credential_audit("test", f"{set_id}:{entry_id}",
+                          after={"result": "store-readable" if ok else "store-unavailable"},
+                          reason="Secure-store reference check; no device contacted")
+        flash(
+            "Secure-store access verified. This does not test a device login."
+            if ok else "The secure provider could not read this credential.",
+            "success" if ok else "error",
+        )
         return redirect(url_for("credentials"))
 
     # -- Discovery ----------------------------------------------------------
@@ -1249,23 +1470,60 @@ def register_routes(app) -> None:
 
     @app.route("/discovery/wizard")
     def discovery_wizard():
+        drafts = AdministrationRepository(cfg("ATLAS_WORKSPACE_ROOT"))
+        draft_id = (request.args.get("draft") or "").strip()
         return render_template(
             "discovery_wizard.html",
             credential_sets=credential_service().list_sets(),
             plan=None,
             error=None,
+            draft_id=draft_id,
+            draft=drafts.get_draft(draft_id) if draft_id else None,
+            drafts=drafts.drafts(),
             **base_context("discovery"),
         )
+
+    @app.route("/api/discovery/wizard/drafts", methods=["POST"])
+    def discovery_wizard_draft_save():
+        payload = request.get_json(silent=True) or request.form.to_dict(flat=True)
+        safe = {key: value for key, value in dict(payload).items()
+                if key not in {"password", "secret", "token"}}
+        identifier = AdministrationRepository(cfg("ATLAS_WORKSPACE_ROOT")).save_draft(
+            str(payload.get("draft_id") or "") or None, safe
+        )
+        return jsonify(draft_id=identifier, saved=True)
+
+    @app.route("/discovery/wizard/drafts/<draft_id>/cancel", methods=["POST"])
+    def discovery_wizard_draft_cancel(draft_id: str):
+        AdministrationRepository(cfg("ATLAS_WORKSPACE_ROOT")).delete_draft(draft_id)
+        flash("Discovery draft cancelled and removed. No discovery was started.", "success")
+        return redirect(url_for("discovery_wizard"))
 
     @app.route("/discovery/wizard/preview", methods=["POST"])
     def discovery_wizard_preview():
         plan, error = _wizard_plan_from_form(request.form)
+        safe = {key: value for key, value in request.form.items()
+                if key not in {"password", "secret", "token"}}
+        safe["credential_sets"] = request.form.getlist("credential_sets")
+        draft_id = AdministrationRepository(cfg("ATLAS_WORKSPACE_ROOT")).save_draft(
+            request.form.get("draft_id") or None, safe
+        )
+        estimate = None
+        if plan:
+            estimate = max(1, round(
+                len(plan.candidates) * int(request.form.get("timeout_seconds") or 15)
+                / max(1, int(request.form.get("concurrency") or 1)) / 60
+            ))
         return render_template(
             "discovery_wizard.html",
             credential_sets=credential_service().list_sets(),
             plan=plan.to_dict() if plan else None,
             form=request.form,
             error=error,
+            draft_id=draft_id,
+            draft=safe,
+            drafts=AdministrationRepository(cfg("ATLAS_WORKSPACE_ROOT")).drafts(),
+            estimate_minutes=estimate,
             **base_context("discovery"),
         )
 
@@ -1275,6 +1533,9 @@ def register_routes(app) -> None:
         if plan is None:
             flash(error, "error")
             return redirect(url_for("discovery_wizard"))
+        if request.form.get("dry_run") == "1":
+            flash("Dry run complete. Candidates and safety checks were validated; no device was contacted.", "success")
+            return redirect(url_for("discovery_wizard", draft=request.form.get("draft_id", "")))
         name = request.form.get("name", "").strip()
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
@@ -1335,6 +1596,9 @@ def register_routes(app) -> None:
             flash(str(error), "error")
             return redirect(url_for("discovery_wizard"))
         session["scope"] = job.profile_id
+        draft_id = request.form.get("draft_id", "").strip()
+        if draft_id:
+            AdministrationRepository(cfg("ATLAS_WORKSPACE_ROOT")).delete_draft(draft_id)
         flash(
             f"Discovery started for {name} — {len(seeds)} candidate "
             f"address(es), {plan.policy} policy.",
@@ -1435,7 +1699,13 @@ def register_routes(app) -> None:
 
         from .timefmt import resolve_timezone
 
-        return resolve_timezone(app.config.get("ATLAS_DISPLAY_TIMEZONE"))
+        repository = AdministrationRepository(cfg("ATLAS_WORKSPACE_ROOT"))
+        setting = (
+            repository.preferences().timezone
+            if repository.preferences_path.is_file()
+            else app.config.get("ATLAS_DISPLAY_TIMEZONE")
+        )
+        return resolve_timezone(setting)
 
     def config_memory_store(scope):
         """The Configuration Memory of one scope — what Atlas remembers."""
@@ -1618,6 +1888,10 @@ def register_routes(app) -> None:
         devices = device_rows(
             visible, [s for s in snapshots if s.get("device_id") in seen]
         )
+        page = max(1, _page_arg())
+        total_pages = max(1, -(-len(devices) // EVIDENCE_PAGE_SIZE))
+        page = min(page, total_pages)
+        visible_devices = devices[(page - 1) * EVIDENCE_PAGE_SIZE:page * EVIDENCE_PAGE_SIZE]
 
         options = {
             "platforms": sorted({r.get("platform") for r in records if r.get("platform")}),
@@ -1630,7 +1904,8 @@ def register_routes(app) -> None:
         return render_template(
             "evidence_index.html",
             sessions=sessions, session=session, summary=summary,
-            devices=devices, filters=filters, options=options,
+            devices=visible_devices, filters=filters, options=options,
+            device_count=len(devices), page=page, total_pages=total_pages,
             filtered=any(filters.values()),
             record_count=len(records), visible_count=len(visible),
             totals=_evidence_storage_totals(scopes, scope_id),
@@ -2058,7 +2333,8 @@ def register_routes(app) -> None:
         overall = summarize(rows)
         posture = posture_score(overall)
         trend = PolicyTrend(cfg("ATLAS_WORKSPACE_ROOT"))
-        trend.record(
+        _series_before = trend.series(scope_id)
+        _recorded = trend.record(
             scope_id=scope_id,
             recorded_at=report_dict["generated_at"],
             score=posture["score"],
@@ -2067,6 +2343,28 @@ def register_routes(app) -> None:
             warnings=overall["warning"],
             unknown=overall["unknown"] + overall["missing-evidence"],
         )
+        if (
+            _recorded and _series_before
+            and overall["fail"] > int(_series_before[-1].get("failed") or 0)
+        ):
+            try:
+                from founderos_atlas.notifications import (
+                    KIND_POLICY_REGRESSION, NotificationStore,
+                )
+
+                NotificationStore(cfg("ATLAS_WORKSPACE_ROOT")).notify(
+                    kind=KIND_POLICY_REGRESSION,
+                    title=(
+                        f"Compliance regressed: {overall['fail']} failure(s) "
+                        f"(was {int(_series_before[-1].get('failed') or 0)})"
+                    ),
+                    detail=f"Scope: {context['active_scope_label']}.",
+                    href=scoped_url("/policy", scope_id, status="fail"),
+                    audience="role:policy-manager",
+                    dedupe_key=f"policy-regression:{scope_id}",
+                )
+            except OSError:
+                pass
 
         option_policies = sorted(
             {
@@ -2147,6 +2445,7 @@ def register_routes(app) -> None:
             exception_active=(
                 exception.is_active(now_iso()) if exception else False
             ),
+            exception_revision=exception_repo.revision(),
             **context,
         )
 
@@ -2190,12 +2489,30 @@ def register_routes(app) -> None:
             },
         )
 
+    def _check_exception_revision(repo) -> None:
+        from founderos_atlas.policy.exceptions import (
+            PolicyExceptionConflictError,
+        )
+
+        raw = request.form.get("expected_revision", "")
+        if raw == "":
+            return
+        try:
+            repo.check_revision(int(raw))
+        except PolicyExceptionConflictError as error:
+            abort(409, description=str(error))
+        except ValueError:
+            pass
+
     @app.route("/policy/exceptions", methods=["POST"])
     def policy_exception_grant():
         from founderos_atlas.policy.exceptions import PolicyExceptionRepository
 
+        repo = PolicyExceptionRepository(cfg("ATLAS_WORKSPACE_ROOT"))
+        _check_exception_revision(repo)
         try:
-            PolicyExceptionRepository(cfg("ATLAS_WORKSPACE_ROOT")).grant(
+            repo.grant(
+                actor=current_actor(),
                 policy_id=str(request.form.get("policy_id") or ""),
                 hostname=str(request.form.get("hostname") or ""),
                 reason=str(request.form.get("reason") or ""),
@@ -2218,8 +2535,11 @@ def register_routes(app) -> None:
     def policy_exception_revoke():
         from founderos_atlas.policy.exceptions import PolicyExceptionRepository
 
+        repo = PolicyExceptionRepository(cfg("ATLAS_WORKSPACE_ROOT"))
+        _check_exception_revision(repo)
         try:
-            PolicyExceptionRepository(cfg("ATLAS_WORKSPACE_ROOT")).revoke(
+            repo.revoke(
+                actor=current_actor(),
                 policy_id=str(request.form.get("policy_id") or ""),
                 hostname=str(request.form.get("hostname") or ""),
                 reason=str(request.form.get("reason") or "") or None,
@@ -2253,10 +2573,26 @@ def register_routes(app) -> None:
         correlation = f"bulk:{uuid4().hex}"
         for subject in subjects:
             store.set(
+                actor=current_actor(),
                 kind="policy-assignment", subject=subject,
                 fields={"owner": owner}, correlation_id=correlation,
                 occurred_at=now_iso(),
             )
+        try:
+            from founderos_atlas.notifications import (
+                KIND_ASSIGNMENT, NotificationStore,
+            )
+
+            NotificationStore(cfg("ATLAS_WORKSPACE_ROOT")).notify(
+                kind=KIND_ASSIGNMENT,
+                title=f"{len(subjects)} policy result(s) assigned to you",
+                detail=f"Assigned by {current_actor()}.",
+                href=request.form.get("next") or "/policy",
+                audience=owner,
+                correlation_id=correlation,
+            )
+        except OSError:
+            pass
         flash(
             f"{len(subjects)} result(s) assigned to {owner} "
             "(audited under one correlation id).",
@@ -2501,6 +2837,19 @@ def register_routes(app) -> None:
                 if key in totals:
                     totals[key] += value
         devices.sort(key=lambda row: row["hostname"].casefold())
+        query = (request.args.get("q") or "").strip().casefold()
+        platform_filter = (request.args.get("platform") or "").strip()
+        all_platforms = sorted({row["platform"] for row in devices if row["platform"] != "â€”"})
+        if query:
+            devices = [row for row in devices if query in " ".join(
+                str(row.get(key) or "") for key in ("hostname", "device_id", "network", "platform")
+            ).casefold()]
+        if platform_filter:
+            devices = [row for row in devices if row["platform"] == platform_filter]
+        page = max(1, _page_arg())
+        total_pages = max(1, -(-len(devices) // EVIDENCE_PAGE_SIZE))
+        page = min(page, total_pages)
+        visible_devices = devices[(page - 1) * EVIDENCE_PAGE_SIZE:page * EVIDENCE_PAGE_SIZE]
         events.sort(key=lambda item: item.occurred_at, reverse=True)
         # Sorting and day-keying use the stored UTC instants; only the
         # rendered strings are converted to the operator's zone.
@@ -2510,7 +2859,9 @@ def register_routes(app) -> None:
                 event["occurred_at"] = format_timestamp(event["occurred_at"], tz=tz)
         return render_template(
             "configuration.html",
-            devices=devices,
+            devices=visible_devices,
+            device_count=len(devices), page=page, total_pages=total_pages,
+            platforms=all_platforms, platform_filter=platform_filter,
             timeline=days,
             change_count=len(events),
             totals=totals,
@@ -2574,6 +2925,24 @@ def register_routes(app) -> None:
             # Reading a remembered configuration is the point of
             # remembering it. Masked — export is the only raw path.
             viewer = config_view(current_text).to_dict()
+            config_query = (request.args.get("config_q") or "").strip()
+            if config_query:
+                needle = config_query.casefold()
+                viewer["lines"] = [line for line in viewer["lines"]
+                                   if needle in str(line.get("text") or "").casefold()]
+                viewer["visible_line_count"] = len(viewer["lines"])
+            else:
+                viewer["visible_line_count"] = viewer["line_count"]
+            for line in viewer["lines"]:
+                stripped = str(line.get("text") or "").lstrip()
+                line["syntax_class"] = (
+                    "config-comment" if stripped.startswith(("!", "#")) else
+                    "config-negation" if stripped.startswith("no ") else
+                    "config-section" if stripped.startswith(("interface ", "router ", "line ", "vrf ")) else
+                    "config-command"
+                )
+            viewer["truncated"] = len(viewer["lines"]) > EVIDENCE_MAX_VIEW_LINES
+            viewer["lines"] = viewer["lines"][:EVIDENCE_MAX_VIEW_LINES]
         if previous is not None and previous.version != current.version:
             before = store.config_text(previous.config_sha256)
             after = current_text
@@ -2606,12 +2975,72 @@ def register_routes(app) -> None:
             semantic=semantic,
             facts=facts,
             viewer=viewer,
+            config_query=(request.args.get("config_q") or "").strip(),
+            annotation=__import__("founderos_atlas.audit", fromlist=["AnnotationStore"]).AnnotationStore(
+                cfg("ATLAS_WORKSPACE_ROOT")
+            ).get("configuration-annotation", device_id),
             timeline=[
                 _timeline_row(event)
                 for event in device_timeline(history, config_text=store.config_text)
             ],
             **context,
         )
+
+    @app.route("/evidence/bulk-export", methods=["POST"])
+    def evidence_bulk_export():
+        """Export selected devices as masked bundles; raw bulk export is forbidden."""
+        from flask import Response
+        import io
+        import zipfile
+        from founderos_atlas.web.evidence_bundle import build_device_bundle, safe_name
+        _context, scopes, scope_id = scoped_context("memory")
+        session_id = request.form.get("session", "").strip()
+        device_ids = tuple(dict.fromkeys(request.form.getlist("device_ids")))[:200]
+        service, _scope = _find_memory(scopes, scope_id, session_id=session_id)
+        if service is None or not device_ids:
+            flash("Select at least one device to export.", "error")
+            return redirect(url_for("evidence_page", session=session_id))
+        output = io.BytesIO()
+        with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as archive:
+            for device_id in device_ids:
+                bundle = build_device_bundle(service, device_id, raw=False, session_id=session_id)
+                if bundle:
+                    archive.writestr(f"{safe_name(device_id, fallback='device')}.zip", bundle)
+            archive.writestr("REDACTION-NOTICE.txt", "All command output in this bulk export is masked.\n")
+        return Response(output.getvalue(), content_type="application/zip", headers={
+            "Content-Disposition": 'attachment; filename="atlas-evidence-selection-masked.zip"'
+        })
+
+    @app.route("/configuration/<path:device_id>/annotation", methods=["POST"])
+    def configuration_annotation(device_id: str):
+        from founderos_atlas.audit import AnnotationStore
+        note = request.form.get("note", "").strip()
+        if not note:
+            flash("An annotation note is required.", "error")
+        else:
+            AnnotationStore(cfg("ATLAS_WORKSPACE_ROOT")).set(
+                kind="configuration-annotation", subject=device_id,
+                fields={"note": note, "status": request.form.get("status", "note")},
+                reason=request.form.get("reason") or "Configuration annotation",
+            )
+            flash("Configuration annotation saved and audited.", "success")
+        return redirect(url_for("configuration_device", device_id=device_id))
+
+    @app.route("/configuration/<path:device_id>/export/<int:version>/redacted")
+    def configuration_export_redacted(device_id: str, version: int):
+        from flask import Response
+        from founderos_atlas.config_memory import config_view
+        _context, scopes, scope_id = scoped_context("configuration")
+        store, history, _scope = _find_history(scopes, scope_id, device_id)
+        if history is None:
+            abort(404)
+        raw = store.version_text(device_id, version)
+        if raw is None:
+            abort(404)
+        masked = "\n".join(line["text"] for line in config_view(raw).to_dict()["lines"])
+        return Response(masked, content_type="text/plain; charset=utf-8", headers={
+            "Content-Disposition": f'attachment; filename="configuration-v{version}-redacted.txt"'
+        })
 
     @app.route("/configuration/<path:device_id>/export/<int:version>")
     def configuration_export(device_id: str, version: int):
@@ -2861,7 +3290,7 @@ def register_routes(app) -> None:
             ).assign(
                 site_id=site_id,
                 reason=str(payload.get("reason") or "").strip() or None,
-                actor="local-operator",
+                actor=current_actor(),
                 expected_revision=int(expected) if expected is not None else None,
                 **override_identity(payload),
             )
@@ -2885,7 +3314,7 @@ def register_routes(app) -> None:
                 cfg("ATLAS_WORKSPACE_ROOT")
             ).revert(
                 reason=str(payload.get("reason") or "").strip() or None,
-                actor="local-operator",
+                actor=current_actor(),
                 expected_revision=int(expected) if expected is not None else None,
                 **override_identity(payload),
             )
@@ -2912,7 +3341,7 @@ def register_routes(app) -> None:
                 cfg("ATLAS_WORKSPACE_ROOT")
             ).undo(
                 subject_key=subject_key,
-                actor="local-operator",
+                actor=current_actor(),
                 expected_revision=int(expected) if expected is not None else None,
             )
         except SiteOverrideConflictError as error:
@@ -2944,6 +3373,7 @@ def register_routes(app) -> None:
     def topology_identity_resolve():
         try:
             _, event = _resolution_repo().resolve(
+                actor=current_actor(),
                 peer_label=str(request.form.get("peer_label") or ""),
                 resolved_hostname=str(
                     request.form.get("resolved_hostname") or ""
@@ -2970,6 +3400,7 @@ def register_routes(app) -> None:
     def topology_identity_revert():
         try:
             _, event = _resolution_repo().revert(
+                actor=current_actor(),
                 peer_label=str(request.form.get("peer_label") or ""),
                 reason=str(request.form.get("reason") or "").strip() or None,
                 expected_revision=_expected_revision(
@@ -2991,6 +3422,7 @@ def register_routes(app) -> None:
     def topology_identity_undo():
         try:
             _, event = _resolution_repo().undo(
+                actor=current_actor(),
                 subject_key=str(request.form.get("subject_key") or ""),
             )
         except (PeerResolutionConflictError, ValueError) as error:
@@ -3008,6 +3440,7 @@ def register_routes(app) -> None:
         payload = curation_payload()
         try:
             result, event = _resolution_repo().resolve(
+                actor=current_actor(),
                 peer_label=str(payload.get("peer_label") or ""),
                 resolved_hostname=str(payload.get("resolved_hostname") or ""),
                 resolved_device_id=(
@@ -3034,6 +3467,7 @@ def register_routes(app) -> None:
         payload = curation_payload()
         try:
             result, event = _resolution_repo().revert(
+                actor=current_actor(),
                 peer_label=str(payload.get("peer_label") or ""),
                 reason=str(payload.get("reason") or "").strip() or None,
                 expected_revision=_expected_revision(
@@ -3056,6 +3490,7 @@ def register_routes(app) -> None:
         payload = curation_payload()
         try:
             result, event = _resolution_repo().undo(
+                actor=current_actor(),
                 subject_key=str(payload.get("subject_key") or ""),
             )
         except PeerResolutionConflictError as error:
@@ -3442,19 +3877,30 @@ def register_routes(app) -> None:
         reason = str(request.form.get("reason") or "").strip() or None
         try:
             if action == "acknowledge":
-                store.set(kind="change-ack", subject=subject,
+                store.set(actor=current_actor(), kind="change-ack", subject=subject,
                           fields={"acknowledged": True}, reason=reason,
                           occurred_at=now_iso())
                 flash("Change acknowledged (audited).", "success")
             elif action == "unacknowledge":
-                store.clear(kind="change-ack", subject=subject,
+                store.clear(actor=current_actor(), kind="change-ack", subject=subject,
                             reason=reason, occurred_at=now_iso())
                 flash("Acknowledgement removed (audited).", "success")
             elif action == "assign":
                 owner = str(request.form.get("owner") or "").strip()
                 if not owner:
                     raise ValueError("an assignment needs an owner")
-                store.set(kind="change-assignment", subject=subject,
+                from founderos_atlas.notifications import (
+                    KIND_ASSIGNMENT, NotificationStore,
+                )
+
+                NotificationStore(cfg("ATLAS_WORKSPACE_ROOT")).notify(
+                    kind=KIND_ASSIGNMENT,
+                    title="A change was assigned to you",
+                    detail=f"Assigned by {current_actor()}.",
+                    href=request.form.get("next") or "/changes",
+                    audience=owner,
+                )
+                store.set(actor=current_actor(), kind="change-assignment", subject=subject,
                           fields={"owner": owner}, reason=reason,
                           occurred_at=now_iso())
                 flash(f"Change assigned to {owner} (audited).", "success")
@@ -3462,13 +3908,13 @@ def register_routes(app) -> None:
                 note = str(request.form.get("note") or "").strip()
                 if not note:
                     raise ValueError("a note needs text")
-                store.set(kind="change-note", subject=subject,
+                store.set(actor=current_actor(), kind="change-note", subject=subject,
                           fields={"note": note}, occurred_at=now_iso())
                 flash("Note attached (audited).", "success")
             elif action == "suppress":
                 if not reason:
                     raise ValueError("suppressing a change requires a reason")
-                store.set(kind="change-suppression", subject=subject,
+                store.set(actor=current_actor(), kind="change-suppression", subject=subject,
                           fields={"reason": reason}, reason=reason,
                           occurred_at=now_iso())
                 flash(
@@ -3477,7 +3923,7 @@ def register_routes(app) -> None:
                     "success",
                 )
             elif action == "unsuppress":
-                store.clear(kind="change-suppression", subject=subject,
+                store.clear(actor=current_actor(), kind="change-suppression", subject=subject,
                             reason=reason, occurred_at=now_iso())
                 flash("Suppression removed (audited).", "success")
         except ValueError as error:
@@ -3888,9 +4334,22 @@ def register_routes(app) -> None:
             ),
             notes=request.form.get("notes", "").strip(),
         )
+        _check_plan_revision(repository, plan_id)
         add_change(repository, plan, change, updated_at=now_iso())
         flash(f"Added: {change.title}.", "success")
         return redirect(url_for("compass_plan_page", plan_id=plan_id))
+
+    def _check_plan_revision(repository, plan_id: str):
+        """Optimistic concurrency for plan mutations (409 on stale form)."""
+
+        from founderos_atlas.compass.service import PlanConflictError
+
+        raw = request.form.get("expected_revision", "")
+        expected = int(raw) if raw.strip().isdigit() else None
+        try:
+            return repository.check_revision(plan_id, expected)
+        except PlanConflictError as error:
+            abort(409, description=str(error))
 
     @app.route(
         "/compass/<plan_id>/changes/<change_id>/remove", methods=["POST"]
@@ -3903,6 +4362,7 @@ def register_routes(app) -> None:
         if plan is None:
             flash("That maintenance plan no longer exists.", "error")
             return redirect(url_for("compass_page"))
+        _check_plan_revision(repository, plan_id)
         remove_change(repository, plan, change_id, updated_at=now_iso())
         flash("Change removed; re-analyse the plan.", "success")
         return redirect(url_for("compass_plan_page", plan_id=plan_id))
@@ -3919,6 +4379,7 @@ def register_routes(app) -> None:
         if not plan.changes:
             flash("Add at least one planned change first.", "error")
             return redirect(url_for("compass_plan_page", plan_id=plan_id))
+        _check_plan_revision(repository, plan_id)
         analyse_plan_for_workspace(
             repository,
             plan,
@@ -3928,7 +4389,10 @@ def register_routes(app) -> None:
             catalog=SiteCatalogRepository(cfg("ATLAS_WORKSPACE_ROOT")).load(),
             credential_memory=CredentialSuccessMemory(cfg("ATLAS_WORKSPACE_ROOT")),
         )
-        flash("Plan analysed.", "success")
+        notify = app.config.get("ATLAS_NOTIFY_APPROVAL")
+        if notify is not None:
+            notify(plan_id, plan.title)
+        flash("Plan analysed — approvers have been notified.", "success")
         return redirect(url_for("compass_plan_page", plan_id=plan_id))
 
     # -- Atlas Advisor (PR-042: the conversational guide) ----------------------
@@ -4170,6 +4634,17 @@ def register_routes(app) -> None:
 
     # -- Settings -----------------------------------------------------------
 
+    def _administration_repository():
+        return AdministrationRepository(cfg("ATLAS_WORKSPACE_ROOT"))
+
+    def _administration_audit(operation: str, *, before=None, after=None, reason=None):
+        from founderos_atlas.audit import AuditEvent, AuditLog
+        AuditLog(cfg("ATLAS_WORKSPACE_ROOT")).append(AuditEvent.create(
+            category="administration", operation=operation,
+            subject="workspace-settings", before=before or {}, after=after or {},
+            reason=reason, scope_id="all",
+        ))
+
     @app.route("/settings")
     def settings():
         from .timefmt import AUTO, timezone_label
@@ -4180,6 +4655,7 @@ def register_routes(app) -> None:
         except Exception:  # pragma: no cover - defensive
             available = False
         tz_setting = str(app.config.get("ATLAS_DISPLAY_TIMEZONE") or AUTO)
+        preferences = _administration_repository().preferences()
         context = {
             "display_timezone_setting": tz_setting,
             "display_timezone_label": timezone_label(display_timezone()),
@@ -4191,8 +4667,152 @@ def register_routes(app) -> None:
             "credential_available": available,
             "bind_host": cfg("ATLAS_HOST"),
             "atlas_version": "FounderOS v0.3 Alpha",
+            "preferences": preferences,
+            "tls_enabled": bool(app.config.get("ATLAS_TLS_ENABLED", False)),
+            "provider_status": (
+                "available" if available else "unavailable"
+            ),
         }
         return render_template("settings.html", **context, **base_context("settings"))
+
+    @app.route("/settings", methods=["POST"])
+    def settings_update():
+        from founderos_atlas.workspace.administration import (
+            PreferencesConflictError,
+        )
+
+        repository = _administration_repository()
+        before = repository.preferences()
+        try:
+            preferences = repository.save_preferences(
+                expected_updated_at=(
+                    request.form.get("expected_updated_at")
+                    if "expected_updated_at" in request.form else None
+                ),
+                value={
+                "timezone": request.form.get("timezone", "auto"),
+                "theme": request.form.get("theme", "system"),
+                "density": request.form.get("density", "comfortable"),
+                "retention_days": request.form.get("retention_days", "365"),
+                "log_level": request.form.get("log_level", "INFO"),
+                },
+            )
+            app.config["ATLAS_DISPLAY_TIMEZONE"] = preferences.timezone
+            app.logger.setLevel(preferences.log_level)
+            _administration_audit(
+                "update", before=before.__dict__, after=preferences.__dict__,
+                reason=request.form.get("reason") or "Operator updated preferences",
+            )
+            flash("Settings saved.", "success")
+        except PreferencesConflictError as error:
+            abort(409, description=str(error))
+        except (ValueError, OSError) as error:
+            flash(str(error), "error")
+        return redirect(url_for("settings"))
+
+    @app.route("/settings/reset", methods=["POST"])
+    def settings_reset():
+        if request.form.get("confirm") != "RESET SETTINGS":
+            flash("Type RESET SETTINGS to confirm.", "error")
+            return redirect(url_for("settings"))
+        before = _administration_repository().preferences()
+        after = _administration_repository().reset_preferences()
+        app.config["ATLAS_DISPLAY_TIMEZONE"] = after.timezone
+        _administration_audit("reset", before=before.__dict__, after=after.__dict__,
+                              reason=request.form.get("reason"))
+        flash("Display and retention preferences reset. Network evidence was not deleted.", "success")
+        return redirect(url_for("settings"))
+
+    @app.route("/system")
+    def system_information():
+        return redirect(url_for("settings", section="system"))
+
+    @app.route("/settings/diagnostics.json")
+    def settings_diagnostics():
+        provider = profile_service().credential_provider
+        try:
+            provider_available = provider.available()
+        except Exception:
+            provider_available = False
+        payload = {
+            "application": "FounderOS Atlas",
+            "version": "0.3-alpha",
+            "python": __import__("sys").version.split()[0],
+            "bind_host": cfg("ATLAS_HOST"),
+            "tls_enabled": bool(app.config.get("ATLAS_TLS_ENABLED", False)),
+            "credential_provider": type(provider).__name__,
+            "credential_provider_available": provider_available,
+            "profile_count": len(profile_service().list_profiles(include_archived=True)),
+            "preferences": _administration_repository().preferences().__dict__,
+            "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        }
+        _administration_audit("export-diagnostics", after={"fields": sorted(payload)})
+        response = jsonify(payload)
+        response.headers["Content-Disposition"] = 'attachment; filename="atlas-diagnostics.json"'
+        return response
+
+    @app.route("/settings/backup")
+    def settings_backup():
+        from flask import Response
+        import io
+        import zipfile
+        root = Path(cfg("ATLAS_WORKSPACE_ROOT"))
+        buffer = io.BytesIO()
+        allowed_suffixes = {".json", ".jsonl"}
+        with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+            if root.is_dir():
+                for path in sorted(root.rglob("*")):
+                    if path.is_file() and path.suffix.casefold() in allowed_suffixes:
+                        archive.write(path, path.relative_to(root).as_posix())
+            archive.writestr("BACKUP-NOTICE.txt",
+                "Atlas metadata backup. OS-keyring secrets and raw network evidence are not included.\n")
+        _administration_audit("backup", after={"secrets_included": False})
+        return Response(buffer.getvalue(), content_type="application/zip", headers={
+            "Content-Disposition": 'attachment; filename="atlas-workspace-backup.zip"'
+        })
+
+    @app.route("/settings/restore", methods=["POST"])
+    def settings_restore():
+        import io
+        import zipfile
+        upload = request.files.get("backup")
+        if request.form.get("confirm") != "RESTORE METADATA" or not upload:
+            flash("Choose a backup and type RESTORE METADATA to confirm.", "error")
+            return redirect(url_for("settings"))
+        allowed = {"profiles.json", "credential_sets.json", "preferences.json",
+                   "discovery_drafts.json", "audit.jsonl", "annotations.json",
+                   "policy-exceptions.json", "policy-trend.json",
+                   "site-overrides.json", "identity-resolutions.json",
+                   "users.json", "notifications.jsonl",
+                   "workspace-schema.json"}
+        # sessions.json is deliberately NOT restorable: a backup must never
+        # resurrect revoked session tokens.
+        try:
+            with zipfile.ZipFile(io.BytesIO(upload.read())) as archive:
+                members = [m for m in archive.infolist()
+                           if not m.is_dir() and "/" not in m.filename
+                           and m.filename in allowed]
+                if not members:
+                    raise ValueError("The archive contains no supported Atlas metadata.")
+                root = Path(cfg("ATLAS_WORKSPACE_ROOT"))
+                root.mkdir(parents=True, exist_ok=True)
+                for member in members:
+                    data = archive.read(member)
+                    if len(data) > 20_000_000:
+                        raise ValueError("A metadata file exceeds the restore safety limit.")
+                    # Parse before replacing so malformed JSON cannot corrupt the workspace.
+                    if member.filename.endswith(".json"):
+                        __import__("json").loads(data.decode("utf-8"))
+                    target = root / member.filename
+                    temporary = target.with_suffix(target.suffix + ".restoring")
+                    temporary.write_bytes(data)
+                    temporary.replace(target)
+            _administration_audit("restore", after={"files": [m.filename for m in members]},
+                                  reason=request.form.get("reason"))
+            flash("Metadata restored. OS-keyring secrets were not changed.", "success")
+        except (OSError, ValueError, zipfile.BadZipFile, UnicodeDecodeError) as error:
+            flash(f"Restore failed safely: {error}", "error")
+        return redirect(url_for("settings"))
 
     # -- Console (PR-044A) --------------------------------------------------
 
@@ -4869,8 +5489,27 @@ def register_routes(app) -> None:
 
     # -- Artifact serving ---------------------------------------------------
 
+    # Only the named report/viewer artifacts Atlas itself links to. The
+    # output tree also holds evidence, jobs, and audit files — those have
+    # their own routes with their own permissions, and this endpoint must
+    # not become a side door around them.
+    _ARTIFACT_BASENAMES = frozenset({
+        "atlas_topology.html",
+        "incident_report.md",
+        "root_cause_report.md",
+        "morning_brief.md",
+        "path_investigation_report.md",
+        "prediction_report.md",
+        "change_report.md",
+    })
+
     @app.route("/artifacts/<path:name>")
     def artifacts(name: str):
+        from flask import abort as _abort
+
+        basename = name.rsplit("/", 1)[-1]
+        if basename not in _ARTIFACT_BASENAMES:
+            _abort(404)
         response = send_from_directory(str(output_dir()), name)
         if name.endswith("atlas_topology.html"):
             # The current viewer is derived mutable presentation over an

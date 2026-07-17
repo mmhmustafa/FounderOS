@@ -63,6 +63,12 @@ with deterministic timestamps.
 | `GET /changes` | Topology / config / operational summaries |
 | `GET /incidents`, `POST /incidents/run` | Incident investigation |
 | `GET /settings` | Workspace path, credential status, version |
+| `POST /settings` | Persist secret-free display, logging, and retention preferences |
+| `GET /settings/diagnostics.json` | Download secret-free runtime diagnostics |
+| `GET /settings/backup`, `POST /settings/restore` | Export/restore allowlisted metadata; never OS-keyring secrets |
+
+The administration security assumptions and external-provider limitations are
+documented in `docs/ATLAS_ADMINISTRATION_SECURITY.md`.
 | `GET /artifacts/<name>` | Serve generated artifacts (viewer, reports) |
 
 ## Security

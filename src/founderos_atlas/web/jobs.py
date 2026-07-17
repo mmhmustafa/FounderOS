@@ -40,6 +40,7 @@ STATUS_RUNNING = "running"
 STATUS_COMPLETED = "completed"
 STATUS_FAILED = "failed"
 STATUS_INTERRUPTED = "interrupted"
+STATUS_CANCELLED = "cancelled"
 
 _ACTIVE_STATUSES = (STATUS_QUEUED, STATUS_RUNNING)
 
@@ -69,6 +70,10 @@ Clock = Callable[[], datetime]
 Runner = Callable[[str, Callable[[str], None], Callable[[str], None]], dict]
 
 
+class JobCancelled(Exception):
+    """Raised inside progress callbacks when an operator cancelled the job."""
+
+
 @dataclass
 class DiscoveryJob:
     """Mutable state of one GUI-driven discovery run. No secrets, ever."""
@@ -96,6 +101,7 @@ class DiscoveryJob:
     error: str | None = None
     warning: str | None = None
     summary: dict[str, Any] | None = None
+    cancel_requested: bool = False
     log: list[str] = field(default_factory=list)
     _seen_hosts: set[str] = field(default_factory=set)
     _elapsed_seconds: float | None = None
@@ -143,6 +149,7 @@ class DiscoveryJob:
             "elapsed_seconds": round(elapsed, 1) if elapsed is not None else None,
             "error": self.error,
             "warning": self.warning,
+            "cancel_requested": self.cancel_requested,
             "summary": self.summary,
             "events": list(self.log[-12:]),
             "percent": percent,
@@ -184,9 +191,11 @@ class DiscoveryJobManager:
         persist_path: str | Path | None = None,
         clock: Clock | None = None,
         thread_factory: Callable[..., threading.Thread] | None = None,
+        on_failure: Callable[["DiscoveryJob"], None] | None = None,
     ) -> None:
         self._runner = runner
         self._profiles = profile_service
+        self._on_failure = on_failure
         self._persist_path = Path(persist_path) if persist_path is not None else None
         self._clock = clock or (lambda: datetime.now(timezone.utc))
         self._threads = thread_factory or (
@@ -254,6 +263,24 @@ class DiscoveryJobManager:
                     return job
             return None
 
+    def request_cancel(self, job_id: str) -> DiscoveryJob | None:
+        """Ask an active job to stop at its next progress event.
+
+        Cancellation is cooperative: the pipeline is not killed mid-write —
+        it is stopped between observable steps, so partial results already
+        persisted stay consistent. Returns the job, or None if unknown.
+        """
+
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if job is None:
+                return None
+            if job.is_active:
+                job.cancel_requested = True
+                job.message = "Cancellation requested"
+                self._persist()
+            return job
+
     def wait(self, job_id: str, timeout: float | None = None) -> DiscoveryJob | None:
         """Block until a job's worker finishes (sync fallback and tests)."""
 
@@ -278,6 +305,9 @@ class DiscoveryJobManager:
                     lambda line: self._on_line(job, line),
                     lambda host: self._on_connect(job, host),
                 )
+            except JobCancelled:
+                self._finish_cancelled(job)
+                return
             except Exception as error:  # noqa: BLE001 - job boundary
                 self._finish_failed(job, error)
                 return
@@ -321,6 +351,16 @@ class DiscoveryJobManager:
                 job.message = "Discovery completed successfully"
             self._persist()
 
+    def _finish_cancelled(self, job: DiscoveryJob) -> None:
+        with self._lock:
+            job.status = STATUS_CANCELLED
+            job.completed_at = self._now()
+            job._elapsed_seconds = self._elapsed(job)
+            job.current_device = None
+            job.message = "Discovery cancelled by the operator"
+            job.log.append("cancelled: stopped at the operator's request")
+            self._persist()
+
     def _finish_failed(self, job: DiscoveryJob, error: Exception) -> None:
         detail = str(error) or type(error).__name__
         with self._lock:
@@ -333,11 +373,18 @@ class DiscoveryJobManager:
             # never a traceback in the user-facing error.
             job.log.append(f"error: {type(error).__name__}: {detail}")
             self._persist()
+        if self._on_failure is not None:
+            try:
+                self._on_failure(job)
+            except Exception:  # noqa: BLE001 - notify must not mask failure
+                pass
 
     # -- progress interpretation (real pipeline activity only) ----------------
 
     def _on_connect(self, job: DiscoveryJob, host: str) -> None:
         with self._lock:
+            if job.cancel_requested:
+                raise JobCancelled()
             job.current_device = host
             if job.stage_number >= 4:
                 # Reconnections after the crawl are configuration collection.
@@ -352,6 +399,8 @@ class DiscoveryJobManager:
 
     def _on_line(self, job: DiscoveryJob, line: str) -> None:
         with self._lock:
+            if job.cancel_requested:
+                raise JobCancelled()
             if line.strip():
                 job.log.append(line)
                 del job.log[:-_MAX_LOG_LINES]

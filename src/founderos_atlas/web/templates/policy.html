@@ -163,7 +163,7 @@
   {% endif %}
 
   {% if page.items %}
-  <form method="post" action="/policy/assign">
+  <form method="post" action="/policy/assign">{{ csrf_field() }}
     <input type="hidden" name="next" value="{{ request.full_path }}">
     <div class="table-scroll table-scroll-wide" role="region" aria-label="Policy results" tabindex="0">
       <table class="grid">

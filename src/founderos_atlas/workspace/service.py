@@ -119,6 +119,8 @@ class ProfileService:
         credential_sets: tuple[str, ...] = (),
         site_hint: str | None = None,
         domain_hint: str | None = None,
+        owner: str | None = None,
+        tags: tuple[str, ...] = (),
     ) -> DiscoveryProfile:
         if not isinstance(name, str) or not name.strip():
             raise InvalidProfileError("A profile name is required.")
@@ -163,6 +165,8 @@ class ProfileService:
             credential_sets=tuple(credential_sets),
             site_hint=site_hint,
             domain_hint=domain_hint,
+            owner=owner,
+            tags=tuple(tags),
         )
         if not own_credential:
             # Credential-set-only: there is no secret of this profile's own to
@@ -203,6 +207,8 @@ class ProfileService:
         domain_hint: str | None = None,
         collection_policy: str | None = None,
         collection_schedule_hours: int | None = None,
+        owner: str | None = None,
+        tags: tuple[str, ...] | None = None,
     ) -> DiscoveryProfile:
         """Update a profile in place; ``new_name`` renames it.
 
@@ -263,6 +269,8 @@ class ProfileService:
                 if collection_schedule_hours is not None
                 else existing.collection_schedule_hours
             ),
+            owner=owner if owner is not None else existing.owner,
+            tags=tuple(tags) if tags is not None else existing.tags,
         )
         if password:
             self._ensure_credential_store()

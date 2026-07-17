@@ -28,6 +28,10 @@ web = [
   # PR-044A (CONSOLE): interactive SSH terminal over a WebSocket.
   "flask-sock>=0.7,<1",
   "paramiko>=3,<5",
+  # Encrypted-file credential provider (headless production servers).
+  # Already a paramiko dependency; declared so the provider never rides
+  # on a transitive accident.
+  "cryptography>=42,<46",
 ]
 
 [project.scripts]

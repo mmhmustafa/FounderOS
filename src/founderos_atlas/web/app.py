@@ -1,8 +1,17 @@
-"""Flask application factory for the local Atlas GUI shell.
+"""Flask application factory for the Atlas web application.
 
-This is a **local, single-user alpha GUI** — not a production or multi-user
-web deployment. It binds to 127.0.0.1 by default, has no authentication, and
-runs the same in-process backend services the CLI uses (never a subprocess).
+Atlas runs in one of three authentication modes (``ATLAS_AUTH_MODE``):
+
+- ``local`` (default): the historical single-operator development mode.
+  Binds to 127.0.0.1 and refuses non-loopback clients outright.
+- ``password``: production mode — user store, server-side sessions,
+  RBAC, CSRF tokens, and full audit attribution.
+- ``proxy``: production mode behind an SSO-terminating reverse proxy.
+
+Security, authorization, health probes, and structured logging are wired
+by ``register_security`` / ``register_ops_routes`` /
+``register_observability`` at the bottom of ``create_app``. The backend
+services run in-process — the same objects the CLI uses.
 """
 
 from __future__ import annotations
@@ -49,6 +58,7 @@ def create_app(
     clock: Clock | None = None,
     workspace_root: str | Path | None = None,
     job_manager: DiscoveryJobManager | None = None,
+    auth_mode: str | None = None,
 ):
     """Build the Atlas Flask app with injectable backend services.
 
@@ -139,7 +149,9 @@ def create_app(
             if item.strip()
         ),
     )
-    app.secret_key = "atlas-local-alpha"  # only used for flash messages, local-only
+    # The signing key is set by register_security (random per process
+    # unless ATLAS_SECRET_KEY is provided); server-side sessions do not
+    # depend on it.
 
     # Shared formatting: `{{ value | timestamp }}` renders any stored UTC
     # ISO-8601 timestamp in the operator's display timezone (see timefmt);
@@ -159,12 +171,44 @@ def create_app(
         # persists under the output dir so interrupted runs are marked
         # honestly after a restart; the interface allows a production job
         # backend to replace it later.
+        def _notify_discovery_failure(job) -> None:
+            from founderos_atlas.notifications import (
+                KIND_DISCOVERY_FAILED,
+                NotificationStore,
+            )
+
+            NotificationStore(resolved_workspace).notify(
+                kind=KIND_DISCOVERY_FAILED,
+                title=f"Discovery failed for {job.profile_name}",
+                detail=str(job.error or "See the job log."),
+                href="/discovery",
+                audience="role:network-operator",
+                dedupe_key=f"discovery-failed:{job.profile_id}",
+            )
+
         job_manager = DiscoveryJobManager(
             runner=make_pipeline_runner(app),
             profile_service=profile_service,
             persist_path=resolved_output / ".atlas" / "jobs.json",
+            on_failure=_notify_discovery_failure,
         )
     app.config["ATLAS_JOB_MANAGER"] = job_manager
 
+    # Ordered, backed-up schema migrations run before anything reads the
+    # workspace; each is idempotent and audited.
+    from founderos_atlas.workspace.migrations import migrate_workspace
+
+    migrate_workspace(resolved_workspace)
+
     register_routes(app)
+
+    # Authentication, authorization, CSRF, rate limits, security headers,
+    # safe error pages, health probes, and structured request logging.
+    from .observability import register_observability
+    from .ops import register_ops_routes
+    from .security import register_security
+
+    register_security(app, auth_mode=auth_mode)
+    register_ops_routes(app)
+    register_observability(app)
     return app

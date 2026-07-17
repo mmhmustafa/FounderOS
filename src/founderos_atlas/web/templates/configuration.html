@@ -48,6 +48,8 @@
 
 <section class="card">
   <h2>Remembered Devices</h2>
+  <form class="form" method="get" action="/configuration"><div class="form-row"><label>Search<input type="search" name="q" value="{{ search }}" placeholder="Device, network, platform"></label><label>Platform<select name="platform"><option value="">All platforms</option>{% for platform in platforms %}<option value="{{ platform }}" {{ 'selected' if platform_filter == platform else '' }}>{{ platform }}</option>{% endfor %}</select></label></div><div class="form-actions"><button class="btn" type="submit">Filter</button><a class="btn" href="/configuration">Clear</a></div></form>
+  <p class="muted">{{ device_count }} matching device(s) · page {{ page }} of {{ total_pages }}</p>
   <table class="grid">
     <thead><tr><th>Device</th><th>Network</th><th>Platform</th><th>Versions</th><th>Observations</th><th>Last seen</th><th></th></tr></thead>
     <tbody>
@@ -68,6 +70,7 @@
       {% endfor %}
     </tbody>
   </table>
+  {% if total_pages > 1 %}<nav class="pagination" aria-label="Configuration device pages">{% if page > 1 %}<a class="btn" href="?q={{ search|urlencode }}&platform={{ platform_filter|urlencode }}&page={{ page-1 }}">Previous</a>{% endif %}{% if page < total_pages %}<a class="btn" href="?q={{ search|urlencode }}&platform={{ platform_filter|urlencode }}&page={{ page+1 }}">Next</a>{% endif %}</nav>{% endif %}
 </section>
 {% else %}
 <section class="card">

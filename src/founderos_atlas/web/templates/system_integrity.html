@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Workspace Integrity{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Workspace Integrity</h1></div>
+<p class="muted">
+  Every Atlas metadata file, checked for corruption. Schema version
+  {{ schema_version }} of {{ schema_target }}
+  {% if schema_version == schema_target %}(current){% else %}
+  (migrations pending — they run at the next start){% endif %}.
+  A missing file is a state, not a problem; a corrupt file names its
+  recovery step. Recovery is never silent: restore from a metadata
+  backup on the Settings page, or remove the file to rebuild that
+  record from scratch.
+</p>
+
+{% if corrupt %}
+<div class="status-banner status-critical">
+  <span class="badge">{{ corrupt | length }} corrupt</span>
+  <span>Restore the named file(s) from a metadata backup, or remove them
+  to start those records fresh.</span>
+</div>
+{% else %}
+<div class="status-banner status-healthy">
+  <span class="badge">Healthy</span>
+  <span>Every present metadata file parses cleanly.</span>
+</div>
+{% endif %}
+
+<section class="card">
+  <table class="grid">
+    <thead><tr><th>File</th><th>State</th><th>Detail</th></tr></thead>
+    <tbody>
+      {% for item in statuses %}
+      <tr>
+        <td><code>{{ item.name }}</code></td>
+        <td>
+          {% if item.state == 'ok' %}<span class="badge hop-badge">ok</span>
+          {% elif item.state == 'missing' %}<span class="muted">missing</span>
+          {% else %}<span class="badge hop-badge hop-badge-failed">corrupt</span>{% endif %}
+        </td>
+        <td class="muted">{{ item.detail or '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

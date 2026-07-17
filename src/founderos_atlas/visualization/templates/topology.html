@@ -815,9 +815,13 @@
     const curationRequest = async (url, method, payload) => {
       let response;
       try {
+        const csrfMatch = document.cookie.match(/(?:^|; )atlas_csrf=([^;]*)/);
         response = await fetch(url, {
           method, credentials: 'same-origin',
-          headers: {'Content-Type': 'application/json'},
+          headers: {
+            'Content-Type': 'application/json',
+            ...(csrfMatch ? {'X-Atlas-CSRF': decodeURIComponent(csrfMatch[1])} : {}),
+          },
           body: JSON.stringify(payload),
         });
       } catch (error) {

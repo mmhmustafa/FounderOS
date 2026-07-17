@@ -21,6 +21,8 @@ COMPASS_SCHEMA_VERSION = "1.0.0"
 
 PLAN_STATUS_DRAFT = "draft"
 PLAN_STATUS_ANALYSED = "analysed"
+PLAN_STATUS_APPROVED = "approved"
+PLAN_STATUS_REJECTED = "rejected"
 
 # The Compass change vocabulary. Each type maps onto the prediction
 # engine's open registry; unmodeled types predict honestly (low
@@ -151,6 +153,8 @@ class ChangePlan:
     scope: str = "all"  # the enterprise scope (UNITY)
     status: str = PLAN_STATUS_DRAFT
     changes: tuple[PlannedChange, ...] = ()
+    revision: int = 0
+    approval: dict | None = None    # {actor, decided_at, reason} once decided
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -164,6 +168,8 @@ class ChangePlan:
             "created_at": self.created_at,
             "updated_at": self.updated_at,
             "changes": [change.to_dict() for change in self.changes],
+            "revision": self.revision,
+            "approval": self.approval,
         }
 
     @classmethod
@@ -181,6 +187,8 @@ class ChangePlan:
             changes=tuple(
                 PlannedChange.from_dict(item) for item in value.get("changes") or ()
             ),
+            revision=int(value.get("revision") or 0),
+            approval=value.get("approval"),
         )
 
 

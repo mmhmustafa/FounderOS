@@ -25,9 +25,15 @@ from .engine import analyse_plan
 from .models import (
     ChangePlan,
     PLAN_STATUS_ANALYSED,
+    PLAN_STATUS_APPROVED,
+    PLAN_STATUS_REJECTED,
     PlanAssessment,
     PlannedChange,
 )
+
+
+class PlanConflictError(RuntimeError):
+    """The caller edited an older revision of the plan."""
 
 
 COMPASS_SUBDIR = Path(".atlas") / "compass"
@@ -75,10 +81,34 @@ class PlanRepository:
                 return ChangePlan.from_dict(plan), entry.get("assessment")
         return None, None
 
+    def check_revision(
+        self, plan_id: str, expected_revision: int | None
+    ) -> ChangePlan | None:
+        """The current plan, after verifying the caller saw its latest
+        revision. ``None`` expected revision skips the check (legacy and
+        non-form callers)."""
+
+        plan, _assessment = self.get(plan_id)
+        if plan is None:
+            return None
+        if (
+            expected_revision is not None
+            and int(expected_revision) != plan.revision
+        ):
+            raise PlanConflictError(
+                f"The plan changed while you were editing (revision "
+                f"{plan.revision}, you edited {expected_revision}). "
+                "Review the current plan and reapply your change."
+            )
+        return plan
+
     def save(
         self, plan: ChangePlan, assessment: PlanAssessment | dict | None = None
     ) -> None:
         entries = self.load()
+        from dataclasses import replace as _replace
+
+        plan = _replace(plan, revision=plan.revision + 1)
         record = {
             "plan": plan.to_dict(),
             "assessment": (
@@ -176,6 +206,46 @@ def remove_change(
         ),
         status="draft",
         updated_at=updated_at,
+    )
+    repository.save(updated)
+    return updated
+
+
+def decide_plan(
+    repository: PlanRepository,
+    plan: ChangePlan,
+    *,
+    approve: bool,
+    actor: str,
+    decided_at: str,
+    reason: str | None = None,
+) -> ChangePlan:
+    """Approve or reject an analysed plan.
+
+    Approval is only meaningful over an analysed plan — a draft has no
+    assessment to approve. Any later edit returns the plan to draft, so
+    an approval can never silently cover changes the approver never saw.
+    """
+
+    from dataclasses import replace
+
+    if plan.status != PLAN_STATUS_ANALYSED:
+        raise ValueError(
+            "Only an analysed plan can be approved or rejected — run the "
+            "analysis first so the decision covers a concrete assessment."
+        )
+    if not approve and not str(reason or "").strip():
+        raise ValueError("Rejecting a plan requires a reason.")
+    updated = replace(
+        plan,
+        status=PLAN_STATUS_APPROVED if approve else PLAN_STATUS_REJECTED,
+        updated_at=decided_at,
+        approval={
+            "actor": actor,
+            "decided_at": decided_at,
+            "decision": "approved" if approve else "rejected",
+            "reason": str(reason or "").strip() or None,
+        },
     )
     repository.save(updated)
     return updated

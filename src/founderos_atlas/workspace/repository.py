@@ -43,6 +43,33 @@ class ProfileRepository:
     def profiles_path(self) -> Path:
         return self._root / PROFILES_FILENAME
 
+    def revision(self) -> int:
+        """Catalog revision for optimistic concurrency (bumped per write)."""
+
+        path = self.profiles_path
+        if not path.is_file():
+            return 0
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            return int(raw.get("revision") or 0) if isinstance(raw, dict) else 0
+        except (OSError, json.JSONDecodeError, TypeError, ValueError):
+            return 0
+
+    def check_revision(self, expected_revision: int | None) -> None:
+        """Refuse a stale edit. ``None`` skips the check (non-form callers)."""
+
+        if expected_revision is None:
+            return
+        current = self.revision()
+        if int(expected_revision) != current:
+            from .exceptions import ProfileConflictError
+
+            raise ProfileConflictError(
+                "The profile catalog changed while you were editing "
+                f"(revision {current}, you edited {expected_revision}). "
+                "Nothing was overwritten — reload and reapply your change."
+            )
+
     def load(self) -> dict[str, DiscoveryProfile]:
         path = self.profiles_path
         if not path.is_file():
@@ -130,6 +157,7 @@ class ProfileRepository:
         ordered = sorted(profiles.values(), key=lambda profile: profile.name.casefold())
         document = {
             "schema_version": "1.0.0",
+            "revision": self.revision() + 1,
             "profiles": [profile.to_dict() for profile in ordered],
         }
         self.profiles_path.write_text(

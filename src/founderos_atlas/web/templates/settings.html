@@ -1,51 +1,59 @@
 {% extends "base.html" %}
-{% block title %}Settings{% endblock %}
+{% block title %}Settings & System Information{% endblock %}
 {% block content %}
-<h1>Settings</h1>
+<div class="page-head"><div><h1>Settings</h1><p class="muted">Workspace preferences are persistent and secret-free.</p></div><a class="btn" href="#system-information">System information</a></div>
 
 <section class="card">
-  <h2>Workspace</h2>
+  <h2>Display and retention</h2>
+  <form class="form" method="post" action="/settings">{{ csrf_field() }}
+    <input type="hidden" name="expected_updated_at" value="{{ preferences.updated_at or '' }}">
+    <div class="form-row">
+      <label>Timezone<input name="timezone" value="{{ preferences.timezone }}" placeholder="auto, UTC, or Asia/Kolkata"></label>
+      <label>Theme<select name="theme"><option value="system" {{ 'selected' if preferences.theme == 'system' else '' }}>System</option><option value="light" {{ 'selected' if preferences.theme == 'light' else '' }}>Light</option><option value="dark" {{ 'selected' if preferences.theme == 'dark' else '' }}>Dark</option></select></label>
+      <label>Density<select name="density"><option value="comfortable" {{ 'selected' if preferences.density == 'comfortable' else '' }}>Comfortable</option><option value="compact" {{ 'selected' if preferences.density == 'compact' else '' }}>Compact</option></select></label>
+    </div>
+    <div class="form-row">
+      <label>Retention days<input type="number" min="1" max="3650" name="retention_days" value="{{ preferences.retention_days }}"></label>
+      <label>Log level<select name="log_level">{% for level in ['ERROR','WARNING','INFO','DEBUG'] %}<option value="{{ level }}" {{ 'selected' if preferences.log_level == level else '' }}>{{ level }}</option>{% endfor %}</select></label>
+      <label>Change reason<input name="reason" placeholder="Why this setting changed"></label>
+    </div>
+    <div class="form-actions"><button class="btn btn-primary" type="submit">Save settings</button></div>
+  </form>
+  <p class="muted">Retention is policy metadata in this phase; Atlas does not silently delete evidence. A future scheduled retention job must require an audited preview.</p>
+</section>
+
+<section class="card">
+  <h2>Backup, restore, and diagnostics</h2>
+  <div class="form-actions"><a class="btn" href="/settings/backup">Download metadata backup</a><a class="btn" href="/settings/diagnostics.json">Download diagnostics</a><button class="btn" type="button" data-copy-url="/settings/diagnostics.json">Copy diagnostics</button></div>
+  <p class="muted">Backups include workspace JSON metadata and audit records. OS-keyring secrets and raw network evidence are deliberately excluded.</p>
+  <details><summary>Restore metadata</summary><form class="form" method="post" action="/settings/restore" enctype="multipart/form-data">{{ csrf_field() }}<label>Atlas backup<input type="file" name="backup" accept=".zip" required></label><label>Reason<input name="reason" required></label><label>Confirmation<input name="confirm" required placeholder="RESTORE METADATA"></label><button class="btn btn-danger" type="submit">Restore metadata</button></form></details>
+</section>
+
+<section class="card" id="system-information">
+  <h2>System information</h2>
   <ul class="kv">
     <li><span>Atlas version</span><span>{{ atlas_version }}</span></li>
     <li><span>Workspace root</span><span><code>{{ workspace_root }}</code></span></li>
     <li><span>Output directory</span><span><code>{{ output_dir }}</code></span></li>
     <li><span>History root</span><span><code>{{ history_root }}</code></span></li>
+    <li><span>Bind host</span><span>{{ bind_host }}</span></li>
+    <li><span>TLS</span><span class="{{ 'ok' if tls_enabled else 'warn' }}">{{ 'enabled' if tls_enabled else 'disabled' }}</span></li>
+    <li><span>Credential provider</span><span>{{ credential_provider }} · {{ provider_status }}</span></li>
+    <li><span>Stored timestamps</span><span>UTC</span></li>
+    <li><span>Displayed timezone</span><span>{{ display_timezone_label }}</span></li>
   </ul>
+  {% if bind_host not in ['127.0.0.1','localhost','::1'] %}<div class="flash flash-error">Atlas is not bound to loopback. Authentication and TLS must be configured before exposing this service.</div>{% endif %}
+  <p class="muted">Current deployment mode is local single-user. Secure credentials live in the OS keyring and are referenced, never serialized into workspace files.</p>
+  <p class="muted">Timestamps are stored as UTC. Override display only with <code>ATLAS_DISPLAY_TIMEZONE</code> or the preference above; stored history is never rewritten.</p>
 </section>
 
-<section class="card">
-  <h2>Credential provider</h2>
-  <ul class="kv">
-    <li><span>Provider</span><span>{{ credential_provider }}</span></li>
-    <li><span>Secure store available</span>
-      <span class="{{ 'ok' if credential_available else 'warn' }}">
-        {{ 'yes' if credential_available else 'no — install founderos-runtime[credentials]' }}
-      </span></li>
-  </ul>
-  <p class="muted">Passwords are stored in the OS keyring, never in workspace files.</p>
-</section>
+<section class="card danger-zone"><h2>Reset preferences</h2><p class="muted">This resets display and retention preferences only. Evidence, profiles, credentials, topology, and audit history remain intact.</p><form class="form" method="post" action="/settings/reset">{{ csrf_field() }}<label>Reason<input name="reason" required></label><label>Confirmation<input name="confirm" required placeholder="RESET SETTINGS"></label><button class="btn btn-danger" type="submit">Reset preferences</button></form></section>
 
-<section class="card">
-  <h2>Server</h2>
-  <ul class="kv">
-    <li><span>Bind host</span><span>{{ bind_host }} (local only)</span></li>
-  </ul>
-  <p class="muted">This is a local single-user alpha GUI. It binds to 127.0.0.1 and has
-    no authentication — it is not a production or multi-user web deployment.</p>
-</section>
-
-<section class="card">
-  <h2>Time</h2>
-  <ul class="kv">
-    <li><span>Stored as</span><span>UTC (always)</span></li>
-    <li><span>Displayed in</span><span>{{ display_timezone_label }}{% if display_timezone_is_auto %} — your system timezone{% endif %}</span></li>
-    <li><span>Setting</span><span><code>ATLAS_DISPLAY_TIMEZONE={{ display_timezone_setting }}</code></span></li>
-  </ul>
-  <p class="muted">Atlas records every timestamp in UTC so that history stays ordered and
-    unambiguous across sites and daylight-saving changes. This setting only affects how
-    those instants are shown to you. Set <code>ATLAS_DISPLAY_TIMEZONE</code> to
-    <code>auto</code> (your system clock), <code>UTC</code>, or an IANA zone such as
-    <code>Asia/Kolkata</code> — NOC teams often choose UTC to line Atlas up with device
-    syslog. An unrecognised zone falls back to your system clock.</p>
-</section>
+<script>
+document.querySelector('[data-copy-url]')?.addEventListener('click', async event => {
+  const response = await fetch(event.currentTarget.dataset.copyUrl);
+  await navigator.clipboard.writeText(JSON.stringify(await response.json(), null, 2));
+  event.currentTarget.textContent = 'Copied';
+});
+</script>
 {% endblock %}

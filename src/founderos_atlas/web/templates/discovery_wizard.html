@@ -2,160 +2,89 @@
 {% block title %}Discovery Wizard{% endblock %}
 {% block content %}
 <a class="back-link" href="/discovery">← Discovery</a>
-<h1>Discovery Wizard</h1>
-<p class="muted">Onboard a network using whatever you know — a seed device, a management subnet, several seeds, or an imported inventory. Every method produces the same canonical enterprise model; discovery stays deterministic.</p>
-
+<div class="page-head"><div><h1>Discovery Wizard</h1><p class="muted">A resumable, safety-first workflow. Drafts never contain passwords.</p></div>{% if drafts %}<label>Resume draft<select onchange="if(this.value) location.href='/discovery/wizard?draft='+encodeURIComponent(this.value)"><option value="">Choose…</option>{% for id, item in drafts.items() %}<option value="{{ id }}" {{ 'selected' if id == draft_id else '' }}>{{ item.name or id }} · {{ item.updated_at }}</option>{% endfor %}</select></label>{% endif %}</div>
 {% if error %}<div class="flash flash-error">{{ error }}</div>{% endif %}
 
-<form class="form" method="post" action="/discovery/wizard/preview" id="wizard-form">
-  <section class="card">
-    <h2>Step 1 — Choose a discovery method</h2>
+<ol class="wizard-progress" aria-label="Discovery setup progress">
+  {% for label in ['Scope','Credentials','Boundaries','Preview','Confirm','Results'] %}<li data-progress="{{ loop.index }}"><span>{{ loop.index }}</span>{{ label }}</li>{% endfor %}
+</ol>
+
+<form class="form" method="post" action="/discovery/wizard/preview" id="wizard-form" novalidate>{{ csrf_field() }}
+  <input type="hidden" name="draft_id" value="{{ draft_id or '' }}">
+  <section class="card wizard-step" data-step="1">
+    <h2>1. Select scope</h2>
+    <label>Profile name<input name="name" value="{{ (draft or {}).get('name','') }}" required placeholder="Hyderabad Lab"></label>
     <div class="wizard-methods">
-      <label class="wizard-method"><input type="radio" name="mode" value="seed" checked> <strong>Seed Device</strong><span class="muted">One address; discover recursively via neighbors.</span></label>
-      <label class="wizard-method"><input type="radio" name="mode" value="management-network"> <strong>Management Network</strong><span class="muted">A CIDR (e.g. 172.20.20.0/24); attempt every usable address.</span></label>
-      <label class="wizard-method"><input type="radio" name="mode" value="multiple-seeds"> <strong>Multiple Seeds</strong><span class="muted">Several starting addresses — useful for disconnected sites.</span></label>
-      <label class="wizard-method"><input type="radio" name="mode" value="import-list"> <strong>Import Device List</strong><span class="muted">CSV: hostname, management_ip, optional platform &amp; site.</span></label>
+      {% for value, label, help in [('seed','Seed Device','One address; follow discovered neighbors.'),('management-network','Management Network','Validate and safely expand a CIDR.'),('multiple-seeds','Multiple Seeds','Start from disconnected entry points.'),('import-list','Import Device List','CSV with hostname, management IP, platform, and site.')] %}
+      <label class="wizard-method"><input type="radio" name="mode" value="{{ value }}" {{ 'checked' if (draft or {}).get('mode','seed') == value else '' }}><strong>{{ label }}</strong><span class="muted">{{ help }}</span></label>
+      {% endfor %}
     </div>
-    <div class="wizard-fields" data-mode="seed">
-      <label>Seed address<input name="seed" placeholder="172.20.20.6"></label>
-    </div>
-    <div class="wizard-fields" data-mode="management-network" hidden>
-      <label>Management network (CIDR)<input name="cidr" placeholder="172.20.20.0/24"></label>
-      <label>Exclusions (optional, comma-separated addresses or CIDRs)<input name="exclusions" placeholder="172.20.20.1, 172.20.20.250/31"></label>
-      <label class="checkbox"><input type="checkbox" name="allow_large_scan" value="yes"> Override safety limit for a large scan</label>
-    </div>
-    <div class="wizard-fields" data-mode="multiple-seeds" hidden>
-      <label>Seed addresses (comma or newline separated)<textarea name="seeds" rows="3" placeholder="10.0.0.1, 10.20.0.1"></textarea></label>
-    </div>
-    <div class="wizard-fields" data-mode="import-list" hidden>
-      <label>Device list (CSV)<textarea name="csv_text" rows="5" placeholder="hostname,management_ip,platform,site&#10;R1,10.0.0.1,cisco-ios,hyderabad&#10;delhi-r1,10.20.0.1,frr,delhi"></textarea></label>
-    </div>
+    <div data-mode-fields="seed"><label>Seed address<input name="seed" value="{{ (draft or {}).get('seed','') }}" placeholder="172.20.20.6"></label></div>
+    <div data-mode-fields="management-network"><label>Management CIDR<input name="cidr" value="{{ (draft or {}).get('cidr','') }}" placeholder="172.20.20.0/24"></label></div>
+    <div data-mode-fields="multiple-seeds"><label>Seed addresses<textarea name="seeds" rows="3">{{ (draft or {}).get('seeds','') }}</textarea></label></div>
+    <div data-mode-fields="import-list"><label>Device CSV<textarea name="csv_text" rows="6">{{ (draft or {}).get('csv_text','') }}</textarea></label></div>
   </section>
 
-  <section class="card">
-    <h2>Step 2 — Credentials</h2>
-    {# A profile needs a way in: its own credential, or a credential set. Ticking
-       a set makes these optional (js-credential-optional), because the set
-       already carries a username and password — Atlas should never make you
-       retype a credential you have already saved. #}
-    <div class="form-row">
-      <label>Username<input name="username" placeholder="e.g. atlas" required
-                            class="js-credential-optional"></label>
-      <label>Password<input name="password" type="password" required
-                            class="js-credential-optional"></label>
-    </div>
-    {% if credential_sets %}
-    <label>Credential sets (tried in order until one authenticates)</label>
-    {% for cs in credential_sets %}
-    <label class="checkbox"><input type="checkbox" name="credential_sets" value="{{ cs.set_id }}" class="js-credential-set"> {{ cs.name }} ({{ cs.entries | length }} entr{{ 'y' if cs.entries | length == 1 else 'ies' }})</label>
-    {% endfor %}
-    <p class="muted js-credential-hint">
-      Tick a credential set and the username and password above become optional —
-      the set carries its own. Fill them in as well to try that credential first.
-      Passwords are never stored in plaintext or shown; only credential
-      references are kept.
-    </p>
-    {% else %}
-    <p class="muted">No credential sets defined. The username and password above are used. Add sets on the <a href="/credentials">Credentials</a> page for rotation.</p>
-    {% endif %}
+  <section class="card wizard-step" data-step="2" hidden>
+    <h2>2. Select and test credentials</h2>
+    {% for cs in credential_sets %}<label class="checkbox"><input type="checkbox" name="credential_sets" value="{{ cs.set_id }}" class="js-credential-set" {{ 'checked' if cs.set_id in (draft or {}).get('credential_sets',[]) else '' }}> {{ cs.name }} · {{ cs.entries|length }} entries</label>{% else %}<p class="muted">No shared sets. <a href="/credentials">Create one</a> or enter a profile credential below.</p>{% endfor %}
+    <details><summary>Use a profile-specific credential</summary><div class="form-row"><label>Username<input name="username" value="{{ (draft or {}).get('username','') }}" autocomplete="username" class="js-credential-optional"></label><label>Password<input type="password" name="password" autocomplete="new-password" class="js-credential-optional"></label></div><p class="muted">Passwords are intentionally excluded from drafts, previews, HTML responses, logs, and audit records.</p></details>
+    <p class="muted">Use “Test secure store” on the Credentials page to validate saved references. Device authentication occurs only after confirmation.</p>
   </section>
 
-  <section class="card">
-    <h2>Step 3 — Discovery policy</h2>
-    <div class="wizard-methods">
-      <label class="wizard-method"><input type="radio" name="policy" value="fast"> <strong>Fast</strong><span class="muted">Identity, interfaces, neighbors — candidates only, no recursion.</span></label>
-      <label class="wizard-method"><input type="radio" name="policy" value="balanced" checked> <strong>Balanced</strong><span class="muted">The default: recursive neighbor discovery.</span></label>
-      <label class="wizard-method"><input type="radio" name="policy" value="deep"> <strong>Deep</strong><span class="muted">Adds configuration, routes, OSPF/BGP, and platform capabilities.</span></label>
-    </div>
+  <section class="card wizard-step" data-step="3" hidden>
+    <h2>3. Define boundaries and exclusions</h2>
+    <label>Exclusions (addresses or CIDRs)<input name="exclusions" value="{{ (draft or {}).get('exclusions','') }}" placeholder="172.20.20.1, 172.20.20.250/31"></label>
+    <div class="boundary-preview" aria-live="polite"><strong>Boundary preview</strong><p class="muted" id="boundary-summary">Enter a scope to preview the permitted candidate region.</p></div>
+    <label class="checkbox"><input type="checkbox" name="allow_large_scan" value="yes" {{ 'checked' if (draft or {}).get('allow_large_scan') == 'yes' else '' }}> Explicitly allow a scan above the normal safety limit</label>
+    <div class="wizard-methods">{% for value,label,help in [('fast','Fast','Candidate identity only; no recursion.'),('balanced','Balanced','Recursive neighbor discovery.'),('deep','Deep','Configuration and routing evidence.')] %}<label class="wizard-method"><input type="radio" name="policy" value="{{ value }}" {{ 'checked' if (draft or {}).get('policy','balanced') == value else '' }}><strong>{{ label }}</strong><span class="muted">{{ help }}</span></label>{% endfor %}</div>
+    <div class="form-row"><label>Maximum devices<input type="number" min="1" max="4096" name="max_devices" value="{{ (draft or {}).get('max_devices','64') }}"></label><label>Maximum depth<input type="number" min="0" max="4096" name="max_depth" value="{{ (draft or {}).get('max_depth','1') }}"></label><label>Concurrent sessions<input type="number" min="1" max="128" name="concurrency" value="{{ (draft or {}).get('concurrency','1') }}"></label><label>Timeout seconds<input type="number" min="1" max="300" name="timeout_seconds" value="{{ (draft or {}).get('timeout_seconds','15') }}"></label></div>
   </section>
 
-  <section class="card">
-    <h2>Step 4 — Scope</h2>
-    <div class="form-row">
-      <label>Maximum devices<input name="max_devices" inputmode="numeric" placeholder="64"></label>
-      <label>Maximum recursion depth<input name="max_depth" inputmode="numeric" placeholder="1"></label>
-    </div>
-    <div class="form-row">
-      <label>Concurrent SSH sessions<input name="concurrency" inputmode="numeric" placeholder="1"></label>
-      <label>Timeout (seconds)<input name="timeout_seconds" inputmode="numeric" placeholder="15"></label>
-    </div>
+  <section class="card wizard-step" data-step="4" hidden>
+    <h2>4. Preview candidates and safety policy</h2>
+    <p class="muted">Preview validates addresses, CIDRs, exclusions, duplicate targets, limits, and policy without contacting a device.</p>
+    <button class="btn btn-primary" type="submit">Generate safe preview</button>
   </section>
-
-  <div class="form-actions">
-    <button class="btn" type="submit">Preview candidates</button>
-  </div>
+  <div class="wizard-controls"><button class="btn" type="button" data-prev hidden>Back</button><button class="btn btn-primary" type="button" data-next>Continue</button><span class="muted" id="draft-status"></span></div>
 </form>
 
 {% if plan %}
-<section class="card root-cause">
-  <h2>Step 5 — Review</h2>
-  <ul>
-    <li><strong>Method:</strong> {{ plan.mode }}</li>
-    <li><strong>Policy:</strong> {{ plan.policy }} (recursion depth {{ plan.effective_depth }}, {{ 'configuration collected' if plan.collect_configuration else 'no configuration' }})</li>
-    <li><strong>Candidate addresses:</strong> {{ plan.candidate_count }}</li>
-    {% if plan.attributes.safety %}
-    <li><strong>Safety:</strong> <span class="{{ 'warn' if plan.attributes.safety.level != 'ok' else 'ok' }}">{{ plan.attributes.safety.message }}</span></li>
-    {% endif %}
-  </ul>
-  {% if plan.warnings %}
-  <ul>{% for w in plan.warnings %}<li class="muted">Note: {{ w }}</li>{% endfor %}</ul>
-  {% endif %}
-  <details>
-    <summary class="muted">Candidate addresses ({{ plan.candidate_count }})</summary>
-    <div class="table-scroll" role="region" aria-label="Candidate addresses" tabindex="0">
-    <table class="grid">
-      <thead><tr><th>Address</th><th>Source</th><th>Confidence</th><th>Status</th><th>Reason</th></tr></thead>
-      <tbody>
-        {% for c in plan.candidates[:200] %}
-        <tr><td>{{ c.address }}</td><td>{{ c.source }}</td><td>{{ c.confidence }}</td><td>{{ c.status }}</td><td class="muted">{{ c.reason }}</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    </div>
-    {% if plan.candidate_count > 200 %}<p class="muted">Showing the first 200 of {{ plan.candidate_count }}.</p>{% endif %}
-  </details>
-
-  <form method="post" action="/discovery/wizard/start" class="form" style="margin-top:14px;">
-    {# Non-secret method fields carry over; credentials are re-entered so a
-       password is NEVER echoed back into the page HTML. #}
-    {% for key in ['mode','policy','seed','cidr','seeds','csv_text','exclusions','max_depth','max_devices','concurrency','timeout_seconds','allow_large_scan'] %}
-    <input type="hidden" name="{{ key }}" value="{{ form.get(key, '') if form else '' }}">
-    {% endfor %}
+<section class="card" id="wizard-review">
+  <h2>Step 5 — Confirm and run</h2>
+  <div class="tiles"><div class="tile"><strong>Candidates</strong><span>{{ plan.candidate_count }}</span></div><div class="tile"><strong>Policy</strong><span>{{ plan.policy }}</span></div><div class="tile"><strong>Depth</strong><span>{{ plan.effective_depth }}</span></div><div class="tile"><strong>Estimated ceiling</strong><span>≈ {{ estimate_minutes }} minute(s)</span></div></div>
+  {% if plan.attributes.safety %}<div class="status-banner"><span>{{ plan.attributes.safety.message }}</span></div>{% endif %}
+  {% if plan.warnings %}<ul>{% for warning in plan.warnings %}<li class="warn">{{ warning }}</li>{% endfor %}</ul>{% endif %}
+  <details open><summary>Candidate preview ({{ plan.candidate_count }})</summary><div class="table-scroll" tabindex="0"><table class="grid"><thead><tr><th>Address</th><th>Source</th><th>Confidence</th><th>Status</th><th>Reason</th></tr></thead><tbody>{% for candidate in plan.candidates[:200] %}<tr><td><code>{{ candidate.address }}</code></td><td>{{ candidate.source }}</td><td>{{ candidate.confidence }}</td><td>{{ candidate.status }}</td><td>{{ candidate.reason }}</td></tr>{% endfor %}</tbody></table></div></details>
+  <form class="form" method="post" action="/discovery/wizard/start">{{ csrf_field() }}
+    {% for key in ['draft_id','name','mode','policy','seed','cidr','seeds','csv_text','exclusions','max_depth','max_devices','concurrency','timeout_seconds','allow_large_scan','username'] %}<input type="hidden" name="{{ key }}" value="{{ (form or {}).get(key,'') }}">{% endfor %}
+    {% for sid in (form.getlist('credential_sets') if form else []) %}<input type="hidden" name="credential_sets" value="{{ sid }}">{% endfor %}
     {% set chosen_sets = (form.getlist('credential_sets') if form else []) %}
-    {% for sid in chosen_sets %}<input type="hidden" name="credential_sets" value="{{ sid }}">{% endfor %}
-    <label>Save as network profile<input name="name" placeholder="Hyderabad Lab" required></label>
-
-    {# This step exists to re-enter a password Atlas never echoes back into a
-       page. A chosen credential set already carries one, so there is nothing
-       to re-enter — and empty credential boxes above "Start Discovery" read as
-       a demand no matter what the text beneath them says. When a set is
-       chosen the fields are put away behind an explicit opt-in; the only
-       reason to open it is to try a different credential first. #}
-    {% if chosen_sets %}
-    <p class="muted">
-      Authenticating with <strong>{{ chosen_sets | join(', ') }}</strong> — nothing to re-enter.
-    </p>
-    <details class="credential-override">
-      <summary>Try a different credential first (optional)</summary>
-      <div class="form-row">
-        <label>Username<input name="username" value="{{ form.get('username', '') if form else '' }}"></label>
-        <label>Password<input name="password" type="password"></label>
-      </div>
-      <p class="muted">Tried before the credential set; the set remains the fallback.</p>
-    </details>
-    {% else %}
-    <div class="form-row">
-      <label>Username<input name="username" value="{{ form.get('username', '') if form else '' }}" required></label>
-      <label>Confirm password<input name="password" type="password" required></label>
-    </div>
-    <p class="muted">Re-enter the password to start (Atlas never echoes passwords into a page).</p>
-    {% endif %}
-
-    <div class="form-actions">
-      <button class="btn btn-primary" type="submit">Start Discovery</button>
-    </div>
-    <p class="muted">This saves a reusable profile whose entry points are the candidate addresses above, then launches discovery — Enterprise Graph, Prediction, Paths, Mission, and Advisor consume the result unchanged.</p>
+    {% if chosen_sets %}<p class="muted">Authenticating with <strong>{{ chosen_sets|join(', ') }}</strong> — nothing to re-enter.</p><details class="credential-override"><summary>Try a different credential first (optional)</summary><div class="form-row"><label>Username<input name="username" value="{{ (form or {}).get('username','') }}"></label><label>Password<input type="password" name="password" autocomplete="new-password"></label></div></details>{% else %}<label>Confirm password<input type="password" name="password" required autocomplete="new-password"></label><p class="muted">Re-enter the password to start; Atlas never echoes passwords into a page.</p>{% endif %}
+    <label class="checkbox"><input type="checkbox" required> I reviewed the candidates, boundaries, credential source, and safety warning.</label>
+    <div class="form-actions"><button class="btn" type="submit" name="dry_run" value="1">Complete dry run</button><button class="btn btn-primary" type="submit">Start discovery</button></div>
   </form>
 </section>
 {% endif %}
+
+{% if draft_id %}<form method="post" action="/discovery/wizard/drafts/{{ draft_id|urlencode }}/cancel" onsubmit="return confirm('Remove this draft? No discovery will be started.');">{{ csrf_field() }}<button class="btn btn-danger" type="submit">Cancel and remove draft</button></form>{% endif %}
+
+<script>
+(() => {
+  const form = document.getElementById('wizard-form'); if (!form) return;
+  let step = {{ 4 if plan else 1 }};
+  const steps = [...document.querySelectorAll('.wizard-step')];
+  const show = () => { steps.forEach(s => s.hidden = Number(s.dataset.step) !== step); document.querySelector('[data-prev]').hidden = step === 1; document.querySelector('[data-next]').hidden = step === 4; document.querySelectorAll('[data-progress]').forEach(p => p.classList.toggle('active', Number(p.dataset.progress) <= step)); updateModes(); };
+  const updateModes = () => { const mode = form.elements.mode?.value || 'seed'; document.querySelectorAll('[data-mode-fields]').forEach(el => el.hidden = el.dataset.modeFields !== mode); const scope = mode === 'management-network' ? form.elements.cidr.value : (mode === 'seed' ? form.elements.seed.value : 'multiple candidates'); document.getElementById('boundary-summary').textContent = scope ? `Candidate scope: ${scope}. Exclusions are validated before preview.` : 'Enter a scope to preview the permitted candidate region.'; };
+  const save = async () => { const data = Object.fromEntries(new FormData(form)); delete data.password; data.draft_id = form.elements.draft_id.value; const response = await fetch('/api/discovery/wizard/drafts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}); const result = await response.json(); form.elements.draft_id.value = result.draft_id; document.getElementById('draft-status').textContent = 'Draft saved · credentials excluded'; history.replaceState({},'',`/discovery/wizard?draft=${encodeURIComponent(result.draft_id)}`); };
+  document.querySelector('[data-next]').addEventListener('click', async () => {
+    const current = steps.find(item => Number(item.dataset.step) === step);
+    const invalid = current ? current.querySelector(':invalid') : null;
+    if (invalid) { invalid.reportValidity(); return; }
+    await save(); step = Math.min(4, step + 1); show();
+  });
+  document.querySelector('[data-prev]').addEventListener('click', () => { step = Math.max(1, step - 1); show(); });
+  form.addEventListener('change', updateModes); show();
+})();
+</script>
 {% endblock %}

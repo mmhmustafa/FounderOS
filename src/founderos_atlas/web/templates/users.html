@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}Users{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Users &amp; Roles</h1></div>
+<p class="muted">
+  Accounts for production authentication modes. Roles are bundles of
+  server-enforced permissions; every grant, change, and deletion is
+  audited. Passwords are stored as scrypt hashes — Atlas cannot show a
+  password back to anyone. {{ session_count }} active session(s).
+  {% if auth_mode_active == 'local' %}
+  <strong>This server is running in local development mode</strong> —
+  accounts defined here take effect when it is started with
+  <code>ATLAS_AUTH_MODE=password</code> or <code>proxy</code>.
+  {% endif %}
+</p>
+
+<section class="card">
+  <h2>Accounts</h2>
+  {% if accounts %}
+  <div class="table-scroll" role="region" aria-label="User accounts" tabindex="0">
+    <table class="grid">
+      <thead>
+        <tr><th>Username</th><th>Display name</th><th>Roles</th><th>Status</th><th>Updated</th><th><span class="visually-hidden">Actions</span></th></tr>
+      </thead>
+      <tbody>
+        {% for account in accounts %}
+        <tr>
+          <td><code>{{ account.username }}</code></td>
+          <td>{{ account.display_name }}</td>
+          <td>{{ account.roles | join(', ') }}</td>
+          <td>
+            {% if account.disabled %}<span class="badge hop-badge hop-badge-failed">disabled</span>
+            {% else %}<span class="badge hop-badge">active</span>{% endif %}
+            {% if not account.has_password %}<span class="muted">(SSO-only)</span>{% endif %}
+          </td>
+          <td>{{ account.updated_at | timestamp }}</td>
+          <td class="row-actions">
+            <form method="post" action="/users/{{ account.username }}" style="display:inline">{{ csrf_field() }}
+              <input type="hidden" name="expected_revision" value="{{ revision }}">
+              <input type="hidden" name="disabled" value="{{ '0' if account.disabled else '1' }}">
+              <button class="btn btn-sm" type="submit">
+                {{ 'Enable' if account.disabled else 'Disable' }}
+              </button>
+            </form>
+            <form method="post" action="/users/{{ account.username }}/delete" style="display:inline"
+                  onsubmit="return confirm('Delete {{ account.username }} and revoke their sessions?');">{{ csrf_field() }}
+              <input type="hidden" name="expected_revision" value="{{ revision }}">
+              <button class="btn btn-sm" type="submit">Delete</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">
+    No accounts exist yet. Create the first system administrator below,
+    or bootstrap one at startup with
+    <code>ATLAS_BOOTSTRAP_ADMIN_USER</code> /
+    <code>ATLAS_BOOTSTRAP_ADMIN_PASSWORD</code>.
+  </p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Create an account</h2>
+  <form method="post" action="/users" class="filter-bar">{{ csrf_field() }}
+    <input type="hidden" name="expected_revision" value="{{ revision }}">
+    <label>Username <input name="username" required></label>
+    <label>Display name <input name="display_name"></label>
+    <label>Password (min 12 chars; empty for SSO-only)
+      <input type="password" name="password" autocomplete="new-password">
+    </label>
+    <fieldset style="border:0;padding:0;">
+      <legend class="muted">Roles</legend>
+      {% for role in roles %}
+      <label class="checkbox"><input type="checkbox" name="roles" value="{{ role }}"> {{ role }}</label>
+      {% endfor %}
+    </fieldset>
+    <button class="btn btn-primary" type="submit">Create account</button>
+  </form>
+</section>
+{% endblock %}

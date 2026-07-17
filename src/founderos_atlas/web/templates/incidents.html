@@ -40,7 +40,7 @@
 {% else %}
 <section class="card">
   <h2>New investigation</h2>
-  <form class="form" method="post" action="/incidents/run">
+  <form class="form" method="post" action="/incidents/run">{{ csrf_field() }}
     <label>Incident title
       <input name="title" required placeholder="VLAN 10 cannot reach internet">
     </label>

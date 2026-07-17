@@ -12,7 +12,7 @@
 
 <section class="card">
   <h2>New Plan</h2>
-  <form class="form" method="post" action="/compass/new">
+  <form class="form" method="post" action="/compass/new">{{ csrf_field() }}
     <input type="hidden" name="device" value="{{ request.args.get('device', '') }}">
     <input type="hidden" name="reason" value="{{ request.args.get('reason', '') }}">
     <label>Title

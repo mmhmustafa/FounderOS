@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Sign in{% endblock %}
+{% block content %}
+<div class="login-wrap">
+  <section class="card login-card">
+    <h1>Sign in to Atlas</h1>
+    <p class="muted">
+      This deployment requires an account. Sessions expire automatically
+      and every operation is recorded in the audit log under your name.
+    </p>
+    {% if error %}
+    <div class="flash flash-error" role="alert">{{ error }}</div>
+    {% endif %}
+    <form method="post" action="/login">{{ csrf_field() }}
+      <input type="hidden" name="next" value="{{ next or '/' }}">
+      <label>Username
+        <input name="username" autocomplete="username" required autofocus>
+      </label>
+      <label>Password
+        <input type="password" name="password"
+               autocomplete="current-password" required>
+      </label>
+      <button class="btn btn-primary" type="submit">Sign in</button>
+    </form>
+    <p class="muted">
+      Locked out? A system administrator manages accounts on the
+      Users page; recovery is documented in the deployment guide.
+    </p>
+  </section>
+</div>
+{% endblock %}
