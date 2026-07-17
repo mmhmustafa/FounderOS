@@ -12,7 +12,13 @@ from unittest.mock import patch
 import urllib.request
 
 from founderos_atlas.demo import run_atlas_discovery_demo
-from founderos_atlas.visualization import CYTOSCAPE_CDN, TopologyRenderer
+from founderos_atlas.visualization import (
+    CYTOSCAPE_CDN,
+    TOPOLOGY_VISUAL_STYLE_MARKER,
+    TOPOLOGY_VISUAL_STYLE_VERSION,
+    TopologyRenderer,
+    topology_visual_style_is_current,
+)
 from founderos_runtime.cli import main
 
 
@@ -46,10 +52,44 @@ class TopologyVisualizationTests(unittest.TestCase):
         self.assertIn("data(source_interface)", html)
         self.assertIn("data(display_label)", html)
 
+    def test_protocol_views_are_separate_and_derive_domain_boundaries(self) -> None:
+        routing_facts = {
+            str(device["hostname"]): {
+                "ospf_areas": ["0"],
+                "ospf_process_ids": ["1"],
+                "bgp_as": "64512",
+            }
+            for device in self.snapshot.devices
+        }
+        renderer = TopologyRenderer(
+            self.snapshot, viewer_context={"routing_facts": routing_facts}
+        )
+        view = renderer.routing_view(renderer.elements())
+        self.assertTrue(view["ospf"]["groups"])
+        self.assertTrue(view["bgp"]["groups"])
+        self.assertEqual(self.snapshot.device_count, view["ospf"]["covered_devices"])
+        self.assertEqual(self.snapshot.device_count, view["bgp"]["covered_devices"])
+        html = renderer.render()
+        self.assertIn("OSPF areas", html)
+        self.assertIn("BGP autonomous systems", html)
+        self.assertIn("Edit topology", html)
+        self.assertNotIn("site-hub", html)
+
     def test_rendering_is_deterministic(self) -> None:
         first = TopologyRenderer(self.snapshot).render()
         second = TopologyRenderer(self.snapshot).render()
         self.assertEqual(first, second)
+
+    def test_rendering_carries_its_deterministic_visual_style_version(self) -> None:
+        html = TopologyRenderer(self.snapshot).render()
+        self.assertTrue(TOPOLOGY_VISUAL_STYLE_VERSION)
+        self.assertEqual(1, html.count(TOPOLOGY_VISUAL_STYLE_MARKER))
+        self.assertTrue(topology_visual_style_is_current(html))
+        self.assertFalse(
+            topology_visual_style_is_current(
+                "<!-- TOPOLOGY_VISUAL_STYLE_VERSION=stale -->"
+            )
+        )
 
     def test_renderer_uses_only_pinned_cytoscape_external_url(self) -> None:
         html = TopologyRenderer(self.snapshot).render()

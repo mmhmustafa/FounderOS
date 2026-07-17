@@ -27,6 +27,11 @@ from founderos_atlas.discovery.models import (
     NetworkInterface,
     NetworkNeighbor,
 )
+from founderos_atlas.routing import (
+    OspfAdjacencyObservation,
+    bgp_sessions_from_summary,
+    routing_metadata,
+)
 
 from .. import capabilities as caps
 from ..capabilities import CommandSpec, EXPERIMENTAL, TIER_DEEP, TIER_FAST, TIER_STANDARD
@@ -171,6 +176,27 @@ class CiscoIOSXEAdapter(DiscoveryAdapter):
         neighbors: list[NetworkNeighbor] = []
         neighbors.extend(_parse_lldp(raw_outputs.get(SHOW_LLDP, ""), local_id))
         neighbors.extend(_parse_cdp(raw_outputs.get(SHOW_CDP, ""), local_id))
+        for match in _OSPF_ROW.finditer(raw_outputs.get(SHOW_OSPF, "")):
+            neighbors.append(NetworkNeighbor(
+                local_device_id=local_id,
+                local_interface=match.group("intf"),
+                remote_hostname=match.group("rid"),
+                remote_interface=None,
+                remote_management_ip=None,
+                protocol="ospf",
+                metadata={
+                    "observation": "routing-adjacency",
+                    "router_id": match.group("rid"),
+                    "adjacency_address": match.group("address"),
+                    "ospf_state": match.group("state"),
+                    "process_id": None,
+                    "area_id": None,
+                    "vrf": "default",
+                    "address_family": "ipv4",
+                    "management_endpoint": False,
+                    "source_command": SHOW_OSPF,
+                },
+            ))
         return tuple(neighbors)
 
     def _local_id(self, raw_outputs: Mapping[str, str]) -> str:
@@ -246,9 +272,12 @@ class CiscoIOSXEDriver(ProductionDriver):
     def annotate(self, discovery: DriverDiscovery) -> DriverDiscovery:
         raw = discovery.raw_outputs
         metadata = dict(discovery.result.device.metadata)
+        sessions = bgp_sessions_from_summary(
+            raw.get(SHOW_BGP, ""), source_command=SHOW_BGP
+        )
         peers = [
-            {"peer": m.group("peer"), "remote_as": m.group("asn")}
-            for m in _BGP_PEER.finditer(raw.get(SHOW_BGP, ""))
+            {"peer": item.peer_address, "remote_as": item.remote_as}
+            for item in sessions
         ]
         if peers:
             metadata["bgp_peers"] = tuple(tuple(sorted(p.items())) for p in peers)
@@ -256,9 +285,40 @@ class CiscoIOSXEDriver(ProductionDriver):
                   if re.match(r"^[A-Z*]", l.strip() or "-")]
         if routes:
             metadata["route_count"] = len(routes)
+        ospf = tuple(
+            OspfAdjacencyObservation(
+                neighbor_router_id=str(item.metadata.get("router_id")),
+                adjacency_address=item.metadata.get("adjacency_address"),
+                local_interface=item.local_interface,
+                state=str(item.metadata.get("ospf_state") or "unknown"),
+                process_id=item.metadata.get("process_id"),
+                area_id=item.metadata.get("area_id"),
+                vrf=str(item.metadata.get("vrf") or "default"),
+                address_family=str(item.metadata.get("address_family") or "ipv4"),
+                source_command=SHOW_OSPF,
+            )
+            for item in discovery.result.neighbors if item.protocol == "ospf"
+        )
+        metadata["routing_evidence"] = routing_metadata(ospf=ospf, bgp=sessions)
+        bgp_neighbors = tuple(
+            NetworkNeighbor(
+                local_device_id=discovery.result.device.device_id,
+                local_interface="bgp",
+                remote_hostname=item.peer_address,
+                remote_interface=None,
+                remote_management_ip=None,
+                protocol="bgp",
+                metadata={
+                    "observation": "protocol-peer",
+                    **item.to_dict(),
+                    "management_endpoint": False,
+                },
+            ) for item in sessions
+        )
         result = replace(
             discovery.result,
             device=replace(discovery.result.device, metadata=metadata),
+            neighbors=(*discovery.result.neighbors, *bgp_neighbors),
         )
         return replace(discovery, result=result)
 

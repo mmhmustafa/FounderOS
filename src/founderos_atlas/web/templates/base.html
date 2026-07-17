@@ -72,7 +72,7 @@
       </ul>
       <div class="sidebar-note">Local alpha GUI · 127.0.0.1</div>
     </nav>
-    <main class="content" id="atlas-main">
+    <main class="content{% block content_class %}{% endblock %}" id="atlas-main">
       {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
           <div class="flashes">

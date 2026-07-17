@@ -15,8 +15,9 @@ comparing one network against another.
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from types import SimpleNamespace
 from pathlib import Path
+from types import SimpleNamespace
+from uuid import uuid4
 
 from founderos_atlas.credentials import (
     CredentialScope,
@@ -42,7 +43,20 @@ from founderos_atlas.federation import (
 )
 from founderos_atlas.history import HistoryRepository, generate_timeline
 from founderos_atlas.search import SearchService, search_enterprise
-from founderos_atlas.sites import SiteCatalogRepository
+from founderos_atlas.sites import (
+    SITE_TYPES,
+    Site,
+    SiteCatalog,
+    SiteCatalogRepository,
+    SiteOverrideConflictError,
+    SiteOverrideRepository,
+)
+from founderos_atlas.topology import TopologySnapshot
+from founderos_atlas.visualization import (
+    TOPOLOGY_VISUAL_STYLE_VERSION,
+    TopologyRenderer,
+    topology_visual_style_is_current,
+)
 from founderos_atlas.incidents import (
     IncidentArtifacts,
     IncidentInvestigator,
@@ -75,6 +89,157 @@ from .models import (
     profile_row,
     timeline_activity,
 )
+
+
+def _viewer_has_current_visual_style(path: Path) -> bool:
+    if not path.is_file():
+        return False
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            return topology_visual_style_is_current(handle.read(512))
+    except (OSError, UnicodeError):
+        return False
+
+
+def _viewer_has_site_override_revision(path: Path, revision: int) -> bool:
+    if not path.is_file():
+        return False
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            header = handle.read(1024)
+    except (OSError, UnicodeError):
+        return False
+    return f"<!-- ATLAS_SITE_OVERRIDE_REVISION={revision} -->" in header
+
+
+def _current_topology_viewer_url(
+    path: str, artifact_path: Path | None = None
+) -> str:
+    """Cache-bust current HTML after style or persisted curation changes."""
+
+    artifact_version = 0
+    if artifact_path is not None:
+        try:
+            artifact_version = artifact_path.stat().st_mtime_ns
+        except OSError:
+            pass
+    return (
+        f"{path}?visual_style={TOPOLOGY_VISUAL_STYLE_VERSION}"
+        f"&artifact_version={artifact_version}"
+    )
+
+
+def _configuration_viewer_context(
+    output: Path,
+) -> tuple[tuple[str, ...], dict[str, str], dict[str, dict]]:
+    from founderos_atlas.config_memory import extract_facts
+
+    configs = output / "configs"
+    try:
+        configured = tuple(
+            sorted(
+                (entry.name for entry in configs.iterdir() if entry.is_dir()),
+                key=str.casefold,
+            )
+        )
+    except OSError:
+        configured = ()
+
+    changes: dict[str, str] = {}
+    routing_facts: dict[str, dict] = {}
+    for hostname in configured:
+        path = configs / hostname / "running_config.txt"
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            continue
+        if text.strip():
+            routing_facts[hostname] = extract_facts(text).view()
+    report = load_json(output / "config_change_report.json") or {}
+    rows = report.get("reports") or ()
+    if isinstance(rows, list | tuple):
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            hostname = row.get("hostname")
+            change_count = row.get("change_count")
+            if isinstance(hostname, str) and isinstance(change_count, int):
+                changes[hostname] = f"{change_count} change(s)"
+    return configured, changes, routing_facts
+
+
+def _refresh_current_topology_viewer(
+    output: Path,
+    *,
+    workspace_root: str | Path,
+    last_discovered: str | None = None,
+    force: bool = False,
+) -> bool:
+    """Refresh one current viewer from its adjacent immutable snapshot.
+
+    Only the live scope root is accepted by callers. History repositories are
+    never traversed or rewritten; their viewer remains the record of what that
+    discovery produced at the time.
+    """
+
+    viewer_path = output / "atlas_topology.html"
+    try:
+        override_revision = SiteOverrideRepository(workspace_root).load().revision
+    except AtlasWorkspaceError:
+        # Preserve an existing readable viewer when workspace state is
+        # corrupt; the curation API will report the underlying error.
+        return False
+    if (
+        not force
+        and _viewer_has_current_visual_style(viewer_path)
+        and _viewer_has_site_override_revision(viewer_path, override_revision)
+    ):
+        return False
+
+    snapshot_data = load_json(output / "topology_snapshot.json")
+    if snapshot_data is None:
+        return False
+    # One same-directory temporary per attempt keeps ``replace`` atomic while
+    # also making simultaneous browser requests unable to clobber each
+    # other's in-progress render.
+    temporary_path = viewer_path.with_name(
+        f".{viewer_path.name}.{uuid4().hex}.refreshing"
+    )
+    try:
+        snapshot = TopologySnapshot.from_dict(snapshot_data)
+        configured, config_changes, routing_facts = (
+            _configuration_viewer_context(output)
+        )
+        workspace = Path(workspace_root)
+        html = TopologyRenderer(
+            snapshot,
+            change_report=load_json(output / "change_report.json"),
+            viewer_context={
+                "last_discovered": last_discovered
+                or snapshot.created_at
+                or "unrecorded",
+                "configured_hostnames": configured,
+                "config_changes": config_changes,
+                "routing_facts": routing_facts,
+            },
+            # Refreshes run inside the app's injected workspace, which can be
+            # different from the process default in tests and embeddings.  A
+            # viewer must retain its site-level topology when its style is
+            # upgraded.
+            site_catalog=SiteCatalogRepository(workspace).load(),
+            site_overrides=SiteOverrideRepository(workspace).load(),
+        ).render()
+        temporary_path.write_text(html, encoding="utf-8")
+        temporary_path.replace(viewer_path)
+    except (AtlasWorkspaceError, KeyError, OSError, TypeError, ValueError):
+        # A bad current snapshot must not destroy a still-readable old viewer
+        # or turn the surrounding topology page into a server error.
+        try:
+            temporary_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return False
+    return True
 
 
 def register_routes(app) -> None:
@@ -159,6 +324,24 @@ def register_routes(app) -> None:
     # request rebuilds. Freshness flags still track the current clock.
     enterprise_cache: dict = {"fingerprint": None, "graph": None, "snapshot": None}
 
+    def enterprise_routing_facts(graph, profiles) -> dict[str, dict]:
+        by_name: dict[str, dict] = {}
+        for profile in profiles:
+            scope = profile_scope(output_dir(), profile.profile_id, profile.name)
+            _configured, _changes, facts = _configuration_viewer_context(
+                scope.output_dir
+            )
+            for hostname, value in facts.items():
+                by_name.setdefault(hostname.casefold(), value)
+        merged: dict[str, dict] = {}
+        for device in graph.devices:
+            for name in (device.hostname, *device.aliases):
+                value = by_name.get(str(name).casefold())
+                if value is not None:
+                    merged[device.hostname] = value
+                    break
+        return merged
+
     def enterprise_world():
         """The federated enterprise graph + snapshot for the Enterprise
         scope — a cached VIEW over the isolated profile scopes, never a
@@ -188,8 +371,21 @@ def register_routes(app) -> None:
                 ),
                 now=now,
             )
+            catalog = SiteCatalogRepository(cfg("ATLAS_WORKSPACE_ROOT")).load()
+            overrides = SiteOverrideRepository(
+                cfg("ATLAS_WORKSPACE_ROOT")
+            ).load()
             snapshot = (
-                write_enterprise_artifacts(output_dir(), graph).to_dict()
+                write_enterprise_artifacts(
+                    output_dir(), graph,
+                    site_catalog=catalog,
+                    site_overrides=overrides,
+                    viewer_context={
+                        "routing_facts": enterprise_routing_facts(
+                            graph, profiles
+                        )
+                    },
+                ).to_dict()
                 if graph.devices
                 else None
             )
@@ -221,6 +417,17 @@ def register_routes(app) -> None:
             if scope.scope_id == scope_id:
                 return profile
         return None
+
+    def refresh_scope_topology_viewer(
+        scope: DiscoveryScope, *, force: bool = False
+    ) -> bool:
+        profile = profile_for_scope(scope.scope_id)
+        return _refresh_current_topology_viewer(
+            scope.output_dir,
+            workspace_root=cfg("ATLAS_WORKSPACE_ROOT"),
+            last_discovered=(profile.last_discovery if profile is not None else None),
+            force=force,
+        )
 
     def scoped_world(scope_id: str):
         """The graph + snapshot for the selected scope (PR-043.9, Part 1).
@@ -1820,11 +2027,16 @@ def register_routes(app) -> None:
                 for scope in aggregation_scopes(scopes)
                 if scope.snapshot_path.is_file()
             ]
+            for scope in with_data:
+                refresh_scope_topology_viewer(scope)
             viewers = [
                 {
                     "label": scope.label,
                     "scope_id": scope.scope_id,
-                    "href": f"/artifacts/{artifact_prefix(scope)}atlas_topology.html",
+                    "href": _current_topology_viewer_url(
+                        f"/artifacts/{artifact_prefix(scope)}atlas_topology.html",
+                        scope.output_dir / "atlas_topology.html",
+                    ),
                 }
                 for scope in with_data
                 if (scope.output_dir / "atlas_topology.html").is_file()
@@ -1833,6 +2045,12 @@ def register_routes(app) -> None:
                 # Enterprise federation (PR-037A): one canonical graph with
                 # provenance, merge decisions, and visible boundaries.
                 graph, snapshot = enterprise_world()
+                if snapshot is not None:
+                    _refresh_current_topology_viewer(
+                        enterprise_scope_dir(output_dir()),
+                        workspace_root=cfg("ATLAS_WORKSPACE_ROOT"),
+                        last_discovered=snapshot.get("created_at"),
+                    )
                 rows = get_enterprise_inventory(graph)
                 site_options = sorted({row["site"] for row in rows})
                 site_filter = request.args.get("site", "").strip()
@@ -1854,8 +2072,9 @@ def register_routes(app) -> None:
                     site_filter=site_filter,
                     viewers=viewers,
                     has_topology=snapshot is not None,
-                    topology_src=(
-                        f"/artifacts/{ENTERPRISE_ARTIFACT_PREFIX}atlas_topology.html"
+                    topology_src=_current_topology_viewer_url(
+                        f"/artifacts/{ENTERPRISE_ARTIFACT_PREFIX}atlas_topology.html",
+                        enterprise_scope_dir(output_dir()) / "atlas_topology.html",
                     ),
                     **enterprise_context(graph),
                     **context,
@@ -1873,13 +2092,179 @@ def register_routes(app) -> None:
                 **context,
             )
         scope = scopes[scope_id]
+        refresh_scope_topology_viewer(scope)
         exists = (scope.output_dir / "atlas_topology.html").is_file()
         return render_template(
             "topology.html",
             global_view=False,
             has_topology=exists,
-            topology_src=f"/artifacts/{artifact_prefix(scope)}atlas_topology.html",
+            topology_src=_current_topology_viewer_url(
+                f"/artifacts/{artifact_prefix(scope)}atlas_topology.html",
+                scope.output_dir / "atlas_topology.html",
+            ),
             **context,
+        )
+
+    def refresh_curated_topologies() -> None:
+        """Re-render current artifacts only; immutable history stays frozen."""
+
+        scopes = known_scopes()
+        for scope in aggregation_scopes(scopes):
+            if scope.snapshot_path.is_file():
+                refresh_scope_topology_viewer(scope, force=True)
+        # Workspace JSON participates in the enterprise fingerprint, but
+        # explicitly clear the in-process cache so the mutation response has
+        # already rebuilt the artifact before the iframe reloads.
+        enterprise_cache.update(fingerprint=None, graph=None, snapshot=None)
+        if any(
+            scope.snapshot_path.is_file()
+            for scope in aggregation_scopes(scopes)
+        ):
+            enterprise_world()
+
+    def curation_payload() -> dict:
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            abort(400, description="A JSON object is required.")
+        origin = request.headers.get("Origin")
+        if origin and origin.rstrip("/") != request.host_url.rstrip("/"):
+            abort(403, description="Cross-origin topology edits are refused.")
+        return payload
+
+    def override_identity(payload: dict) -> dict:
+        return {
+            "device_id": str(payload.get("device_id") or "").strip() or None,
+            "hostname": str(payload.get("hostname") or "").strip() or None,
+            "management_ip": (
+                str(payload.get("management_ip") or "").strip() or None
+            ),
+            "serial_number": (
+                str(payload.get("serial_number") or "").strip() or None
+            ),
+            "vendor": str(payload.get("vendor") or "").strip() or None,
+        }
+
+    @app.route("/api/topology/curation")
+    def api_topology_curation():
+        workspace = cfg("ATLAS_WORKSPACE_ROOT")
+        catalog = SiteCatalogRepository(workspace).load()
+        repository = SiteOverrideRepository(workspace)
+        overrides = repository.load()
+        return jsonify({
+            "catalog": catalog.to_dict(),
+            "overrides": overrides.to_dict(),
+            "history": [item.to_dict() for item in repository.history()],
+            "operator": "local-operator",
+            "authorization": (
+                "local single-user curation; server-side roles are required "
+                "before remote multi-user deployment"
+            ),
+        })
+
+    @app.route("/api/topology/site-assignments", methods=["PUT"])
+    def api_assign_topology_site():
+        payload = curation_payload()
+        site_id = str(payload.get("site_id") or "").strip()
+        catalog = SiteCatalogRepository(cfg("ATLAS_WORKSPACE_ROOT")).load()
+        if site_id != "__none__" and catalog.get(site_id) is None:
+            return jsonify(error="The requested site does not exist."), 400
+        expected = payload.get("expected_revision")
+        try:
+            result, event = SiteOverrideRepository(
+                cfg("ATLAS_WORKSPACE_ROOT")
+            ).assign(
+                site_id=site_id,
+                reason=str(payload.get("reason") or "").strip() or None,
+                actor="local-operator",
+                expected_revision=int(expected) if expected is not None else None,
+                **override_identity(payload),
+            )
+        except SiteOverrideConflictError as error:
+            return jsonify(error=str(error)), 409
+        except ValueError as error:
+            return jsonify(error=str(error)), 400
+        refresh_curated_topologies()
+        return jsonify(
+            revision=result.revision,
+            event=event.to_dict(),
+            message="Persistent site assignment saved.",
+        )
+
+    @app.route("/api/topology/site-assignments/revert", methods=["POST"])
+    def api_revert_topology_site():
+        payload = curation_payload()
+        expected = payload.get("expected_revision")
+        try:
+            result, event = SiteOverrideRepository(
+                cfg("ATLAS_WORKSPACE_ROOT")
+            ).revert(
+                reason=str(payload.get("reason") or "").strip() or None,
+                actor="local-operator",
+                expected_revision=int(expected) if expected is not None else None,
+                **override_identity(payload),
+            )
+        except SiteOverrideConflictError as error:
+            return jsonify(error=str(error)), 409
+        except ValueError as error:
+            return jsonify(error=str(error)), 400
+        refresh_curated_topologies()
+        return jsonify(
+            revision=result.revision,
+            event=event.to_dict(),
+            message="Returned to evidence-based site inference.",
+        )
+
+    @app.route("/api/topology/site-assignments/undo", methods=["POST"])
+    def api_undo_topology_site():
+        payload = curation_payload()
+        subject_key = str(payload.get("subject_key") or "").strip()
+        if not subject_key:
+            return jsonify(error="subject_key is required."), 400
+        expected = payload.get("expected_revision")
+        try:
+            result, event = SiteOverrideRepository(
+                cfg("ATLAS_WORKSPACE_ROOT")
+            ).undo(
+                subject_key=subject_key,
+                actor="local-operator",
+                expected_revision=int(expected) if expected is not None else None,
+            )
+        except SiteOverrideConflictError as error:
+            return jsonify(error=str(error)), 409
+        except ValueError as error:
+            return jsonify(error=str(error)), 400
+        refresh_curated_topologies()
+        return jsonify(
+            revision=result.revision,
+            event=event.to_dict(),
+            message="Last site assignment change undone.",
+        )
+
+    @app.route("/api/topology/sites/<site_id>", methods=["PUT"])
+    def api_update_topology_site(site_id: str):
+        from dataclasses import replace
+
+        payload = curation_payload()
+        site_type = str(payload.get("site_type") or "").strip()
+        if site_type not in SITE_TYPES:
+            return jsonify(
+                error="site_type must be one of " + ", ".join(SITE_TYPES)
+            ), 400
+        repository = SiteCatalogRepository(cfg("ATLAS_WORKSPACE_ROOT"))
+        catalog = repository.load()
+        existing = catalog.get(site_id)
+        if existing is None:
+            return jsonify(error="The requested site does not exist."), 404
+        repository.save(SiteCatalog(sites=tuple(
+            replace(site, site_type=site_type)
+            if site.site_id == site_id else site
+            for site in catalog.sites
+        )))
+        refresh_curated_topologies()
+        return jsonify(
+            site_id=site_id,
+            site_type=site_type,
+            message="Site type saved.",
         )
 
     @app.route("/history")
@@ -3224,7 +3609,14 @@ def register_routes(app) -> None:
 
     @app.route("/artifacts/<path:name>")
     def artifacts(name: str):
-        return send_from_directory(str(output_dir()), name)
+        response = send_from_directory(str(output_dir()), name)
+        if name.endswith("atlas_topology.html"):
+            # The current viewer is derived mutable presentation over an
+            # immutable snapshot. Browser caches must never resurrect an old
+            # curation revision after the operator closes and reopens Atlas.
+            response.headers["Cache-Control"] = "no-store, max-age=0"
+            response.headers["Pragma"] = "no-cache"
+        return response
 
 
 def _completed_execution_demo() -> dict:

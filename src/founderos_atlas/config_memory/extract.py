@@ -60,6 +60,15 @@ class BgpNeighborFact:
 
 
 @dataclass(frozen=True)
+class OspfInterfaceFact:
+    interface: str
+    area: str
+
+    def to_dict(self) -> dict[str, str]:
+        return {"interface": self.interface, "area": self.area}
+
+
+@dataclass(frozen=True)
 class HsrpGroupFact:
     interface: str
     group: str
@@ -86,6 +95,7 @@ class ConfigFacts:
     bgp_neighbors: tuple[BgpNeighborFact, ...] = ()
     ospf_areas: tuple[str, ...] = ()
     ospf_process_ids: tuple[str, ...] = ()
+    ospf_interfaces: tuple[OspfInterfaceFact, ...] = ()
     vlans: tuple[str, ...] = ()
     vrfs: tuple[str, ...] = ()
     acls: tuple[str, ...] = ()
@@ -107,6 +117,7 @@ class ConfigFacts:
             "bgp_neighbors": [item.to_dict() for item in self.bgp_neighbors],
             "ospf_areas": list(self.ospf_areas),
             "ospf_process_ids": list(self.ospf_process_ids),
+            "ospf_interfaces": [item.to_dict() for item in self.ospf_interfaces],
             "vlans": list(self.vlans),
             "vrfs": list(self.vrfs),
             "acls": list(self.acls),
@@ -182,6 +193,18 @@ _BGP_NEIGHBOR_DESC = re.compile(
     r"^\s*neighbor\s+(\S+)\s+description\s+(.+)$", re.IGNORECASE
 )
 _OSPF_AREA = re.compile(r"\barea\s+(\S+)", re.IGNORECASE)
+_JUNOS_OSPF_INTERFACE = re.compile(
+    r"^set\s+protocols\s+ospf\s+area\s+(\S+)\s+interface\s+(\S+)",
+    re.IGNORECASE,
+)
+_JUNOS_BGP_LOCAL_AS = re.compile(
+    r"^set\s+protocols\s+bgp\s+group\s+\S+\s+local-as\s+(\S+)",
+    re.IGNORECASE,
+)
+_JUNOS_BGP_PEER_AS = re.compile(
+    r"^set\s+protocols\s+bgp\s+group\s+\S+\s+neighbor\s+(\S+)\s+peer-as\s+(\S+)",
+    re.IGNORECASE,
+)
 _HSRP_GROUP = re.compile(r"^\s*standby\s+(\d+)\s+", re.IGNORECASE)
 _HSRP_PRIORITY = re.compile(
     r"^\s*standby\s+(\d+)\s+priority\s+(\d+)", re.IGNORECASE
@@ -211,6 +234,7 @@ def extract_facts(running_config: str) -> ConfigFacts:
     neighbors: dict[str, dict[str, str | None]] = {}
     ospf_areas: set[str] = set()
     ospf_processes: list[str] = []
+    ospf_interfaces: list[OspfInterfaceFact] = []
     vlans: list[str] = []
     vrfs: list[str] = []
     acls: list[str] = []
@@ -255,6 +279,24 @@ def extract_facts(running_config: str) -> ConfigFacts:
         if not indented:
             flush_interface()
             context = None
+
+            match = _JUNOS_OSPF_INTERFACE.match(line)
+            if match:
+                area, interface = match.group(1), match.group(2)
+                ospf_areas.add(area)
+                fact = OspfInterfaceFact(interface=interface, area=area)
+                if fact not in ospf_interfaces:
+                    ospf_interfaces.append(fact)
+                continue
+            match = _JUNOS_BGP_LOCAL_AS.match(line)
+            if match:
+                bgp_as = match.group(1)
+                continue
+            match = _JUNOS_BGP_PEER_AS.match(line)
+            if match:
+                entry = neighbors.setdefault(match.group(1), {})
+                entry["remote_as"] = match.group(2)
+                continue
 
             match = _HOSTNAME.match(line)
             if match:
@@ -388,6 +430,7 @@ def extract_facts(running_config: str) -> ConfigFacts:
         ),
         ospf_areas=tuple(sorted(ospf_areas)),
         ospf_process_ids=tuple(ospf_processes),
+        ospf_interfaces=tuple(ospf_interfaces),
         vlans=tuple(vlans),
         vrfs=tuple(vrfs),
         acls=tuple(acls),

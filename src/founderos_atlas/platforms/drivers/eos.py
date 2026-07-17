@@ -24,6 +24,11 @@ from founderos_atlas.discovery.models import (
     NetworkInterface,
     NetworkNeighbor,
 )
+from founderos_atlas.routing import (
+    OspfAdjacencyObservation,
+    bgp_sessions_from_summary,
+    routing_metadata,
+)
 
 from .. import capabilities as caps
 from ..capabilities import CommandSpec, EXPERIMENTAL, TIER_DEEP, TIER_FAST
@@ -64,6 +69,12 @@ _LLDP_ROW = re.compile(
 # and let a bare header line ("MLAG Configuration:") swallow the line below.
 _MLAG_FIELD = re.compile(r"(?m)^(?P<key>[\w-]+(?:[ ][\w-]+)*)[ 	]*:[ 	]*(?P<value>\S.*?)[ 	]*$")
 _BGP_PEER = re.compile(r"(?m)^\s*(?P<peer>\d+\.\d+\.\d+\.\d+)\s+4\s+(?P<asn>\d+)\s+")
+_OSPF_ROW = re.compile(
+    r"(?m)^\s*(?P<rid>\d+\.\d+\.\d+\.\d+)\s+"
+    r"(?P<process>\S+)\s+(?P<vrf>\S+)\s+\d+\s+"
+    r"(?P<state>\S+)\s+\S+\s+"
+    r"(?P<address>\d+\.\d+\.\d+\.\d+)\s+(?P<intf>\S+)\s*$"
+)
 
 
 class AristaEOSAdapter(DiscoveryAdapter):
@@ -146,6 +157,26 @@ class AristaEOSAdapter(DiscoveryAdapter):
                 remote_management_ip=None,   # EOS's tabular LLDP carries none
                 protocol="lldp",
                 metadata={"source_command": SHOW_LLDP},
+            ))
+        for match in _OSPF_ROW.finditer(raw_outputs.get(SHOW_OSPF, "")):
+            neighbors.append(NetworkNeighbor(
+                local_device_id=local_id,
+                local_interface=match.group("intf"),
+                remote_hostname=match.group("rid"),
+                remote_interface=None, remote_management_ip=None,
+                protocol="ospf",
+                metadata={
+                    "observation": "routing-adjacency",
+                    "router_id": match.group("rid"),
+                    "adjacency_address": match.group("address"),
+                    "ospf_state": match.group("state"),
+                    "process_id": match.group("process"),
+                    "area_id": None,
+                    "vrf": match.group("vrf"),
+                    "address_family": "ipv4",
+                    "management_endpoint": False,
+                    "source_command": SHOW_OSPF,
+                },
             ))
         return tuple(neighbors)
 
@@ -237,15 +268,45 @@ class AristaEOSDriver(ProductionDriver):
                 "peer_link": fields.get("peer-link", UNKNOWN),
                 "state": fields.get("state", UNKNOWN),
             }
+        sessions = bgp_sessions_from_summary(
+            raw.get(SHOW_BGP, ""), source_command=SHOW_BGP
+        )
         peers = [
-            {"peer": m.group("peer"), "remote_as": m.group("asn")}
-            for m in _BGP_PEER.finditer(raw.get(SHOW_BGP, ""))
+            {"peer": item.peer_address, "remote_as": item.remote_as}
+            for item in sessions
         ]
         if peers:
             metadata["bgp_peers"] = tuple(tuple(sorted(p.items())) for p in peers)
+        ospf = tuple(
+            OspfAdjacencyObservation(
+                neighbor_router_id=str(item.metadata.get("router_id")),
+                adjacency_address=item.metadata.get("adjacency_address"),
+                local_interface=item.local_interface,
+                state=str(item.metadata.get("ospf_state") or "unknown"),
+                process_id=item.metadata.get("process_id"),
+                area_id=item.metadata.get("area_id"),
+                vrf=str(item.metadata.get("vrf") or "default"),
+                address_family=str(item.metadata.get("address_family") or "ipv4"),
+                source_command=SHOW_OSPF,
+            ) for item in discovery.result.neighbors if item.protocol == "ospf"
+        )
+        metadata["routing_evidence"] = routing_metadata(ospf=ospf, bgp=sessions)
+        bgp_neighbors = tuple(
+            NetworkNeighbor(
+                local_device_id=discovery.result.device.device_id,
+                local_interface="bgp", remote_hostname=item.peer_address,
+                remote_interface=None, remote_management_ip=None,
+                protocol="bgp",
+                metadata={
+                    "observation": "protocol-peer", **item.to_dict(),
+                    "management_endpoint": False,
+                },
+            ) for item in sessions
+        )
         result = replace(
             discovery.result,
             device=replace(discovery.result.device, metadata=metadata),
+            neighbors=(*discovery.result.neighbors, *bgp_neighbors),
         )
         return replace(discovery, result=result)
 

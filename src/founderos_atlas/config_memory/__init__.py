@@ -21,6 +21,7 @@ from .extract import (
     ConfigFacts,
     HsrpGroupFact,
     InterfaceFact,
+    OspfInterfaceFact,
     extract_facts,
 )
 from .models import (
@@ -76,6 +77,7 @@ __all__ = [
     "DiffLine",
     "HsrpGroupFact",
     "InterfaceFact",
+    "OspfInterfaceFact",
     "POLICY_ALWAYS",
     "POLICY_DISABLED",
     "POLICY_DISCOVERY_ONLY",

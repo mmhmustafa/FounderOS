@@ -18,6 +18,8 @@ import tempfile
 import unittest
 
 from founderos_atlas.history import HistoryRepository
+from founderos_atlas.sites import Site, SiteCatalog, SiteCatalogRepository
+from founderos_atlas.visualization import TOPOLOGY_VISUAL_STYLE_MARKER
 from founderos_atlas.workspace import (
     InMemoryCredentialProvider,
     ProfileRepository,
@@ -584,6 +586,7 @@ class WebScopeTests(unittest.TestCase):
             profile_service=service,
             output_dir=workdir,
             history_root=workdir / ".atlas" / "history",
+            workspace_root=workdir / "workspace",
         )
         app.config.update(TESTING=True)
         return service, app.test_client()
@@ -616,6 +619,73 @@ class WebScopeTests(unittest.TestCase):
             page = client.get("/topology?scope=all").data
             for hostname in (b"A1", b"A2", b"B1"):
                 self.assertIn(hostname, page)
+
+    def test_stale_current_profile_viewer_refreshes_without_rewriting_history(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workdir = Path(tmp)
+            service, client = self.build_world(workdir)
+            SiteCatalogRepository(workdir / "workspace").save(
+                SiteCatalog(
+                    sites=(
+                        Site(
+                            site_id="alpha",
+                            name="Alpha Site",
+                            explicit_hostnames=("A1", "A2"),
+                        ),
+                        Site(
+                            site_id="beta",
+                            name="Beta Site",
+                            explicit_hostnames=("B1",),
+                        ),
+                    )
+                )
+            )
+            current = scope_dir(workdir, "lab-a")
+            viewer = current / "atlas_topology.html"
+            snapshot_before = (current / "topology_snapshot.json").read_bytes()
+            history_viewers = tuple(sorted((current / "history").glob("*/atlas_topology.html")))
+            history_before = {path: path.read_bytes() for path in history_viewers}
+            last_discovery = service.get_profile("Lab A").last_discovery
+            viewer.write_text("<html>stale current viewer</html>", encoding="utf-8")
+
+            response = client.get("/topology?scope=lab-a")
+
+            self.assertEqual(200, response.status_code)
+            refreshed = viewer.read_text(encoding="utf-8")
+            self.assertIn(TOPOLOGY_VISUAL_STYLE_MARKER, refreshed)
+            self.assertIn("A1", refreshed)
+            self.assertIn('"id":"site:alpha"', refreshed)
+            self.assertEqual(
+                snapshot_before,
+                (current / "topology_snapshot.json").read_bytes(),
+            )
+            self.assertEqual(
+                history_before,
+                {path: path.read_bytes() for path in history_viewers},
+            )
+            self.assertEqual(last_discovery, service.get_profile("Lab A").last_discovery)
+
+    def test_failed_style_refresh_preserves_the_existing_viewer_atomically(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workdir = Path(tmp)
+            _, client = self.build_world(workdir)
+            current = scope_dir(workdir, "lab-a")
+            viewer = current / "atlas_topology.html"
+            old_viewer = b"<html>still-readable stale viewer</html>"
+            viewer.write_bytes(old_viewer)
+            (current / "topology_snapshot.json").write_text(
+                json.dumps({"snapshot_id": "atlas-topology:broken"}),
+                encoding="utf-8",
+            )
+
+            response = client.get("/topology?scope=lab-a")
+
+            self.assertEqual(200, response.status_code)
+            self.assertEqual(old_viewer, viewer.read_bytes())
+            self.assertEqual(
+                [],
+                list(current.glob(".atlas_topology.html.*.refreshing")),
+            )
 
     def test_history_scope_filtering(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

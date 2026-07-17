@@ -23,6 +23,11 @@ from founderos_atlas.discovery.models import (
     NetworkInterface,
     NetworkNeighbor,
 )
+from founderos_atlas.routing import (
+    OspfAdjacencyObservation,
+    bgp_sessions_from_summary,
+    routing_metadata,
+)
 
 from ..base import (
     CAP_COLLECTED,
@@ -230,6 +235,10 @@ class FRRoutingAdapter(DiscoveryAdapter):
                         "adjacency_address": match.group("address"),
                         "management_endpoint": False,
                         "ospf_state": match.group("state"),
+                        "process_id": None,
+                        "area_id": None,
+                        "vrf": "default",
+                        "address_family": "ipv4",
                         "source_command": SHOW_OSPF_NEIGHBORS,
                     },
                 )
@@ -291,6 +300,10 @@ class FRRoutingDriver(PlatformDriver):
         bgp_peers = _parse_bgp_peers(
             discovery.raw_outputs.get(SHOW_BGP_SUMMARY, "")
         )
+        sessions = bgp_sessions_from_summary(
+            discovery.raw_outputs.get(SHOW_BGP_SUMMARY, ""),
+            source_command=SHOW_BGP_SUMMARY,
+        )
         result = discovery.result
         metadata = dict(result.device.metadata)
         if routes is not None:
@@ -300,22 +313,35 @@ class FRRoutingDriver(PlatformDriver):
             if bgp_peers.get("router_id"):
                 # An identity claim for the ownership index (PR-043.7).
                 metadata["bgp_router_id"] = bgp_peers["router_id"]
+        ospf = tuple(
+            OspfAdjacencyObservation(
+                neighbor_router_id=str(item.metadata.get("router_id")),
+                adjacency_address=item.metadata.get("adjacency_address"),
+                local_interface=item.local_interface,
+                state=str(item.metadata.get("ospf_state") or "unknown"),
+                process_id=item.metadata.get("process_id"),
+                area_id=item.metadata.get("area_id"),
+                vrf=str(item.metadata.get("vrf") or "default"),
+                address_family=str(item.metadata.get("address_family") or "ipv4"),
+                source_command=SHOW_OSPF_NEIGHBORS,
+            ) for item in result.neighbors if item.protocol == "ospf"
+        )
+        metadata["routing_evidence"] = routing_metadata(ospf=ospf, bgp=sessions)
         peer_neighbors = tuple(
             NetworkNeighbor(
                 local_device_id=result.device.device_id,
                 local_interface="bgp",  # a session, not a physical port
-                remote_hostname=peer,
+                remote_hostname=session.peer_address,
                 remote_interface=None,
                 remote_management_ip=None,  # peer addresses are NOT endpoints
                 protocol="bgp",
                 metadata={
                     "observation": "protocol-peer",
-                    "peer_address": peer,
+                    **session.to_dict(),
                     "management_endpoint": False,
-                    "source_command": SHOW_BGP_SUMMARY,
                 },
             )
-            for peer in (bgp_peers or {}).get("peers", ())
+            for session in sessions
         )
         result = replace(
             result,

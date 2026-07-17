@@ -393,6 +393,24 @@ class ExtractionTests(unittest.TestCase):
         self.assertEqual("192.0.2.65/30", names["eth1"].ip_address)
         self.assertEqual("LINK-TO-delhi-r2", names["eth1"].description)
 
+    def test_junos_routing_membership_is_normalized(self) -> None:
+        facts = extract_facts("""
+set system host-name edge-junos
+set routing-options autonomous-system 64512
+set protocols ospf area 0.0.0.1 interface ge-0/0/0.0
+set protocols bgp group WAN local-as 64512
+set protocols bgp group WAN neighbor 192.0.2.2 peer-as 64513
+""")
+        self.assertEqual("64512", facts.bgp_as)
+        self.assertEqual(
+            [("ge-0/0/0.0", "0.0.0.1")],
+            [(item.interface, item.area) for item in facts.ospf_interfaces],
+        )
+        self.assertEqual(
+            [("192.0.2.2", "64513")],
+            [(item.neighbor, item.remote_as) for item in facts.bgp_neighbors],
+        )
+
     def test_absent_constructs_stay_absent(self) -> None:
         facts = extract_facts("hostname bare\n!\n")
         self.assertEqual("bare", facts.hostname)

@@ -316,7 +316,12 @@ def overall_freshness(contributions: tuple[ContributionSummary, ...]) -> bool:
 
 
 def write_enterprise_artifacts(
-    base_output_dir: str | Path, graph: EnterpriseGraph
+    base_output_dir: str | Path,
+    graph: EnterpriseGraph,
+    *,
+    site_catalog=None,
+    site_overrides=None,
+    viewer_context: dict | None = None,
 ) -> TopologySnapshot:
     """Persist the enterprise snapshot, graph, and interactive topology.
 
@@ -355,7 +360,10 @@ def write_enterprise_artifacts(
             snapshot,
             viewer_context={
                 "last_discovered": snapshot.created_at or "unrecorded",
+                **dict(viewer_context or {}),
             },
+            site_catalog=site_catalog,
+            site_overrides=site_overrides,
         ).render(),
         encoding="utf-8",
     )

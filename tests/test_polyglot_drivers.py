@@ -265,6 +265,27 @@ def _wave1():
     )
 
 
+class RoutingNormalizationTests(unittest.TestCase):
+    def test_every_wave1_driver_emits_vendor_neutral_ospf_and_bgp(self) -> None:
+        for driver, outputs, hint in _wave1():
+            with self.subTest(driver=driver.platform_id):
+                discovery, _transport = _discover(
+                    driver, outputs, hint=hint
+                )
+                protocols = {item.protocol for item in discovery.result.neighbors}
+                self.assertIn("ospf", protocols)
+                self.assertIn("bgp", protocols)
+                routing = discovery.result.device.metadata["routing_evidence"]
+                self.assertTrue(routing["ospf_adjacencies"])
+                self.assertTrue(routing["bgp_sessions"])
+                session = routing["bgp_sessions"][0]
+                self.assertTrue(session["peer_address"])
+                self.assertTrue(session["remote_as"])
+                self.assertIn(
+                    session["state"],
+                    {"established", "active", "idle", "connect"},
+                )
+
 class NXOSTests(unittest.TestCase):
     def test_identity_management_vrf_and_vpc(self) -> None:
         from founderos_atlas.platforms.drivers import CiscoNXOSDriver

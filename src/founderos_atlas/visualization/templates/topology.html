@@ -6,31 +6,91 @@
   <title>Atlas Topology Viewer</title>
   <script src="__CYTOSCAPE_CDN__"></script>
   <style>
-    :root { color-scheme: light; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+    :root {
+      color-scheme: light;
+      --font-sans: "Segoe UI Variable Text", "Segoe UI", Inter, ui-sans-serif, system-ui, sans-serif;
+      --ink: #0f172a;
+      --muted: #475569;
+      --subtle: #64748b;
+      --line: #cbd5e1;
+      --line-strong: #94a3b8;
+      --surface: #ffffff;
+      --surface-muted: #f8fafc;
+      --accent: #2563eb;
+      --accent-dark: #1d4ed8;
+      --edge-physical: #475569;
+      --edge-routed: #2563eb;
+      --edge-adjacency: #64748b;
+      --edge-peer: #7c3aed;
+      --edge-layer3: #0369a1;
+      --role-router: #3b82f6;
+      --role-switch: #0ea5e9;
+      --role-server: #64748b;
+      --role-host: #6366f1;
+      --role-firewall: #ef4444;
+      --role-unresolved: #94a3b8;
+      --role-site: #4f46e5;
+      font-family: var(--font-sans);
+      font-synthesis: none;
+      text-rendering: optimizeLegibility;
+    }
     * { box-sizing: border-box; }
-    body { margin: 0; color: #172033; background: #f3f6fb; }
-    header { display: flex; gap: 16px; align-items: center; padding: 14px 18px; background: #111827; color: white; }
-    header h1 { margin: 0; font-size: 18px; white-space: nowrap; }
-    #search { flex: 1; max-width: 440px; border: 0; border-radius: 6px; padding: 9px 11px; }
-    button { border: 1px solid #94a3b8; border-radius: 6px; padding: 8px 12px; background: white; cursor: pointer; }
+    html, body { min-height: 100%; }
+    body {
+      min-height: 100vh; margin: 0; display: flex; flex-direction: column;
+      color: var(--ink); background: #f3f6fb; line-height: 1.45;
+      -webkit-font-smoothing: antialiased;
+    }
+    button, input, select, textarea { font: inherit; }
+    header {
+      display: grid; grid-template-columns: auto minmax(180px, 1fr) auto auto auto auto auto;
+      gap: 9px 12px; align-items: center; padding: 11px 16px;
+      background: #111827; color: white; border-bottom: 1px solid #263244;
+    }
+    header h1 { margin: 0; font-size: 18px; line-height: 1.2; white-space: nowrap; letter-spacing: -.01em; }
+    #search { width: 100%; max-width: 440px; border: 1px solid #64748b; border-radius: 6px; padding: 8px 10px; color: var(--ink); background: #fff; }
+    button { border: 1px solid var(--line-strong); border-radius: 6px; padding: 7px 11px; background: white; color: var(--ink); cursor: pointer; }
+    button:hover { border-color: #64748b; background: #f8fafc; }
+    button:focus-visible, input:focus-visible, select:focus-visible {
+      outline: 2px solid #60a5fa; outline-offset: 2px;
+    }
     .layout-label { color: #cbd5e1; font-size: 12px; display: flex; align-items: center; gap: 6px; white-space: nowrap; }
-    .layout-label select { border: 0; border-radius: 6px; padding: 7px 9px; background: white; color: #172033; cursor: pointer; }
-    main { display: grid; grid-template-columns: minmax(0, 1fr) 300px; height: calc(100vh - 62px); }
-    .graph-wrap { position: relative; min-width: 0; }
-    #cy { width: 100%; height: 100%; min-height: 520px; background: white; }
-    #legend { position: absolute; left: 14px; bottom: 14px; z-index: 5; background: rgba(255,255,255,0.94);
-      border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px 12px; font-size: 11px; color: #475569;
-      box-shadow: 0 1px 3px rgba(15,23,42,0.08); max-width: 210px; }
-    #legend h3 { margin: 0 0 7px; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: #94a3b8; }
+    .layout-label select { border: 1px solid #64748b; border-radius: 6px; padding: 6px 8px; background: white; color: var(--ink); cursor: pointer; }
+    .summary {
+      grid-column: 1 / -1; margin: 0; color: #cbd5e1; font-size: 12px;
+      line-height: 1.35; font-variant-numeric: tabular-nums;
+    }
+    main { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 280px; }
+    main.details-collapsed { grid-template-columns: minmax(0, 1fr); }
+    main.details-collapsed aside { display: none; }
+    .graph-wrap { position: relative; min-width: 0; min-height: 420px; }
+    #cy { width: 100%; height: 100%; min-height: 420px; background: white; }
+    #legend { position: absolute; left: 14px; bottom: 14px; z-index: 5; background: rgba(255,255,255,0.97);
+      border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; font-size: 12px; color: var(--muted);
+      box-shadow: 0 1px 2px rgba(15,23,42,0.05); max-width: 220px; }
+    #legend h3 { margin: 0 0 7px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--subtle); }
     #legend .row { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
     #legend .swatch { width: 26px; flex: 0 0 26px; }
-    #legend .line { display: inline-block; width: 26px; height: 0; border-top-width: 2.5px; }
+    #legend .line { display: inline-block; width: 26px; height: 0; border-top-width: 1.5px; }
     #legend .dot { width: 13px; height: 13px; border-radius: 3px; flex: 0 0 13px; }
     #legend .divider { height: 1px; background: #eef2f7; margin: 8px 0; }
-    aside { overflow: auto; padding: 18px; border-left: 1px solid #dbe2ea; background: #f8fafc; }
+    aside { overflow: auto; padding: 18px; border-left: 1px solid var(--line); background: var(--surface-muted); }
     aside h2 { margin-top: 0; font-size: 17px; }
     .field { margin-bottom: 12px; }
     .field strong { display: block; color: #475569; font-size: 12px; text-transform: uppercase; }
+    .status-badge { display: inline-flex; align-items: center; padding: 2px 7px;
+      margin-left: 6px; border: 1px solid #cbd5e1; border-radius: 999px;
+      background: #fff; color: #475569; font-size: 11px; font-weight: 650; }
+    .status-badge.operator { border-color: #93c5fd; background: #eff6ff; color: #1d4ed8; }
+    .status-badge.conflict { border-color: #fbbf24; background: #fffbeb; color: #92400e; }
+    .edit-panel { margin-top: 14px; padding: 12px; border: 1px solid #bfdbfe;
+      border-radius: 8px; background: #eff6ff; }
+    .edit-panel label { display: block; margin-bottom: 8px; color: #334155;
+      font-size: 12px; font-weight: 650; }
+    .edit-panel select, .edit-panel input { width: 100%; margin-top: 4px;
+      border: 1px solid #94a3b8; border-radius: 6px; padding: 7px 8px; background: #fff; }
+    .edit-panel .edit-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+    #edit-mode[aria-pressed="true"] { border-color: #60a5fa; background: #dbeafe; color: #1d4ed8; }
     /* PR-044A (CONSOLE): device actions on a managed node. */
     .node-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 16px; padding-top: 14px; border-top: 1px solid #e2e8f0; }
     .node-action { display: inline-block; padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; color: #0f172a; font-size: 12px; text-decoration: none; }
@@ -53,6 +113,11 @@
     /* PR-050A: the way back down. Chips for every open site. */
     #open-sites { position: absolute; top: 12px; left: 14px; z-index: 6;
       display: flex; gap: 8px; flex-wrap: wrap; }
+    #viewport-hint { position: absolute; top: 12px; right: 14px; z-index: 6;
+      max-width: 290px; padding: 6px 9px; border: 1px solid var(--line);
+      border-radius: 6px; background: rgba(255,255,255,.96); color: var(--muted);
+      box-shadow: 0 1px 2px rgba(15,23,42,.05); font-size: 12px; }
+    #viewport-hint[hidden] { display: none; }
     .site-chip { display: inline-flex; align-items: center; gap: 7px;
       background: #eef2ff; border: 1px solid #c7d2fe; border-radius: 999px;
       padding: 5px 8px 5px 12px; font-size: 12px; font-weight: 600;
@@ -66,8 +131,27 @@
     .node-action-primary { background: #2563eb; border-color: #2563eb; color: #fff; }
     .node-action-primary:hover { background: #1d4ed8; border-color: #1d4ed8; }
     #tooltip { position: fixed; left: 0; top: 0; display: none; z-index: 10; pointer-events: none; padding: 7px 10px; border-radius: 6px; background: rgba(17,24,39,0.92); color: white; font-size: 12px; box-shadow: 0 4px 12px rgba(15,23,42,0.25); will-change: transform; max-width: 320px; }
-    .summary { margin-left: auto; color: #cbd5e1; font-size: 12px; }
-    @media (max-width: 760px) { main { grid-template-columns: 1fr; } aside { display: none; } .summary { display: none; } }
+    @media (max-width: 1050px) {
+      header { display: flex; flex-wrap: wrap; }
+      header h1 { flex: 0 0 auto; }
+      #search { flex: 1 1 300px; }
+      .summary { flex: 1 0 100%; }
+      main { display: block; position: relative; }
+      .graph-wrap { height: 100%; }
+      aside {
+        position: absolute; z-index: 9; top: 12px; right: 12px;
+        width: min(340px, calc(100% - 24px)); max-height: calc(100% - 24px);
+        border: 1px solid var(--line); border-radius: 8px;
+        box-shadow: 0 8px 24px rgba(15,23,42,.14);
+      }
+    }
+    @media (max-width: 720px) {
+      header { display: grid; grid-template-columns: 1fr 1fr; }
+      header h1, #search, .summary { grid-column: 1 / -1; }
+      .layout-label { min-width: 0; }
+      .layout-label select { width: 100%; }
+      #legend { display: none; }
+    }
   </style>
 </head>
 <body>
@@ -76,8 +160,10 @@
     <input id="search" type="search" placeholder="Search hostname, IP, vendor, or platform" aria-label="Search topology">
     <label class="layout-label" id="view-label" style="display:none">View
       <select id="view-mode" aria-label="Topology view level">
-        <option value="sites" selected>Sites</option>
-        <option value="full">Full topology</option>
+        <option value="sites" selected>Site overview</option>
+        <option value="full">All devices (pan)</option>
+        <option value="ospf">OSPF areas</option>
+        <option value="bgp">BGP autonomous systems</option>
       </select>
     </label>
     <label class="layout-label">Layout
@@ -90,29 +176,34 @@
         <option value="grid">Grid</option>
       </select>
     </label>
-    <button id="fit" type="button">Fit graph</button>
+    <button id="fit" type="button" title="Reset at a scale where labels remain readable">Reset view</button>
+    <button id="edit-mode" type="button" aria-pressed="false" title="Curate persistent site membership" hidden>Edit topology</button>
+    <button id="details-toggle" type="button" aria-controls="details" aria-expanded="true">Details</button>
     <span class="summary" id="summary"></span>
   </header>
-  <main>
+  <main id="viewer-main">
     <div class="graph-wrap">
       <div id="cy" aria-label="Interactive topology graph"></div>
       <div id="context-menu" role="menu" aria-label="Device actions"></div>
       <div id="open-sites" aria-label="Open sites"></div>
+      <div id="viewport-hint" role="status" aria-live="polite" hidden></div>
       <div id="legend" aria-label="Legend">
         <h3>Links</h3>
-        <div class="row"><span class="swatch"><span class="line" style="border-top-style:solid;border-top-color:#64748b"></span></span> Physical</div>
-        <div class="row"><span class="swatch"><span class="line" style="border-top-style:dashed;border-top-color:#60a5fa"></span></span> Verified routed</div>
-        <div class="row"><span class="swatch"><span class="line" style="border-top-style:dashed;border-top-color:#cbd5e1"></span></span> Routing adjacency</div>
-        <div class="row"><span class="swatch"><span class="line" style="border-top-style:dotted;border-top-color:#c4b5fd"></span></span> BGP peering</div>
+        <div class="row"><span class="swatch"><span class="line" style="border-top-style:solid;border-top-color:var(--edge-physical)"></span></span> Physical</div>
+        <div class="row"><span class="swatch"><span class="line" style="border-top-style:dashed;border-top-color:var(--edge-routed)"></span></span> Verified routed</div>
+        <div class="row"><span class="swatch"><span class="line" style="border-top-style:dashed;border-top-color:var(--edge-adjacency)"></span></span> Routing adjacency</div>
+        <div class="row"><span class="swatch"><span class="line" style="border-top-style:dotted;border-top-color:var(--edge-peer)"></span></span> BGP peering</div>
         <div class="divider"></div>
         <h3>Devices</h3>
-        <div class="row"><span class="dot" style="background:#3b82f6"></span> Router</div>
-        <div class="row"><span class="dot" style="background:#0ea5e9"></span> Switch</div>
-        <div class="row"><span class="dot" style="background:#64748b"></span> Server</div>
-        <div class="row"><span class="dot" style="background:#6366f1"></span> Host</div>
-        <div class="row"><span class="dot" style="background:#ef4444"></span> Firewall</div>
-        <div class="row"><span class="dot" style="background:#cbd5e1;border:1px dashed #94a3b8"></span> Unresolved peer</div>
-        <div class="row" id="legend-site" style="display:none"><span class="dot" style="background:#4f46e5"></span> Site (double-click to open)</div>
+        <div class="row"><span class="dot" style="background:var(--role-router)"></span> Router</div>
+        <div class="row"><span class="dot" style="background:var(--role-switch)"></span> Switch</div>
+        <div class="row"><span class="dot" style="background:var(--role-server)"></span> Server</div>
+        <div class="row"><span class="dot" style="background:var(--role-host)"></span> Host</div>
+        <div class="row"><span class="dot" style="background:var(--role-firewall)"></span> Firewall</div>
+        <div class="row"><span class="dot" style="background:transparent;border:1px dashed var(--role-unresolved)"></span> Unresolved peer</div>
+        <div class="row" id="legend-site" style="display:none"><span class="dot" style="background:transparent;border:1px solid var(--role-site)"></span> Site (double-click to open)</div>
+        <div class="row" id="legend-ospf" style="display:none"><span class="dot" style="background:#eff6ff;border:1px solid #60a5fa"></span> OSPF area boundary</div>
+        <div class="row" id="legend-bgp" style="display:none"><span class="dot" style="background:#f5f3ff;border:1px solid #a78bfa"></span> BGP AS boundary</div>
       </div>
     </div>
     <aside id="details">
@@ -124,6 +215,8 @@
   <script>
     const topologyElements = __TOPOLOGY_ELEMENTS__;
     const snapshotSummary = __SNAPSHOT_SUMMARY__;
+    const siteView = __SITE_VIEW__;
+    const routingView = __ROUTING_VIEW__;
     // Lead with the device count and TOTAL links, then break down only the
     // link kinds that are actually present — so a routed-only fabric never
     // opens with a scary "0 physical links".
@@ -140,14 +233,57 @@
     if (snapshotSummary.unresolved_peers) summaryParts.push(`${snapshotSummary.unresolved_peers} unresolved peer identities`);
     const fullSummaryText = summaryParts.join(' · ');
     document.getElementById('summary').textContent = fullSummaryText;
-    window.syncSummary = isSitesLevel => {
+    window.syncSummary = viewMode => {
       const el = document.getElementById('summary');
-      if (isSitesLevel && (typeof siteView !== 'undefined')) {
+      if (viewMode === 'sites' && (typeof siteView !== 'undefined')) {
         el.textContent = siteView.sites.length + ' sites · ' +
           siteView.aggregated_edges.length + ' inter-site links · ' +
           fullSummaryText;
+      } else if ((viewMode === 'ospf' || viewMode === 'bgp') && routingView[viewMode]) {
+        const view = routingView[viewMode];
+        el.textContent = `${view.groups.length} ${viewMode.toUpperCase()} domains · ` +
+          `${view.covered_devices}/${view.total_devices} devices with evidence · ` +
+          `${view.edge_ids.length} observed links`;
       } else { el.textContent = fullSummaryText; }
     };
+
+    // One rendering contract for DOM text, canvas text, and relationship
+    // colours. CSS owns the tokens; Cytoscape receives their computed values.
+    const rootTokens = getComputedStyle(document.documentElement);
+    const token = name => rootTokens.getPropertyValue(name).trim();
+    const GRAPH_THEME = Object.freeze({
+      fontFamily: token('--font-sans'),
+      ink: token('--ink'),
+      line: token('--line'),
+      lineStrong: token('--line-strong'),
+      accent: token('--accent'),
+      physical: token('--edge-physical'),
+      routed: token('--edge-routed'),
+      adjacency: token('--edge-adjacency'),
+      peer: token('--edge-peer'),
+      layer3: token('--edge-layer3'),
+    });
+    // Supersample enough for clean curves and text, but bound the backing
+    // canvas so a large future estate does not allocate three unbounded 3×
+    // layers. Native 2×/2.5× output is crisp at common desktop scale factors.
+    const RENDER_PIXEL_RATIO = Math.min(
+      2.5, Math.max(2, window.devicePixelRatio || 1)
+    );
+
+    // The embedded Network page has less horizontal room than the standalone
+    // viewer. Keep the canvas full-width there; details remain one click away
+    // as an overlay and open automatically after a selection.
+    const viewerMain = document.getElementById('viewer-main');
+    const detailsToggle = document.getElementById('details-toggle');
+    const compactViewer = window.matchMedia('(max-width: 1050px)');
+    const setDetailsOpen = open => {
+      viewerMain.classList.toggle('details-collapsed', !open);
+      detailsToggle.setAttribute('aria-expanded', String(open));
+      detailsToggle.textContent = open ? 'Hide details' : 'Details';
+    };
+    // An empty details panel must never make the network smaller. It opens
+    // automatically as soon as the operator selects a node or connection.
+    setDetailsOpen(false);
 
     // The ICON is the device role; COLOR/BORDER is operational state —
     // never shape alone (PR-043.1 stencil framework).
@@ -176,14 +312,12 @@
     const cy = cytoscape({
       container: document.getElementById('cy'),
       elements: [...topologyElements.nodes, ...topologyElements.edges],
-      layout: LAYOUTS.tiered,
+      // The real layout is selected below after the site model is known.
+      // A preset avoids flashing a briefly auto-fitted miniature graph.
+      layout: { name: 'preset', fit: false },
       minZoom: 0.2,
       maxZoom: 3,
-      // Render the canvas at (at least) 3× resolution so labels, interface
-      // names and icons stay crisp even on a standard-DPI monitor, where
-      // Cytoscape would otherwise draw everything at 1×. Never render below
-      // the display's own ratio.
-      pixelRatio: Math.max(3, window.devicePixelRatio || 1),
+      pixelRatio: RENDER_PIXEL_RATIO,
       textureOnViewport: false,
       motionBlur: false,
       style: [
@@ -201,18 +335,24 @@
           // not floating away from it.
           'background-width': '92%', 'background-height': '92%',
           'background-position-y': '-8px',
-          'label': 'data(display_label)', 'color': '#0f172a',
+          // Hostname first. Management IP joins the nameplate only when the
+          // operator zooms in; two-line labels at estate scale create blur.
+          'label': 'data(label)', 'color': GRAPH_THEME.ink,
           // Labels are the point of the map: a topology whose names cannot be
           // read is a picture, not a tool. Larger type on a SOLID nameplate —
           // a translucent one let edge lines bleed through the letters, which
           // is most of why the text read as blurry at fit-zoom.
-          'font-size': 14, 'font-weight': 600,
+          'font-family': GRAPH_THEME.fontFamily,
+          'font-size': 13, 'font-weight': 600,
+          // Never paint miniature text. At overview zoom the label disappears
+          // and the icon/tooltip carries identity until the operator zooms in.
+          'min-zoomed-font-size': 11,
           'text-valign': 'bottom', 'text-halign': 'center', 'text-margin-y': -14,
-          'text-wrap': 'wrap', 'line-height': 1.35,
+          'text-wrap': 'wrap', 'text-max-width': 138, 'line-height': 1.3,
           'text-background-color': '#ffffff', 'text-background-opacity': 1,
           'text-background-shape': 'round-rectangle', 'text-background-padding': 4,
-          'text-border-color': '#cbd5e1', 'text-border-width': 1, 'text-border-opacity': 1,
-          'width': 66, 'height': 74,
+          'text-border-color': GRAPH_THEME.lineStrong, 'text-border-width': 1, 'text-border-opacity': 1,
+          'width': 68, 'height': 76,
           'border-width': 0,
           // The nameplate is part of the node for pointer purposes -- moving
           // the cursor from icon to label must not fire a mouseout.
@@ -222,40 +362,73 @@
           'transition-duration': '0.15s',
           'transition-timing-function': 'ease-out'
         }},
-        { selector: 'node[kind = "observed"]', style: { 'opacity': 0.85 }},
-        // PR-050 (SKYLINE): a site is a PLACE on the diagram -- larger
-        // glyph, bolder nameplate. Aggregated links always carry their
-        // count; the constituent links are one double-click away.
+        { selector: 'node[kind = "observed"]', style: { 'opacity': 0.78 }},
+        { selector: 'node.label-detailed[kind != "site"][kind != "protocol-domain"]', style: {
+          'label': 'data(display_label)'
+        }},
+        { selector: 'node.label-suppressed', style: { 'label': '' }},
+        // A folded site is a quiet cloud with its compact name INSIDE the
+        // artwork. This stays legible at overview scale and removes the
+        // floating nameplates that made the map feel diagram-generator-like.
         { selector: 'node[kind = "site"]', style: {
-          'width': 165, 'height': 165, 'font-weight': 800,
+          'label': 'data(display_label)',
+          'width': 158, 'height': 112,
+          'font-size': 11, 'font-weight': 650,
+          'min-zoomed-font-size': 9,
           'background-image': 'data(stencil)',
-          // fit alone decides the size: mixing fit with %-sizing made
-          // cytoscape fall back to the image's intrinsic pixels and clip.
           'background-fit': 'contain',
           'background-clip': 'none',
-          // The name rides in a solid blue pill above the badge -- the
-          // circular badge itself stays clean.
-          'text-valign': 'top', 'text-halign': 'center',
-          'text-margin-y': -12,
-          'color': '#ffffff',
-          'text-background-color': '#2563eb', 'text-background-opacity': 1,
-          'text-background-shape': 'round-rectangle',
-          'text-background-padding': 6,
-          'text-border-color': '#1d4ed8', 'text-border-width': 1,
-          'text-border-opacity': 1
+          'background-width': '100%', 'background-height': '100%',
+          'background-position-y': '0%',
+          'text-valign': 'center', 'text-halign': 'center',
+          // The visual centre of the cloud body is slightly below its SVG
+          // centre because of the upper cloud lobes.
+          'text-margin-y': 11,
+          'text-wrap': 'wrap', 'text-max-width': 102,
+          'color': GRAPH_THEME.ink,
+          'text-background-opacity': 0, 'text-border-width': 0
         }},
-        // The centre of the estate wears the globe.
-        { selector: 'node.site-hub', style: {
-          'background-image': 'data(hub_stencil)',
-          'width': 185, 'height': 185
+        { selector: 'node[kind = "site"][site_type = "wan"]', style: {
+          'width': 176, 'height': 122, 'font-weight': 700
+        }},
+        { selector: 'node[kind = "site"][site_type = "internet"]', style: {
+          // Internet remains visually distinct and appears only for an
+          // explicitly typed catalog entry.
+          'width': 126, 'height': 126, 'text-margin-y': 0,
+          'text-background-color': '#ffffff', 'text-background-opacity': 0.88,
+          'text-background-shape': 'round-rectangle',
+          'text-background-padding': 3
+        }},
+        // Dedicated control-plane views use quiet compound boundaries. The
+        // device icons remain untouched inside them; only explicit evidence
+        // creates a domain.
+        { selector: 'node[kind = "protocol-domain"]', style: {
+          'shape': 'round-rectangle', 'background-image': 'none',
+          'background-color': '#eff6ff', 'background-opacity': 0.42,
+          'border-color': '#60a5fa', 'border-width': 1,
+          'border-style': 'solid', 'padding': 28,
+          'label': 'data(label)', 'font-family': GRAPH_THEME.fontFamily,
+          'font-size': 13, 'font-weight': 700, 'color': '#1e3a8a',
+          'text-valign': 'top', 'text-halign': 'left',
+          'text-margin-x': 8, 'text-margin-y': -8,
+          'text-background-opacity': 0, 'text-border-width': 0,
+          'z-compound-depth': 'bottom'
+        }},
+        { selector: 'node[kind = "protocol-domain"][protocol = "bgp"]', style: {
+          'background-color': '#f5f3ff', 'border-color': '#a78bfa',
+          'color': '#5b21b6'
+        }},
+        { selector: 'node.protocol-boundary', style: {
+          'border-color': '#f59e0b', 'border-width': 2,
+          'border-style': 'double'
         }},
         // State ring: a rounded halo around the icon, only when it means
         // something. `background-opacity` stays 0 so the ring frames the
         // picture rather than boxing it.
-        { selector: 'node[change = "new"]', style: { 'border-color': '#16a34a', 'border-width': 3, 'border-opacity': 0.9 }},
-        { selector: 'node[change = "changed"]', style: { 'border-color': '#f59e0b', 'border-width': 3, 'border-opacity': 0.9 }},
-        { selector: 'node[change = "removed"]', style: { 'border-color': '#dc2626', 'border-width': 3, 'border-style': 'dashed', 'opacity': 0.7 }},
-        { selector: 'node:selected', style: { 'border-color': '#2563eb', 'border-width': 3, 'border-opacity': 1 }},
+        { selector: 'node[change = "new"]', style: { 'border-color': '#16a34a', 'border-width': 2, 'border-opacity': 0.95 }},
+        { selector: 'node[change = "changed"]', style: { 'border-color': '#d97706', 'border-width': 2, 'border-opacity': 0.95 }},
+        { selector: 'node[change = "removed"]', style: { 'border-color': '#dc2626', 'border-width': 2, 'border-style': 'dashed', 'opacity': 0.7 }},
+        { selector: 'node:selected', style: { 'border-color': GRAPH_THEME.accent, 'border-width': 2, 'border-opacity': 1 }},
 
         // Base edge: a soft, rounded line. The STYLE carries the
         // relationship (solid = physical, dashed = routed, dotted =
@@ -264,27 +437,26 @@
         // Thin, straight links keep the devices the focus. Style carries the
         // relationship: solid = physical, dashed = routed, dotted = observed.
         { selector: 'edge', style: {
-          'width': 1.6, 'line-color': '#cbd5e1', 'curve-style': 'straight',
+          'width': 1.2, 'line-color': GRAPH_THEME.adjacency, 'curve-style': 'straight',
           'target-arrow-shape': 'none',
           'transition-property': 'opacity, line-color, underlay-opacity',
           'transition-duration': '0.15s',
           'transition-timing-function': 'ease-out'
         }},
-        { selector: 'edge[relationship = "physical"]', style: { 'line-style': 'solid', 'line-color': '#64748b', 'width': 2 }},
-        { selector: 'edge[relationship = "verified-routed"]', style: { 'line-style': 'dashed', 'line-color': '#60a5fa', 'width': 1.8 }},
-        // Deliberately the quietest link kind — but #cbd5e1 vanished into the
-        // page at fit zoom, reading as smudge rather than structure.
-        { selector: 'edge[relationship = "routing-adjacency"]', style: { 'line-style': 'dashed', 'line-color': '#a8b6c8' }},
-        { selector: 'edge[relationship = "protocol-peer"]', style: { 'line-style': 'dotted', 'line-color': '#c4b5fd', 'width': 1.8 }},
-        { selector: 'edge[relationship = "layer-3"]', style: { 'line-style': 'dashed', 'line-color': '#7dd3fc' }},
-        { selector: 'edge[relationship = "inferred"]', style: { 'line-style': 'dotted', 'line-color': '#e2e8f0' }},
-        { selector: 'edge[relationship = "unknown"]', style: { 'line-style': 'dotted', 'line-color': '#eef2f7' }},
+        { selector: 'edge[relationship = "physical"]', style: { 'line-style': 'solid', 'line-color': GRAPH_THEME.physical, 'width': 1.5 }},
+        { selector: 'edge[relationship = "verified-routed"]', style: { 'line-style': 'dashed', 'line-color': GRAPH_THEME.routed, 'width': 1.35 }},
+        { selector: 'edge[relationship = "routing-adjacency"]', style: { 'line-style': 'dashed', 'line-color': GRAPH_THEME.adjacency, 'width': 1.25, 'opacity': 0.62 }},
+        { selector: 'edge[relationship = "protocol-peer"]', style: { 'line-style': 'dotted', 'line-color': GRAPH_THEME.peer, 'width': 1.25, 'opacity': 0.55 }},
+        { selector: 'edge[relationship = "layer-3"]', style: { 'line-style': 'dashed', 'line-color': GRAPH_THEME.layer3, 'width': 1.25 }},
+        { selector: 'edge[relationship = "inferred"]', style: { 'line-style': 'dotted', 'line-color': GRAPH_THEME.adjacency, 'width': 1.1, 'opacity': 0.5 }},
+        { selector: 'edge[relationship = "unknown"]', style: { 'line-style': 'dotted', 'line-color': GRAPH_THEME.adjacency, 'width': 1.1, 'opacity': 0.5 }},
 
         // PR-050: aggregate styling comes AFTER the relationship rules on
         // purpose -- a folded link keeps its own confident look.
         { selector: 'edge[kind = "aggregate"]', style: {
-          'label': 'data(display_label)', 'font-size': 13, 'font-weight': 600,
-          'color': '#1e293b', 'text-background-color': '#ffffff',
+          'label': 'data(display_label)', 'font-family': GRAPH_THEME.fontFamily,
+          'font-size': 12, 'font-weight': 600, 'min-zoomed-font-size': 10,
+          'color': GRAPH_THEME.ink, 'text-background-color': '#ffffff',
           'text-background-opacity': 1, 'text-background-padding': 5,
           'text-background-shape': 'round-rectangle',
           'text-border-color': '#bfdbfe', 'text-border-width': 1,
@@ -292,37 +464,43 @@
           // The reference look: dashed blue runs with a dot where the link
           // meets each badge.
           'curve-style': 'bezier', 'control-point-step-size': 60,
-          'width': 2.5, 'line-color': '#2563eb', 'line-style': 'dashed',
+          'width': 1.75, 'line-color': GRAPH_THEME.routed, 'line-style': 'dashed',
           'line-dash-pattern': [7, 6],
           'source-arrow-shape': 'circle', 'target-arrow-shape': 'circle',
           'source-arrow-color': '#2563eb', 'target-arrow-color': '#2563eb',
           'arrow-scale': 0.75
         }},
         { selector: 'edge[kind = "aggregate"][relationship = "physical"]',
-          style: { 'line-style': 'solid', 'width': 3.2 }},
+          style: { 'line-style': 'solid', 'width': 2 }},
         { selector: 'edge[kind = "aggregate"][relationship = "unknown"]',
           style: { 'line-color': '#93c5fd',
                    'source-arrow-color': '#93c5fd',
-                   'target-arrow-color': '#93c5fd', 'width': 2 }},
+                   'target-arrow-color': '#93c5fd', 'width': 1.5 }},
 
         // Hover lift (#5): the focused device grows and its links brighten;
         // everything else fades so the neighbourhood stands out.
         { selector: 'node.node-lift', style: {
-          'underlay-color': '#2563eb', 'underlay-opacity': 0.14,
-          'underlay-padding': 12, 'underlay-shape': 'ellipse',
+          'underlay-color': GRAPH_THEME.accent, 'underlay-opacity': 0.10,
+          'underlay-padding': 8, 'underlay-shape': 'ellipse',
           'z-index': 999
         }},
+        { selector: 'node.drop-target', style: {
+          'underlay-color': '#2563eb', 'underlay-opacity': 0.16,
+          'underlay-padding': 22, 'underlay-shape': 'ellipse',
+          'border-color': '#2563eb', 'border-width': 2,
+          'z-index': 997
+        }},
         { selector: 'edge.edge-hi', style: {
-          'line-color': '#f59e0b', 'z-index': 998,
+          'line-color': '#f59e0b', 'opacity': 1, 'z-index': 998,
           'underlay-color': '#f59e0b', 'underlay-opacity': 0.12,
           'underlay-padding': 5
         }},
-        { selector: '.faded', style: { 'opacity': 0.22 }},
+        { selector: '.faded', style: { 'opacity': 0.18 }},
 
         // Hover and selection reveal the interface names at each end —
         // Packet-Tracer style, but only when you ask for them.
         { selector: 'edge.hover, edge:selected', style: {
-          'line-color': '#f59e0b',
+          'line-color': '#f59e0b', 'opacity': 1,
           'underlay-color': '#f59e0b', 'underlay-opacity': 0.12,
           'underlay-padding': 5,
           'source-label': 'data(source_interface)', 'target-label': 'data(target_interface)',
@@ -333,9 +511,22 @@
           'text-border-color': '#fcd34d', 'text-border-width': 1, 'text-border-opacity': 1
         }},
         { selector: '.search-muted', style: { 'opacity': 0.15 }},
-        { selector: '.search-match', style: { 'border-color': '#f59e0b', 'border-width': 4, 'opacity': 1 }}
+        { selector: '.search-match', style: { 'border-color': '#d97706', 'border-width': 2, 'opacity': 1 }}
       ]
     });
+
+    const resizeGraph = () => requestAnimationFrame(() => cy.resize());
+    detailsToggle.addEventListener('click', () => {
+      const opening = viewerMain.classList.contains('details-collapsed');
+      setDetailsOpen(opening);
+      resizeGraph();
+    });
+    const revealDetails = () => {
+      if (viewerMain.classList.contains('details-collapsed')) {
+        setDetailsOpen(true);
+        resizeGraph();
+      }
+    };
 
     // Layout switcher.
     const layoutSelect = document.getElementById('layout');
@@ -347,7 +538,11 @@
           return;
         }
         const chosen = LAYOUTS[layoutSelect.value] || LAYOUTS.force;
-        cy.layout(chosen).run();
+        cy.one('layoutstop', () => requestAnimationFrame(() => {
+          applyReadableViewport(false);
+          finishRebuild((viewSelect && viewSelect.value) || 'full');
+        }));
+        cy.layout({ ...chosen, fit: false }).run();
       });
     }
 
@@ -362,7 +557,45 @@
     // end of the URL. Served over http(s), Atlas is there; opened from
     // disk (file://), it is not.
     const servedByAtlas = /^https?:$/.test(window.location.protocol);
+    const editButton = document.getElementById('edit-mode');
+    let editMode = false;
+    let selectedDetailNodeId = null;
+    const siteOptionsHtml = selected => (siteView.site_options || []).map(site =>
+      `<option value="${escapeHtml(site.site_id)}"${site.site_id === selected ? ' selected' : ''}>` +
+      `${escapeHtml(site.name)} · ${escapeHtml(site.site_type)}</option>`
+    ).join('');
+    if (servedByAtlas && (siteView.site_options || []).length) {
+      editButton.hidden = false;
+      editButton.addEventListener('click', () => {
+        editMode = !editMode;
+        editButton.setAttribute('aria-pressed', String(editMode));
+        editButton.textContent = editMode ? 'Finish editing' : 'Edit topology';
+        if (editMode) {
+          viewSelect.value = 'sites';
+          rebuildView();
+          showEditHint('Edit mode: double-click the source site, then drag a device onto a highlighted destination cloud.');
+        } else {
+          viewportHint.hidden = true;
+          rebuildView();
+        }
+        if (selectedDetailNodeId) {
+          const node = cy.getElementById(selectedDetailNodeId);
+          if (node.length) { details.innerHTML = nodeDetails(node.data()); }
+        }
+      });
+    }
     const nodeDetails = data => {
+      if (data.kind === 'protocol-domain') {
+        const name = data.protocol === 'ospf' ? 'OSPF area' : 'BGP autonomous system';
+        return `
+      <h2>${escapeHtml(data.label)}</h2>
+      <div class="field"><strong>Control-plane domain</strong>${name}</div>
+      <div class="field"><strong>Devices represented</strong>${escapeHtml(data.count || 0)}</div>
+      ${data.area_id ? `<div class="field"><strong>Area</strong>${escapeHtml(data.area_id)}</div>` : ''}
+      ${data.local_as ? `<div class="field"><strong>Local AS</strong>${escapeHtml(data.local_as)}</div>` : ''}
+      <div class="field"><strong>VRF</strong>${escapeHtml(data.vrf || 'default')}</div>
+      <p style="font-size:13px;color:#475569">This boundary is derived from normalized configured and operational evidence. Disconnected reuse of the same identifier is kept as a separate domain.</p>`;
+      }
       if (data.kind === 'site') {
         const roles = Object.entries(data.roles || {})
           .map(([role, count]) => `${escapeHtml(role)}: ${count}`).join(', ');
@@ -370,13 +603,25 @@
         return `
       <h2>${escapeHtml(data.label)}</h2>
       <div class="field"><strong>Site</strong>${data.count} devices</div>
+      <div class="field"><strong>Site type</strong>${escapeHtml(data.site_type || 'site')}</div>
       <div class="field"><strong>Roles</strong>${roles || 'none'}</div>
       <div class="field"><strong>Membership evidence</strong>${escapeHtml(data.evidence || '')}</div>
       <div class="node-actions">
         <button class="node-action node-action-primary" type="button"
                 onclick="toggleSite('${escapeHtml(data.site_id)}')">${isOpen ? 'Collapse site' : 'Open site'}</button>
         <span style="font-size:12px;color:#64748b;align-self:center">Tip: double-click any device inside an open site to fold it back.</span>
-      </div>`;
+      </div>
+      ${editMode && data.site_id !== '__none__' ? `
+      <div class="edit-panel">
+        <label>Site illustration
+          <select id="site-type-select">
+            ${['site','wan','internet','cloud'].map(value =>
+              `<option value="${value}"${value === data.site_type ? ' selected' : ''}>${value}</option>`
+            ).join('')}
+          </select>
+        </label>
+        <div class="edit-actions"><button type="button" onclick="saveSiteType()">Save site type</button></div>
+      </div>` : ''}`;
       }
       const unresolved = data.kind === 'observed';
       const heading = unresolved && (data.observation === 'routing-adjacency' || data.observation === 'protocol-peer')
@@ -411,6 +656,38 @@
       <div class="field"><strong>Last discovered</strong>${escapeHtml(data.last_discovered ?? 'unrecorded')}</div>
       <div class="field"><strong>Configuration collected</strong>${escapeHtml(data.config_collected ?? 'No')}</div>
       <div class="field"><strong>Last configuration change</strong>${escapeHtml(data.last_config_change ?? 'None recorded')}</div>`;
+      const assignment = data.site_assignment || {};
+      const sourceBadge = assignment.source === 'operator'
+        ? '<span class="status-badge operator">Operator assigned</span>'
+        : `<span class="status-badge">${escapeHtml(assignment.source || 'unknown')}</span>`;
+      const conflictBadge = assignment.conflict
+        ? '<span class="status-badge conflict">Evidence conflict</span>' : '';
+      html += `
+      <div class="field"><strong>Effective site</strong>${escapeHtml(assignment.effective_site_name || 'Site not identified')} ${sourceBadge}${conflictBadge}</div>`;
+      if (assignment.conflict) {
+        html += `<div class="field"><strong>Underlying inference</strong>${escapeHtml(assignment.inferred_site_name || 'unknown')}</div>`;
+      }
+      if ((data.ospf_memberships || []).length) {
+        html += `<div class="field"><strong>OSPF membership</strong>${escapeHtml(data.ospf_memberships.map(item => `Area ${item.area_id} (${item.vrf})`).join(', '))}</div>`;
+      }
+      if ((data.bgp_memberships || []).length) {
+        html += `<div class="field"><strong>BGP AS</strong>${escapeHtml(data.bgp_memberships.map(item => `AS ${item.local_as} (${item.vrf})`).join(', '))}</div>`;
+      }
+      if (editMode) {
+        html += `
+      <div class="edit-panel">
+        <label>Persistent site assignment
+          <select id="site-assignment-select">${siteOptionsHtml(assignment.effective_site_id)}</select>
+        </label>
+        <label>Reason <input id="site-assignment-reason" placeholder="Why is this correction needed?"></label>
+        <div class="edit-actions">
+          <button type="button" onclick="saveSelectedSite()">Save assignment</button>
+          ${assignment.source === 'operator' ? '<button type="button" onclick="revertSelectedSite()">Return to automatic</button>' : ''}
+          ${assignment.subject_key ? '<button type="button" onclick="undoSelectedSite()">Undo last change</button>' : ''}
+        </div>
+        <p style="margin:8px 0 0;font-size:11px;color:#475569">Saved corrections survive restarts and future discovery. Discovery evidence remains visible underneath.</p>
+      </div>`;
+      }
       html += nodeActions(data);
       return html;
     };
@@ -498,6 +775,89 @@
       if (current === slot && actions) { slot.innerHTML = accessButtons(actions); }
     };
 
+    const selectedData = () => {
+      if (!selectedDetailNodeId) { return null; }
+      const node = cy.getElementById(selectedDetailNodeId);
+      return node.length ? node.data() : null;
+    };
+    const curationIdentity = data => ({
+      device_id: data.id,
+      hostname: data.hostname || data.label,
+      management_ip: data.management_ip,
+      serial_number: data.serial_number,
+      vendor: data.vendor,
+      expected_revision: siteView.override_revision || 0,
+    });
+    const curationRequest = async (url, method, payload) => {
+      let response;
+      try {
+        response = await fetch(url, {
+          method, credentials: 'same-origin',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(payload),
+        });
+      } catch (error) {
+        window.alert('Atlas could not be reached. The topology change was not saved.');
+        return null;
+      }
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        window.alert(result.error || 'The topology change could not be saved.');
+        return null;
+      }
+      const query = new URLSearchParams(window.location.search);
+      query.set('curation', String(result.revision || Date.now()));
+      window.location.search = query.toString();
+      return result;
+    };
+    window.saveSelectedSite = async () => {
+      const data = selectedData();
+      const select = document.getElementById('site-assignment-select');
+      if (!data || !select) { return; }
+      const target = (siteView.site_options || []).find(
+        item => item.site_id === select.value);
+      if (!target) { return; }
+      if (!window.confirm(`Persistently assign ${data.label} to ${target.name}?\n\nDiscovery evidence will remain visible and future conflicts will be flagged.`)) {
+        return;
+      }
+      const reason = (document.getElementById('site-assignment-reason') || {}).value || '';
+      await curationRequest('/api/topology/site-assignments', 'PUT', {
+        ...curationIdentity(data), site_id: target.site_id, reason,
+      });
+    };
+    window.revertSelectedSite = async () => {
+      const data = selectedData();
+      if (!data || !window.confirm(`Return ${data.label} to evidence-based automatic site assignment?`)) {
+        return;
+      }
+      await curationRequest('/api/topology/site-assignments/revert', 'POST', {
+        ...curationIdentity(data), reason: 'Returned to automatic inference',
+      });
+    };
+    window.undoSelectedSite = async () => {
+      const data = selectedData();
+      const assignment = data && data.site_assignment;
+      if (!assignment || !assignment.subject_key ||
+          !window.confirm(`Undo the last site-assignment change for ${data.label}?`)) {
+        return;
+      }
+      await curationRequest('/api/topology/site-assignments/undo', 'POST', {
+        subject_key: assignment.subject_key,
+        expected_revision: siteView.override_revision || 0,
+      });
+    };
+    window.saveSiteType = async () => {
+      const data = selectedData();
+      const select = document.getElementById('site-type-select');
+      if (!data || !select) { return; }
+      if (!window.confirm(`Use the ${select.value} illustration for ${data.label}?`)) {
+        return;
+      }
+      await curationRequest(
+        `/api/topology/sites/${encodeURIComponent(data.site_id)}`,
+        'PUT', {site_type: select.value});
+    };
+
     // PR-043.7 (FUSION): clicking any relationship explains WHY Atlas
     // created it, WHICH evidence supports it, and WHAT confidence it has.
     const aggregateDetails = data => {
@@ -565,10 +925,13 @@
     };
 
     cy.on('tap', 'node', event => {
+      revealDetails();
+      selectedDetailNodeId = event.target.id();
       details.innerHTML = nodeDetails(event.target.data());
       hydrateAccessActions();
     });
     cy.on('tap', 'edge', event => {
+      revealDetails();
       const data = event.target.data();
       details.innerHTML = data.kind === 'aggregate'
         ? aggregateDetails(data) : edgeDetails(data);
@@ -653,36 +1016,34 @@
       if (servedByAtlas) { event.preventDefault(); }
     });
 
-    // Labels stay readable at every zoom (PR-048A). Cytoscape scales text
-    // with the canvas, so fitting 40+ devices used to shrink 14px labels to
-    // ~6 effective pixels — the map became a picture. Compensate: as the
-    // operator zooms out, the model-space font grows so the on-screen size
-    // never drops below ~11px; zooming in returns to the designed 14px.
-    // The cap is a judgment call: full compensation at a 76-node fit would
-    // draw 50px model-space labels that collide into mush. 44 keeps an
-    // enterprise-wide fit at ~9 effective px — small but legible — and any
-    // zoom-in quickly reaches the designed 14.
-    const LABEL_PX = 14, LABEL_MIN_EFFECTIVE = 11, LABEL_MODEL_CAP = 44;
-    let labelSyncQueued = false;
-    const syncLabelsToZoom = () => {
-      if (labelSyncQueued) { return; }
-      labelSyncQueued = true;
-      // setTimeout, not requestAnimationFrame: rAF never fires in a hidden
-      // or non-painting tab, which would leave labels stuck at the size of
-      // whatever zoom the tab was at when it lost focus.
-      setTimeout(() => {
-        labelSyncQueued = false;
-        const zoom = cy.zoom() || 1;
-        const size = Math.min(LABEL_MODEL_CAP,
-                              Math.max(LABEL_PX, LABEL_MIN_EFFECTIVE / zoom));
-        cy.nodes().style('font-size', size);
-        cy.nodes('[kind = "site"]').style('font-size',
-          Math.min(LABEL_MODEL_CAP + 10, size * 1.45));
-      }, 50);
+    // Semantic zoom: higher resolution cannot make 3px text readable. Node
+    // labels have an 11px paint floor in the stylesheet; unresolved peers are
+    // additionally label-free at overview scale and remain discoverable by
+    // shape, link style, hover tooltip, search, and the details panel.
+    const PEER_LABEL_ZOOM = 0.9;
+    const DETAIL_LABEL_ZOOM = 1.15;
+    let peerLabelsHidden = null;
+    let detailedLabelsShown = null;
+    const syncSemanticZoom = () => {
+      const zoom = cy.zoom() || 1;
+      const hidePeers = zoom < PEER_LABEL_ZOOM;
+      if (hidePeers !== peerLabelsHidden) {
+        peerLabelsHidden = hidePeers;
+        const peers = cy.nodes('[kind = "observed"]');
+        if (hidePeers) { peers.addClass('label-suppressed'); }
+        else { peers.removeClass('label-suppressed'); }
+      }
+      const showDetails = zoom >= DETAIL_LABEL_ZOOM;
+      if (showDetails !== detailedLabelsShown) {
+        detailedLabelsShown = showDetails;
+        const devices = cy.nodes('[kind != "site"][kind != "protocol-domain"]');
+        if (showDetails) { devices.addClass('label-detailed'); }
+        else { devices.removeClass('label-detailed'); }
+      }
     };
-    cy.on('zoom', syncLabelsToZoom);
-    cy.ready(syncLabelsToZoom);
-    syncLabelsToZoom();
+    cy.on('zoom', syncSemanticZoom);
+    cy.ready(syncSemanticZoom);
+    syncSemanticZoom();
 
 
 
@@ -694,7 +1055,47 @@
     // (cross-site links, BGP sessions to unresolved WAN peers). Every other
     // device sits at its hop distance below that edge, so edge -> firewall
     // -> core -> switches -> access/servers falls out of the graph itself.
-    const TIER_DY = 165, NODE_DX = 175, BAND_GAP = 130;
+    const TIER_DY = 155, NODE_DX = 155, BAND_GAP = 90;
+
+    // A sharp 5px label is still unreadable. The whole-estate view is the
+    // folded site skyline; any view containing individual devices protects a
+    // scale at which 13px canvas labels actually paint at about 11px. Large
+    // graphs therefore pan instead of shrinking themselves into a thumbnail.
+    const READABLE_DEVICE_ZOOM = 0.86;
+    const READABLE_SITE_ZOOM = 0.84;
+    const viewportHint = document.getElementById('viewport-hint');
+
+    function showEditHint(message) {
+      viewportHint.hidden = false;
+      viewportHint.textContent = message;
+    }
+
+    function applyReadableViewport(isSkyline, elements = cy.elements()) {
+      if (!elements || elements.length === 0) { return; }
+      const floor = isSkyline ? READABLE_SITE_ZOOM : READABLE_DEVICE_ZOOM;
+      const padding = isSkyline ? 56 : 72;
+
+      // Release the previous mode's floor while measuring its natural fit.
+      cy.minZoom(0.2);
+      cy.fit(elements, padding);
+      const fittedZoom = cy.zoom();
+      const needsPan = fittedZoom < floor;
+      cy.minZoom(floor);
+      if (needsPan) {
+        cy.zoom(floor);
+        cy.center(elements);
+      }
+
+      viewportHint.hidden = !needsPan;
+      viewportHint.textContent = needsPan
+        ? (isSkyline
+            ? 'Readable scale - drag to pan across sites'
+            : 'Readable scale - drag to pan; Site overview shows the whole estate')
+        : '';
+      peerLabelsHidden = null;
+      detailedLabelsShown = null;
+      syncSemanticZoom();
+    }
 
     function logicalPositions(visibleNodes, visibleEdges) {
       const member = id => (sitesEnabled && siteView.membership[id]) || '__all__';
@@ -852,7 +1253,7 @@
         const p = positions[n.id()];
         if (p) { n.position(p); }
       });
-      cy.fit(undefined, 40);
+      applyReadableViewport(false);
     }
 
     // ---- PR-050 (SKYLINE): the site level ------------------------------
@@ -862,10 +1263,51 @@
     // Default: every site closed (the skyline). Double-click opens a site in
     // place while the others stay closed; View -> Full topology is the whole
     // estate, exactly the pre-SKYLINE map.
-    const siteView = __SITE_VIEW__;
     const sitesEnabled = (siteView.sites || []).length >= 2;
+    const ospfEnabled = (routingView.ospf.groups || []).length > 0;
+    const bgpEnabled = (routingView.bgp.groups || []).length > 0;
     const expandedSites = new Set();
     const viewSelect = document.getElementById('view-mode');
+    if (!sitesEnabled) {
+      const option = viewSelect.querySelector('option[value="sites"]');
+      if (option) { option.remove(); }
+    }
+    if (!ospfEnabled) {
+      const option = viewSelect.querySelector('option[value="ospf"]');
+      if (option) { option.remove(); }
+    }
+    if (!bgpEnabled) {
+      const option = viewSelect.querySelector('option[value="bgp"]');
+      if (option) { option.remove(); }
+    }
+    if (!sitesEnabled) { viewSelect.value = 'full'; }
+
+    function protocolElements(protocol) {
+      const view = routingView[protocol];
+      const relevantEdges = new Set(view.edge_ids || []);
+      const memberIds = new Set(Object.keys(view.membership || {}));
+      const edges = topologyElements.edges.filter(edge => relevantEdges.has(edge.data.id));
+      for (const edge of edges) {
+        memberIds.add(edge.data.source);
+        memberIds.add(edge.data.target);
+      }
+      const parents = (view.groups || []).map(group => ({data: {...group}}));
+      const nodes = topologyElements.nodes
+        .filter(node => memberIds.has(node.data.id))
+        .map(node => {
+          const domains = view.membership[node.data.id] || [];
+          const data = {...node.data};
+          if (domains.length) {
+            data.parent = domains[0];
+            data.protocol_domains = domains;
+          }
+          return {
+            data,
+            classes: domains.length > 1 ? 'protocol-boundary' : '',
+          };
+        });
+      return [...parents, ...nodes, ...edges.map(edge => ({data: {...edge.data}}))];
+    }
 
     function siteElements() {
       const memberOf = siteView.membership;
@@ -875,10 +1317,16 @@
       const els = visible.map(n => ({ data: { ...n.data } }));
       for (const site of siteView.sites) {
         if (!expandedSites.has(site.site_id)) {
+          const searchText = topologyElements.nodes
+            .filter(n => memberOf[n.data.id] === site.site_id)
+            .map(n => [n.data.label, n.data.management_ip, n.data.vendor,
+                       n.data.platform, n.data.os].join(' '))
+            .join(' ');
           els.push({ data: { ...site, accent: '#2563eb', role_label: 'Site',
-                             display_label:
-                               site.label.toUpperCase() + '\n' +
-                               site.count + ' devices' } });
+                             search_text: searchText,
+                             // Count remains in the details pane and tooltip;
+                             // the overview cloud carries only the site name.
+                             display_label: site.label } });
         }
       }
       const stubs = new Map();   // member<->closed-site links, deduplicated
@@ -911,12 +1359,34 @@
     }
 
     function rebuildView() {
-      const full = !sitesEnabled || (viewSelect && viewSelect.value === 'full');
+      const mode = (viewSelect && viewSelect.value) || 'full';
+      const full = mode === 'full';
       cy.elements().remove();
+      if (mode === 'ospf' || mode === 'bgp') {
+        cy.add(protocolElements(mode));
+        document.getElementById('legend-site').style.display = 'none';
+        document.getElementById('legend-ospf').style.display = mode === 'ospf' ? '' : 'none';
+        document.getElementById('legend-bgp').style.display = mode === 'bgp' ? '' : 'none';
+        const protocolLayout = {
+          name: 'cose', animate: false, fit: false, padding: 64,
+          idealEdgeLength: 145, nodeRepulsion: 18000,
+          nodeOverlap: 35, gravity: 0.18, componentSpacing: 170,
+        };
+        cy.one('layoutstop', () => requestAnimationFrame(() => {
+          applyReadableViewport(false);
+          finishRebuild(mode);
+        }));
+        cy.layout(protocolLayout).run();
+        return;
+      }
+      document.getElementById('legend-site').style.display = mode === 'sites' ? '' : 'none';
+      document.getElementById('legend-ospf').style.display = 'none';
+      document.getElementById('legend-bgp').style.display = 'none';
       cy.add(full ? [...topologyElements.nodes, ...topologyElements.edges]
                   : siteElements());
-      // The skyline is a WAN diagram, not a hierarchy: clouds on a ring with
-      // the mesh visible between them. Once a site is opened, an organic
+      // The overview is a WAN-style relationship diagram, not a hierarchy:
+      // site clouds sit on an elliptical ring with the real mesh visible.
+      // Once a site is opened, an organic
       // force layout keeps its devices clustered beside the closed clouds.
       let chosen;
       const wantLogical =
@@ -925,55 +1395,81 @@
         if (wantLogical) {
           cy.layout({ name: 'preset', animate: false, fit: false }).run();
           runLogicalLayout();
-          finishRebuild(false);
+          finishRebuild('full');
           return;
         }
         chosen = LAYOUTS[(layoutSelect && layoutSelect.value) || 'tiered']
           || LAYOUTS.tiered;
       } else if (expandedSites.size === 0) {
-        const siteIds = (siteView.sites || []).map(s => s.id);
-        const degree = Object.fromEntries(siteIds.map(id => [id, 0]));
-        for (const agg of siteView.aggregated_edges) {
-          if (agg.source in degree) { degree[agg.source] += 1; }
-          if (agg.target in degree) { degree[agg.target] += 1; }
+        // Only explicit semantics may influence transit placement. Unknown
+        // membership and graph degree never turn an ordinary site into WAN
+        // or Internet. With exactly one explicit transit domain, centre it;
+        // multiple peer domains remain equals.
+        const transitSites = (siteView.sites || []).filter(
+          site => site.site_type === 'wan' || site.site_type === 'internet');
+        const centre = transitSites.length === 1 ? transitSites[0].id : null;
+        // One explicitly typed WAN/Internet domain may occupy the centre,
+        // like a conventional network overview. If this lab has no such
+        // evidence, no centre cloud is invented: all sites remain peers on
+        // the ring and only their observed inter-site links are drawn.
+        const skylineNodes = cy.nodes('[kind = "site"]').sort(
+          (a, b) => String(a.data('label')).localeCompare(String(b.data('label')))
+        );
+        const ordered = skylineNodes.toArray();
+        let centreNode = null;
+        if (centre) {
+          const centreAt = ordered.findIndex(node => node.id() === centre);
+          if (centreAt >= 0) {
+            centreNode = ordered.splice(centreAt, 1)[0];
+          }
         }
-        // The centre of a WAN diagram is the shared estate, not a city.
-        // "No site evidence" (core, WAN, unassigned) sits in the middle when
-        // it exists; otherwise the strictly-highest-degree site does. In a
-        // full mesh every city ties on degree -- and a tie centres nobody,
-        // because promoting one city over its equals would be a guess.
-        const most = Math.max(1, ...Object.values(degree));
-        const atMost = Object.keys(degree).filter(id => degree[id] === most);
-        const centre = siteIds.includes('site:__none__')
-          ? 'site:__none__'
-          : (atMost.length === 1 ? atMost[0] : null);
-        chosen = { name: 'concentric', animate: false, fit: true, padding: 90,
-                   minNodeSpacing: 130, startAngle: Math.PI / 2,
-                   concentric: n => (centre && n.id() === centre) ? 2 : 1,
-                   levelWidth: () => 1 };
-        cy.nodes('[kind = "site"]').removeClass('site-hub');
-        if (centre) { cy.getElementById(centre).addClass('site-hub'); }
+        const centreX = 390;
+        const centreY = 245;
+        if (centreNode) { centreNode.position({x: centreX, y: centreY}); }
+        if (!centreNode && ordered.length === 1) {
+          ordered[0].position({x: centreX, y: centreY});
+        }
+        const ringCount = ordered.length;
+        const radiusX = Math.max(245, Math.min(390, 78 * ringCount));
+        const radiusY = Math.max(165, Math.min(235, 48 * ringCount));
+        ordered.forEach((node, index) => {
+          if (!centreNode && ringCount === 1) { return; }
+          const angle = -Math.PI / 2 + (2 * Math.PI * index / ringCount);
+          node.position({x: centreX + radiusX * Math.cos(angle),
+                         y: centreY + radiusY * Math.sin(angle)});
+        });
+        applyReadableViewport(true);
+        finishRebuild('sites');
+        return;
       } else if (wantLogical) {
         // Open sites keep the same discipline: tier bands per open site,
         // closed clouds as their own bands.
         cy.layout({ name: 'preset', animate: false, fit: false }).run();
         runLogicalLayout();
-        finishRebuild(false);
+        finishRebuild('sites');
         return;
       } else {
         chosen = { name: 'cose', animate: false, fit: true, padding: 60,
                    idealEdgeLength: 130, nodeRepulsion: 20000,
                    nodeOverlap: 30, gravity: 0.25, componentSpacing: 140 };
       }
-      cy.layout(chosen).run();
-      finishRebuild(!full && expandedSites.size === 0);
+      const isSkyline = !full && expandedSites.size === 0;
+      // COSE can complete asynchronously. Register before run so no layout
+      // can auto-fit after the readable floor has been applied.
+      cy.one('layoutstop', () => requestAnimationFrame(() => {
+        applyReadableViewport(isSkyline);
+        finishRebuild(isSkyline ? 'sites' : mode);
+      }));
+      cy.layout({ ...chosen, fit: false }).run();
     }
 
     // Every rebuild path ends here -- labels, summary and the open-site
     // chips must never depend on WHICH layout branch ran.
-    function finishRebuild(isSkyline) {
-      syncLabelsToZoom();
-      if (window.syncSummary) { window.syncSummary(isSkyline); }
+    function finishRebuild(viewMode) {
+      peerLabelsHidden = null;
+      detailedLabelsShown = null;
+      syncSemanticZoom();
+      if (window.syncSummary) { window.syncSummary(viewMode); }
       syncOpenSiteChips();
     }
 
@@ -1008,37 +1504,124 @@
 
     window.closeAllSites = () => { expandedSites.clear(); rebuildView(); };
 
-    if (sitesEnabled) {
+    // Edit mode has one honest drag meaning: move this device to that site.
+    // Highlight a forgiving destination zone and snap every non-save drag
+    // back into the derived layout so a temporary move never masquerades as
+    // a durable correction.
+    cy.on('grab', 'node', event => {
+      if (!editMode || viewSelect.value !== 'sites') { return; }
+      const data = event.target.data();
+      if (data.kind !== 'discovered') { return; }
+      const current = (data.site_assignment || {}).effective_site_id;
+      cy.nodes('[kind = "site"]').forEach(site => {
+        if (site.data('site_id') !== current) { site.addClass('drop-target'); }
+      });
+      showEditHint('Drop the device anywhere inside a highlighted site cloud to save the assignment.');
+    });
+    cy.on('free', 'node', async event => {
+      if (!editMode || viewSelect.value !== 'sites') { return; }
+      const node = event.target;
+      const data = node.data();
+      cy.nodes('[kind = "site"]').removeClass('drop-target');
+      if (data.kind === 'site') {
+        rebuildView();
+        showEditHint('Site cloud positions are automatic and were not saved. Open a source site and drag its device onto another cloud.');
+        return;
+      }
+      if (data.kind === 'protocol-domain' || data.kind === 'observed') { return; }
+      const point = node.renderedPosition();
+      let target = null;
+      cy.nodes('[kind = "site"]').forEach(site => {
+        const box = site.renderedBoundingBox();
+        const padding = 28;
+        if (point.x >= box.x1 - padding && point.x <= box.x2 + padding &&
+            point.y >= box.y1 - padding && point.y <= box.y2 + padding) {
+          target = site;
+        }
+      });
+      if (!target || target.data('site_id') ===
+          (data.site_assignment || {}).effective_site_id) {
+        rebuildView();
+        showEditHint('Not saved: drop the device onto a different highlighted site cloud.');
+        return;
+      }
+      const targetName = target.data('label');
+      const targetSiteId = target.data('site_id');
+      const assignment = data.site_assignment || {};
+      let result = null;
+      // Returning a device to the unknown group it originally came from is
+      // a REVERT, not an assignment to an imaginary catalog site. This is
+      // the round-trip: unknown -> operator site -> automatic unknown.
+      if (targetSiteId === '__none__' && assignment.source === 'operator' &&
+          !assignment.inferred_site_id) {
+        if (!window.confirm(`Return ${data.label} to automatic site identification?\n\nIts operator override will be removed; discovery evidence remains unchanged.`)) {
+          rebuildView();
+          return;
+        }
+        result = await curationRequest(
+          '/api/topology/site-assignments/revert', 'POST', {
+            ...curationIdentity(data),
+            reason: 'Returned to automatic inference by drag-and-drop',
+          });
+      } else {
+        const action = targetSiteId === '__none__'
+          ? `Mark ${data.label} as Site not identified?`
+          : `Persistently assign ${data.label} to ${targetName}?`;
+        if (!window.confirm(`${action}\n\nThis is an operator override; discovery evidence remains underneath.`)) {
+          rebuildView();
+          return;
+        }
+        result = await curationRequest('/api/topology/site-assignments', 'PUT', {
+          ...curationIdentity(data), site_id: targetSiteId,
+          reason: 'Drag-and-drop site curation',
+        });
+      }
+      if (!result) {
+        rebuildView();
+        showEditHint('The assignment was not saved. Review the error and try again.');
+      }
+    });
+
+    if (sitesEnabled || ospfEnabled || bgpEnabled) {
       document.getElementById('view-label').style.display = '';
-      document.getElementById('legend-site').style.display = '';
-      viewSelect.addEventListener('change', rebuildView);
+      viewSelect.addEventListener('change', () => {
+        if (viewSelect.value !== 'sites') { setDetailsOpen(false); }
+        cy.resize();
+        rebuildView();
+      });
+    }
+    if (sitesEnabled) {
+      // Do not let browser form-state restoration reopen the 40-device
+      // thumbnail from a previous visit. Sites are the deliberate overview.
+      viewSelect.value = 'sites';
       cy.on('dbltap', 'node[kind = "site"]',
             event => window.toggleSite(event.target.data('site_id')));
       cy.on('dbltap', 'node[kind != "site"]', event => {
-        if (viewSelect.value === 'full') { return; }
+        if (viewSelect.value !== 'sites') { return; }
         const siteId = siteView.membership[event.target.id()];
         if (siteId && expandedSites.has(siteId)) {
           window.toggleSite(siteId);
         }
       });
-      // Search must never miss a device just because its site is closed:
-      // a match inside a closed site opens that site first.
+      // A unique result may open its closed site. A broad query must not
+      // unfold every matching site and recreate the unreadable estate view.
       const searchBox = document.getElementById('search');
       if (searchBox) {
         searchBox.addEventListener('input', () => {
-          if (viewSelect.value === 'full') { return; }
+          if (viewSelect.value !== 'sites') { return; }
           const query = searchBox.value.trim().toLowerCase();
           if (query.length < 2) { return; }
-          let opened = false;
-          for (const n of topologyElements.nodes) {
+          const matches = topologyElements.nodes.filter(n => {
             const hay = (n.data.label + ' ' + (n.data.management_ip || '') +
                          ' ' + (n.data.platform || '')).toLowerCase();
-            const siteId = siteView.membership[n.data.id];
-            if (hay.includes(query) && siteId && !expandedSites.has(siteId)) {
-              expandedSites.add(siteId); opened = true;
-            }
+            return hay.includes(query);
+          });
+          if (matches.length !== 1) { return; }
+          const siteId = siteView.membership[matches[0].data.id];
+          if (siteId && !expandedSites.has(siteId)) {
+            expandedSites.add(siteId);
+            rebuildView();
           }
-          if (opened) { rebuildView(); }
         });
       }
       // Deep link: ?site=<id> opens one site on arrival.
@@ -1046,12 +1629,8 @@
       if (wanted && siteView.sites.some(s => s.site_id === wanted)) {
         expandedSites.add(wanted);
       }
-      rebuildView();
     }
-    if (!sitesEnabled &&
-        ((layoutSelect && layoutSelect.value) || 'logical') === 'logical') {
-      runLogicalLayout();
-    }
+    rebuildView();
 
     // Reachable from the console for debugging and driveable UI tests.
     window.cy = cy;
@@ -1062,7 +1641,9 @@
       const hovered = event.target.data();
       tooltip.textContent = hovered.kind === 'site'
         ? `${hovered.label} · ${hovered.count} devices · double-click to open`
-        : `${hovered.label} · ${hovered.management_ip}`;
+        : hovered.kind === 'protocol-domain'
+          ? `${hovered.label} · ${hovered.count} devices`
+          : `${hovered.label} · ${hovered.management_ip}`;
       tooltip.style.display = 'block';
       // Hover emphasis: a halo on the focused device, brightened links, and
       // a fade on everything else. Never a size change -- growing the node
@@ -1094,16 +1675,44 @@
       }
     });
     cy.on('mouseout', 'node', () => { tooltip.style.display = 'none'; });
-    document.getElementById('fit').addEventListener('click', () => cy.fit(undefined, 40));
+    document.getElementById('fit').addEventListener('click', () => {
+      const isSkyline = sitesEnabled && viewSelect.value === 'sites' &&
+        expandedSites.size === 0;
+      applyReadableViewport(isSkyline);
+    });
     document.getElementById('search').addEventListener('input', event => {
       const query = event.target.value.trim().toLowerCase();
       cy.nodes().removeClass('search-match search-muted');
-      if (!query) return;
+      if (!query) { return; }
+      const matched = [];
       cy.nodes().forEach(node => {
         const data = node.data();
-        const haystack = [data.label, (data.aliases || []).join(' '), data.management_ip, data.vendor, data.platform, data.os].join(' ').toLowerCase();
-        node.addClass(haystack.includes(query) ? 'search-match' : 'search-muted');
+        const haystack = [data.label, (data.aliases || []).join(' '),
+                          data.management_ip, data.vendor, data.platform,
+                          data.os, data.search_text].join(' ').toLowerCase();
+        const isMatch = haystack.includes(query);
+        node.addClass(isMatch ? 'search-match' : 'search-muted');
+        if (isMatch) { matched.push(node); }
       });
+      if (query.length < 2 || matched.length === 0) { return; }
+      const matches = cy.collection(matched);
+      if (matched.length === 1) {
+        // Search is navigation, not just a highlight: move the exact result
+        // to a zoom at which its 13px name clears the 11px paint floor.
+        cy.zoom(Math.max(cy.zoom(), DETAIL_LABEL_ZOOM));
+        cy.center(matches.closedNeighborhood());
+      } else if (matched.length <= 8) {
+        cy.fit(matches.closedNeighborhood(), 96);
+        const searchFloor = matches.nodes('[kind != "site"]').length
+          ? READABLE_DEVICE_ZOOM : READABLE_SITE_ZOOM;
+        if (cy.zoom() < searchFloor) {
+          cy.zoom(searchFloor);
+          cy.center(matches);
+        }
+      }
+      peerLabelsHidden = null;
+      detailedLabelsShown = null;
+      syncSemanticZoom();
     });
   </script>
 </body>

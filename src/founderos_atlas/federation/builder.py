@@ -81,6 +81,9 @@ def build_enterprise_graph(
                 )
 
     interfaces = _merge_interfaces(contributions, by_profile_hostname)
+    device_metadata = _merge_device_metadata(
+        contributions, by_profile_hostname
+    )
     links, unknowns = _build_links(
         contributions, by_profile_hostname, device_by_id
     )
@@ -105,7 +108,10 @@ def build_enterprise_graph(
         merge_decisions=decisions,
         contributions=summaries,
         unknowns=unknowns,
-        attributes={"networks": list(topology.networks)},
+        attributes={
+            "networks": list(topology.networks),
+            "device_metadata": device_metadata,
+        },
     )
 
 
@@ -216,6 +222,7 @@ def _merge_interfaces(
                         "ip_address": interface.get("ip_address"),
                         "description": interface.get("description"),
                         "observed_by": [contribution.profile_name],
+                        "metadata": dict(interface.get("metadata") or {}),
                     }
                 elif contribution.profile_name not in entry["observed_by"]:
                     entry["observed_by"].append(contribution.profile_name)
@@ -228,6 +235,7 @@ def _merge_interfaces(
                 ip_address=entry["ip_address"],
                 description=entry["description"],
                 observed_by=tuple(sorted(entry["observed_by"])),
+                metadata=dict(entry.get("metadata") or {}),
             )
             for _, entry in sorted(bucket.items())
         )
@@ -289,6 +297,7 @@ def _build_links(
                 run_id=contribution.run_id,
                 observed_at=contribution.observed_at,
                 protocol=str(edge.get("protocol") or "unknown"),
+                metadata=dict(edge.get("metadata") or {}),
             )
             entry = collected.get(key)
             if entry is None:
@@ -305,6 +314,7 @@ def _build_links(
                     "remote_interface": remote_interface,
                     "protocol": observation.protocol,
                     "observations": [observation],
+                    "metadata": dict(edge.get("metadata") or {}),
                 }
             elif not any(
                 existing.profile_id == observation.profile_id
@@ -338,6 +348,7 @@ def _build_links(
                 # its endpoints' evidence comes from more than one profile.
                 cross_profile=len(observing_profiles) > 1
                 or len(endpoint_profiles) > 1,
+                metadata=dict(entry.get("metadata") or {}),
             )
         )
     seen: set[str] = set()
@@ -345,6 +356,63 @@ def _build_links(
         item for item in unknowns if not (item in seen or seen.add(item))
     )
     return tuple(links), deduped_unknowns
+
+
+def _merge_device_metadata(
+    contributions: tuple[ScopeContribution, ...],
+    resolver: dict[tuple[str, str], str],
+) -> dict[str, dict]:
+    """Preserve normalized routing evidence through federation."""
+
+    ordered = sorted(
+        contributions,
+        key=lambda item: (item.observed_at or "", item.profile_id),
+        reverse=True,
+    )
+    merged: dict[str, dict] = {}
+    routing: dict[str, dict[str, list]] = {}
+    for contribution in ordered:
+        for device in contribution.snapshot.get("devices") or ():
+            if not isinstance(device, dict) or not device.get("hostname"):
+                continue
+            enterprise_id = resolver.get(
+                (
+                    contribution.profile_id,
+                    normalize_hostname(str(device.get("hostname"))),
+                )
+            )
+            if enterprise_id is None:
+                continue
+            target = merged.setdefault(enterprise_id, {})
+            source = dict(device.get("metadata") or {})
+            route = dict(source.pop("routing_evidence", {}) or {})
+            for key, value in source.items():
+                target.setdefault(key, value)
+            route_target = routing.setdefault(
+                enterprise_id,
+                {"ospf_adjacencies": [], "bgp_sessions": []},
+            )
+            for key in ("ospf_adjacencies", "bgp_sessions"):
+                for item in route.get(key) or ():
+                    normalized = dict(item)
+                    normalized.setdefault(
+                        "observed_by", contribution.profile_name
+                    )
+                    if normalized not in route_target[key]:
+                        route_target[key].append(normalized)
+    for enterprise_id, values in routing.items():
+        merged.setdefault(enterprise_id, {})["routing_evidence"] = {
+            "schema_version": "1.0.0",
+            "ospf_adjacencies": sorted(
+                values["ospf_adjacencies"],
+                key=lambda item: repr(sorted(item.items())),
+            ),
+            "bgp_sessions": sorted(
+                values["bgp_sessions"],
+                key=lambda item: repr(sorted(item.items())),
+            ),
+        }
+    return merged
 
 
 def _endpoint_profiles(entry: dict, device_by_id: dict) -> set[str]:

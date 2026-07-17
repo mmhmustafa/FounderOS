@@ -27,7 +27,18 @@ ASSIGNMENT_ASSIGNED = "assigned"
 ASSIGNMENT_UNKNOWN = "unknown"
 ASSIGNMENT_AMBIGUOUS = "ambiguous"
 
-SITE_CATALOG_SCHEMA_VERSION = "1.0.0"
+SITE_CATALOG_SCHEMA_VERSION = "1.1.0"
+
+SITE_TYPE_SITE = "site"
+SITE_TYPE_WAN = "wan"
+SITE_TYPE_INTERNET = "internet"
+SITE_TYPE_CLOUD = "cloud"
+SITE_TYPES = (
+    SITE_TYPE_SITE,
+    SITE_TYPE_WAN,
+    SITE_TYPE_INTERNET,
+    SITE_TYPE_CLOUD,
+)
 
 _SLUG = re.compile(r"[^a-z0-9]+")
 
@@ -115,12 +126,19 @@ class Site:
     cidrs: tuple[str, ...] = ()
     explicit_hostnames: tuple[str, ...] = ()
     explicit_device_ids: tuple[str, ...] = ()
+    # Keep this field last so older positional construction remains source
+    # compatible while newly persisted catalogs gain an explicit visual type.
+    site_type: str = SITE_TYPE_SITE
 
     def __post_init__(self) -> None:
         for name in ("site_id", "name"):
             value = getattr(self, name)
             if not isinstance(value, str) or not value.strip():
                 raise ValueError(f"{name} must be a non-empty string")
+        if self.site_type not in SITE_TYPES:
+            raise ValueError(
+                "site_type must be one of " + ", ".join(SITE_TYPES)
+            )
         for value in self.cidrs:
             try:
                 ip_network(value, strict=False)
@@ -131,6 +149,7 @@ class Site:
         return {
             "site_id": self.site_id,
             "name": self.name,
+            "site_type": self.site_type,
             "description": self.description,
             "hostname_patterns": list(self.hostname_patterns),
             "cidrs": list(self.cidrs),
@@ -147,6 +166,9 @@ class Site:
             return cls(
                 site_id=value["site_id"],
                 name=value["name"],
+                # Backward compatible: catalogs written before 1.1 did not
+                # distinguish a campus/site from WAN, Internet, or cloud.
+                site_type=str(value.get("site_type") or SITE_TYPE_SITE),
                 description=value.get("description"),
                 hostname_patterns=strings("hostname_patterns"),
                 cidrs=strings("cidrs"),

@@ -100,6 +100,24 @@ shown in every page title. Running a discovery switches the session scope to
 that profile. Incident investigations require a specific network scope and
 read/write only that scope's artifacts.
 
+## Network viewer presentation
+
+`GET /topology` uses the full available content width and presents the graph
+before its supporting inventory and evidence tables. The embedded viewer keeps
+the graph wide on smaller screens by turning its details pane into a
+toggleable overlay; tables remain complete and scroll horizontally when the
+viewport is narrow.
+
+Generated topology HTML carries a content-derived visual-style marker. When a
+current profile or Enterprise viewer predates the installed template/stencil
+contract, the route regenerates only `atlas_topology.html` from the adjacent
+`topology_snapshot.json` using an atomic replace. It does not run discovery,
+rewrite the snapshot, or traverse/change any history directory. If the current
+snapshot cannot be read, the existing viewer remains in place and the page
+continues to load. Current-viewer URLs also carry that style version as a query
+parameter so the iframe cannot reuse a visually stale browser-cache entry after
+the artifact has been refreshed.
+
 ## Discovery jobs (PR-032)
 
 The Discover page runs the real pipeline asynchronously through an
@@ -133,6 +151,20 @@ queue. Local-alpha limitation, chosen for correctness.
 Browser refresh/navigation never affects a run (the page re-attaches).
 In-process jobs do not survive a server restart: on startup, persisted
 queued/running jobs are marked `interrupted` with an honest message.
+
+## Topology curation API
+
+The Network viewer is read-only until the operator enables Edit topology.
+Device-to-site changes require confirmation, a reason, and the current
+override revision. The API returns `409` for stale revisions, exposes the
+underlying inference alongside the override, and supports both return-to-
+automatic and undo. Site type changes are explicit; WAN, Internet, cloud, and
+ordinary sites never depend on graph degree or the absence of evidence.
+
+Current profile and Enterprise viewers are regenerated after a successful
+curation operation. Discovery snapshots and historical viewers are not
+rewritten. This is a local single-operator application boundary; the audit
+records the local operator identity and mutation reason.
 
 **Fallback.** Without JavaScript the form posts to `/discovery/run`, which
 runs synchronously through the same job manager — one execution path.
