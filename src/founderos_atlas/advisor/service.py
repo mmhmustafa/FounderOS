@@ -48,6 +48,37 @@ class ConversationRepository:
             data, list
         ) else []
 
+    def get(self, index: int) -> dict | None:
+        entries = self.list_conversations()
+        return entries[index] if 0 <= index < len(entries) else None
+
+    def _store(self, entries: list[dict]) -> None:
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        self._path.write_text(
+            json.dumps(
+                entries, indent=2, sort_keys=True, ensure_ascii=False,
+                allow_nan=False,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+    def delete(self, index: int) -> bool:
+        entries = self.list_conversations()
+        if not 0 <= index < len(entries):
+            return False
+        del entries[index]
+        self._store(entries)
+        return True
+
+    def rename(self, index: int, label: str) -> bool:
+        entries = self.list_conversations()
+        if not 0 <= index < len(entries) or not str(label or "").strip():
+            return False
+        entries[index]["label"] = str(label).strip()
+        self._store(entries)
+        return True
+
     def save(self, response: AdvisorResponse) -> None:
         entries = self.list_conversations()
         entries.insert(

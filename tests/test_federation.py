@@ -587,7 +587,12 @@ class EnterpriseGuiTests(unittest.TestCase):
             _, client = self.build_world(workdir)
             page = client.get("/paths?scope=all").data
             self.assertIn(b"Enterprise scope", page)
-            self.assertIn(b"B1", page)
+            names = {
+                item["value"] for item in client.get(
+                    "/api/entities?kind=device&scope=all"
+                ).get_json()["results"]
+            }
+            self.assertIn("B1", names)
             response = client.post(
                 "/paths/run",
                 data={"source": "A2", "destination": "B1"},
@@ -611,7 +616,12 @@ class EnterpriseGuiTests(unittest.TestCase):
             _, client = self.build_world(workdir)
             page = client.get("/predict?scope=all").data
             self.assertIn(b"Enterprise scope", page)
-            self.assertIn(b"GW", page)
+            names = {
+                item["value"] for item in client.get(
+                    "/api/entities?kind=device&scope=all"
+                ).get_json()["results"]
+            }
+            self.assertIn("GW", names)
             response = client.post(
                 "/predict/run",
                 data={"device": "GW", "interface": "Gi0/1"},
@@ -648,8 +658,13 @@ class EnterpriseGuiTests(unittest.TestCase):
             # Scoped pages still work exactly as before.
             page = client.get(f"/paths?scope={profiles['Hyderabad']}").data
             self.assertNotIn(b"Enterprise scope", page)
-            self.assertIn(b"A1", page)
-            self.assertNotIn(b"B1", page)
+            names = {
+                item["value"] for item in client.get(
+                    f"/api/entities?kind=device&scope={profiles['Hyderabad']}"
+                ).get_json()["results"]
+            }
+            self.assertIn("A1", names)
+            self.assertNotIn("B1", names)  # isolation intact
 
     def test_enterprise_artifacts_live_in_the_enterprise_scope(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

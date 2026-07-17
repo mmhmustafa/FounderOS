@@ -310,13 +310,22 @@ def register_ops_routes(app) -> None:
             if plan is None:
                 flash("No such plan.", "error")
                 return redirect("/compass")
-            decided = decide_plan(
-                repository, plan, approve=approve,
-                actor=principal.username, reason=reason,
-                decided_at=datetime.now(timezone.utc).isoformat(
-                    timespec="seconds"
-                ),
-            )
+            if plan.status == "in-review":
+                from founderos_atlas.compass.lifecycle import decide_review
+
+                decided = decide_review(
+                    plan, approve=approve, actor=principal.username,
+                    reason=reason,
+                )
+                repository.save(decided)
+            else:
+                decided = decide_plan(
+                    repository, plan, approve=approve,
+                    actor=principal.username, reason=reason,
+                    decided_at=datetime.now(timezone.utc).isoformat(
+                        timespec="seconds"
+                    ),
+                )
         except PlanConflictError as error:
             abort(409, description=str(error))
         except ValueError as error:

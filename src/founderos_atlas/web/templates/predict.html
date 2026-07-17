@@ -25,27 +25,33 @@
 {% endif %}
 
 <section class="card">
-  <h2>Proposed change: shutdown interface</h2>
+  <h2>Propose a change</h2>
   <form class="form" method="post" action="/predict/run">{{ csrf_field() }}
+    {% if request.args.get('case_id') %}
+    <input type="hidden" name="case_id" value="{{ request.args.get('case_id') }}">
+    <p class="muted">This prediction will be linked to incident case
+      <a href="/incidents/case/{{ request.args.get('case_id') }}">{{ request.args.get('case_id') }}</a>.</p>
+    {% endif %}
     <div class="form-row">
-      <label>Device
-        <select name="device" id="predict-device" required>
-          <option value="" {{ '' if request.args.get('device') else 'selected' }} disabled>— Select a device —</option>
-          {% for d in devices %}
-          <option value="{{ d.hostname }}" {{ 'selected' if request.args.get('device') == d.hostname }}>{{ d.hostname }}</option>
-          {% endfor %}
+      <label>Change template
+        <select name="change_type" id="predict-change-type">
+          <option value="shutdown-interface" selected>Shutdown interface (modeled)</option>
+          <option value="reboot-device">Reboot device (modeled)</option>
         </select>
       </label>
-      <label>Interface
-        <select name="interface" id="predict-interface" required>
-          <option value="" selected disabled>— Select a device first —</option>
-          {% for d in devices %}{% for i in d.interfaces %}
-          <option value="{{ i.name }}" data-device="{{ d.hostname }}">{{ d.hostname }} — {{ i.label }}</option>
-          {% endfor %}{% endfor %}
-        </select>
+      <label>Device
+        <div class="entity-picker" data-picker data-kind="device" data-name="device"
+             data-required="1" data-value="{{ request.args.get('device', '') }}"></div>
+      </label>
+      <label>Interface (for interface changes — loads after the device is picked)
+        <div class="entity-picker" data-picker data-kind="interface" data-name="interface"
+             data-device-from="device"></div>
       </label>
     </div>
-    <p class="muted" id="predict-no-interfaces" hidden>No discovered interfaces are available. Run discovery first.</p>
+    <p class="muted">Other change types are analysed through Compass, whose
+    engine states unmodeled impact honestly instead of pretending. Atlas
+    validates the target against the CURRENT snapshot before predicting and
+    reports evidence freshness inside the prediction's confidence.</p>
     <label>Reason (optional)
       <input name="reason" placeholder="Port migration to new access switch">
     </label>
@@ -62,21 +68,51 @@
     </div>
     <p class="muted">Deterministic and evidence-based: Atlas predicts from this network's discovered topology, history, and intelligence — and says Unknown when evidence is missing. Other change types are future work.</p>
   </form>
-  {% if devices %}
-  <details><summary class="muted">Known devices and interfaces</summary>
-    <div class="table-scroll" role="region" aria-label="Known devices and interfaces" tabindex="0">
-    <table class="grid">
-      <thead><tr><th>Device</th><th>Interfaces</th></tr></thead>
-      <tbody>
-        {% for d in devices %}<tr><td>{{ d.hostname }}</td><td>{{ d.interface_names or '—' }}</td></tr>{% endfor %}
-      </tbody>
-    </table>
-    </div>
-  </details>
-  {% else %}
+  {% if not devices %}
   <p class="muted">No topology yet — <a href="/discovery">run a discovery</a> first.</p>
   {% endif %}
 </section>
+
+{% if scenarios %}
+<section class="card">
+  <h2>Saved scenarios</h2>
+  <p class="muted">Every prediction is saved as a comparable scenario; pick one to plan it in Compass.</p>
+  <div class="table-scroll" role="region" aria-label="Saved prediction scenarios" tabindex="0">
+  <table class="grid">
+    <thead><tr><th>When</th><th>Change</th><th>Risk</th><th>Confidence</th><th>Blast radius</th><th><span class="visually-hidden">Actions</span></th></tr></thead>
+    <tbody>
+      {% for scenario in scenarios %}
+      <tr>
+        <td>{{ scenario.generated_at | timestamp }}</td>
+        <td>{{ scenario.change_type }} — {{ scenario.device }}{% if scenario.interface %} {{ scenario.interface }}{% endif %}</td>
+        <td><span class="badge hop-badge hop-badge-{{ 'failed' if scenario.risk in ('high', 'critical') else 'pass' }}">{{ scenario.risk or '—' }}</span></td>
+        <td>{{ scenario.confidence }}%</td>
+        <td class="muted">{{ scenario.summary or '—' }}</td>
+        <td class="row-actions">
+          {% if can('plans.edit') %}
+          <form method="post" action="/compass/new" style="display:inline">{{ csrf_field() }}
+            <input type="hidden" name="title" value="{{ scenario.change_type }} {{ scenario.device }}">
+            <input type="hidden" name="device" value="{{ scenario.device }}">
+            <input type="hidden" name="reason" value="Predicted {{ scenario.generated_at }}: risk {{ scenario.risk }}, confidence {{ scenario.confidence }}%">
+            {% if request.args.get('case_id') %}<input type="hidden" name="incident_ref" value="{{ request.args.get('case_id') }}">{% endif %}
+            <button class="btn btn-sm" type="submit">Plan in Compass</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% if scenarios | length >= 2 %}
+  <p class="muted">Scenario comparison: the two most recent differ by
+    {% set a, b = scenarios[0], scenarios[1] %}
+    {% if a.risk != b.risk %}risk ({{ b.risk }} → {{ a.risk }}){% else %}risk (unchanged: {{ a.risk }}){% endif %} ·
+    {% if a.confidence != b.confidence %}confidence ({{ b.confidence }}% → {{ a.confidence }}%){% else %}confidence (unchanged){% endif %}.
+  </p>
+  {% endif %}
+</section>
+{% endif %}
 
 {% if prediction %}
 <section class="card root-cause">
@@ -147,4 +183,5 @@
 </section>
 {% endif %}
 {% endif %}
+<script src="{{ url_for('static', filename='atlas-picker.js') }}" defer></script>
 {% endblock %}

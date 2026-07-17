@@ -1,101 +1,118 @@
 {% extends "base.html" %}
-{% from "_entity_actions.html" import entity_menu %}
 {% import "_fmt.html" as fmt %}
 {% block title %}Incidents{% endblock %}
 {% block content %}
-<h1>Incident Investigation — {{ active_scope_label }}</h1>
+<div class="page-head"><h1>Incidents — {{ active_scope_label }}</h1></div>
+<p class="muted">
+  Detection to resolution, evidence all the way: an investigation runs
+  deterministically against one observation point's artifacts and opens a
+  case you can acknowledge, assign, annotate, resolve, or suppress — every
+  action audited, every conclusion linked to the evidence it stands on.
+</p>
 
-{% if global_view %}
-<section class="card">
-  <h2>New investigation</h2>
-  <p class="muted">Incident investigations run against one observation point's artifacts — pick a discovery profile in the Scope selector above to start one. For enterprise-wide "why can't A reach B?" questions, use <a href="/paths?scope=all">Investigate</a> instead.</p>
-</section>
-
-{% if reports %}
-{% for entry in reports %}
-{% if entry.report %}
-<section class="card">
-  <h2>{{ entry.label }}</h2>
-  <ul>
-    <li><strong>Title:</strong> {{ entry.report.title }}</li>
-    <li><strong>Confidence:</strong> {{ entry.report.confidence | title }}</li>
-    <li><strong>Affected devices:</strong> {{ entry.report.affected_devices | join(', ') or 'none matched' }}</li>
-    <li><strong>Generated:</strong> {{ fmt.when(entry.report.generated_at) }}</li>
-  </ul>
-  <a class="btn btn-sm" href="{{ entry.href }}">Open full report</a>
-</section>
-{% endif %}
-{% endfor %}
-{% else %}
-<section class="card">
-  <h2>What is an incident investigation?</h2>
-  <p class="muted">Describe a problem ("VPN down since 09:00") and Atlas correlates it deterministically against the scope's evidence — topology, changes, operational state, history — and produces an explained, confidence-rated report. No investigation has run yet.</p>
-  <div class="actions">
-    <a class="btn" href="/paths?scope=all">Investigate a path instead</a>
-    <a class="btn" href="/changes?scope=all">Review recent changes</a>
-  </div>
-</section>
-{% endif %}
-
-{% else %}
 <section class="card">
   <h2>New investigation</h2>
   <form class="form" method="post" action="/incidents/run">{{ csrf_field() }}
+    {% if global_view %}
+    <label>Investigate against profile
+      <select name="profile" required>
+        <option value="" selected disabled>— choose an observation point —</option>
+        {% for option in selectable_profiles %}
+        <option value="{{ option.scope_id }}">{{ option.label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    {% endif %}
     <label>Incident title
       <input name="title" required placeholder="VLAN 10 cannot reach internet">
     </label>
     <label>Description
       <textarea name="description" rows="3" placeholder="Users report no internet on VLAN 10"></textarea>
     </label>
+    <label>Severity
+      <select name="severity">
+        {% for option in severities %}
+        <option value="{{ option }}" {{ 'selected' if option == 'medium' }}>{{ option }}</option>
+        {% endfor %}
+      </select>
+    </label>
     <div class="form-actions">
-      <button class="btn btn-primary" type="submit">Investigate</button>
+      <button class="btn btn-primary" type="submit">Investigate &amp; open case</button>
     </div>
-    <p class="muted">Uses the latest discovery artifacts of {{ active_scope_label }}. Deterministic — no AI.</p>
+    <p class="muted">Deterministic correlation against topology, changes, state, and history — no AI, no invention. The case opens with the report as its evidence.</p>
   </form>
 </section>
 
-{% if root_cause and root_cause.primary %}
+<section class="card" id="cases">
+  <h2>Cases</h2>
+  <form method="get" action="/incidents" class="filter-bar">
+    <input type="hidden" name="scope" value="{{ active_scope_id }}">
+    <label>Status
+      <select name="status">
+        <option value="">any active</option>
+        {% for option in case_statuses %}
+        <option value="{{ option }}" {{ 'selected' if case_filters.status == option }}>{{ option }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Owner <input name="owner" value="{{ case_filters.owner }}" placeholder="username"></label>
+    <label class="checkbox" style="align-self:center;">
+      <input type="checkbox" name="suppressed" value="1" {{ 'checked' if case_filters.suppressed }}> include suppressed
+    </label>
+    <button class="btn btn-sm btn-primary" type="submit">Apply filters</button>
+    <a class="btn btn-sm" href="{{ scoped_url('/incidents', active_scope_id) }}">Clear</a>
+  </form>
+
+  <p class="muted" role="status" aria-live="polite">{{ cases | length }} case(s) match.</p>
+
+  {% if cases %}
+  <div class="table-scroll table-scroll-wide" role="region" aria-label="Incident cases" tabindex="0">
+    <table class="grid">
+      <thead>
+        <tr><th>Opened</th><th>Severity</th><th>Status</th><th>Case</th><th>Scope</th><th>Owner</th><th>Confidence</th><th>Evidence age</th><th><span class="visually-hidden">Open</span></th></tr>
+      </thead>
+      <tbody>
+        {% for case in cases %}
+        <tr>
+          <td>{{ fmt.when(case.opened_at) }}</td>
+          <td><span class="badge hop-badge sev-{{ case.severity }}">{{ case.severity }}</span></td>
+          <td><span class="badge hop-badge">{{ case.status }}</span></td>
+          <td>
+            <strong>{{ case.title }}</strong>
+            {% if case.affected_devices %}
+            <div class="muted">{{ case.affected_devices | join(', ') }}</div>
+            {% endif %}
+          </td>
+          <td>{{ case.scope_label }}</td>
+          <td>{{ case.owner or '—' }}</td>
+          <td>{{ case.confidence or '—' }}</td>
+          <td>{% if case.report_generated_at %}{{ fmt.when(case.report_generated_at) }}{% else %}—{% endif %}</td>
+          <td class="row-actions">
+            <a class="btn btn-sm" href="/incidents/case/{{ case.case_id }}">Open case</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">
+    {% if case_filters.status or case_filters.owner %}
+    No case matches these filters. <a href="{{ scoped_url('/incidents', active_scope_id) }}">Clear the filters</a>.
+    {% else %}
+    No incident cases yet. Run an investigation above — the report it
+    produces becomes the case's founding evidence.
+    {% endif %}
+  </p>
+  {% endif %}
+</section>
+
+{% if not global_view and root_cause and root_cause.primary is defined %}
 <section class="card root-cause">
-  <h2>Root Cause Analysis</h2>
+  <h2>Latest root cause analysis (inferred)</h2>
   <p><strong>{{ root_cause.problem }}</strong></p>
   <p>Likely cause ({{ root_cause.primary.band | title }} confidence, {{ root_cause.primary.confidence_percent }}%): {{ root_cause.primary.statement }}</p>
-  {% if root_cause.reasoning %}
-  <ol>
-    {% for line in root_cause.reasoning %}<li>{{ line }}</li>{% endfor %}
-  </ol>
-  {% endif %}
-  <p>Recommended next step: {{ root_cause.primary.next_step }}</p>
   <a class="btn btn-sm" href="/artifacts/{{ artifact_prefix or '' }}root_cause_report.md">Open full analysis</a>
 </section>
-{% endif %}
-
-{% if report %}
-<section class="card">
-  <h2>Latest incident report</h2>
-  <ul>
-    <li><strong>Title:</strong> {{ report.title }}</li>
-    <li><strong>Confidence:</strong> {{ report.confidence | title }}</li>
-    <li><strong>Affected devices:</strong>
-      {% if report.affected_devices %}
-      {% for hostname in report.affected_devices %}
-      {{ hostname }} {{ entity_menu(device_menu(hostname=hostname), hostname) }}{{ ", " if not loop.last }}
-      {% endfor %}
-      {% else %}none matched{% endif %}</li>
-    <li><strong>Generated:</strong> {{ fmt.when(report.generated_at) }}</li>
-  </ul>
-  {# An incident is a starting point: the changes that preceded it, the
-     evidence behind it, the paths through it, and where it sits. #}
-  <div class="actions">
-    <a class="btn btn-sm" href="/artifacts/{{ artifact_prefix or '' }}incident_report.md">Open full report</a>
-    <a class="btn btn-sm" href="{{ scoped_url('/changes', link_scope()) }}" aria-label="Review the changes recorded around this incident">Recent changes</a>
-    <a class="btn btn-sm" href="{{ scoped_url('/evidence', link_scope()) }}" aria-label="Open the evidence for this scope">Evidence</a>
-    <a class="btn btn-sm" href="{{ scoped_url('/paths', link_scope(), device=(report.affected_devices[0] if report.affected_devices else None)) }}" aria-label="Investigate a path through the affected devices">Investigate paths</a>
-    <a class="btn btn-sm" href="{{ scoped_url('/topology', link_scope(), focus=(report.affected_devices[0] if report.affected_devices else None)) }}" aria-label="Focus the affected devices in topology">Topology</a>
-    <a class="btn btn-sm" href="{{ scoped_url('/timeline', link_scope()) }}" aria-label="Open the timeline around this incident">Timeline</a>
-  </div>
-</section>
-{% else %}
-<p class="muted">No incident report generated yet for this network.</p>
-{% endif %}
 {% endif %}
 {% endblock %}

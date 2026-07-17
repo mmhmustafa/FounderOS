@@ -308,8 +308,14 @@ class PredictGuiTests(unittest.TestCase):
             workdir = Path(tmp)
             client = self.build_world(workdir)
             page = client.get("/predict?scope=lab-a").data
-            self.assertIn(b"Proposed change: shutdown interface", page)
-            self.assertIn(b"A1", page)
+            self.assertIn(b"Propose a change", page)
+            self.assertIn(b"data-picker", page)
+            names = {
+                item["value"] for item in client.get(
+                    "/api/entities?kind=device&scope=lab-a"
+                ).get_json()["results"]
+            }
+            self.assertIn("A1", names)
             response = client.post(
                 "/predict/run",
                 data={
@@ -357,7 +363,12 @@ class PredictGuiTests(unittest.TestCase):
             page = client.get("/predict?scope=all").data
             self.assertNotIn(b"Select a specific network", page)
             self.assertIn(b"Enterprise scope", page)
-            self.assertIn(b"A1", page)
+            names = {
+                item["value"] for item in client.get(
+                    "/api/entities?kind=device&scope=all"
+                ).get_json()["results"]
+            }
+            self.assertIn("A1", names)
             response = client.post(
                 "/predict/run",
                 data={"device": "A1", "interface": "Gi0/1"},
@@ -448,28 +459,41 @@ class PredictValidationGuiTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             _, client = self.build_world(Path(tmp))
             page = client.get("/predict?scope=lab-a").data.decode("utf-8")
-            # Options are device-tagged canonical names with context labels.
-            self.assertIn('data-device="A1"', page)
-            self.assertIn('data-device="A2"', page)
-            self.assertIn('value="GigabitEthernet0/1"', page)
-            self.assertIn("up/up", page)
-            self.assertIn("connected to A2", page)
-            self.assertNotIn('<input name="interface"', page)  # no free text
+            # No interface is preloaded into the DOM; the async API serves
+            # ONE device's interfaces with the same evidence context the
+            # old dropdown carried.
+            self.assertNotIn('data-device="A1"', page)
+            self.assertNotIn('value="GigabitEthernet0/1"', page)
+            results = client.get(
+                "/api/device-interfaces?device=A1&scope=lab-a"
+            ).get_json()["results"]
+            byname = {item["value"]: item["detail"] for item in results}
+            self.assertIn("GigabitEthernet0/1", byname)
+            self.assertIn("up/up", byname["GigabitEthernet0/1"])
+            self.assertIn("connected to A2", byname["GigabitEthernet0/1"])
 
     def test_dropdown_uses_the_latest_scoped_snapshot(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             workdir = Path(tmp)
             service, client = self.build_world(workdir)
-            page = client.get("/predict?scope=lab-a").data.decode("utf-8")
-            self.assertNotIn("FastEthernet0/5", page)
-            # A later discovery changes A2's inventory; the page follows.
+            names = {
+                item["value"] for item in client.get(
+                    "/api/device-interfaces?device=A2&scope=lab-a"
+                ).get_json()["results"]
+            }
+            self.assertNotIn("FastEthernet0/5", names)
+            # A later discovery changes A2's inventory; the API follows.
             run_discover(
                 workdir, service,
                 network_a(a2_interfaces=A2_DISTINCT_BRIEF), "Lab A",
                 FIXED + timedelta(hours=1),
             )
-            page = client.get("/predict?scope=lab-a").data.decode("utf-8")
-            self.assertIn("FastEthernet0/5", page)
+            names = {
+                item["value"] for item in client.get(
+                    "/api/device-interfaces?device=A2&scope=lab-a"
+                ).get_json()["results"]
+            }
+            self.assertIn("FastEthernet0/5", names)
 
     def test_interface_of_another_device_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -573,9 +597,14 @@ class PredictValidationGuiTests(unittest.TestCase):
             app.config.update(TESTING=True)
             client = app.test_client()
             page = client.get("/predict?scope=lab-b").data.decode("utf-8")
-            self.assertIn('data-device="B1"', page)
-            self.assertNotIn('data-device="A1"', page)  # isolation intact
             self.assertNotIn(PASSWORD, page)
+            self.assertTrue(client.get(
+                "/api/device-interfaces?device=B1&scope=lab-b"
+            ).get_json()["results"])
+            # Lab A's devices do not resolve from Lab B's scope.
+            self.assertEqual([], client.get(
+                "/api/device-interfaces?device=A1&scope=lab-b"
+            ).get_json()["results"])
             # A1's interface cannot be predicted from Lab B's scope.
             response = client.post(
                 "/predict/run",

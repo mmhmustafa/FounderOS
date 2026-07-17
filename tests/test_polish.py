@@ -106,8 +106,10 @@ class NavigationTests(unittest.TestCase):
             # PR-047A: the cross-link names the destination as the navigation
             # names it (Analyze > Investigate).
             self.assertIn(b"Investigate", page)
-            self.assertIn(b"What is an incident investigation?", page)
-            self.assertIn(b"Investigate a path instead", page)
+            # Enterprise scope is no dead end: the run form offers an
+            # inline observation-point selection.
+            self.assertIn(b"Investigate against profile", page)
+            self.assertIn(b"choose an observation point", page)
 
 
 class EmptyStateTests(unittest.TestCase):
@@ -121,7 +123,7 @@ class EmptyStateTests(unittest.TestCase):
             self.assertIn(b"What is change intelligence?", changes)
             self.assertIn(b"what changed overnight", changes)
             incidents = client.get("/incidents?scope=all").data
-            self.assertIn(b"What is an incident investigation?", incidents)
+            self.assertIn(b"No incident cases yet", incidents)
 
 
 class FormTests(unittest.TestCase):
@@ -136,15 +138,19 @@ class FormTests(unittest.TestCase):
                 engineer="netops", created_at="2026-07-12T08:00:00+00:00",
             )
             page = client.get("/compass/window").data.decode("utf-8")
-            self.assertIn('id="compass-device"', page)
-            self.assertIn('id="compass-interface"', page)
-            self.assertIn('data-device="GW"', page)
-            self.assertIn('data-keep="1"', page)  # the "none" option survives
-            script = client.get("/static/atlas.js").data.decode("utf-8")
-            self.assertIn("bindInterfaceFilter", script)
-            self.assertIn('"compass-device", "compass-interface"', script)
-            # Predict keeps its existing filtering through the same code.
-            self.assertIn('"predict-device", "predict-interface"', script)
+            # Giant preloaded selects are gone: device and interface are
+            # async searchable pickers, interfaces scoped by the picked
+            # device and fetched on demand.
+            self.assertIn('data-picker data-kind="device" data-name="device"', page)
+            self.assertIn('data-picker data-kind="interface"', page)
+            self.assertIn('data-device-from="device"', page)
+            self.assertNotIn('data-device="GW"', page)  # no interface preload
+            script = client.get("/static/atlas-picker.js").data.decode("utf-8")
+            self.assertIn("/api/device-interfaces", script)
+            self.assertIn('role", "combobox', script.replace("'", '"'))
+            # Predict uses the same async picker component.
+            predict = client.get("/predict?scope=all").data.decode("utf-8")
+            self.assertIn('data-picker data-kind="interface"', predict)
 
 
 class AccessibilityTests(unittest.TestCase):

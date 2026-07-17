@@ -163,6 +163,25 @@ ENDPOINT_PERMISSIONS: dict[str, str] = {
     "compass_remove_change": PLANS_EDIT,
     "compass_analyse": PLANS_EDIT,
     "compass_approve": PLANS_APPROVE,
+    "compass_readiness": PLANS_EDIT,
+    "compass_reorder": PLANS_EDIT,
+    "compass_dependencies": PLANS_EDIT,
+    "compass_submit": PLANS_EDIT,
+    "compass_schedule": PLANS_EDIT,
+    "compass_execution": PLANS_EDIT,
+    "compass_cab_export": EXPORT_DATA,
+
+    # -- lifecycle: incidents, advisor, paths, entity APIs ------------------
+    "api_entities": PAGES_VIEW,
+    "api_device_interfaces": PAGES_VIEW,
+    "incident_case_page": PAGES_VIEW,
+    "incident_case_action": INVESTIGATE_RUN,
+    "incident_case_link": INVESTIGATE_RUN,
+    "advisor_feedback": INVESTIGATE_RUN,
+    "advisor_conversation_delete": INVESTIGATE_RUN,
+    "advisor_conversation_rename": INVESTIGATE_RUN,
+    "advisor_conversation_export": EXPORT_DATA,
+    "paths_compare": PAGES_VIEW,
 
     # -- console -----------------------------------------------------------
     "console_index": CONSOLE_USE,

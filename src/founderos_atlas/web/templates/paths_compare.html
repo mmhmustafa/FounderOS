@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% import "_fmt.html" as fmt %}
+{% block title %}Compare Path Investigations{% endblock %}
+{% block content %}
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+  <ol>
+    <li><a href="{{ scoped_url('/paths', active_scope_id) }}">Investigate</a></li>
+    <li><span aria-current="page">Compare over time</span></li>
+  </ol>
+</nav>
+<div class="page-head"><h1>Compare Path Investigations — {{ active_scope_label }}</h1></div>
+<p class="muted">
+  Two stored investigations of the same question, side by side — what
+  changed between them is stated from their own recorded evidence.
+</p>
+
+{% if left and right %}
+<section class="card">
+  <h2>What changed</h2>
+  <ul>{% for item in differences %}<li>{{ item }}</li>{% endfor %}</ul>
+</section>
+
+<div class="columns">
+  {% for entry in (left, right) %}
+  <section class="card">
+    <h2>{{ 'Earlier' if loop.first else 'Later' }} — {{ entry.generated_at }}</h2>
+    <p>
+      <strong>{{ entry.source }} → {{ entry.destination }}</strong>
+      <span class="badge hop-badge hop-badge-{{ 'pass' if entry.status == 'connected' else ('failed' if entry.status == 'failed' else 'unknown') }}">{{ entry.status | title }}</span>
+      <span class="muted">{{ entry.confidence_percent }}% confidence</span>
+    </p>
+    {% if entry.path %}
+    <p><strong>Path:</strong> {{ entry.path | join(' → ') }}</p>
+    {% endif %}
+    {% if entry.failure_summary %}
+    <p class="hop-text-failed">{{ entry.failure_summary }}</p>
+    {% endif %}
+    {% if entry.hops %}
+    <details><summary class="muted">Hop evidence ({{ entry.hops | length }})</summary>
+      <ol>
+        {% for hop in entry.hops %}
+        <li>
+          <strong>{{ hop.device }}</strong>
+          <span class="badge hop-badge hop-badge-{{ hop.status }}">{{ hop.status }}</span>
+          <span class="muted">{{ hop.explanation }}</span>
+        </li>
+        {% endfor %}
+      </ol>
+    </details>
+    {% endif %}
+  </section>
+  {% endfor %}
+</div>
+{% else %}
+<section class="card">
+  <p class="muted">
+    Pick two stored investigations on the
+    <a href="{{ scoped_url('/paths', active_scope_id) }}">Investigate page</a>
+    to compare them here.
+    {% if not investigations %}No investigation has been stored yet in this
+    scope.{% endif %}
+  </p>
+</section>
+{% endif %}
+{% endblock %}

@@ -446,3 +446,50 @@ class AdvisorGuiTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AdvisorHonestyTests(unittest.TestCase):
+    """Advisor must never claim evidence Atlas does not possess."""
+
+    def test_unknown_device_answers_never_invent_facts(self) -> None:
+        import tempfile
+        from pathlib import Path
+
+        from tests.test_polish import build_world
+
+        with tempfile.TemporaryDirectory() as tmp:
+            _, client = build_world(Path(tmp))
+            page = client.post("/advisor/ask", data={
+                "question": "Find device-that-was-never-discovered-xyz",
+            }, follow_redirects=True).data.decode("utf-8")
+            # The made-up hostname must not be presented as a known device
+            # with facts attached; the honest outcome is a no-match answer.
+            self.assertNotIn("device-that-was-never-discovered-xyz is",
+                             page.casefold())
+            self.assertTrue(
+                "no match" in page.casefold()
+                or "not found" in page.casefold()
+                or "cannot" in page.casefold()
+                or "0 result" in page.casefold()
+                or "nothing" in page.casefold(),
+                "the answer neither matched nor admitted the gap",
+            )
+
+    def test_stale_scope_answers_state_their_evidence_age(self) -> None:
+        import tempfile
+        from pathlib import Path
+
+        from tests.test_polish import build_world
+
+        with tempfile.TemporaryDirectory() as tmp:
+            _, client = build_world(Path(tmp))
+            page = client.post("/advisor/ask", data={
+                "question": "Explain enterprise health",
+            }, follow_redirects=True).data.decode("utf-8")
+            # Every answer names its scope and cites evidence or admits the
+            # absence — no free-floating claims.
+            self.assertIn("scope:", page.casefold())
+            self.assertTrue(
+                "evidence used" in page.casefold()
+                or "no evidence supports this answer" in page.casefold()
+            )

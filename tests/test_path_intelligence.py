@@ -451,8 +451,15 @@ class PathsGuiTests(unittest.TestCase):
             _, client = self.build_world(workdir)
             page = client.get("/paths?scope=lab-a").data
             self.assertIn(b"Investigate device-to-device connectivity", page)
-            self.assertIn(b"A1", page)
-            self.assertIn(b"A2", page)
+            # Devices come from the async entity API, not a preloaded select.
+            self.assertIn(b"data-picker", page)
+            names = {
+                item["value"] for item in client.get(
+                    "/api/entities?kind=device&scope=lab-a"
+                ).get_json()["results"]
+            }
+            self.assertIn("A1", names)
+            self.assertIn("A2", names)
             response = client.post(
                 "/paths/run",
                 data={"source": "A1", "destination": "A2"},
@@ -492,7 +499,7 @@ class PathsGuiTests(unittest.TestCase):
             self.assertIn(b"Where communication stops", response.data)
             self.assertIn(b"administratively shut down", response.data)
             self.assertIn(b"hop-badge-failed", response.data)
-            self.assertIn(b"Recent investigations", response.data)
+            self.assertIn(b"Saved investigations", response.data)
             self.assertNotIn(PASSWORD.encode(), response.data)
 
     def test_unknown_destination_is_explained_in_the_gui(self) -> None:

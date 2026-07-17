@@ -727,8 +727,9 @@ class WebScopeTests(unittest.TestCase):
                 (scope_dir(workdir, "lab-b") / "incident_report.json").exists()
             )
             self.assertFalse((workdir / "incident_report.json").exists())
+            # Lab B sees no case; the enterprise case list names Lab A's.
             page = client.get("/incidents?scope=lab-b").data
-            self.assertIn(b"No incident report generated yet", page)
+            self.assertNotIn(b"Device A2 unreachable", page)
             page = client.get("/incidents?scope=all").data
             self.assertIn(b"Device A2 unreachable", page)
 
@@ -743,7 +744,12 @@ class WebScopeTests(unittest.TestCase):
                 follow_redirects=True,
             )
             self.assertEqual(200, response.status_code)
-            self.assertIn(b"Select a specific network scope", response.data)
+            # Enterprise scope is not a dead end, but an investigation
+            # still needs ONE observation point, chosen inline.
+            self.assertIn(
+                b"Choose which profile&#39;s evidence to investigate",
+                response.data,
+            )
 
     def test_changes_scope_filtering(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

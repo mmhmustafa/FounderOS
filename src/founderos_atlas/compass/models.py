@@ -21,8 +21,22 @@ COMPASS_SCHEMA_VERSION = "1.0.0"
 
 PLAN_STATUS_DRAFT = "draft"
 PLAN_STATUS_ANALYSED = "analysed"
+PLAN_STATUS_IN_REVIEW = "in-review"
 PLAN_STATUS_APPROVED = "approved"
 PLAN_STATUS_REJECTED = "rejected"
+PLAN_STATUS_SCHEDULED = "scheduled"
+PLAN_STATUS_RUNNING = "running"
+PLAN_STATUS_COMPLETED = "completed"
+PLAN_STATUS_FAILED = "failed"
+PLAN_STATUS_ROLLED_BACK = "rolled-back"
+PLAN_STATUS_CANCELLED = "cancelled"
+
+PLAN_STATUSES = (
+    PLAN_STATUS_DRAFT, PLAN_STATUS_ANALYSED, PLAN_STATUS_IN_REVIEW,
+    PLAN_STATUS_APPROVED, PLAN_STATUS_REJECTED, PLAN_STATUS_SCHEDULED,
+    PLAN_STATUS_RUNNING, PLAN_STATUS_COMPLETED, PLAN_STATUS_FAILED,
+    PLAN_STATUS_ROLLED_BACK, PLAN_STATUS_CANCELLED,
+)
 
 # The Compass change vocabulary. Each type maps onto the prediction
 # engine's open registry; unmodeled types predict honestly (low
@@ -92,6 +106,8 @@ class PlannedChange:
     estimated_duration_minutes: int | None = None
     rollback_available: bool | None = None  # None = honestly unknown
     notes: str = ""
+    depends_on: tuple[str, ...] = ()      # change_ids that must run first
+    concurrency_group: str | None = None  # same group => may run together
 
     def __post_init__(self) -> None:
         if self.change_type not in CHANGE_TYPES:
@@ -123,6 +139,8 @@ class PlannedChange:
             "estimated_duration_minutes": self.estimated_duration_minutes,
             "rollback_available": self.rollback_available,
             "notes": self.notes,
+            "depends_on": list(self.depends_on),
+            "concurrency_group": self.concurrency_group,
         }
 
     @classmethod
@@ -136,6 +154,10 @@ class PlannedChange:
             estimated_duration_minutes=value.get("estimated_duration_minutes"),
             rollback_available=value.get("rollback_available"),
             notes=value.get("notes") or "",
+            depends_on=tuple(
+                str(item) for item in value.get("depends_on") or ()
+            ),
+            concurrency_group=value.get("concurrency_group") or None,
         )
 
 
@@ -155,6 +177,15 @@ class ChangePlan:
     changes: tuple[PlannedChange, ...] = ()
     revision: int = 0
     approval: dict | None = None    # {actor, decided_at, reason} once decided
+    reviewers: tuple[str, ...] = ()
+    pre_checks: tuple[dict, ...] = ()   # {check_id, text, status, by, at, note}
+    post_checks: tuple[dict, ...] = ()
+    rollback_plan: str = ""
+    success_criteria: tuple[str, ...] = ()
+    window_start: str | None = None     # ISO instants bounding execution
+    window_end: str | None = None
+    incident_ref: str | None = None     # the incident case this plan serves
+    execution_log: tuple[dict, ...] = ()  # {at, actor, change_id?, event, note}
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -170,6 +201,15 @@ class ChangePlan:
             "changes": [change.to_dict() for change in self.changes],
             "revision": self.revision,
             "approval": self.approval,
+            "reviewers": list(self.reviewers),
+            "pre_checks": list(self.pre_checks),
+            "post_checks": list(self.post_checks),
+            "rollback_plan": self.rollback_plan,
+            "success_criteria": list(self.success_criteria),
+            "window_start": self.window_start,
+            "window_end": self.window_end,
+            "incident_ref": self.incident_ref,
+            "execution_log": list(self.execution_log),
         }
 
     @classmethod
@@ -189,6 +229,25 @@ class ChangePlan:
             ),
             revision=int(value.get("revision") or 0),
             approval=value.get("approval"),
+            reviewers=tuple(
+                str(item) for item in value.get("reviewers") or ()
+            ),
+            pre_checks=tuple(
+                dict(item) for item in value.get("pre_checks") or ()
+            ),
+            post_checks=tuple(
+                dict(item) for item in value.get("post_checks") or ()
+            ),
+            rollback_plan=str(value.get("rollback_plan") or ""),
+            success_criteria=tuple(
+                str(item) for item in value.get("success_criteria") or ()
+            ),
+            window_start=value.get("window_start"),
+            window_end=value.get("window_end"),
+            incident_ref=value.get("incident_ref"),
+            execution_log=tuple(
+                dict(item) for item in value.get("execution_log") or ()
+            ),
         )
 
 

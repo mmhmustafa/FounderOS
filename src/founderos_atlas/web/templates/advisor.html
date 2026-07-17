@@ -7,11 +7,15 @@
 <p class="muted">How can I help today? Advisor answers only from collected evidence — every response cites its sources, states its confidence, and recommends the workflow to act on it. It never guesses.</p>
 
 <section class="card">
-  <form class="advisor-ask" method="post" action="/advisor/ask">{{ csrf_field() }}
+  <form class="advisor-ask" method="post" action="/advisor/ask" id="advisor-ask-form">{{ csrf_field() }}
     <input type="text" name="question" id="advisor-question" autocomplete="off"
+           value="{{ request.args.get('retry', '') }}"
            placeholder="Ask Atlas Advisor… (e.g. Explain enterprise health · Find SW2 · What changed?)" required>
-    <button class="btn btn-primary" type="submit">Ask</button>
+    <button class="btn btn-primary" type="submit" id="advisor-ask-button">Ask</button>
   </form>
+  <p class="muted" id="advisor-asking" hidden aria-live="polite">Advisor is
+  reading the evidence… every answer is prepared from real artifacts, so this
+  can take a moment. Reload if you want to abandon the question.</p>
   <div class="advisor-quick">
     <form method="post" action="/advisor/ask">{{ csrf_field() }}<input type="hidden" name="question" value="Investigate an issue"><button class="btn btn-sm" type="submit">{{ icons.icon('paths', 15) }} Investigate an Issue</button></form>
     <form method="post" action="/advisor/ask">{{ csrf_field() }}<input type="hidden" name="question" value="Help me plan maintenance"><button class="btn btn-sm" type="submit">{{ icons.icon('wrench', 15) }} Plan a Change</button></form>
@@ -27,6 +31,11 @@
     <h2 style="margin:0;">{{ response.question }}</h2>
     <span class="badge hop-badge hop-badge-{{ 'pass' if response.confidence == 'High' else ('warning' if response.confidence == 'Medium' else ('failed' if response.confidence == 'Low' else 'unknown')) }}">Confidence: {{ response.confidence }}</span>
   </div>
+
+  <p class="muted">Answered {{ response.generated_at | timestamp if response.generated_at else 'now' }}
+     · scope: <strong>{{ active_scope_label }}</strong>
+     · every citation below deep-links to the exact stored artifact; evidence
+     Atlas does not hold is listed under what it cannot see, never implied.</p>
 
   <h2>Summary</h2>
   <p>{{ response.summary }}</p>
@@ -90,6 +99,23 @@
   </div>
   {% endif %}
 
+  {% if can('investigate.run') %}
+  <div class="filter-bar" style="margin-top:8px;">
+    <form method="post" action="/advisor/feedback">{{ csrf_field() }}
+      <input type="hidden" name="question" value="{{ response.question }}">
+      <input type="hidden" name="helpful" value="1">
+      <button class="btn btn-sm" type="submit" aria-label="This answer and its citations were helpful">Helpful</button>
+    </form>
+    <form method="post" action="/advisor/feedback" class="filter-bar" style="padding:0;border:0;">{{ csrf_field() }}
+      <input type="hidden" name="question" value="{{ response.question }}">
+      <input type="hidden" name="helpful" value="0">
+      <label class="visually-hidden" for="advisor-feedback-note">What was wrong or unsupported</label>
+      <input id="advisor-feedback-note" name="note" placeholder="what was wrong or unsupported">
+      <button class="btn btn-sm" type="submit">Not helpful</button>
+    </form>
+  </div>
+  {% endif %}
+
   <details class="advisor-steps">
     <summary class="muted">How this answer was prepared ({{ response.steps | length }} step(s))</summary>
     <ol>
@@ -108,8 +134,26 @@
       {% for entry in conversations %}
       <li>
         <span class="activity-kind">{{ entry.response.intent }}</span>
-        <a href="/advisor?conversation={{ loop.index0 }}">{{ entry.response.question }}</a>
+        <a href="/advisor?conversation={{ loop.index0 }}">{{ entry.label or entry.response.question }}</a>
         <span class="muted">{{ entry.asked_at or '' }} · {{ entry.response.confidence }}</span>
+        {% if can('investigate.run') %}
+        <span class="row-actions">
+          <a class="btn btn-sm" href="/advisor/conversations/{{ loop.index0 }}/export"
+             aria-label="Export this conversation as JSON">Export</a>
+          <details style="display:inline-block">
+            <summary class="btn btn-sm" role="button">Rename</summary>
+            <form method="post" action="/advisor/conversations/{{ loop.index0 }}/rename" class="filter-bar" style="padding:4px;border:0;">{{ csrf_field() }}
+              <label class="visually-hidden" for="rename-{{ loop.index0 }}">New name</label>
+              <input id="rename-{{ loop.index0 }}" name="label" value="{{ entry.label or '' }}" placeholder="name">
+              <button class="btn btn-sm" type="submit">Save</button>
+            </form>
+          </details>
+          <form method="post" action="/advisor/conversations/{{ loop.index0 }}/delete" style="display:inline"
+                onsubmit="return confirm('Delete this conversation?');">{{ csrf_field() }}
+            <button class="btn btn-sm" type="submit" aria-label="Delete this conversation">Delete</button>
+          </form>
+        </span>
+        {% endif %}
       </li>
       {% endfor %}
     </ul>
@@ -133,4 +177,18 @@
     </div>
   </section>
 </div>
+<script nonce="{{ csp_nonce }}">
+  (function () {
+    var form = document.getElementById("advisor-ask-form");
+    var note = document.getElementById("advisor-asking");
+    var button = document.getElementById("advisor-ask-button");
+    if (form && note && button) {
+      form.addEventListener("submit", function () {
+        button.disabled = true;
+        button.textContent = "Asking…";
+        note.hidden = false;
+      });
+    }
+  })();
+</script>
 {% endblock %}

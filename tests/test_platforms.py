@@ -545,7 +545,13 @@ class MultiPlatformPipelineTests(unittest.TestCase):
 
             # Prediction unchanged: FRR interfaces are canonical.
             predict = client.get("/predict?scope=all").data
-            self.assertIn(b"delhi-r1", predict)
+            self.assertIn(b"data-picker", predict)
+            names = {
+                item["value"] for item in client.get(
+                    "/api/entities?kind=device&scope=all"
+                ).get_json()["results"]
+            }
+            self.assertIn("delhi-r1", names)
             response = client.post(
                 "/predict/run",
                 data={"device": "delhi-r1", "interface": "eth1"},

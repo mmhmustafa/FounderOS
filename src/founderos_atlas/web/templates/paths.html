@@ -30,24 +30,40 @@
 <section class="card">
   <h2>Investigate device-to-device connectivity</h2>
   <form class="form" method="post" action="/paths/run">{{ csrf_field() }}
+    {% if request.args.get('case_id') %}
+    <input type="hidden" name="case_id" value="{{ request.args.get('case_id') }}">
+    <p class="muted">This investigation will be linked to incident case
+      <a href="/incidents/case/{{ request.args.get('case_id') }}">{{ request.args.get('case_id') }}</a>.</p>
+    {% endif %}
     <div class="form-row">
       <label>Source device
-        <select name="source" required>
-          <option value="" {{ '' if request.args.get('device') else 'selected' }} disabled>— Select a device —</option>
-          {% for d in devices %}
-          <option value="{{ d.hostname }}" {{ 'selected' if request.args.get('device') == d.hostname }}>{{ d.hostname }}</option>
-          {% endfor %}
-        </select>
+        <div class="entity-picker" data-picker data-kind="device" data-name="source"
+             data-required="1" data-value="{{ request.args.get('device', '') }}"></div>
       </label>
       <label>Destination device
-        <select name="destination" required>
-          <option value="" selected disabled>— Select a device —</option>
-          {% for d in devices %}
-          <option value="{{ d.hostname }}">{{ d.hostname }}</option>
-          {% endfor %}
-        </select>
+        <div class="entity-picker" data-picker data-kind="device" data-name="destination"
+             data-required="1"></div>
       </label>
     </div>
+    <details>
+      <summary class="muted">Declared intent (optional): VRF, source address, protocol, port</summary>
+      <div class="form-row">
+        <label>VRF <input name="vrf" placeholder="default"></label>
+        <label>Source address <input name="source_address" placeholder="10.0.10.20"></label>
+        <label>Protocol
+          <select name="protocol">
+            <option value="">any / unspecified</option>
+            <option value="tcp">TCP</option>
+            <option value="udp">UDP</option>
+            <option value="icmp">ICMP</option>
+          </select>
+        </label>
+        <label>Port <input name="port" inputmode="numeric" placeholder="443"></label>
+      </div>
+      <p class="muted">Recorded with the investigation. Atlas evaluates topology
+      and device state deterministically; ACL/firewall policy for this intent is
+      not evaluated and is reported under what Atlas cannot see.</p>
+    </details>
     <div class="form-actions">
       <button class="btn btn-primary" type="submit">Investigate Path</button>
     </div>
@@ -67,7 +83,15 @@
     <span class="muted">{{ investigation.generated_at }}</span>
   </div>
   {% if investigation.path %}
-  <p><strong>Path:</strong> {{ investigation.path | join(' → ') }}</p>
+  <p><strong>Observed path (from evidence):</strong> {{ investigation.path | join(' → ') }}</p>
+  {% endif %}
+  {% if investigation.intent %}
+  <p class="muted"><strong>Declared intent:</strong>
+    {% for key, value in investigation.intent.items() %}{{ key }}={{ value }}{{ ' · ' if not loop.last }}{% endfor %}
+    — {{ investigation.intent_note }}</p>
+  {% endif %}
+  {% if investigation.case_id %}
+  <p class="muted">Linked to incident case <a href="/incidents/case/{{ investigation.case_id }}">{{ investigation.case_id }}</a>.</p>
   {% endif %}
   {% if investigation.failure_summary %}
   <p class="hop-text-failed"><strong>Where communication stops:</strong> {{ investigation.failure_summary }}</p>
@@ -132,7 +156,18 @@
 
 {% if past_investigations %}
 <section class="card">
-  <h2>Recent investigations</h2>
+  <h2>Saved investigations</h2>
+  <form method="get" action="/paths/compare" class="filter-bar">
+    <input type="hidden" name="scope" value="{{ active_scope_id }}">
+    <label>Compare earlier
+      <select name="left">{% for entry in past_investigations %}<option value="{{ loop.index0 }}">{{ entry.generated_at }} · {{ entry.source }}→{{ entry.destination }}</option>{% endfor %}</select>
+    </label>
+    <label>with later
+      <select name="right">{% for entry in past_investigations %}<option value="{{ loop.index0 }}" {{ 'selected' if loop.first }}>{{ entry.generated_at }} · {{ entry.source }}→{{ entry.destination }}</option>{% endfor %}</select>
+    </label>
+    <button class="btn btn-sm" type="submit">Compare over time</button>
+  </form>
+  <div class="table-scroll" role="region" aria-label="Saved investigations" tabindex="0">
   <table class="grid">
     <thead><tr><th>When</th><th>Source</th><th>Destination</th><th>Result</th><th>Confidence</th></tr></thead>
     <tbody>
@@ -147,8 +182,10 @@
       {% endfor %}
     </tbody>
   </table>
-  <p class="muted">Each investigation is stored with its evidence so it can be replayed later.</p>
+  </div>
+  <p class="muted">Each investigation is stored with its evidence so it can be replayed and compared later.</p>
 </section>
 {% endif %}
+<script src="{{ url_for('static', filename='atlas-picker.js') }}" defer></script>
 {% endif %}
 {% endblock %}

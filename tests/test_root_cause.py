@@ -370,9 +370,9 @@ class PipelineIntegrationTests(unittest.TestCase):
             self.assertIn("## Root Cause Analysis", markdown)
             self.assertIn("Likely cause", markdown)
             self.assertIn("Recommended next step", markdown)
-            # The incidents page shows the analysis card.
+            # The scoped incidents page shows the (inferred) analysis card.
             page = client.get("/incidents?scope=lab-a").data
-            self.assertIn(b"Root Cause Analysis", page)
+            self.assertIn(b"root cause analysis (inferred)", page)
             self.assertIn(b"Likely cause", page)
             # The dashboard shows the most likely root cause card.
             page = client.get("/?scope=lab-a").data

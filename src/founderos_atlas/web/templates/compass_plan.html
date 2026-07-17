@@ -7,21 +7,44 @@
   {'label': 'Compass', 'href': scoped_url('/compass', link_scope())},
   {'label': plan.title},
 ]) }}
+{% set editable = plan.status in ('draft', 'analysed') %}
+{% set status_tone = 'pass' if plan.status in ('analysed', 'approved', 'completed')
+   else ('failed' if plan.status in ('rejected', 'failed', 'rolled-back') else 'unknown') %}
 <div class="page-head">
   <h1>{{ plan.title }}</h1>
-  <span class="badge hop-badge hop-badge-{{ 'pass' if plan.status in ('analysed', 'approved') else ('failed' if plan.status == 'rejected' else 'unknown') }}">{{ plan.status }}</span>
+  <span class="badge hop-badge hop-badge-{{ status_tone }}">{{ plan.status }}</span>
 </div>
 <p class="muted">
-  Window: {{ plan.maintenance_window or '—' }} ·
-  Engineer: {{ plan.engineer or '—' }} ·
+  Window: {{ plan.maintenance_window or '—' }}{% if plan.window_start %} ({{ fmt.when(plan.window_start) }} → {{ fmt.when(plan.window_end) }}){% endif %} ·
+  Owner: {{ plan.engineer or '—' }} ·
+  Reviewers: {{ plan.reviewers | join(', ') or '—' }} ·
   CAB: {{ plan.cab_reference or '—' }} ·
-  Scope: enterprise ({{ enterprise_device_count }} canonical device(s) from {{ enterprise_contributions | length }} profile(s)) ·
   Updated: {{ fmt.when(plan.updated_at) }}
+  {% if plan.incident_ref %} · Incident: <a href="/incidents/case/{{ plan.incident_ref }}">{{ plan.incident_ref }}</a>{% endif %}
+  · <a href="/compass/{{ plan.plan_id }}/cab.md">CAB export</a>
 </p>
 
-{% if plan.status in ('analysed', 'approved', 'rejected') %}
-<section class="card" id="approval">
-  <h2>Approval</h2>
+{# ---------------------------------------------------------------- lifecycle #}
+<section class="card" id="lifecycle">
+  <h2>Lifecycle</h2>
+  <p class="muted">
+    Draft → analysed → in review → approved → scheduled → running →
+    completed (or failed → rolled back). Any edit returns the plan to
+    draft, so a decision always covers exactly what was reviewed.
+  </p>
+
+  {% if plan.status == 'analysed' and can('plans.edit') %}
+  {% if readiness_gaps %}
+  <p><strong>Before review:</strong></p>
+  <ul>{% for gap in readiness_gaps %}<li class="warn">{{ gap }}</li>{% endfor %}</ul>
+  {% else %}
+  <form method="post" action="/compass/{{ plan.plan_id }}/submit">{{ csrf_field() }}
+    <input type="hidden" name="expected_revision" value="{{ plan.revision }}">
+    <button class="btn btn-primary" type="submit">Submit for review</button>
+  </form>
+  {% endif %}
+  {% endif %}
+
   {% if plan.approval %}
   <p>
     <strong>{{ plan.approval.decision | title }}</strong> by
@@ -29,12 +52,11 @@
     {% if plan.approval.reason %}<span class="muted">— {{ plan.approval.reason }}</span>{% endif %}
   </p>
   {% endif %}
-  {% if plan.status == 'analysed' %}
+
+  {% if plan.status == 'in-review' %}
   <p class="muted">
-    The decision covers exactly this analysed revision — any later edit
-    returns the plan to draft and clears the way for a fresh decision.
-    {% if not can('plans.approve') %}Your roles cannot approve plans; an
-    approver has been notified.{% endif %}
+    Awaiting an approver's decision on this exact revision.
+    {% if not can('plans.approve') %}Your roles cannot approve plans.{% endif %}
   </p>
   {% if can('plans.approve') %}
   <form method="post" action="/compass/{{ plan.plan_id }}/decision" class="filter-bar">{{ csrf_field() }}
@@ -45,15 +67,73 @@
   </form>
   {% endif %}
   {% endif %}
+
+  {% if plan.status == 'approved' and can('plans.edit') %}
+  <form method="post" action="/compass/{{ plan.plan_id }}/schedule" class="filter-bar">{{ csrf_field() }}
+    <input type="hidden" name="expected_revision" value="{{ plan.revision }}">
+    <label>Window start <input type="datetime-local" name="window_start" required></label>
+    <label>Window end <input type="datetime-local" name="window_end" required></label>
+    <button class="btn btn-primary" type="submit">Schedule</button>
+  </form>
+  {% endif %}
+
+  {% if plan.status not in ('completed', 'rolled-back', 'cancelled') and can('plans.edit') %}
+  <form method="post" action="/compass/{{ plan.plan_id }}/execution" class="filter-bar">{{ csrf_field() }}
+    <input type="hidden" name="expected_revision" value="{{ plan.revision }}">
+    <input type="hidden" name="action" value="cancel">
+    <label>Cancel plan (reason) <input name="note" placeholder="why"></label>
+    <button class="btn btn-sm" type="submit">Cancel plan</button>
+  </form>
+  {% endif %}
+</section>
+
+{# ---------------------------------------------------------------- readiness #}
+{% if plan.status in ('draft', 'analysed', 'in-review') %}
+<section class="card" id="readiness">
+  <h2>Readiness — rollback, criteria, checks, reviewers</h2>
+  {% if can('plans.edit') %}
+  <form class="form" method="post" action="/compass/{{ plan.plan_id }}/readiness">{{ csrf_field() }}
+    <input type="hidden" name="expected_revision" value="{{ plan.revision }}">
+    <label>Rollback plan
+      <textarea name="rollback_plan" rows="2" placeholder="How every change is undone if the window goes wrong">{{ plan.rollback_plan }}</textarea>
+    </label>
+    <div class="form-row">
+      <label>Success criteria (one per line)
+        <textarea name="success_criteria" rows="3">{{ plan.success_criteria | join('\n') }}</textarea>
+      </label>
+      <label>Reviewers (one per line)
+        <textarea name="reviewers" rows="3">{{ plan.reviewers | join('\n') }}</textarea>
+      </label>
+    </div>
+    <div class="form-row">
+      <label>Pre-checks (one per line{% if plan.pre_checks %} — re-saving resets recorded results{% endif %})
+        <textarea name="pre_checks" rows="3">{{ plan.pre_checks | map(attribute='text') | join('\n') }}</textarea>
+      </label>
+      <label>Post-checks (one per line)
+        <textarea name="post_checks" rows="3">{{ plan.post_checks | map(attribute='text') | join('\n') }}</textarea>
+      </label>
+    </div>
+    <button class="btn btn-sm btn-primary" type="submit">Save readiness details</button>
+  </form>
+  {% else %}
+  <p><strong>Rollback:</strong> {{ plan.rollback_plan or 'none written' }}</p>
+  {% endif %}
 </section>
 {% endif %}
 
+{# ---------------------------------------------------------------- changes #}
 <section class="card">
   <h2>Planned Changes ({{ plan.changes | length }})</h2>
+  {% if order_problems %}
+  <div class="status-banner status-warning">
+    <span class="badge">Order</span>
+    <span>{{ order_problems | join(' ') }}</span>
+  </div>
+  {% endif %}
   {% if plan.changes %}
-  <div class="table-scroll" role="region" aria-label="Planned changes" tabindex="0">
+  <div class="table-scroll table-scroll-wide" role="region" aria-label="Planned changes" tabindex="0">
   <table class="grid">
-    <thead><tr><th>#</th><th>Change</th><th>Reason</th><th>Duration</th><th>Rollback</th><th>Notes</th><th><span class="visually-hidden">Actions</span></th></tr></thead>
+    <thead><tr><th>#</th><th>Change</th><th>Reason</th><th>Duration</th><th>Rollback</th><th>Depends on</th><th>Group</th>{% if plan.status == 'running' %}<th>Checkpoint</th>{% endif %}<th><span class="visually-hidden">Actions</span></th></tr></thead>
     <tbody>
       {% for change in plan.changes %}
       <tr>
@@ -62,45 +142,218 @@
         <td>{{ change.reason or '—' }}</td>
         <td>{{ change.estimated_duration_minutes ~ ' min' if change.estimated_duration_minutes is not none else '—' }}</td>
         <td>{% if change.rollback_available is sameas true %}<span class="ok">yes</span>{% elif change.rollback_available is sameas false %}<span class="warn">no</span>{% else %}unknown{% endif %}</td>
-        <td>{{ change.notes or '—' }}</td>
+        <td>{{ change.depends_on | join(', ') or '—' }}</td>
+        <td>{{ change.concurrency_group or '—' }}</td>
+        {% if plan.status == 'running' %}
         <td>
-          <form method="post" action="/compass/{{ plan.plan_id }}/changes/{{ change.change_id }}/remove">{{ csrf_field() }}
-      <input type="hidden" name="expected_revision" value="{{ plan.revision }}">
+          {% set outcome = checkpoints.get(change.change_id) %}
+          {% if outcome %}
+          <span class="badge hop-badge hop-badge-{{ 'pass' if outcome == 'done' else ('failed' if outcome == 'failed' else 'warning') }}">{{ outcome }}</span>
+          {% else %}
+          <form method="post" action="/compass/{{ plan.plan_id }}/execution" class="filter-bar" style="padding:0;border:0;">{{ csrf_field() }}
+            <input type="hidden" name="expected_revision" value="{{ plan.revision }}">
+            <input type="hidden" name="action" value="checkpoint">
+            <input type="hidden" name="change_id" value="{{ change.change_id }}">
+            <label class="visually-hidden" for="cknote-{{ change.change_id }}">Checkpoint note</label>
+            <input id="cknote-{{ change.change_id }}" name="note" placeholder="note">
+            <button class="btn btn-sm" name="outcome" value="done" type="submit">Done</button>
+            <button class="btn btn-sm" name="outcome" value="failed" type="submit">Failed</button>
+            <button class="btn btn-sm" name="outcome" value="skipped" type="submit">Skip</button>
+          </form>
+          {% endif %}
+        </td>
+        {% endif %}
+        <td class="row-actions">
+          {% if editable and can('plans.edit') %}
+          <form method="post" action="/compass/{{ plan.plan_id }}/reorder" style="display:inline">{{ csrf_field() }}
+            <input type="hidden" name="expected_revision" value="{{ plan.revision }}">
+            <input type="hidden" name="change_id" value="{{ change.change_id }}">
+            <button class="btn btn-sm" name="direction" value="up" type="submit" aria-label="Move {{ change.title }} earlier" {{ 'disabled' if loop.first }}>↑</button>
+            <button class="btn btn-sm" name="direction" value="down" type="submit" aria-label="Move {{ change.title }} later" {{ 'disabled' if loop.last }}>↓</button>
+          </form>
+          <details style="display:inline-block">
+            <summary class="btn btn-sm" role="button">Dependencies</summary>
+            <form method="post" action="/compass/{{ plan.plan_id }}/dependencies" class="form" style="min-width:220px;">{{ csrf_field() }}
+              <input type="hidden" name="expected_revision" value="{{ plan.revision }}">
+              <input type="hidden" name="change_id" value="{{ change.change_id }}">
+              <fieldset style="border:0;padding:0;"><legend class="muted">Must run after</legend>
+                {% for other in plan.changes if other.change_id != change.change_id %}
+                <label class="checkbox"><input type="checkbox" name="depends_on" value="{{ other.change_id }}" {{ 'checked' if other.change_id in change.depends_on }}> {{ other.change_id }} — {{ other.title }}</label>
+                {% endfor %}
+              </fieldset>
+              <label>Concurrency group <input name="concurrency_group" value="{{ change.concurrency_group or '' }}" placeholder="e.g. batch-a"></label>
+              <button class="btn btn-sm" type="submit">Save</button>
+            </form>
+          </details>
+          <form method="post" action="/compass/{{ plan.plan_id }}/changes/{{ change.change_id }}/remove" style="display:inline">{{ csrf_field() }}
+            <input type="hidden" name="expected_revision" value="{{ plan.revision }}">
             <button class="btn btn-sm" type="submit" aria-label="Remove change {{ change.title }}">Remove</button>
           </form>
+          {% else %}—{% endif %}
         </td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
   </div>
+  {% if editable and can('plans.edit') %}
   <form method="post" action="/compass/{{ plan.plan_id }}/analyse" class="form-actions" style="margin-top: 12px;">{{ csrf_field() }}
       <input type="hidden" name="expected_revision" value="{{ plan.revision }}">
     <button class="btn btn-primary" type="submit">Analyse Plan</button>
   </form>
+  {% endif %}
+
+  {% if plan.changes and plan.window_start %}
+  <h3>Window timeline</h3>
+  {% set total = plan.changes | map(attribute='estimated_duration_minutes') | select('ne', none) | sum %}
+  <div class="gantt" role="img" aria-label="Sequential timeline of planned changes within the maintenance window">
+    {% set ns = namespace(offset=0) %}
+    {% for change in plan.changes %}
+    {% set minutes = change.estimated_duration_minutes or 0 %}
+    <div class="gantt-row">
+      <span class="muted">{{ change.change_id }} · {{ change.subject }}</span>
+      <div class="gantt-track">
+        {% if total and minutes %}
+        <div class="gantt-bar" style="left: {{ (100 * ns.offset / total) | round(1) }}%; width: {{ (100 * minutes / total) | round(1) }}%"></div>
+        {% set ns.offset = ns.offset + minutes %}
+        {% else %}
+        <span class="muted" style="padding-left:6px;">no duration estimate</span>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  <p class="muted">Proportional by estimated duration, in execution order — an estimate aid, not a schedule commitment.</p>
+  {% endif %}
   {% else %}
   <p class="muted">No changes yet — add the first one below.</p>
   {% endif %}
 </section>
 
+{# ---------------------------------------------------------------- execution #}
+{% if plan.status in ('scheduled', 'running') %}
+<section class="card" id="execution">
+  <h2>Execution — {{ 'pre-checks, then start' if plan.status == 'scheduled' else 'checkpoints and completion' }}</h2>
+  <p class="muted">
+    Atlas does not push configuration to devices, so execution is tracked
+    through explicit, attributed checkpoints — that record is the
+    resulting evidence, and it flows to the audit log
+    {% if plan.incident_ref %} and back to incident {{ plan.incident_ref }}{% endif %}.
+  </p>
+
+  <h3>Pre-checks</h3>
+  <ul>
+    {% for check in plan.pre_checks %}
+    <li>
+      {{ check.text }}
+      {% if check.status != 'pending' %}
+      <span class="badge hop-badge hop-badge-{{ 'pass' if check.status == 'passed' else 'failed' }}">{{ check.status }}</span>
+      <span class="muted">{{ check.by }} · {{ check.at | timestamp }}</span>
+      {% elif can('plans.edit') %}
+      <form method="post" action="/compass/{{ plan.plan_id }}/execution" class="filter-bar" style="display:inline-flex;padding:0;border:0;">{{ csrf_field() }}
+        <input type="hidden" name="expected_revision" value="{{ plan.revision }}">
+        <input type="hidden" name="action" value="check">
+        <input type="hidden" name="phase" value="pre">
+        <input type="hidden" name="check_id" value="{{ check.check_id }}">
+        <button class="btn btn-sm" name="passed" value="1" type="submit">Passed</button>
+        <button class="btn btn-sm" name="passed" value="0" type="submit">Failed</button>
+      </form>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+
+  {% if plan.status == 'scheduled' and can('plans.edit') %}
+  <form method="post" action="/compass/{{ plan.plan_id }}/execution">{{ csrf_field() }}
+    <input type="hidden" name="expected_revision" value="{{ plan.revision }}">
+    <input type="hidden" name="action" value="start">
+    <button class="btn btn-primary" type="submit">Start execution</button>
+  </form>
+  {% endif %}
+
+  {% if plan.status == 'running' %}
+  <h3>Post-checks</h3>
+  <ul>
+    {% for check in plan.post_checks %}
+    <li>
+      {{ check.text }}
+      {% if check.status != 'pending' %}
+      <span class="badge hop-badge hop-badge-{{ 'pass' if check.status == 'passed' else 'failed' }}">{{ check.status }}</span>
+      {% elif can('plans.edit') %}
+      <form method="post" action="/compass/{{ plan.plan_id }}/execution" class="filter-bar" style="display:inline-flex;padding:0;border:0;">{{ csrf_field() }}
+        <input type="hidden" name="expected_revision" value="{{ plan.revision }}">
+        <input type="hidden" name="action" value="check">
+        <input type="hidden" name="phase" value="post">
+        <input type="hidden" name="check_id" value="{{ check.check_id }}">
+        <button class="btn btn-sm" name="passed" value="1" type="submit">Passed</button>
+        <button class="btn btn-sm" name="passed" value="0" type="submit">Failed</button>
+      </form>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% if can('plans.edit') %}
+  <div class="filter-bar">
+    <form method="post" action="/compass/{{ plan.plan_id }}/execution">{{ csrf_field() }}
+      <input type="hidden" name="expected_revision" value="{{ plan.revision }}">
+      <input type="hidden" name="action" value="complete">
+      <button class="btn btn-primary" type="submit">Mark completed</button>
+    </form>
+    <form method="post" action="/compass/{{ plan.plan_id }}/execution" class="filter-bar" style="padding:0;border:0;">{{ csrf_field() }}
+      <input type="hidden" name="expected_revision" value="{{ plan.revision }}">
+      <input type="hidden" name="action" value="fail">
+      <label>Mark failed (what happened) <input name="note" required></label>
+      <button class="btn btn-sm" type="submit">Failed</button>
+    </form>
+  </div>
+  {% endif %}
+  {% endif %}
+</section>
+{% endif %}
+
+{% if plan.status == 'failed' and can('plans.edit') %}
+<section class="card">
+  <h2>Rollback</h2>
+  <p><strong>Plan:</strong> {{ plan.rollback_plan or 'none was written' }}</p>
+  <form method="post" action="/compass/{{ plan.plan_id }}/execution" class="filter-bar">{{ csrf_field() }}
+    <input type="hidden" name="expected_revision" value="{{ plan.revision }}">
+    <input type="hidden" name="action" value="rollback">
+    <label>What was restored <input name="note" required></label>
+    <button class="btn btn-primary" type="submit">Record rollback</button>
+  </form>
+</section>
+{% endif %}
+
+{% if plan.execution_log %}
+<section class="card">
+  <h2>Execution record</h2>
+  <ul class="case-timeline exec-log">
+    {% for entry in plan.execution_log %}
+    <li>
+      <strong>{{ entry.event }}</strong>
+      {% if entry.change_id %}· {{ entry.change_id }}{% endif %}
+      · {{ entry.actor }} · {{ entry.at | timestamp }}
+      {% if entry.note %}<span class="muted">— {{ entry.note }}</span>{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+{# ---------------------------------------------------------------- add form #}
+{% if editable and can('plans.edit') %}
 <section class="card">
   <h2>Add a Change</h2>
   <form class="form" method="post" action="/compass/{{ plan.plan_id }}/changes">{{ csrf_field() }}
       <input type="hidden" name="expected_revision" value="{{ plan.revision }}">
     <div class="form-row">
       <label>Device
-        <select name="device" id="compass-device" required>
-          <option value="" {{ '' if request.args.get('device') else 'selected' }} disabled>— Select a device —</option>
-          {% for d in devices %}<option value="{{ d.hostname }}" {{ 'selected' if request.args.get('device') == d.hostname }}>{{ d.hostname }}</option>{% endfor %}
-        </select>
+        <div class="entity-picker" data-picker data-kind="device" data-name="device"
+             data-required="1" data-value="{{ request.args.get('device', '') }}"></div>
       </label>
-      <label>Interface (optional)
-        <select name="interface" id="compass-interface">
-          <option value="" data-keep="1">— none / device-level —</option>
-          {% for d in devices %}{% for i in d.interfaces %}
-          <option value="{{ i.name }}" data-device="{{ d.hostname }}">{{ d.hostname }} — {{ i.label }}</option>
-          {% endfor %}{% endfor %}
-        </select>
+      <label>Interface (optional — loads after the device is picked)
+        <div class="entity-picker" data-picker data-kind="interface" data-name="interface"
+             data-device-from="device"></div>
       </label>
       <label>Change type
         <select name="change_type" required>
@@ -131,9 +384,10 @@
     <div class="form-actions">
       <button class="btn btn-primary" type="submit">Add Change</button>
     </div>
-    <p class="muted">Devices and interfaces come from the enterprise's latest discovery evidence and are re-validated server-side.</p>
+    <p class="muted">Devices and interfaces are searched from the enterprise's latest discovery evidence and re-validated server-side.</p>
   </form>
 </section>
+{% endif %}
 
 {% if assessment %}
 <section class="card root-cause">
@@ -187,7 +441,7 @@
 {% endif %}
 
 <section class="card">
-  <h2>Dependencies</h2>
+  <h2>Evidence-derived dependencies</h2>
   {% if assessment.dependencies %}
   <ul>
     {% for dep in assessment.dependencies %}
@@ -210,4 +464,5 @@
 </section>
 {% endif %}
 {% endif %}
+<script src="{{ url_for('static', filename='atlas-picker.js') }}" defer></script>
 {% endblock %}

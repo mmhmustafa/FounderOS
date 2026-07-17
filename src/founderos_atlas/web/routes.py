@@ -3982,6 +3982,10 @@ def register_routes(app) -> None:
                 "predict.html",
                 needs_scope=False,
                 enterprise=True,
+                scenarios=(load_json(
+                    enterprise_scope_dir(output_dir())
+                    / "prediction_scenarios.json"
+                ) or [])[:8],
                 devices=prediction_targets(snapshot),
                 prediction=load_json(enterprise_dir / "prediction_report.json"),
                 artifact_prefix=ENTERPRISE_ARTIFACT_PREFIX,
@@ -3997,6 +4001,9 @@ def register_routes(app) -> None:
             "predict.html",
             needs_scope=False,
             enterprise=False,
+            scenarios=(load_json(
+                scopes[scope_id].output_dir / "prediction_scenarios.json"
+            ) or [])[:8],
             devices=devices,
             prediction=prediction,
             artifact_prefix=artifact_prefix(scope),
@@ -4017,8 +4024,20 @@ def register_routes(app) -> None:
         scope_id = active_scope_id(scopes)
         device = request.form.get("device", "").strip()
         interface = request.form.get("interface", "").strip()
-        if not device or not interface:
-            flash("A device and an interface are required.", "error")
+        change_type = request.form.get("change_type", "shutdown-interface").strip()
+        # Only engine-modeled types are offered; anything else falls back
+        # to the modeled default rather than pretending.
+        if change_type not in ("shutdown-interface", "reboot-device"):
+            change_type = "shutdown-interface"
+        needs_interface = change_type == "shutdown-interface"
+        if not device or (needs_interface and not interface):
+            flash(
+                "A device is required"
+                + (" and an interface for interface changes" if needs_interface
+                   else "")
+                + ".",
+                "error",
+            )
             return redirect(url_for("predict_page"))
         evidence_overrides: dict = {}
         if scope_id == GLOBAL_SCOPE_ID:
@@ -4057,16 +4076,28 @@ def register_routes(app) -> None:
                     seed_addresses = profile.all_seeds
                     break
             scope_label = scope.label
-        device, interface, problem = validated_change_target(
-            snapshot, device, interface, scope_label
-        )
+        if needs_interface:
+            device, interface, problem = validated_change_target(
+                snapshot, device, interface, scope_label
+            )
+        else:
+            interface = None
+            known = {
+                str(entry.get("hostname") or "").casefold()
+                for entry in (snapshot or {}).get("devices") or ()
+                if isinstance(entry, dict)
+            }
+            problem = (
+                None if device.casefold() in known else
+                f"{device} is not in {scope_label}'s latest discovery."
+            )
         if problem is not None:
             flash(problem, "error")
             return redirect(url_for("predict_page"))
         generated_at = now_iso()
         change = ChangeRequest(
-            request_id=f"gui-{device}-{interface}".replace(" ", "-"),
-            change_type="shutdown-interface",
+            request_id=f"gui-{device}-{interface or change_type}".replace(" ", "-"),
+            change_type=change_type,
             target_device=device,
             target_object=interface,
             requested_at=generated_at,
@@ -4093,7 +4124,48 @@ def register_routes(app) -> None:
         (out_dir / "prediction_report.md").write_text(
             render_prediction_markdown(prediction), encoding="utf-8"
         )
-        flash("Prediction generated.", "success")
+        # Saved scenario: the prediction's own facts, replayable and
+        # comparable, addable to Compass.
+        scenario = {
+            "scenario_id": f"scn-{uuid4().hex[:8]}",
+            "generated_at": generated_at,
+            "scope_id": scope_id,
+            "change_type": change_type,
+            "device": device,
+            "interface": interface,
+            "risk": (prediction.to_dict().get("risk") or {}).get("level"),
+            "confidence": (
+                prediction.to_dict().get("confidence") or {}
+            ).get("percent"),
+            "summary": (
+                prediction.to_dict().get("blast_radius") or {}
+            ).get("summary"),
+        }
+        scenarios_path = out_dir / "prediction_scenarios.json"
+        existing_scenarios = load_json(scenarios_path) or []
+        if not isinstance(existing_scenarios, list):
+            existing_scenarios = []
+        existing_scenarios.insert(0, scenario)
+        scenarios_path.write_text(
+            __import__("json").dumps(existing_scenarios[:20], indent=2)
+            + "\n",
+            encoding="utf-8",
+        )
+        case_id = request.form.get("case_id", "").strip()
+        if case_id:
+            from founderos_atlas.incidents.records import (
+                IncidentCaseRepository,
+            )
+
+            try:
+                IncidentCaseRepository(cfg("ATLAS_WORKSPACE_ROOT")).link(
+                    case_id, kind="prediction",
+                    value=f"{change_type} {device} {interface or ''}".strip(),
+                    actor=current_actor(),
+                )
+            except ValueError:
+                pass
+        flash("Prediction generated and scenario saved.", "success")
         return redirect(url_for("predict_page"))
 
     # -- Path Intelligence (PR-037: where does communication stop, and why?) --
@@ -4148,6 +4220,17 @@ def register_routes(app) -> None:
         if not source or not destination:
             flash("A source and a destination device are required.", "error")
             return redirect(url_for("paths_page"))
+        # Declared L3/L4 intent rides with the investigation as context.
+        # Atlas records it honestly: the deterministic engine evaluates
+        # topology and state; ACL/firewall policy evaluation is listed
+        # under what it cannot see.
+        intent = {
+            "vrf": request.form.get("vrf", "").strip(),
+            "source_address": request.form.get("source_address", "").strip(),
+            "protocol": request.form.get("protocol", "").strip(),
+            "port": request.form.get("port", "").strip(),
+        }
+        intent = {key: value for key, value in intent.items() if value}
         generated_at = now_iso()
         # The engine itself resolves and reports unknown devices with
         # evidence-based explanations — no pre-validation needed here.
@@ -4180,6 +4263,43 @@ def register_routes(app) -> None:
                 history_root=scope.history_root,
                 generated_at=generated_at,
                 profile_id=scope.scope_id,
+            )
+        # Attach the declared intent to the stored report (and to an
+        # incident case when the investigation came from one).
+        report_dir = (
+            enterprise_scope_dir(output_dir())
+            if scope_id == GLOBAL_SCOPE_ID else scopes[scope_id].output_dir
+        )
+        report_path = report_dir / "path_investigation_report.json"
+        stored = load_json(report_path)
+        if isinstance(stored, dict):
+            if intent:
+                stored["intent"] = intent
+                stored["intent_note"] = (
+                    "Declared intent, recorded with the investigation. "
+                    "Atlas evaluated topology and device state; ACL and "
+                    "firewall policy for this protocol/port were NOT "
+                    "evaluated and are listed under what Atlas cannot see."
+                )
+            case_id = request.form.get("case_id", "").strip()
+            if case_id:
+                stored["case_id"] = case_id
+                from founderos_atlas.incidents.records import (
+                    IncidentCaseRepository,
+                )
+
+                try:
+                    IncidentCaseRepository(cfg("ATLAS_WORKSPACE_ROOT")).link(
+                        case_id, kind="path",
+                        value=f"{source} → {destination}",
+                        actor=current_actor(),
+                    )
+                except ValueError:
+                    pass
+            report_path.write_text(
+                __import__("json").dumps(stored, indent=2, sort_keys=True)
+                + "\n",
+                encoding="utf-8",
             )
         flash("Path investigation complete.", "success")
         return redirect(url_for("paths_page"))
@@ -4225,10 +4345,28 @@ def register_routes(app) -> None:
             compass_repository(),
             title=title,
             maintenance_window=request.form.get("maintenance_window", ""),
-            engineer=request.form.get("engineer", ""),
+            engineer=request.form.get("engineer", "") or current_actor(),
             cab_reference=request.form.get("cab_reference", "") or None,
             created_at=now_iso(),
         )
+        incident_ref = request.form.get("incident_ref", "").strip()
+        if incident_ref:
+            from dataclasses import replace as _replace
+
+            from founderos_atlas.incidents.records import (
+                IncidentCaseRepository,
+            )
+
+            repository = compass_repository()
+            linked, _assessment = repository.get(plan.plan_id)
+            repository.save(_replace(linked, incident_ref=incident_ref))
+            try:
+                IncidentCaseRepository(cfg("ATLAS_WORKSPACE_ROOT")).link(
+                    incident_ref, kind="plan", value=plan.plan_id,
+                    actor=current_actor(),
+                )
+            except ValueError:
+                pass
         flash(f"Plan '{plan.title}' created.", "success")
         # "Add to Compass" carried a device here; it rides into the plan
         # page so the Add-a-Change form arrives preselected.
@@ -4253,8 +4391,17 @@ def register_routes(app) -> None:
             flash("That maintenance plan no longer exists.", "error")
             return redirect(url_for("compass_page"))
         graph, snapshot = enterprise_world()
+        from founderos_atlas.compass.lifecycle import (
+            change_checkpoints,
+            readiness_gaps,
+            validate_order,
+        )
+
         return render_template(
             "compass_plan.html",
+            readiness_gaps=readiness_gaps(plan),
+            order_problems=validate_order(plan.changes),
+            checkpoints=change_checkpoints(plan),
             plan=plan,
             assessment=assessment,
             devices=prediction_targets(snapshot),
@@ -4558,33 +4705,49 @@ def register_routes(app) -> None:
 
     @app.route("/incidents")
     def incidents():
+        from founderos_atlas.incidents.records import (
+            CASE_STATUSES,
+            IncidentCaseRepository,
+            SEVERITIES,
+        )
+
         context, scopes, scope_id = scoped_context("incidents")
-        if scope_id == GLOBAL_SCOPE_ID:
-            reports = [
-                {
-                    "label": scope.label,
-                    "report": load_json(scope.output_dir / "incident_report.json"),
-                    "href": f"/artifacts/{artifact_prefix(scope)}incident_report.md",
-                }
-                for scope in aggregation_scopes(scopes)
-                if (scope.output_dir / "incident_report.json").is_file()
-            ]
-            return render_template(
-                "incidents.html",
-                global_view=True,
-                reports=reports,
-                report=None,
-                **context,
-            )
-        scope = scopes[scope_id]
-        report = load_json(scope.output_dir / "incident_report.json")
-        root_cause_data = load_json(scope.output_dir / "root_cause_report.json") or {}
+        repo = IncidentCaseRepository(cfg("ATLAS_WORKSPACE_ROOT"))
+        include_suppressed = request.args.get("suppressed") == "1"
+        status = request.args.get("status", "").strip() or None
+        cases = repo.list(
+            scope_id=None if scope_id == GLOBAL_SCOPE_ID else scope_id,
+            include_suppressed=include_suppressed,
+            status=status,
+        )
+        owner = request.args.get("owner", "").strip()
+        if owner:
+            cases = [case for case in cases if (case.owner or "") == owner]
+        # Enterprise scope is never a dead end: investigations still run
+        # against ONE observation point, chosen inline on the form.
+        selectable = [
+            {"scope_id": scope.scope_id, "label": scope.label}
+            for scope in aggregation_scopes(scopes)
+        ]
+        scope = scopes.get(scope_id) if scope_id != GLOBAL_SCOPE_ID else None
         return render_template(
             "incidents.html",
-            global_view=False,
-            report=report,
-            root_cause=root_cause_data.get("most_important"),
-            artifact_prefix=artifact_prefix(scope),
+            global_view=scope_id == GLOBAL_SCOPE_ID,
+            cases=cases,
+            case_filters={"status": status or "", "owner": owner,
+                          "suppressed": include_suppressed},
+            case_statuses=CASE_STATUSES,
+            severities=SEVERITIES,
+            selectable_profiles=selectable,
+            report=(
+                load_json(scope.output_dir / "incident_report.json")
+                if scope else None
+            ),
+            root_cause=(
+                (load_json(scope.output_dir / "root_cause_report.json") or {})
+                .get("most_important") if scope else None
+            ),
+            artifact_prefix=artifact_prefix(scope) if scope else "",
             **context,
         )
 
@@ -4593,10 +4756,17 @@ def register_routes(app) -> None:
         scopes = known_scopes()
         scope_id = active_scope_id(scopes)
         if scope_id == GLOBAL_SCOPE_ID:
-            flash(
-                "Select a specific network scope to run an investigation.", "error"
-            )
-            return redirect(url_for("incidents"))
+            # Inline profile selection keeps the enterprise view useful:
+            # the investigation runs against the chosen observation point.
+            chosen = request.form.get("profile", "").strip()
+            if chosen and chosen in scopes:
+                scope_id = chosen
+            else:
+                flash(
+                    "Choose which profile's evidence to investigate against.",
+                    "error",
+                )
+                return redirect(url_for("incidents"))
         scope = scopes[scope_id]
         title = request.form.get("title", "").strip()
         description = request.form.get("description", "").strip()
@@ -4629,8 +4799,25 @@ def register_routes(app) -> None:
 
             incident_markdown += root_cause_incident_section(root_cause_data)
         (out / "incident_report.md").write_text(incident_markdown, encoding="utf-8")
-        flash("Incident investigation generated.", "success")
-        return redirect(url_for("incidents"))
+        from founderos_atlas.incidents.records import IncidentCaseRepository
+
+        case = IncidentCaseRepository(cfg("ATLAS_WORKSPACE_ROOT")).open_case(
+            scope_id=scope.scope_id,
+            scope_label=scope.label,
+            title=title,
+            description=description,
+            severity=(
+                request.form.get("severity", "").strip() or "medium"
+            ),
+            actor=current_actor(),
+            report=report.to_dict(),
+        )
+        flash(
+            "Incident investigated and case opened — the report below is "
+            "its evidence.",
+            "success",
+        )
+        return redirect(url_for("incident_case_page", case_id=case.case_id))
 
     # -- Settings -----------------------------------------------------------
 
@@ -5502,6 +5689,37 @@ def register_routes(app) -> None:
         "prediction_report.md",
         "change_report.md",
     })
+
+    def past_path_investigations(scopes, scope_id):
+        from founderos_atlas.path_intelligence import (
+            load_investigation_history,
+        )
+
+        directory = (
+            enterprise_scope_dir(output_dir())
+            if scope_id == GLOBAL_SCOPE_ID
+            else scopes[scope_id].output_dir
+        )
+        return load_investigation_history(directory)[:10]
+
+    from types import SimpleNamespace as _NS
+
+    from .lifecycle_routes import register_lifecycle_routes
+
+    register_lifecycle_routes(app, _NS(
+        cfg=cfg,
+        current_actor=current_actor,
+        scoped_context=scoped_context,
+        known_scopes=known_scopes,
+        active_scope_id=active_scope_id,
+        aggregation_scopes=aggregation_scopes,
+        scoped_world=scoped_world,
+        output_dir=output_dir,
+        now_iso=now_iso,
+        load_json=load_json,
+        artifact_prefix=artifact_prefix,
+        past_path_investigations=past_path_investigations,
+    ))
 
     @app.route("/artifacts/<path:name>")
     def artifacts(name: str):

@@ -360,10 +360,17 @@ class PlaneGuiTests(unittest.TestCase):
     def test_gui_shows_svi_badge_and_management_context(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             client = self.build_world(Path(tmp))
-            page = client.get("/predict?scope=hyderabad-lab").data.decode("utf-8")
-            self.assertIn("[SVI]", page)
-            self.assertIn("10.10.10.2", page)
-            self.assertIn("management address", page)
+            # The SVI badge and management context ride the async interface
+            # API's detail text — the same evidence the old dropdown showed.
+            client.get("/predict?scope=hyderabad-lab")
+            details = " | ".join(
+                item["detail"] for item in client.get(
+                    "/api/device-interfaces?device=SW1&scope=hyderabad-lab"
+                ).get_json()["results"]
+            )
+            self.assertIn("[SVI]", details)
+            self.assertIn("10.10.10.2", details)
+            self.assertIn("management address", details)
 
     def test_gui_prediction_shows_plane_cards(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

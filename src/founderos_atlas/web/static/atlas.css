@@ -696,3 +696,36 @@ textarea:focus-visible, summary:focus-visible, [tabindex]:focus-visible {
 .login-card { max-width: 420px; width: 100%; }
 .login-card form { display: flex; flex-direction: column; gap: 12px; }
 .login-card label { display: flex; flex-direction: column; gap: 4px; }
+
+/* -- Entity picker (async searchable combobox) ------------------------------ */
+.entity-picker { position: relative; display: block; min-width: 220px; }
+.entity-picker input[type="text"] { width: 100%; }
+.picker-list {
+  position: absolute; z-index: 40; left: 0; right: 0; top: 100%;
+  margin: 2px 0 0; padding: 4px; list-style: none;
+  background: var(--surface, #fff); border: 1px solid var(--line, #d6dbe3);
+  border-radius: 8px; box-shadow: 0 8px 24px rgba(20, 30, 50, .12);
+  max-height: 260px; overflow-y: auto;
+}
+.picker-list li[role="option"] { padding: 6px 8px; border-radius: 6px; cursor: pointer; }
+.picker-list li[role="option"]:hover,
+.picker-list li[aria-selected="true"] { background: var(--surface-2, #eef1f5); }
+.picker-note { padding: 6px 8px; font-size: .8rem; }
+
+/* -- Lifecycle surfaces ----------------------------------------------------- */
+.case-header { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.sev-critical { background: #c0392b; color: #fff; }
+.sev-high { background: #e67e22; color: #fff; }
+.sev-medium { background: #b7950b; color: #fff; }
+.sev-low { background: #7f8c8d; color: #fff; }
+.case-timeline { list-style: none; margin: 0; padding: 0; }
+.case-timeline li { padding: 6px 0 6px 16px; border-left: 2px solid var(--line, #d6dbe3); }
+.gantt { display: grid; gap: 4px; }
+.gantt-row { display: grid; grid-template-columns: 180px 1fr; gap: 8px; align-items: center; }
+.gantt-track { position: relative; height: 18px; background: var(--surface-2, #eef1f5); border-radius: 4px; overflow: hidden; }
+.gantt-bar { position: absolute; top: 0; bottom: 0; background: var(--accent, #3f6ad8); opacity: .75; border-radius: 4px; min-width: 6px; }
+.exec-log { font-size: .85rem; }
+
+/* Long option labels (run ids, timestamps) must never widen the page. */
+.filter-bar label { max-width: 100%; min-width: 0; }
+.filter-bar select, .filter-bar input { max-width: min(100%, 340px); }

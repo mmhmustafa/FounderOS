@@ -267,7 +267,7 @@ class PolicyWorkflowTests(unittest.TestCase):
             predict = client.get("/predict?scope=all&device=GW").data.decode(
                 "utf-8"
             )
-            self.assertIn('value="GW" selected', predict)
+            self.assertIn('data-value="GW"', predict)
 
             # Add to Compass: the device rides through plan creation into
             # the plan page's preselected Add-a-Change form.
@@ -286,7 +286,7 @@ class PolicyWorkflowTests(unittest.TestCase):
             location = created.headers["Location"]
             self.assertIn("device=GW", location)
             plan_page = client.get(location).data.decode("utf-8")
-            self.assertIn('value="GW" selected', plan_page)
+            self.assertIn('data-value="GW"', plan_page)
             self.assertIn("Remediate policy: NTP", plan_page)
 
 
