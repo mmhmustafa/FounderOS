@@ -24,9 +24,22 @@ from .stencils import role_accent as _role_accent
 from .stencils import stencil_data_uri
 
 
-CYTOSCAPE_CDN = "https://unpkg.com/cytoscape@3.29.2/dist/cytoscape.min.js"
+CYTOSCAPE_VERSION = "3.29.2"
+# Kept as a compatibility/exported source identifier.  Rendered viewers do
+# not depend on this URL: Atlas embeds the audited vendored copy below so a
+# topology works without Internet access and under the application's CSP.
+CYTOSCAPE_CDN = (
+    f"https://unpkg.com/cytoscape@{CYTOSCAPE_VERSION}/dist/cytoscape.min.js"
+)
 
 _TOPOLOGY_TEMPLATE_PATH = Path(__file__).resolve().parent / "templates" / "topology.html"
+_CYTOSCAPE_VENDOR_PATH = (
+    Path(__file__).resolve().parents[1]
+    / "web"
+    / "static"
+    / "vendor"
+    / "cytoscape.min.js"
+)
 
 
 def _visual_style_version() -> str:
@@ -39,6 +52,8 @@ def _visual_style_version() -> str:
     """
 
     digest = sha256(_TOPOLOGY_TEMPLATE_PATH.read_bytes())
+    digest.update(b"\0cytoscape\0")
+    digest.update(_CYTOSCAPE_VENDOR_PATH.read_bytes())
     for role in sorted(STENCILS):
         digest.update(b"\0role\0")
         digest.update(role.encode("utf-8"))
@@ -998,7 +1013,12 @@ class TopologyRenderer:
         )
         site_json = _script_json(site_view)
         routing_json = _script_json(routing_view)
-        return template.replace("__CYTOSCAPE_CDN__", CYTOSCAPE_CDN).replace(
+        # The viewer is both embedded by /topology and usable as a saved
+        # standalone artifact.  Embedding the pinned local dependency avoids
+        # an Internet/CDN requirement and ensures ``cytoscape`` exists before
+        # the viewer's initialization script executes.
+        cytoscape_source = _CYTOSCAPE_VENDOR_PATH.read_text(encoding="utf-8")
+        return template.replace("__CYTOSCAPE_SOURCE__", cytoscape_source).replace(
             "__TOPOLOGY_ELEMENTS__", elements_json
         ).replace("__SNAPSHOT_SUMMARY__", summary_json).replace(
             "__SITE_VIEW__", site_json

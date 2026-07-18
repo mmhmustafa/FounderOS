@@ -129,24 +129,84 @@ def register_ops_routes(app) -> None:
 
     # -- users administration ---------------------------------------------
 
+    def _auth_mode() -> str:
+        return str(app.config.get("ATLAS_AUTH_MODE") or "local")
+
+    def _allow_sso_admins() -> bool:
+        # In proxy mode an SSO-only account (no password hash) is a fully
+        # usable administrator; in password mode it cannot sign in and
+        # must not count toward the last-admin invariant.
+        return _auth_mode() == "proxy"
+
+    def _reauth_failed():
+        """High-risk user changes in password mode require the signed-in
+        administrator to re-enter THEIR OWN password. Returns a redirect
+        response when re-authentication fails, else None. Local mode has
+        no passwords and proxy mode authenticates at the proxy — there,
+        the check is not feasible and RBAC + audit remain the controls."""
+
+        if _auth_mode() != "password":
+            return None
+        principal = _actor()
+        offered = str(request.form.get("admin_password") or "")
+        store = cfg("ATLAS_USER_STORE")
+        if principal is not None and offered and store.authenticate(
+            principal.username, offered
+        ):
+            return None
+        _audit().append(_audit_event(
+            category="user-account", operation="reauth",
+            subject=f"user:{principal.username if principal else 'unknown'}",
+            outcome="denied",
+            reason="user change refused: administrator re-authentication "
+                   "missing or wrong",
+        ))
+        flash(
+            "Confirm this change by entering your own password in the "
+            "'Your password' field.",
+            "error",
+        )
+        return redirect("/users")
+
     @app.route("/users")
     def users_page():
         store = cfg("ATLAS_USER_STORE")
+        sessions = cfg("ATLAS_SESSION_STORE")
         from founderos_atlas.access.models import ALL_ROLES
 
+        principal = _actor()
+        accounts = []
+        for account in store.list():
+            row = account.public_dict()
+            row["active_sessions"] = sessions.active_count_for(
+                account.username
+            )
+            row["is_me"] = bool(
+                principal
+                and principal.username.casefold()
+                == account.username.casefold()
+            )
+            accounts.append(row)
         return render_template(
             "users.html",
-            accounts=[account.public_dict() for account in store.list()],
+            accounts=accounts,
             revision=store.revision(),
             roles=ALL_ROLES,
-            auth_mode_active=app.config.get("ATLAS_AUTH_MODE"),
-            session_count=cfg("ATLAS_SESSION_STORE").active_count(),
+            auth_mode_active=_auth_mode(),
+            reauth_required=_auth_mode() == "password",
+            usable_admins=store.usable_admin_count(
+                allow_sso=_allow_sso_admins()
+            ),
+            session_count=sessions.active_count(),
         )
 
     @app.route("/users", methods=["POST"], endpoint="users_create")
     def users_create():
         from founderos_atlas.access import UserConflictError, UserStoreError
 
+        refused = _reauth_failed()
+        if refused is not None:
+            return refused
         store = cfg("ATLAS_USER_STORE")
         try:
             expected = int(request.form.get("expected_revision", "") or 0)
@@ -173,14 +233,47 @@ def register_ops_routes(app) -> None:
 
     @app.route("/users/<username>", methods=["POST"], endpoint="users_update")
     def users_update(username: str):
-        from founderos_atlas.access import UserConflictError, UserStoreError
+        from founderos_atlas.access import (
+            LastAdministratorError,
+            UserConflictError,
+            UserStoreError,
+        )
+        from founderos_atlas.access.models import ROLE_SYSTEM_ADMIN
 
+        refused = _reauth_failed()
+        if refused is not None:
+            return refused
         store = cfg("ATLAS_USER_STORE")
         before = store.get(username)
         if before is None:
             flash("No such account.", "error")
             return redirect("/users")
         disabled = request.form.get("disabled")
+        principal = _actor()
+        is_self = bool(
+            principal
+            and principal.username.casefold() == str(username).casefold()
+        )
+        if is_self and disabled == "1":
+            flash(
+                "You cannot disable the account you are signed in with — "
+                "another administrator must do that.",
+                "error",
+            )
+            return redirect("/users")
+        submitted_roles = request.form.getlist("roles")
+        if (
+            is_self
+            and submitted_roles
+            and ROLE_SYSTEM_ADMIN in before.roles
+            and ROLE_SYSTEM_ADMIN not in submitted_roles
+        ):
+            flash(
+                "You cannot remove your own system-admin role — another "
+                "administrator must change your roles.",
+                "error",
+            )
+            return redirect("/users")
         try:
             expected = int(request.form.get("expected_revision", "") or 0)
             account = store.update(
@@ -189,20 +282,25 @@ def register_ops_routes(app) -> None:
                     str(request.form["display_name"])
                     if "display_name" in request.form else None
                 ),
-                roles=(
-                    request.form.getlist("roles")
-                    if request.form.getlist("roles") else None
-                ),
+                roles=submitted_roles if submitted_roles else None,
                 password=str(request.form.get("password") or "") or None,
                 disabled=(disabled == "1") if disabled is not None else None,
                 expected_revision=expected,
+                allow_sso_admins=_allow_sso_admins(),
             )
         except UserConflictError as error:
             abort(409, description=str(error))
+        except LastAdministratorError as error:
+            flash(str(error), "error")
+            return redirect("/users")
         except UserStoreError as error:
             flash(str(error), "error")
             return redirect("/users")
         if account.disabled and not before.disabled:
+            cfg("ATLAS_SESSION_STORE").invalidate_user(account.username)
+        if request.form.get("password") and not is_self:
+            # A rotated password invalidates the holder's sessions: whoever
+            # held the old credential no longer holds a live session.
             cfg("ATLAS_SESSION_STORE").invalidate_user(account.username)
         _audit().append(_audit_event(
             category="user-account", operation="update",
@@ -218,9 +316,30 @@ def register_ops_routes(app) -> None:
         "/users/<username>/delete", methods=["POST"], endpoint="users_delete"
     )
     def users_delete(username: str):
+        from flask import current_app
+
         from founderos_atlas.access import UserConflictError
 
-        from .confirmation import require_confirmation
+        from .confirmation import (
+            CONFIRM_TOKEN_FIELD,
+            require_confirmation,
+            token_is_valid,
+        )
+
+        # Re-authentication happens on the FIRST post (the one carrying
+        # the administrator's password); the signed, path-bound,
+        # short-lived confirmation token then carries that proof into the
+        # confirmed post — the password itself never rides through the
+        # confirmation page.
+        has_valid_token = token_is_valid(
+            current_app,
+            str(request.form.get(CONFIRM_TOKEN_FIELD) or ""),
+            request.path,
+        )
+        if not has_valid_token:
+            refused = _reauth_failed()
+            if refused is not None:
+                return refused
 
         confirmation = require_confirmation(
             title=f"Delete account {username}",
@@ -243,10 +362,18 @@ def register_ops_routes(app) -> None:
             flash("You cannot delete the account you are signed in with.",
                   "error")
             return redirect("/users")
+        from founderos_atlas.access import LastAdministratorError
+
         store = cfg("ATLAS_USER_STORE")
         try:
             expected = int(request.form.get("expected_revision", "") or 0)
-            removed = store.delete(username, expected_revision=expected)
+            removed = store.delete(
+                username, expected_revision=expected,
+                allow_sso_admins=_allow_sso_admins(),
+            )
+        except LastAdministratorError as error:
+            flash(str(error), "error")
+            return redirect("/users")
         except UserConflictError as error:
             abort(409, description=str(error))
         if removed:

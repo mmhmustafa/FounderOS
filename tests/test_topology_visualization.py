@@ -14,6 +14,7 @@ import urllib.request
 from founderos_atlas.demo import run_atlas_discovery_demo
 from founderos_atlas.visualization import (
     CYTOSCAPE_CDN,
+    CYTOSCAPE_VERSION,
     TOPOLOGY_VISUAL_STYLE_MARKER,
     TOPOLOGY_VISUAL_STYLE_VERSION,
     TopologyRenderer,
@@ -91,10 +92,14 @@ class TopologyVisualizationTests(unittest.TestCase):
             )
         )
 
-    def test_renderer_uses_only_pinned_cytoscape_external_url(self) -> None:
+    def test_renderer_embeds_pinned_cytoscape_before_viewer_initialization(self) -> None:
         html = TopologyRenderer(self.snapshot).render()
         urls = re.findall(r"https://[^\"']+", html)
-        self.assertEqual([CYTOSCAPE_CDN], urls)
+        self.assertEqual([], urls)
+        self.assertNotIn(CYTOSCAPE_CDN, html)
+        self.assertIn("Cytoscape Consortium", html)
+        self.assertEqual("3.29.2", CYTOSCAPE_VERSION)
+        self.assertLess(html.index("Cytoscape Consortium"), html.index("cytoscape({"))
 
     def test_renderer_performs_no_network_access(self) -> None:
         with (
@@ -102,7 +107,8 @@ class TopologyVisualizationTests(unittest.TestCase):
             patch.object(urllib.request, "urlopen", side_effect=AssertionError("network used")),
         ):
             html = TopologyRenderer(self.snapshot).render()
-        self.assertIn(CYTOSCAPE_CDN, html)
+        self.assertNotIn(CYTOSCAPE_CDN, html)
+        self.assertIn("Cytoscape Consortium", html)
 
     def test_cli_generates_html_and_requests_browser_open(self) -> None:
         output_path = Path(__file__).resolve().parent / ".atlas_topology_viewer_test.html"

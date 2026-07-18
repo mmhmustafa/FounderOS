@@ -131,6 +131,43 @@ class RenderedPageTests(unittest.TestCase):
                 page.headers.get("Content-Security-Policy", ""),
             )
 
+    def test_only_topology_artifact_can_be_framed_same_origin(self) -> None:
+        """The topology route embeds its generated viewer; every other
+        application page and report artifact remains non-frameable."""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            workdir = Path(tmp)
+            _, client = build_world(workdir)
+            (workdir / "atlas_topology.html").write_text(
+                "<html><body>viewer</body></html>", encoding="utf-8"
+            )
+            (workdir / "morning_brief.md").write_text(
+                "# brief", encoding="utf-8"
+            )
+
+            viewer = client.get("/artifacts/atlas_topology.html")
+            self.assertEqual("SAMEORIGIN", viewer.headers["X-Frame-Options"])
+            self.assertIn(
+                "frame-ancestors 'self'",
+                viewer.headers["Content-Security-Policy"],
+            )
+            viewer.close()
+
+            report = client.get("/artifacts/morning_brief.md")
+            self.assertEqual("DENY", report.headers["X-Frame-Options"])
+            self.assertIn(
+                "frame-ancestors 'none'",
+                report.headers["Content-Security-Policy"],
+            )
+            report.close()
+
+            page = client.get("/?scope=all")
+            self.assertEqual("DENY", page.headers["X-Frame-Options"])
+            self.assertIn(
+                "frame-ancestors 'none'",
+                page.headers["Content-Security-Policy"],
+            )
+
 
 class BehaviorHookTests(unittest.TestCase):
     """The external modules and the data hooks they attach to."""
@@ -287,15 +324,22 @@ class DestructiveConfirmationTests(unittest.TestCase):
             self.assertNotIn(">Admin<", page)
 
     def test_user_deletion_requires_confirmation_in_production(self) -> None:
+        from tests.test_production_security import PASSWORDS
+
         with production_world() as (app, _):
             admin, csrf = sign_in(app, "admin")
-            first = admin.post("/users/viewer/delete", data={"_csrf": csrf})
+            first = admin.post("/users/viewer/delete", data={
+                "_csrf": csrf, "admin_password": PASSWORDS["admin"],
+            })
             self.assertEqual(200, first.status_code)
             store = app.config["ATLAS_USER_STORE"]
             self.assertIsNotNone(store.get("viewer"))
+            body = first.data.decode()
+            # The confirmation page never echoes the password.
+            self.assertNotIn(PASSWORDS["admin"], body)
             admin.post("/users/viewer/delete", data={
                 "_csrf": csrf,
-                "_confirm_token": self._token(first.data.decode()),
+                "_confirm_token": self._token(body),
                 "expected_revision": str(store.revision()),
             })
             self.assertIsNone(store.get("viewer"))

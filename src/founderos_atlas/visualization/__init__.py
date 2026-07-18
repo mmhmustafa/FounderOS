@@ -2,6 +2,7 @@
 
 from .renderer import (
     CYTOSCAPE_CDN,
+    CYTOSCAPE_VERSION,
     TOPOLOGY_VISUAL_STYLE_MARKER,
     TOPOLOGY_VISUAL_STYLE_VERSION,
     TopologyRenderer,
@@ -10,6 +11,7 @@ from .renderer import (
 
 __all__ = [
     "CYTOSCAPE_CDN",
+    "CYTOSCAPE_VERSION",
     "TOPOLOGY_VISUAL_STYLE_MARKER",
     "TOPOLOGY_VISUAL_STYLE_VERSION",
     "TopologyRenderer",

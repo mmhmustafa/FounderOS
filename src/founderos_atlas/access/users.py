@@ -42,6 +42,10 @@ class UserConflictError(RuntimeError):
     """The caller edited an older revision of the user catalog."""
 
 
+class LastAdministratorError(RuntimeError):
+    """The change would leave Atlas without a usable system administrator."""
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
@@ -203,6 +207,51 @@ class UserStore:
             raise UserStoreError("An account needs at least one role.")
         return cleaned
 
+    def _is_usable_admin(self, account: UserAccount, *,
+                         allow_sso: bool) -> bool:
+        """An account that can actually administer Atlas right now:
+        enabled, holding system-admin, and able to sign in (a password,
+        or SSO when the deployment authenticates at a proxy)."""
+
+        from .models import ROLE_SYSTEM_ADMIN
+
+        return (
+            not account.disabled
+            and ROLE_SYSTEM_ADMIN in account.roles
+            and (bool(account.password_hash) or allow_sso)
+        )
+
+    def usable_admin_count(
+        self, *, allow_sso: bool = False, excluding: str | None = None,
+    ) -> int:
+        needle = (excluding or "").casefold()
+        return sum(
+            1 for account in self.list()
+            if account.username.casefold() != needle
+            and self._is_usable_admin(account, allow_sso=allow_sso)
+        )
+
+    def _guard_last_admin(
+        self, before: UserAccount, after, *, allow_sso: bool,
+    ) -> None:
+        """Refuse any change that converts the LAST usable administrator
+        into a non-administrator, a disabled account, or nothing."""
+
+        if not self._is_usable_admin(before, allow_sso=allow_sso):
+            return
+        if after is not None and self._is_usable_admin(
+            after, allow_sso=allow_sso
+        ):
+            return
+        if self.usable_admin_count(
+            allow_sso=allow_sso, excluding=before.username
+        ) == 0:
+            raise LastAdministratorError(
+                "This change would leave Atlas without a usable system "
+                "administrator. Grant system-admin to another enabled "
+                "account first."
+            )
+
     def create(
         self,
         *,
@@ -241,6 +290,7 @@ class UserStore:
         password: str | None = None,
         disabled: bool | None = None,
         expected_revision: int | None = None,
+        allow_sso_admins: bool = False,
     ) -> UserAccount:
         with self._lock:
             current = self._check_revision(expected_revision)
@@ -264,6 +314,9 @@ class UserStore:
                 disabled=disabled if disabled is not None else existing.disabled,
                 updated_at=_now(),
             )
+            self._guard_last_admin(
+                existing, updated, allow_sso=allow_sso_admins
+            )
             users = tuple(
                 updated if account.username == existing.username else account
                 for account in self.list()
@@ -272,10 +325,16 @@ class UserStore:
             return updated
 
     def delete(
-        self, username: str, *, expected_revision: int | None = None
+        self, username: str, *, expected_revision: int | None = None,
+        allow_sso_admins: bool = False,
     ) -> bool:
         with self._lock:
             current = self._check_revision(expected_revision)
+            existing = self.get(username)
+            if existing is not None:
+                self._guard_last_admin(
+                    existing, None, allow_sso=allow_sso_admins
+                )
             users = self.list()
             remaining = tuple(
                 account for account in users
@@ -301,3 +360,39 @@ class UserStore:
         if account is None or account.disabled or not stored or not ok:
             return None
         return account
+
+
+def ensure_recovery_admin(workspace_root) -> str | None:
+    """Emergency lockout recovery, driven by environment variables.
+
+    When ``ATLAS_RECOVERY_ADMIN_USER`` and
+    ``ATLAS_RECOVERY_ADMIN_PASSWORD`` are both set at startup, the named
+    account is created (or reset) as an ENABLED system administrator
+    with that password. The password is hashed immediately and never
+    stored in clear; the caller audits the event. Operators should set
+    the variables, restart, sign in, repair the accounts, then unset
+    them — anyone who can set this process's environment already owns
+    the host, so this restores access without adding a trust boundary.
+
+    Returns the username when a recovery was applied, else ``None``.
+    """
+
+    import os
+
+    from .models import ROLE_SYSTEM_ADMIN
+
+    username = os.environ.get("ATLAS_RECOVERY_ADMIN_USER", "").strip()
+    password = os.environ.get("ATLAS_RECOVERY_ADMIN_PASSWORD", "")
+    if not username or not password:
+        return None
+    store = UserStore(workspace_root)
+    if store.get(username) is None:
+        store.create(
+            username=username, roles=(ROLE_SYSTEM_ADMIN,), password=password,
+        )
+    else:
+        store.update(
+            username, roles=(ROLE_SYSTEM_ADMIN,), password=password,
+            disabled=False,
+        )
+    return username

@@ -209,6 +209,7 @@ class SessionLifecycleTests(unittest.TestCase):
             store = app.config["ATLAS_USER_STORE"]
             response = admin_client.post("/users/viewer", data={
                 "_csrf": csrf, "disabled": "1",
+                "admin_password": PASSWORDS["admin"],
                 "expected_revision": store.revision(),
             })
             self.assertEqual(302, response.status_code)

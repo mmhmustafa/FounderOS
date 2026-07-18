@@ -36,11 +36,12 @@ from founderos_atlas.access import (
     LocalDevelopmentAuth,
     PasswordAuth,
     ProxySSOAuth,
-    RateLimiter,
     SESSION_COOKIE,
     SessionStore,
     UserStore,
+    ensure_recovery_admin,
     resolve_auth_mode,
+    resolve_rate_limiter,
 )
 from founderos_atlas.audit import AuditEvent, AuditLog
 
@@ -58,14 +59,28 @@ _MUTATING_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 _CSRF_TOKEN_EXEMPT = frozenset({"login_submit"})
 
 # (limit per minute, applies-to-endpoint). Sensitive or expensive.
+# login_submit is NOT here: sign-in uses the layered limiter below.
 _RATE_LIMITS: dict[str, int] = {
-    "login_submit": 5,
     "credentials_test": 20,
     "profile_test": 20,
     "settings_restore": 5,
     "api_advisor_ask": 30,
     "advisor_ask_route": 30,
 }
+
+
+def _login_limits() -> dict[str, int]:
+    """Layered sign-in limits (per minute). The ACCOUNT layer counts every
+    attempt against the case-normalized submitted name regardless of
+    source, so a distributed attack cannot dodge it; the SOURCE layer
+    caps one address spraying many accounts; the optional GLOBAL layer
+    (0 disables) is the final safety ceiling."""
+
+    return {
+        "account": int(os.environ.get("ATLAS_LOGIN_ACCOUNT_LIMIT", 5)),
+        "source": int(os.environ.get("ATLAS_LOGIN_SOURCE_LIMIT", 30)),
+        "global": int(os.environ.get("ATLAS_LOGIN_GLOBAL_LIMIT", 500)),
+    }
 
 _SAFE_REQUEST_ID = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 
@@ -107,6 +122,38 @@ def register_security(app, *, auth_mode: str | None = None) -> None:
     mode = resolve_auth_mode(auth_mode or app.config.get("ATLAS_AUTH_MODE"))
     app.config["ATLAS_AUTH_MODE"] = mode
     workspace_root = app.config["ATLAS_WORKSPACE_ROOT"]
+
+    trusted_proxies = frozenset(
+        item.strip()
+        for item in os.environ.get("ATLAS_TRUSTED_PROXY_ADDRS", "").split(",")
+        if item.strip()
+    )
+    allow_forwarded_local = (
+        os.environ.get("ATLAS_LOCAL_ALLOW_FORWARDED", "").strip() == "1"
+    )
+    if mode == "local":
+        # Proxy-shaped configuration alongside local mode is a deployment
+        # mistake that would end in silently trusting a proxy: refuse to
+        # start rather than guess.
+        conflicting = [
+            name for name in
+            ("ATLAS_TRUSTED_PROXY_ADDRS", "ATLAS_PROXY_SECRET")
+            if os.environ.get(name, "").strip()
+        ]
+        if conflicting:
+            raise RuntimeError(
+                "ATLAS_AUTH_MODE=local cannot run with proxy settings "
+                f"({', '.join(conflicting)} set). Local mode must never "
+                "sit behind a proxy — use ATLAS_AUTH_MODE=password or "
+                "proxy to serve forwarded clients."
+            )
+        if allow_forwarded_local:
+            logger.warning(
+                "ATLAS_LOCAL_ALLOW_FORWARDED=1: local mode will accept "
+                "loopback requests that carry forwarding headers. This is "
+                "safe ONLY for a deliberate localhost-only dev wrapper; "
+                "never expose this server beyond the machine."
+            )
     tls_enabled = bool(
         app.config.get("ATLAS_TLS")
         or os.environ.get("ATLAS_TLS", "").strip() in {"1", "true", "yes"}
@@ -132,8 +179,25 @@ def register_security(app, *, auth_mode: str | None = None) -> None:
             users, os.environ.get("ATLAS_PROXY_SECRET", "")
         )
     else:
-        provider = LocalDevelopmentAuth()
+        provider = LocalDevelopmentAuth(
+            allow_forwarded=allow_forwarded_local
+        )
     app.config["ATLAS_AUTH_PROVIDER"] = provider
+
+    if mode in ("password", "proxy"):
+        recovered = ensure_recovery_admin(workspace_root)
+        if recovered:
+            logger.warning(
+                "Emergency recovery applied: %s is an enabled system "
+                "administrator. Unset ATLAS_RECOVERY_ADMIN_USER/PASSWORD "
+                "after signing in.", recovered,
+            )
+            AuditLog(workspace_root).append(AuditEvent.create(
+                category="user-account", operation="recovery-reset",
+                subject=f"user:{recovered}", actor="system",
+                source="startup",
+                reason="ATLAS_RECOVERY_ADMIN_* environment recovery",
+            ))
 
     # The Flask signing key protects only flashes; sessions are server-side
     # opaque tokens. A hardcoded key would still be a liability (flash
@@ -141,8 +205,31 @@ def register_security(app, *, auth_mode: str | None = None) -> None:
     provided_key = os.environ.get("ATLAS_SECRET_KEY", "").strip()
     app.secret_key = provided_key or secrets.token_hex(32)
 
-    limiter = RateLimiter()
+    limiter = resolve_rate_limiter()
     audit_log = AuditLog(workspace_root)
+
+    def _client_address() -> str:
+        """The address rate limits and audit attribute the request to.
+
+        ``request.remote_addr`` — except when the TCP peer is an
+        EXPLICITLY trusted proxy (ATLAS_TRUSTED_PROXY_ADDRS, production
+        modes only): then the closest untrusted hop of X-Forwarded-For
+        is used. Header values are never trusted from anyone else, and
+        this never feeds an authentication decision.
+        """
+
+        peer = request.remote_addr or "unknown"
+        if mode == "local" or peer not in trusted_proxies:
+            return peer
+        forwarded = [
+            hop.strip()
+            for hop in request.headers.get("X-Forwarded-For", "").split(",")
+            if hop.strip()
+        ]
+        for hop in reversed(forwarded):
+            if hop not in trusted_proxies:
+                return hop
+        return peer
 
     def _audit_denial(operation: str, detail: str) -> None:
         principal = getattr(g, "principal", None)
@@ -254,14 +341,44 @@ def register_security(app, *, auth_mode: str | None = None) -> None:
                         "Reload the page and try again.",
                     )
 
+        if request.endpoint == "login_submit":
+            limits = _login_limits()
+            # The account layer keys the case-normalized SUBMITTED name —
+            # existing or not — so limiting reveals nothing about which
+            # accounts exist, and case games change nothing.
+            account = str(
+                request.form.get("username") or ""
+            ).strip().casefold()[:64] or "(empty)"
+            source = _client_address()
+            layers = [
+                ("account", f"login:acct:{account}", limits["account"]),
+                ("source", f"login:src:{source}", limits["source"]),
+            ]
+            if limits["global"] > 0:
+                layers.append(("global", "login:global", limits["global"]))
+            # Every attempt consumes every layer; success never resets a
+            # counter, so valid credentials cannot be used to launder an
+            # attack window.
+            blocked = [
+                layer for layer, key, limit in layers
+                if not limiter.allow(key, limit=limit)
+            ]
+            if blocked:
+                _audit_denial(
+                    "rate-limit",
+                    f"sign-in limit ({'+'.join(blocked)} layer) for "
+                    f"account {account!r} from {source}",
+                )
+                # One generic answer for every layer: no enumeration.
+                return _deny(
+                    429,
+                    "Too many sign-in attempts. Wait a minute and try "
+                    "again.",
+                )
+
         limit = _RATE_LIMITS.get(request.endpoint or "")
         if limit is not None:
-            key = f"{request.remote_addr}:{request.endpoint}"
-            if request.endpoint == "login_submit":
-                # Per-account limiting: five wrong guesses lock the pace
-                # for THAT account, and one noisy account cannot starve
-                # everyone behind the same NAT address.
-                key += f":{str(request.form.get('username') or '')[:64]}"
+            key = f"{_client_address()}:{request.endpoint}"
             if not limiter.allow(key, limit=limit):
                 _audit_denial("rate-limit", f"over {limit}/minute")
                 return _deny(
@@ -272,19 +389,36 @@ def register_security(app, *, auth_mode: str | None = None) -> None:
 
     @app.after_request
     def _security_headers(response):
+        artifact_name = (
+            str((request.view_args or {}).get("name") or "")
+            if request.endpoint == "artifacts"
+            else ""
+        )
+        is_topology_artifact = artifact_name.endswith("atlas_topology.html")
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
-        response.headers.setdefault("X-Frame-Options", "DENY")
+        # Normal Atlas pages and report artifacts must never be framed.  The
+        # generated topology viewer is the single deliberate exception: the
+        # /topology page embeds it in a same-origin iframe.  DENY here makes
+        # a healthy discovery look like a broken/empty topology in every
+        # modern browser.
+        response.headers.setdefault(
+            "X-Frame-Options",
+            "SAMEORIGIN" if is_topology_artifact else "DENY",
+        )
         response.headers.setdefault("Referrer-Policy", "same-origin")
         response.headers.setdefault(
             "Permissions-Policy", "camera=(), microphone=(), geolocation=()"
         )
         if request.endpoint == "artifacts":
             # Generated topology artifacts are self-contained pages with
-            # inline scripts; they stay same-origin locked.
+            # inline scripts.  Only the topology viewer may be embedded, and
+            # only by Atlas on the same origin; other artifacts remain
+            # non-frameable.
+            frame_ancestors = "'self'" if is_topology_artifact else "'none'"
             csp = (
                 "default-src 'self'; script-src 'self' 'unsafe-inline'; "
                 "style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
-                "connect-src 'self'; frame-ancestors 'none'; "
+                f"connect-src 'self'; frame-ancestors {frame_ancestors}; "
                 "base-uri 'self'; form-action 'self'"
             )
         else:

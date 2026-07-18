@@ -192,6 +192,16 @@ class SessionStore:
             self._write(remaining)
             return len(sessions) - len(remaining)
 
+    def active_count_for(self, username: str) -> int:
+        needle = str(username).casefold()
+        now_iso = _now().isoformat(timespec="seconds")
+        return sum(
+            1 for record in self._read()
+            if record.username.casefold() == needle
+            and record.expires_at > now_iso
+            and record.idle_deadline > now_iso
+        )
+
     def active_count(self) -> int:
         now_iso = _now().isoformat(timespec="seconds")
         return sum(

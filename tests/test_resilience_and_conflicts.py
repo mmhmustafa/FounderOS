@@ -102,6 +102,7 @@ class ConflictTests(unittest.TestCase):
             stale = client.post("/users", data={
                 "_csrf": csrf, "username": "new-user",
                 "password": "new-user-password-1", "roles": "viewer",
+                "admin_password": PASSWORDS["admin"],
                 "expected_revision": str(store.revision() + 5),
             })
             self.assertEqual(409, stale.status_code)

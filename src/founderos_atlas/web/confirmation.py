@@ -56,11 +56,22 @@ def require_confirmation(*, title: str, detail: str, consequence: str):
     token = str(request.form.get(CONFIRM_TOKEN_FIELD) or "")
     if token and token_is_valid(current_app, token, request.path):
         return None
+
+    def _sensitive(name: str) -> bool:
+        lowered = name.casefold()
+        return any(
+            marker in lowered
+            for marker in ("password", "secret", "passphrase", "private_key")
+        )
+
+    # Echo the original fields so the confirmed POST replays the request —
+    # but NEVER credential material: a password must not round-trip
+    # through the confirmation page's HTML.
     fields = [
         (name, value)
         for name in request.form
         for value in request.form.getlist(name)
-        if name not in (CONFIRM_TOKEN_FIELD, "_csrf")
+        if name not in (CONFIRM_TOKEN_FIELD, "_csrf") and not _sensitive(name)
     ]
     return render_template(
         "confirm_action.html",

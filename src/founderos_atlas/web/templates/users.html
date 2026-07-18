@@ -6,26 +6,39 @@
   Accounts for production authentication modes. Roles are bundles of
   server-enforced permissions; every grant, change, and deletion is
   audited. Passwords are stored as scrypt hashes — Atlas cannot show a
-  password back to anyone. {{ session_count }} active session(s).
+  password back to anyone, only set a new one.
+  {{ session_count }} active session(s) ·
+  {{ usable_admins }} usable system administrator(s) — Atlas refuses any
+  change that would leave zero.
+  {% if reauth_required %}
+  High-risk changes require re-entering <strong>your own</strong>
+  password.
+  {% endif %}
   {% if auth_mode_active == 'local' %}
   <strong>This server is running in local development mode</strong> —
   accounts defined here take effect when it is started with
   <code>ATLAS_AUTH_MODE=password</code> or <code>proxy</code>.
+  {% elif auth_mode_active == 'proxy' %}
+  This deployment authenticates at the SSO proxy: password-less accounts
+  are normal here and count as usable administrators.
   {% endif %}
 </p>
 
 <section class="card">
   <h2>Accounts</h2>
   {% if accounts %}
-  <div class="table-scroll" role="region" aria-label="User accounts" tabindex="0">
+  <div class="table-scroll table-scroll-wide" role="region" aria-label="User accounts" tabindex="0">
     <table class="grid">
       <thead>
-        <tr><th>Username</th><th>Display name</th><th>Roles</th><th>Status</th><th>Updated</th><th><span class="visually-hidden">Actions</span></th></tr>
+        <tr><th>Username</th><th>Display name</th><th>Roles</th><th>Status</th><th>Sessions</th><th>Updated</th><th><span class="visually-hidden">Actions</span></th></tr>
       </thead>
       <tbody>
         {% for account in accounts %}
         <tr>
-          <td><code>{{ account.username }}</code></td>
+          <td>
+            <code>{{ account.username }}</code>
+            {% if account.is_me %}<span class="badge hop-badge">you</span>{% endif %}
+          </td>
           <td>{{ account.display_name }}</td>
           <td>{{ account.roles | join(', ') }}</td>
           <td>
@@ -33,31 +46,99 @@
             {% else %}<span class="badge hop-badge">active</span>{% endif %}
             {% if not account.has_password %}<span class="muted">(SSO-only)</span>{% endif %}
           </td>
+          <td title="Live sessions revoked immediately on disable, delete, or password rotation">{{ account.active_sessions }}</td>
           <td>{{ account.updated_at | timestamp }}</td>
           <td class="row-actions">
+            <details>
+              <summary class="btn btn-sm" role="button">Edit</summary>
+              <form method="post" action="/users/{{ account.username }}" class="form" style="min-width:260px;">{{ csrf_field() }}
+                <input type="hidden" name="expected_revision" value="{{ revision }}">
+                {% if account.is_me %}
+                <p class="warn">This is your own account: you cannot disable
+                it or remove your own system-admin role, and a password
+                change signs your other sessions out.</p>
+                {% endif %}
+                <label>Display name
+                  <input name="display_name" value="{{ account.display_name }}">
+                </label>
+                <fieldset style="border:0;padding:0;">
+                  <legend class="muted">Roles</legend>
+                  {% for role in roles %}
+                  <label class="checkbox">
+                    <input type="checkbox" name="roles" value="{{ role }}"
+                           {{ 'checked' if role in account.roles }}
+                           {{ 'disabled' if account.is_me and role == 'system-admin' and role in account.roles }}>
+                    {{ role }}
+                    {% if account.is_me and role == 'system-admin' and role in account.roles %}
+                    <span class="muted">(your own admin role — another administrator must change it)</span>
+                    {% endif %}
+                  </label>
+                  {% endfor %}
+                  {% if account.is_me and 'system-admin' in account.roles %}
+                  {# A disabled checkbox does not submit; keep the role
+                     present so an edit never accidentally demotes. The
+                     server refuses self-demotion regardless. #}
+                  <input type="hidden" name="roles" value="system-admin">
+                  {% endif %}
+                </fieldset>
+                <label>New password (min 12 chars; blank keeps the current one; rotating signs the account's sessions out)
+                  <input type="password" name="password" autocomplete="new-password">
+                </label>
+                {% if reauth_required %}
+                <label>Your password (required to confirm)
+                  <input type="password" name="admin_password" autocomplete="current-password" required>
+                </label>
+                {% endif %}
+                <button class="btn btn-sm btn-primary" type="submit">Save changes</button>
+              </form>
+            </details>
+            {% if not account.is_me %}
             <form method="post" action="/users/{{ account.username }}" style="display:inline">{{ csrf_field() }}
               <input type="hidden" name="expected_revision" value="{{ revision }}">
               <input type="hidden" name="disabled" value="{{ '0' if account.disabled else '1' }}">
-              <button class="btn btn-sm" type="submit">
+              {% if reauth_required %}
+              <label class="visually-hidden" for="reauth-toggle-{{ loop.index }}">Your password</label>
+              <input id="reauth-toggle-{{ loop.index }}" type="password" name="admin_password"
+                     placeholder="your password" autocomplete="current-password" style="max-width:130px;">
+              {% endif %}
+              <button class="btn btn-sm" type="submit"
+                      title="{{ 'Re-enable sign-in for this account' if account.disabled else 'Disabling revokes its ' ~ account.active_sessions ~ ' active session(s) immediately' }}">
                 {{ 'Enable' if account.disabled else 'Disable' }}
               </button>
             </form>
             <form method="post" action="/users/{{ account.username }}/delete" style="display:inline">{{ csrf_field() }}
               <input type="hidden" name="expected_revision" value="{{ revision }}">
-              <button class="btn btn-sm" type="submit">Delete</button>
+              {% if reauth_required %}
+              <label class="visually-hidden" for="reauth-delete-{{ loop.index }}">Your password</label>
+              <input id="reauth-delete-{{ loop.index }}" type="password" name="admin_password"
+                     placeholder="your password" autocomplete="current-password" style="max-width:130px;">
+              {% endif %}
+              <button class="btn btn-sm" type="submit">Delete…</button>
             </form>
+            {% else %}
+            <span class="muted" title="Server-enforced: you cannot disable or delete your own account">—</span>
+            {% endif %}
           </td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
+  <p class="muted">
+    Deletion asks for server-verified confirmation on its own page.
+    Impossible actions are hidden here, but every rule is enforced
+    server-side — the UI is a convenience, never the control.
+  </p>
   {% else %}
   <p class="muted">
     No accounts exist yet. Create the first system administrator below,
     or bootstrap one at startup with
     <code>ATLAS_BOOTSTRAP_ADMIN_USER</code> /
-    <code>ATLAS_BOOTSTRAP_ADMIN_PASSWORD</code>.
+    <code>ATLAS_BOOTSTRAP_ADMIN_PASSWORD</code>. Locked out entirely?
+    The recovery procedure is
+    <code>ATLAS_RECOVERY_ADMIN_USER</code> /
+    <code>ATLAS_RECOVERY_ADMIN_PASSWORD</code> at restart — see the
+    deployment guide.
   </p>
   {% endif %}
 </section>
@@ -77,6 +158,11 @@
       <label class="checkbox"><input type="checkbox" name="roles" value="{{ role }}"> {{ role }}</label>
       {% endfor %}
     </fieldset>
+    {% if reauth_required %}
+    <label>Your password (required to confirm)
+      <input type="password" name="admin_password" autocomplete="current-password" required>
+    </label>
+    {% endif %}
     <button class="btn btn-primary" type="submit">Create account</button>
   </form>
 </section>

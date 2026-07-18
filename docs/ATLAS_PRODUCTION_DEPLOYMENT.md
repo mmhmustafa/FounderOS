@@ -16,10 +16,30 @@ it to multi-user operation.
 | `password` | Small teams, direct deployment | Workspace user store (`users.json`, scrypt hashes) + server-side sessions |
 | `proxy` | Enterprises with SSO | SSO-terminating reverse proxy asserts the login in `X-Atlas-Remote-User` and proves itself with `X-Atlas-Proxy-Secret` |
 
-Local mode **cannot** be exposed by accident: any request from a
-non-loopback address is refused with 403 before any view runs, and the
-CLI refuses to bind beyond 127.0.0.1. To serve other clients you must
-consciously choose a production mode.
+### How local mode can and cannot be exposed
+
+Local mode **fails closed** on every path that could smuggle a remote
+user in:
+
+- Any request from a non-loopback address is refused with 403 before
+  any view runs, and the CLI refuses to bind beyond 127.0.0.1.
+- Any loopback request carrying proxy/forwarding headers (`Forwarded`,
+  `X-Forwarded-For`, `X-Real-IP`, `X-Client-IP`, `True-Client-IP`,
+  `CF-Connecting-IP`, and variants) is refused: a reverse proxy on the
+  same machine makes remote users look loopback, and those headers are
+  the tell. Header VALUES are never trusted to determine the client.
+- Starting local mode with proxy-shaped settings
+  (`ATLAS_TRUSTED_PROXY_ADDRS` or `ATLAS_PROXY_SECRET`) refuses at
+  startup instead of guessing.
+- The one narrow developer override is
+  `ATLAS_LOCAL_ALLOW_FORWARDED=1`, for a deliberate localhost-only dev
+  wrapper (e.g. local TLS terminator) that adds such headers to
+  genuinely local traffic. It logs a prominent startup warning, still
+  refuses non-loopback peers, and must never be combined with exposing
+  the port.
+
+There is no supported way to put local mode behind a proxy for other
+users; serving anyone else requires `password` or `proxy` mode.
 
 ### Sessions (password mode)
 
@@ -32,13 +52,36 @@ consciously choose a production mode.
 - Absolute lifetime `ATLAS_SESSION_MAX_AGE` (default 12 h) and idle
   timeout `ATLAS_SESSION_IDLE_TIMEOUT` (default 2 h).
 
-### Bootstrap
+### Bootstrap and emergency recovery
 
 With an empty user store, set `ATLAS_BOOTSTRAP_ADMIN_USER` and
 `ATLAS_BOOTSTRAP_ADMIN_PASSWORD` for the first start. The password is
 hashed immediately and never stored in clear; remove both variables
 after the first start. Further accounts are managed on `/users`
 (system administrators only, fully audited).
+
+**Administrator-lockout invariants** (enforced in the user store, so
+every caller is covered):
+
+1. At least one enabled, sign-in-capable system administrator always
+   remains — the last one cannot be disabled, deleted, demoted, or
+   left password-less in password mode. In proxy mode SSO-only
+   administrators count as usable.
+2. A signed-in administrator cannot disable their own account or
+   remove their own system-admin role.
+3. Disabling, deleting, or rotating the password of an account revokes
+   its sessions immediately.
+4. In password mode, every user-management change requires the acting
+   administrator to re-enter **their own** password; refusals are
+   audited.
+
+**Emergency recovery** (tested): if every administrator is lost, set
+`ATLAS_RECOVERY_ADMIN_USER` and `ATLAS_RECOVERY_ADMIN_PASSWORD` and
+restart — the named account is created or reset as an enabled system
+administrator (hash-stored, event audited as `recovery-reset`). Sign
+in, repair the accounts, then unset both variables. This adds no trust
+boundary: whoever sets this process's environment already owns the
+host.
 
 ## Authorization (RBAC)
 
@@ -74,9 +117,27 @@ actor, roles, endpoint, outcome, and correlation id.
   `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
   `Referrer-Policy: same-origin`, `Cache-Control: no-store` on
   authenticated pages, and an `X-Request-ID` correlation id.
-- Rate limits (per source address, fixed one-minute windows): login
-  5/min **per account**, credential/profile tests 20/min, restore
-  5/min, advisor 30/min. Denials return 429 and are audited.
+- Sign-in rate limiting is **layered** (fixed one-minute windows):
+  an account layer keyed on the case-normalized submitted username —
+  existing or not — so distributed attacks cannot dodge it and limiting
+  reveals nothing about which accounts exist
+  (`ATLAS_LOGIN_ACCOUNT_LIMIT`, default 5); a source-address layer
+  (`ATLAS_LOGIN_SOURCE_LIMIT`, default 30); and an optional global
+  ceiling (`ATLAS_LOGIN_GLOBAL_LIMIT`, default 500, 0 disables). Every
+  attempt consumes every layer, successful logins never reset counters,
+  and all layers answer with one identical 429. Other sensitive
+  endpoints keep per-source limits (tests 20/min, restore 5/min,
+  advisor 30/min). Denials are audited without passwords.
+- **The built-in limiter is single-process and in-memory**: counters
+  are not shared across workers and reset on restart. Multi-worker
+  deployments must supply a shared implementation behind the
+  `ATLAS_RATE_LIMITER` adapter boundary (unknown names refuse to
+  start); until then run one process, or enforce limits at the proxy.
+- Behind an SSO proxy, set `ATLAS_TRUSTED_PROXY_ADDRS` to the proxy's
+  address(es): rate limiting and audit then attribute requests to the
+  closest untrusted `X-Forwarded-For` hop. Header values are used for
+  attribution only, only from those peers, and never for
+  authentication.
 - Error pages never include stack traces, paths, or internals — only a
   safe message and the correlation id that finds the full server-side
   log line.

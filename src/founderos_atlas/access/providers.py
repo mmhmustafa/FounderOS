@@ -67,10 +67,44 @@ class AuthDecision:
     session_record: object = None   # live SessionRecord when session-backed
 
 
+# Headers a proxy uses to describe the client it forwards for. Their
+# PRESENCE is the signal local mode acts on; their VALUES are never
+# trusted to determine anything.
+FORWARDING_HEADERS = (
+    "Forwarded",
+    "X-Forwarded-For",
+    "X-Forwarded-Host",
+    "X-Forwarded-Proto",
+    "X-Forwarded",
+    "Forwarded-For",
+    "X-Real-IP",
+    "X-Client-IP",
+    "True-Client-IP",
+    "CF-Connecting-IP",
+)
+
+
 class LocalDevelopmentAuth:
-    """Loopback-only auto-principal. Never valid for remote clients."""
+    """Loopback-only auto-principal that FAILS CLOSED behind proxies.
+
+    ``request.remote_addr`` being loopback proves only that the TCP peer
+    is local — a reverse proxy on the same machine makes every remote
+    user look exactly like that. Local mode therefore refuses any
+    request that carries proxy/forwarding headers: a proxied request
+    announces itself, and announcing yourself to local mode is a
+    refusal, not an identity.
+
+    ``allow_forwarded=True`` (``ATLAS_LOCAL_ALLOW_FORWARDED=1``) is the
+    one narrow, explicit developer override for tools that add such
+    headers on genuinely local traffic (e.g. a localhost TLS dev
+    wrapper). It still never grants non-loopback peers anything, never
+    reads the header values, and startup logs a prominent warning.
+    """
 
     mode = "local"
+
+    def __init__(self, *, allow_forwarded: bool = False) -> None:
+        self.allow_forwarded = allow_forwarded
 
     def identify(self, request) -> AuthDecision:
         from .models import LOCAL_OPERATOR
@@ -85,6 +119,24 @@ class LocalDevelopmentAuth:
                     "clients."
                 ),
             )
+        if not self.allow_forwarded:
+            offered = [
+                name for name in FORWARDING_HEADERS
+                if request.headers.get(name)
+            ]
+            if offered:
+                return AuthDecision(
+                    principal=None,
+                    failure=(
+                        "Local development mode refuses proxied requests: "
+                        f"forwarding header(s) {', '.join(sorted(offered))} "
+                        "are present, so this connection is not provably "
+                        "the local operator. Serve other users with "
+                        "ATLAS_AUTH_MODE=password or proxy. (A deliberate "
+                        "local-only dev proxy can set "
+                        "ATLAS_LOCAL_ALLOW_FORWARDED=1.)"
+                    ),
+                )
         return AuthDecision(principal=LOCAL_OPERATOR)
 
     def login(self, request):  # pragma: no cover - no login page in local mode
