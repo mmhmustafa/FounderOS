@@ -69,7 +69,7 @@
           {% if p.archived %}<input type="hidden" name="restore" value="1">{% endif %}
           <button class="btn btn-sm" type="submit" aria-label="{{ 'Restore' if p.archived else 'Archive' }} {{ p.name }}">{{ 'Restore' if p.archived else 'Archive' }}</button>
         </form>
-        <form method="post" action="/profiles/{{ p.name | urlencode }}/delete" onsubmit="return confirm('Delete only the discovery profile {{ p.name }}? The network and its enterprise knowledge stay if another profile observes it.');">{{ csrf_field() }}
+        <form method="post" action="/profiles/{{ p.name | urlencode }}/delete">{{ csrf_field() }}
           <input type="hidden" name="expected_revision" value="{{ profile_revision }}">
           <button class="btn btn-sm btn-danger" type="submit" aria-label="Delete {{ p.name }}">Delete</button>
         </form>

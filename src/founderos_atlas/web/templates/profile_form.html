@@ -3,7 +3,7 @@
 {% block content %}
 <h1>{{ 'Edit' if mode == 'edit' else 'Add' }} Discovery Profile</h1>
 
-<form class="form" method="post"
+<form class="form" method="post" data-dirty-guard
       action="{% if mode == 'edit' %}/profiles/{{ profile.name | urlencode }}{% else %}/profiles{% endif %}">{{ csrf_field() }}
   {% if mode == 'edit' %}<input type="hidden" name="expected_revision" value="{{ profile_revision }}">{% endif %}
   {% if mode != 'edit' %}
@@ -101,17 +101,4 @@
   </div>
   <p class="muted">The password is stored securely in your OS keyring, never in profile files.</p>
 </form>
-<script>
-(() => {
-  const form = document.querySelector('form.form');
-  if (!form) return;
-  let dirty = false;
-  form.addEventListener('input', () => { dirty = true; });
-  form.addEventListener('submit', () => { dirty = false; });
-  window.addEventListener('beforeunload', event => {
-    if (!dirty) return;
-    event.preventDefault(); event.returnValue = '';
-  });
-})();
-</script>
 {% endblock %}

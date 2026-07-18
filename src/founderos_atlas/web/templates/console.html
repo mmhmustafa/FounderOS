@@ -83,15 +83,13 @@
 <script src="{{ url_for('static', filename='vendor/xterm.js') }}"></script>
 <script src="{{ url_for('static', filename='vendor/xterm-addon-fit.js') }}"></script>
 <script src="{{ url_for('static', filename='atlas-console.js') }}"></script>
-<script>
-  window.ATLAS_CONSOLE = {
-    deviceId: {{ target.device_id | tojson }},
-    hostname: {{ target.hostname | tojson }},
-    managementIp: {{ target.management_ip | tojson }},
-    port: {{ target.port | tojson }},
-    credentialRef: {{ target.credential_ref | tojson }}
-  };
-  document.addEventListener('DOMContentLoaded', function () { AtlasConsole.init(window.ATLAS_CONSOLE); });
-</script>
+<script type="application/json" id="atlas-console-config">{{ {
+  "deviceId": target.device_id,
+  "hostname": target.hostname,
+  "managementIp": target.management_ip,
+  "port": target.port,
+  "credentialRef": target.credential_ref,
+} | tojson }}</script>
+<script src="{{ url_for('static', filename='atlas.js') }}"></script>
 {% endif %}
 {% endblock %}

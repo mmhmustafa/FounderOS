@@ -30,7 +30,7 @@
     {% if scope_selector %}
     <form class="scope-form" method="get" action="">
       <label class="scope-label">Scope
-        <select name="scope" onchange="this.form.submit()" aria-label="Active scope: the enterprise or one discovery profile">
+        <select name="scope" data-autosubmit aria-label="Active scope: the enterprise or one discovery profile">
           {% for option in scope_selector %}
           <option value="{{ option.id }}" {{ 'selected' if option.id == active_scope_id else '' }}>{{ option.label }}</option>
           {% endfor %}

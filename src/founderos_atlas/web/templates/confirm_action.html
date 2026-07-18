@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Confirm — {{ title }}{% endblock %}
+{% block content %}
+<section class="card danger-zone" style="max-width: 640px;">
+  <h1>{{ title }}</h1>
+  <p>{{ detail }}</p>
+  <p><strong>{{ consequence }}</strong></p>
+  <p class="muted">
+    Confirmation is verified on the server: this action only proceeds
+    with the signed token below, which covers exactly this operation and
+    expires in ten minutes.
+  </p>
+  <form method="post" action="{{ action_path }}">{{ csrf_field() }}
+    {% for name, value in fields %}
+    <input type="hidden" name="{{ name }}" value="{{ value }}">
+    {% endfor %}
+    <input type="hidden" name="_confirm_token" value="{{ confirm_token }}">
+    <div class="form-actions">
+      <button class="btn btn-danger" type="submit">Yes — {{ title | lower }}</button>
+      <a class="btn" href="{{ cancel_href }}">Cancel</a>
+    </div>
+  </form>
+</section>
+{% endblock %}

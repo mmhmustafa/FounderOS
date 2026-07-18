@@ -32,7 +32,7 @@
 <section class="card">
   <form class="form" method="get" action="/evidence">
     <label>Discovery session
-      <select name="session" onchange="this.form.submit()">
+      <select name="session" data-autosubmit>
         {% for s in sessions %}
         <option value="{{ s.session_id }}" {{ 'selected' if session and s.session_id == session.session_id else '' }}>
           {{ s.started_at }} — {{ s.network or s.profile_name }} ({{ s.status }})
@@ -202,12 +202,6 @@
 </section>
 {% endif %}
 
-<script>
-document.querySelector('[data-save-evidence-filter]')?.addEventListener('click', event => {
-  localStorage.setItem('atlas:evidence-filter', location.search);
-  event.currentTarget.textContent = 'Filter saved';
-});
-</script>
 
 <section class="card">
   <details>

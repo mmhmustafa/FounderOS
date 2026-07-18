@@ -42,8 +42,7 @@
                 {{ 'Enable' if account.disabled else 'Disable' }}
               </button>
             </form>
-            <form method="post" action="/users/{{ account.username }}/delete" style="display:inline"
-                  onsubmit="return confirm('Delete {{ account.username }} and revoke their sessions?');">{{ csrf_field() }}
+            <form method="post" action="/users/{{ account.username }}/delete" style="display:inline">{{ csrf_field() }}
               <input type="hidden" name="expected_revision" value="{{ revision }}">
               <button class="btn btn-sm" type="submit">Delete</button>
             </form>

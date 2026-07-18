@@ -538,6 +538,22 @@ def register_lifecycle_routes(app, h) -> None:
 
     @app.route("/advisor/conversations/<int:index>/delete", methods=["POST"])
     def advisor_conversation_delete(index: int):
+        from .confirmation import require_confirmation
+
+        entry = _conversations().get(index)
+        question = (
+            (entry or {}).get("label")
+            or ((entry or {}).get("response") or {}).get("question")
+            or f"conversation {index}"
+        )
+        confirmation = require_confirmation(
+            title="Delete conversation",
+            detail=f"This deletes the Advisor conversation {question!r}.",
+            consequence="The conversation and its citations are removed "
+                        "from the Advisor history.",
+        )
+        if confirmation is not None:
+            return confirmation
         if _conversations().delete(index):
             _audit_log().append(AuditEvent.create(
                 category="advisor", operation="delete-conversation",

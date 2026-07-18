@@ -2,14 +2,14 @@
 {% block title %}Discovery Wizard{% endblock %}
 {% block content %}
 <a class="back-link" href="/discovery">← Discovery</a>
-<div class="page-head"><div><h1>Discovery Wizard</h1><p class="muted">A resumable, safety-first workflow. Drafts never contain passwords.</p></div>{% if drafts %}<label>Resume draft<select onchange="if(this.value) location.href='/discovery/wizard?draft='+encodeURIComponent(this.value)"><option value="">Choose…</option>{% for id, item in drafts.items() %}<option value="{{ id }}" {{ 'selected' if id == draft_id else '' }}>{{ item.name or id }} · {{ item.updated_at }}</option>{% endfor %}</select></label>{% endif %}</div>
+<div class="page-head"><div><h1>Discovery Wizard</h1><p class="muted">A resumable, safety-first workflow. Drafts never contain passwords.</p></div>{% if drafts %}<label>Resume draft<select data-draft-jump aria-label="Resume a saved draft"><option value="">Choose…</option>{% for id, item in drafts.items() %}<option value="{{ id }}" {{ 'selected' if id == draft_id else '' }}>{{ item.name or id }} · {{ item.updated_at }}</option>{% endfor %}</select></label>{% endif %}</div>
 {% if error %}<div class="flash flash-error">{{ error }}</div>{% endif %}
 
 <ol class="wizard-progress" aria-label="Discovery setup progress">
   {% for label in ['Scope','Credentials','Boundaries','Preview','Confirm','Results'] %}<li data-progress="{{ loop.index }}"><span>{{ loop.index }}</span>{{ label }}</li>{% endfor %}
 </ol>
 
-<form class="form" method="post" action="/discovery/wizard/preview" id="wizard-form" novalidate>{{ csrf_field() }}
+<form class="form" method="post" action="/discovery/wizard/preview" id="wizard-form" data-initial-step="{{ 4 if plan else 1 }}" novalidate>{{ csrf_field() }}
   <input type="hidden" name="draft_id" value="{{ draft_id or '' }}">
   <section class="card wizard-step" data-step="1">
     <h2>1. Select scope</h2>
@@ -67,24 +67,7 @@
 </section>
 {% endif %}
 
-{% if draft_id %}<form method="post" action="/discovery/wizard/drafts/{{ draft_id|urlencode }}/cancel" onsubmit="return confirm('Remove this draft? No discovery will be started.');">{{ csrf_field() }}<button class="btn btn-danger" type="submit">Cancel and remove draft</button></form>{% endif %}
+{% if draft_id %}<form method="post" action="/discovery/wizard/drafts/{{ draft_id|urlencode }}/cancel">{{ csrf_field() }}<button class="btn btn-danger" type="submit">Cancel and remove draft</button></form>{% endif %}
 
-<script>
-(() => {
-  const form = document.getElementById('wizard-form'); if (!form) return;
-  let step = {{ 4 if plan else 1 }};
-  const steps = [...document.querySelectorAll('.wizard-step')];
-  const show = () => { steps.forEach(s => s.hidden = Number(s.dataset.step) !== step); document.querySelector('[data-prev]').hidden = step === 1; document.querySelector('[data-next]').hidden = step === 4; document.querySelectorAll('[data-progress]').forEach(p => p.classList.toggle('active', Number(p.dataset.progress) <= step)); updateModes(); };
-  const updateModes = () => { const mode = form.elements.mode?.value || 'seed'; document.querySelectorAll('[data-mode-fields]').forEach(el => el.hidden = el.dataset.modeFields !== mode); const scope = mode === 'management-network' ? form.elements.cidr.value : (mode === 'seed' ? form.elements.seed.value : 'multiple candidates'); document.getElementById('boundary-summary').textContent = scope ? `Candidate scope: ${scope}. Exclusions are validated before preview.` : 'Enter a scope to preview the permitted candidate region.'; };
-  const save = async () => { const data = Object.fromEntries(new FormData(form)); delete data.password; data.draft_id = form.elements.draft_id.value; const response = await fetch('/api/discovery/wizard/drafts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}); const result = await response.json(); form.elements.draft_id.value = result.draft_id; document.getElementById('draft-status').textContent = 'Draft saved · credentials excluded'; history.replaceState({},'',`/discovery/wizard?draft=${encodeURIComponent(result.draft_id)}`); };
-  document.querySelector('[data-next]').addEventListener('click', async () => {
-    const current = steps.find(item => Number(item.dataset.step) === step);
-    const invalid = current ? current.querySelector(':invalid') : null;
-    if (invalid) { invalid.reportValidity(); return; }
-    await save(); step = Math.min(4, step + 1); show();
-  });
-  document.querySelector('[data-prev]').addEventListener('click', () => { step = Math.max(1, step - 1); show(); });
-  form.addEventListener('change', updateModes); show();
-})();
-</script>
+<script src="{{ url_for('static', filename='atlas-wizard.js') }}" defer></script>
 {% endblock %}

@@ -220,6 +220,22 @@ def register_ops_routes(app) -> None:
     def users_delete(username: str):
         from founderos_atlas.access import UserConflictError
 
+        from .confirmation import require_confirmation
+
+        confirmation = require_confirmation(
+            title=f"Delete account {username}",
+            detail=(
+                f"This deletes the account {username!r} and revokes every "
+                "session it holds."
+            ),
+            consequence=(
+                "The account cannot sign in again unless recreated; its "
+                "audit history is retained."
+            ),
+        )
+        if confirmation is not None:
+            return confirmation
+
         principal = _actor()
         if principal is not None and (
             principal.username.casefold() == str(username).casefold()

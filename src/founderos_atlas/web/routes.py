@@ -1183,6 +1183,22 @@ def register_routes(app) -> None:
 
     @app.route("/profiles/<name>/delete", methods=["POST"])
     def profile_delete(name: str):
+        from .confirmation import require_confirmation
+
+        confirmation = require_confirmation(
+            title=f"Delete profile {name}",
+            detail=(
+                f"This removes the discovery profile {name!r} and its "
+                "stored credential reference."
+            ),
+            consequence=(
+                "The network's enterprise knowledge is unaffected if "
+                "another profile observes it; the profile itself cannot "
+                "be recovered."
+            ),
+        )
+        if confirmation is not None:
+            return confirmation
         _check_profile_revision()
         try:
             removed = profile_service().delete_profile(name)
@@ -1360,6 +1376,18 @@ def register_routes(app) -> None:
 
     @app.route("/credentials/<set_id>/<entry_id>/delete", methods=["POST"])
     def credentials_delete(set_id: str, entry_id: str):
+        from .confirmation import require_confirmation
+
+        confirmation = require_confirmation(
+            title=f"Delete credential {entry_id}",
+            detail=(
+                f"This deletes credential entry {entry_id!r} from set "
+                f"{set_id!r} AND its secret from the secure store."
+            ),
+            consequence="The stored secret cannot be recovered.",
+        )
+        if confirmation is not None:
+            return confirmation
         impacted = [p.name for p in profile_service().list_profiles(include_archived=True)
                     if set_id in p.credential_sets]
         if impacted and request.form.get("confirm_impact") != "yes":
@@ -1495,6 +1523,19 @@ def register_routes(app) -> None:
 
     @app.route("/discovery/wizard/drafts/<draft_id>/cancel", methods=["POST"])
     def discovery_wizard_draft_cancel(draft_id: str):
+        from .confirmation import require_confirmation
+
+        confirmation = require_confirmation(
+            title="Remove discovery draft",
+            detail=f"This removes the saved wizard draft {draft_id!r}.",
+            consequence=(
+                "No discovery will be started; the draft's targeting and "
+                "boundary choices are discarded (drafts never held "
+                "credentials)."
+            ),
+        )
+        if confirmation is not None:
+            return confirmation
         AdministrationRepository(cfg("ATLAS_WORKSPACE_ROOT")).delete_draft(draft_id)
         flash("Discovery draft cancelled and removed. No discovery was started.", "success")
         return redirect(url_for("discovery_wizard"))

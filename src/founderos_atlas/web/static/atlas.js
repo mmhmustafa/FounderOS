@@ -706,3 +706,87 @@
     );
   }
 })();
+
+// ---------------------------------------------------------------------------
+// CSP-strict page behaviors (no inline scripts, no inline handlers).
+// Every block is guarded and delegated: pages opt in via data-* hooks,
+// and essential flows keep working with JavaScript disabled.
+(function () {
+  "use strict";
+
+  // Auto-submitting selects (scope switcher, filter selects). The
+  // enclosing form keeps its <noscript> Apply button as the fallback.
+  document.addEventListener("change", function (event) {
+    var control = event.target.closest("[data-autosubmit]");
+    if (control && control.form) { control.form.submit(); }
+  });
+
+  // Dirty-form protection: forms marked data-dirty-guard warn before
+  // navigation once edited, and stand down on submit.
+  var dirtyForms = document.querySelectorAll("form[data-dirty-guard]");
+  if (dirtyForms.length) {
+    var dirty = false;
+    Array.prototype.forEach.call(dirtyForms, function (form) {
+      form.addEventListener("input", function () { dirty = true; });
+      form.addEventListener("submit", function () { dirty = false; });
+    });
+    window.addEventListener("beforeunload", function (event) {
+      if (!dirty) { return; }
+      event.preventDefault();
+      event.returnValue = "";
+    });
+  }
+
+  // Copy Diagnostics: fetch the JSON and place it on the clipboard.
+  document.addEventListener("click", function (event) {
+    var button = event.target.closest("[data-copy-url]");
+    if (!button) { return; }
+    fetch(button.dataset.copyUrl)
+      .then(function (response) { return response.json(); })
+      .then(function (data) {
+        return navigator.clipboard.writeText(JSON.stringify(data, null, 2));
+      })
+      .then(function () { button.textContent = "Copied"; })
+      .catch(function () { button.textContent = "Copy failed — open the JSON link instead"; });
+  });
+
+  // Saved evidence filter: remember the current query string locally.
+  document.addEventListener("click", function (event) {
+    var button = event.target.closest("[data-save-evidence-filter]");
+    if (!button) { return; }
+    try {
+      localStorage.setItem("atlas:evidence-filter", window.location.search);
+      button.textContent = "Filter saved";
+    } catch (error) {
+      button.textContent = "Saving is unavailable in this browser";
+    }
+  });
+
+  // Advisor ask: explicit in-progress state while the server prepares
+  // the evidence-backed answer.
+  var advisorForm = document.getElementById("advisor-ask-form");
+  var advisorNote = document.getElementById("advisor-asking");
+  var advisorButton = document.getElementById("advisor-ask-button");
+  if (advisorForm && advisorNote && advisorButton) {
+    advisorForm.addEventListener("submit", function () {
+      advisorButton.disabled = true;
+      advisorButton.textContent = "Asking…";
+      advisorNote.hidden = false;
+    });
+  }
+
+  // Interactive SSH console bootstrap: configuration rides in a JSON data
+  // block (never executable), read here and handed to AtlasConsole.
+  var consoleConfig = document.getElementById("atlas-console-config");
+  if (consoleConfig && window.AtlasConsole) {
+    try {
+      window.AtlasConsole.init(JSON.parse(consoleConfig.textContent));
+    } catch (error) {
+      var terminal = document.getElementById("terminal");
+      if (terminal) {
+        terminal.textContent =
+          "The console could not start: its configuration did not parse.";
+      }
+    }
+  }
+})();

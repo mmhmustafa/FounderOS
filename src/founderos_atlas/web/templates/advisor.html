@@ -148,8 +148,7 @@
               <button class="btn btn-sm" type="submit">Save</button>
             </form>
           </details>
-          <form method="post" action="/advisor/conversations/{{ loop.index0 }}/delete" style="display:inline"
-                onsubmit="return confirm('Delete this conversation?');">{{ csrf_field() }}
+          <form method="post" action="/advisor/conversations/{{ loop.index0 }}/delete" style="display:inline">{{ csrf_field() }}
             <button class="btn btn-sm" type="submit" aria-label="Delete this conversation">Delete</button>
           </form>
         </span>
@@ -177,18 +176,4 @@
     </div>
   </section>
 </div>
-<script nonce="{{ csp_nonce }}">
-  (function () {
-    var form = document.getElementById("advisor-ask-form");
-    var note = document.getElementById("advisor-asking");
-    var button = document.getElementById("advisor-ask-button");
-    if (form && note && button) {
-      form.addEventListener("submit", function () {
-        button.disabled = true;
-        button.textContent = "Asking…";
-        note.hidden = false;
-      });
-    }
-  })();
-</script>
 {% endblock %}

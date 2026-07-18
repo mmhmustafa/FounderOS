@@ -49,11 +49,4 @@
 
 <section class="card danger-zone"><h2>Reset preferences</h2><p class="muted">This resets display and retention preferences only. Evidence, profiles, credentials, topology, and audit history remain intact.</p><form class="form" method="post" action="/settings/reset">{{ csrf_field() }}<label>Reason<input name="reason" required></label><label>Confirmation<input name="confirm" required placeholder="RESET SETTINGS"></label><button class="btn btn-danger" type="submit">Reset preferences</button></form></section>
 
-<script>
-document.querySelector('[data-copy-url]')?.addEventListener('click', async event => {
-  const response = await fetch(event.currentTarget.dataset.copyUrl);
-  await navigator.clipboard.writeText(JSON.stringify(await response.json(), null, 2));
-  event.currentTarget.textContent = 'Copied';
-});
-</script>
 {% endblock %}

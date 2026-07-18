@@ -134,7 +134,9 @@ class AdministrationWebTests(unittest.TestCase):
             self.assertNotIn("not-rendered", page)
             form = client.get("/profiles/Campus/edit").get_data(as_text=True)
             self.assertIn("Credential sets", form)
-            self.assertIn("beforeunload", form)
+            # Dirty-form protection moved to the external CSP-safe module,
+            # activated by the data hook.
+            self.assertIn("data-dirty-guard", form)
 
 
 if __name__ == "__main__":
