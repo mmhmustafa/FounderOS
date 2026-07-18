@@ -194,6 +194,15 @@ def create_app(
         )
     app.config["ATLAS_JOB_MANAGER"] = job_manager
 
+    # Enforce the supported concurrency model: ONE process per workspace.
+    # A second process (extra WSGI worker, stray server) fails here with
+    # instructions instead of silently racing shared files.
+    from founderos_atlas.workspace.instance import acquire_instance_lock
+
+    app.config["ATLAS_INSTANCE_LOCK"] = acquire_instance_lock(
+        resolved_workspace
+    )
+
     # Ordered, backed-up schema migrations run before anything reads the
     # workspace; each is idempotent and audited.
     from founderos_atlas.workspace.migrations import migrate_workspace

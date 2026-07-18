@@ -179,22 +179,89 @@ actor, roles, endpoint, outcome, and correlation id.
 - Denial-of-service beyond the sensitive-endpoint rate limits is out of
   scope; deploy behind a proxy with connection limits.
 
+## Supported process model (enforced)
+
+Atlas supports exactly **one process per workspace**. Threads are fine
+(discovery jobs, request handling); multiple WSGI workers or a second
+service instance over the same workspace are NOT supported and are
+actively prevented: at startup the application takes an OS-level
+exclusive instance lock derived from the workspace path, and a second
+process fails to start with instructions instead of silently racing
+shared files. The lock releases automatically if the process dies.
+``/readyz`` reports ``single-instance``; a false value means an
+unsupported multi-process deployment.
+
+Deployment commands:
+
+- Windows/dev: ``python -m founderos_runtime … atlas web`` (one process).
+- gunicorn: ``gunicorn --workers 1 --threads 8 'founderos_atlas.web:create_app()'``
+  — **exactly** ``--workers 1``; more workers will fail to start by design.
+
+Nothing in this guide implies multi-worker safety. Scaling beyond one
+process requires a transactional persistence adapter and a shared rate
+limiter — both deliberate future work behind existing seams.
+
+## Backup contract
+
+``/settings/backup`` builds from an explicit, reviewed manifest
+(``workspace/backup.py``) — never from "every JSON in the directory".
+An unknown future file is excluded until consciously classified, so a
+new secret store can never leak into backups by default.
+
+- **Included (operational metadata)**: profiles, credential-set
+  references, credential success memory, preferences, drafts, sites,
+  site overrides + audit, identity resolutions + audit, policy
+  exceptions/trend, annotations, incidents, notifications, the unified
+  audit log, the schema marker.
+- **Included but sensitive**: ``users.json`` (scrypt password hashes —
+  protect the archive).
+- **Always excluded**: ``credentials.enc.json`` and every credential
+  store (encrypted or not; the OS keyring is never read),
+  ``sessions.json`` (restoring tokens would resurrect revoked access),
+  temporary ``.…writing``/``*.restoring`` files, raw evidence (a
+  separate explicit export), migration backups, and any file not in the
+  manifest.
+
+Every archive carries ``backup-manifest.json``: backup schema version,
+file names/sizes/SHA-256 hashes/classifications, creation time, and
+application version.
+
+## Restore transaction model
+
+Restore (``/settings/restore``) is a transaction:
+
+1. refuse oversized uploads before reading the body;
+2. validate EVERY member — plain workspace filenames only (no
+   traversal), no duplicates, only manifest-known files (sessions and
+   credential stores are never restorable), per-member and total size
+   limits, compression-ratio bomb guard, JSON/JSONL structure, schema
+   compatibility, manifest hash verification;
+3. stage all files beside the workspace;
+4. snapshot the current state to ``pre-restore-snapshots/<stamp>/``;
+5. commit atomically file-by-file — any failure rolls every committed
+   file back from the snapshot (verified by a fault-injection test);
+6. run integrity verification over the restored files;
+7. audit the outcome (success or refusal, without data), and instruct
+   an application restart so in-memory views reload.
+
+Recovery: if a restore ever leaves doubt, the pre-restore snapshot
+directory contains the exact prior state of every touched file — copy
+them back and restart. ``/system/integrity`` names any corrupt file and
+its recovery step.
+
 ## Resilience and data lifecycle
 
 - **Migrations**: `workspace/migrations.py` — ordered, idempotent,
   audited; each backs affected files up to
   `migration-backups/v<N>/` before touching them. They run at startup;
   `/system/integrity` shows applied vs target schema version.
-- **Backup**: `/settings/backup` (system administrators) exports all
-  workspace JSON/JSONL metadata. Secrets and raw evidence are excluded
-  by design.
-- **Restore**: `/settings/restore` accepts only allowlisted root-level
-  metadata files, validates JSON, limits size, requires the
-  confirmation phrase, and **never restores `sessions.json`** — a
-  backup must not resurrect revoked access. Recovery procedure: stop
-  the server, restore the backup through the UI (or unzip the named
-  files into the workspace root), restart, and check
-  `/system/integrity`.
+- **Backup**: `/settings/backup` (system administrators) follows the
+  explicit backup contract above — reviewed manifest, machine-readable
+  hashes, secrets/sessions/evidence excluded by construction.
+- **Restore**: `/settings/restore` runs the transactional model above
+  (validate → stage → snapshot → commit → verify, with full rollback);
+  it requires the confirmation phrase and **never restores
+  `sessions.json`** or any credential store.
 - **Corruption**: `/system/integrity` parses every known metadata file
   and names the recovery step per file; JSONL readers skip bad lines
   so one damaged line never hides a record.

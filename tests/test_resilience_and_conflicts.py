@@ -200,7 +200,9 @@ class BackupRestoreTests(unittest.TestCase):
                 content_type="multipart/form-data",
                 follow_redirects=True,
             )
-            self.assertIn(b"no supported Atlas metadata", response.data)
+            # The transactional restore names the refusal precisely:
+            # sessions are never restorable.
+            self.assertIn(b"never restored", response.data)
 
 
 class MigrationTests(unittest.TestCase):

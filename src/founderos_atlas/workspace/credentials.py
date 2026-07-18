@@ -164,11 +164,23 @@ class EncryptedFileCredentialProvider(CredentialProvider):
 
     FILENAME = "credentials.enc.json"
 
+    _locks: dict[str, "RLock"] = {}
+    _locks_guard = None
+
     def __init__(self, root: str | Path | None = None, *, key: bytes | None = None) -> None:
+        from threading import RLock
+
         from .repository import default_workspace_root
 
+        if EncryptedFileCredentialProvider._locks_guard is None:
+            EncryptedFileCredentialProvider._locks_guard = RLock()
         self._root = Path(root) if root is not None else default_workspace_root()
         self._key = key if key is not None else _load_credential_key()
+        resolved = str((self._root / self.FILENAME).resolve())
+        with EncryptedFileCredentialProvider._locks_guard:
+            self._lock = EncryptedFileCredentialProvider._locks.setdefault(
+                resolved, RLock()
+            )
 
     @property
     def path(self) -> Path:
@@ -230,11 +242,15 @@ class EncryptedFileCredentialProvider(CredentialProvider):
         sealed = cipher.encrypt(
             nonce, password.encode("utf-8"), credential_ref.encode("utf-8")
         )
-        data = self._load()
-        secrets_map = data.get("secrets") if isinstance(data, dict) else None
-        secrets_map = dict(secrets_map or {})
-        secrets_map[credential_ref] = base64.b64encode(nonce + sealed).decode("ascii")
-        self._store({"secrets": secrets_map})
+        # The read-modify-write is serialized per store; cross-process
+        # safety comes from the enforced single-instance model
+        # (workspace/instance.py) — a second process cannot even start.
+        with self._lock:
+            data = self._load()
+            secrets_map = data.get("secrets") if isinstance(data, dict) else None
+            secrets_map = dict(secrets_map or {})
+            secrets_map[credential_ref] = base64.b64encode(nonce + sealed).decode("ascii")
+            self._store({"secrets": secrets_map})
 
     def get(self, credential_ref: str) -> str:
         import base64
@@ -260,12 +276,13 @@ class EncryptedFileCredentialProvider(CredentialProvider):
 
     def delete(self, credential_ref: str) -> None:
         self._require(credential_ref)
-        data = self._load()
-        secrets_map = (data.get("secrets") if isinstance(data, dict) else {}) or {}
-        if credential_ref in secrets_map:
-            secrets_map = dict(secrets_map)
-            del secrets_map[credential_ref]
-            self._store({"secrets": secrets_map})
+        with self._lock:
+            data = self._load()
+            secrets_map = (data.get("secrets") if isinstance(data, dict) else {}) or {}
+            if credential_ref in secrets_map:
+                secrets_map = dict(secrets_map)
+                del secrets_map[credential_ref]
+                self._store({"secrets": secrets_map})
 
 
 def _load_credential_key() -> bytes | None:

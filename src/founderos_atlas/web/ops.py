@@ -75,6 +75,30 @@ def register_ops_routes(app) -> None:
         except Exception:
             components["audit-log"] = False
 
+        # The supported concurrency model: this process must hold the
+        # workspace's exclusive instance lock. Not holding it means an
+        # unsupported multi-process deployment.
+        try:
+            from founderos_atlas.workspace.instance import (
+                instance_lock_held,
+            )
+
+            components["single-instance"] = instance_lock_held(root)
+        except Exception:
+            components["single-instance"] = False
+
+        try:
+            from founderos_atlas.workspace.migrations import (
+                CURRENT_SCHEMA_VERSION,
+                applied_version,
+            )
+
+            components["schema-compatible"] = (
+                applied_version(root) == CURRENT_SCHEMA_VERSION
+            )
+        except Exception:
+            components["schema-compatible"] = False
+
         mode = app.config.get("ATLAS_AUTH_MODE", "local")
         if mode != "local":
             try:

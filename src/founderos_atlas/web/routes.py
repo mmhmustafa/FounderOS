@@ -4982,64 +4982,73 @@ def register_routes(app) -> None:
     @app.route("/settings/backup")
     def settings_backup():
         from flask import Response
-        import io
-        import zipfile
-        root = Path(cfg("ATLAS_WORKSPACE_ROOT"))
-        buffer = io.BytesIO()
-        allowed_suffixes = {".json", ".jsonl"}
-        with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
-            if root.is_dir():
-                for path in sorted(root.rglob("*")):
-                    if path.is_file() and path.suffix.casefold() in allowed_suffixes:
-                        archive.write(path, path.relative_to(root).as_posix())
-            archive.writestr("BACKUP-NOTICE.txt",
-                "Atlas metadata backup. OS-keyring secrets and raw network evidence are not included.\n")
-        _administration_audit("backup", after={"secrets_included": False})
-        return Response(buffer.getvalue(), content_type="application/zip", headers={
+
+        from founderos_atlas.workspace.backup import build_backup
+
+        payload, manifest = build_backup(
+            cfg("ATLAS_WORKSPACE_ROOT"),
+            application_version="FounderOS Atlas 0.3-alpha",
+        )
+        _administration_audit("backup", after={
+            "secrets_included": False,
+            "file_count": len(manifest["files"]),
+            "backup_schema_version": manifest["backup_schema_version"],
+        })
+        return Response(payload, content_type="application/zip", headers={
             "Content-Disposition": 'attachment; filename="atlas-workspace-backup.zip"'
         })
 
     @app.route("/settings/restore", methods=["POST"])
     def settings_restore():
-        import io
-        import zipfile
+        from founderos_atlas.workspace.restore import (
+            MAX_ARCHIVE_BYTES,
+            RestoreError,
+            perform_restore,
+        )
+
+        # Refuse oversized uploads BEFORE reading the body.
+        if (request.content_length or 0) > MAX_ARCHIVE_BYTES + 65536:
+            _administration_audit(
+                "restore", after={"outcome": "refused-oversize"},
+            )
+            flash(
+                "Restore refused: the upload exceeds the "
+                f"{MAX_ARCHIVE_BYTES // (1024 * 1024)} MB limit.",
+                "error",
+            )
+            return redirect(url_for("settings"))
         upload = request.files.get("backup")
         if request.form.get("confirm") != "RESTORE METADATA" or not upload:
             flash("Choose a backup and type RESTORE METADATA to confirm.", "error")
             return redirect(url_for("settings"))
-        allowed = {"profiles.json", "credential_sets.json", "preferences.json",
-                   "discovery_drafts.json", "audit.jsonl", "annotations.json",
-                   "policy-exceptions.json", "policy-trend.json",
-                   "site-overrides.json", "identity-resolutions.json",
-                   "users.json", "notifications.jsonl",
-                   "workspace-schema.json"}
-        # sessions.json is deliberately NOT restorable: a backup must never
-        # resurrect revoked session tokens.
         try:
-            with zipfile.ZipFile(io.BytesIO(upload.read())) as archive:
-                members = [m for m in archive.infolist()
-                           if not m.is_dir() and "/" not in m.filename
-                           and m.filename in allowed]
-                if not members:
-                    raise ValueError("The archive contains no supported Atlas metadata.")
-                root = Path(cfg("ATLAS_WORKSPACE_ROOT"))
-                root.mkdir(parents=True, exist_ok=True)
-                for member in members:
-                    data = archive.read(member)
-                    if len(data) > 20_000_000:
-                        raise ValueError("A metadata file exceeds the restore safety limit.")
-                    # Parse before replacing so malformed JSON cannot corrupt the workspace.
-                    if member.filename.endswith(".json"):
-                        __import__("json").loads(data.decode("utf-8"))
-                    target = root / member.filename
-                    temporary = target.with_suffix(target.suffix + ".restoring")
-                    temporary.write_bytes(data)
-                    temporary.replace(target)
-            _administration_audit("restore", after={"files": [m.filename for m in members]},
-                                  reason=request.form.get("reason"))
-            flash("Metadata restored. OS-keyring secrets were not changed.", "success")
-        except (OSError, ValueError, zipfile.BadZipFile, UnicodeDecodeError) as error:
-            flash(f"Restore failed safely: {error}", "error")
+            result = perform_restore(
+                cfg("ATLAS_WORKSPACE_ROOT"),
+                upload.read(MAX_ARCHIVE_BYTES + 1),
+            )
+        except RestoreError as error:
+            _administration_audit(
+                "restore",
+                after={"outcome": "refused"},
+                reason=str(error)[:300],
+            )
+            flash(f"Restore refused safely: {error}", "error")
+            return redirect(url_for("settings"))
+        _administration_audit("restore", after={
+            "outcome": "committed",
+            "files": result.restored,
+            "integrity_verified": result.verified,
+            "snapshot": Path(result.snapshot_dir).name
+            if result.snapshot_dir else None,
+        }, reason=request.form.get("reason"))
+        flash(
+            f"Metadata restored ({len(result.restored)} file(s)), integrity "
+            "verified. Sessions were not restored and no credential store "
+            "was touched. Restart Atlas now so every in-memory view reloads "
+            "the restored records; the pre-restore snapshot is retained "
+            "under the workspace for recovery.",
+            "success",
+        )
         return redirect(url_for("settings"))
 
     # -- Console (PR-044A) --------------------------------------------------

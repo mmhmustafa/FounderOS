@@ -17,22 +17,25 @@ from pathlib import Path
 # line by line; JSON files must parse whole.
 KNOWN_JSON_FILES = (
     "profiles.json",
-    "credential-sets.json",
+    "credential_sets.json",
+    "credential_memory.json",
     "preferences.json",
     "discovery_drafts.json",
+    "sites.json",
     "site-overrides.json",
     "identity-resolutions.json",
     "policy-exceptions.json",
     "policy-trend.json",
     "annotations.json",
+    "incidents.json",
     "users.json",
     "sessions.json",
     "workspace-schema.json",
 )
 KNOWN_JSONL_FILES = (
     "audit.jsonl",
-    "site-overrides-audit.jsonl",
-    "identity-resolutions-audit.jsonl",
+    "site-overrides.audit.jsonl",
+    "identity-resolutions.audit.jsonl",
     "notifications.jsonl",
 )
 
