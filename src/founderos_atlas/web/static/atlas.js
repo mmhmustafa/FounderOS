@@ -750,18 +750,6 @@
       .catch(function () { button.textContent = "Copy failed — open the JSON link instead"; });
   });
 
-  // Saved evidence filter: remember the current query string locally.
-  document.addEventListener("click", function (event) {
-    var button = event.target.closest("[data-save-evidence-filter]");
-    if (!button) { return; }
-    try {
-      localStorage.setItem("atlas:evidence-filter", window.location.search);
-      button.textContent = "Filter saved";
-    } catch (error) {
-      button.textContent = "Saving is unavailable in this browser";
-    }
-  });
-
   // Advisor ask: explicit in-progress state while the server prepares
   // the evidence-backed answer.
   var advisorForm = document.getElementById("advisor-ask-form");

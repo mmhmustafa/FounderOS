@@ -1418,6 +1418,44 @@ def register_routes(app) -> None:
         )
         return redirect(url_for("credentials"))
 
+    @app.route(
+        "/credentials/<set_id>/<entry_id>/test-connection", methods=["POST"]
+    )
+    def credentials_test_connection(set_id: str, entry_id: str):
+        """Honest connection test against an EXPLICIT authorized target."""
+
+        from founderos_atlas.transport import SSHDeviceTransport
+
+        target = str(request.form.get("target") or "").strip()
+        if not target:
+            flash(
+                "Enter the address of a device you are authorized to test "
+                "against.",
+                "error",
+            )
+            return redirect(url_for("credentials"))
+        factory = cfg("ATLAS_TRANSPORT_FACTORY") or SSHDeviceTransport
+        try:
+            result = credential_service().test_connection(
+                set_id, entry_id, target=target, transport_factory=factory,
+            )
+        except Exception as error:  # invalid set/entry or transport setup
+            flash(str(error), "error")
+            return redirect(url_for("credentials"))
+        # Audit the target and outcome only — never the credential, the
+        # command, or any device output.
+        _credential_audit(
+            "test-connection", f"{set_id}:{entry_id}",
+            after={"target": target, "outcome": result.outcome,
+                   "platform": result.platform},
+            reason="Explicit connection test to an authorized target",
+        )
+        flash(
+            f"Connection test → {result.outcome}: {result.detail}",
+            "success" if result.succeeded else "error",
+        )
+        return redirect(url_for("credentials"))
+
     # -- Discovery ----------------------------------------------------------
 
     def job_manager():
@@ -1513,9 +1551,28 @@ def register_routes(app) -> None:
 
     @app.route("/api/discovery/wizard/drafts", methods=["POST"])
     def discovery_wizard_draft_save():
-        payload = request.get_json(silent=True) or request.form.to_dict(flat=True)
-        safe = {key: value for key, value in dict(payload).items()
-                if key not in {"password", "secret", "token"}}
+        json_body = request.get_json(silent=True)
+        if isinstance(json_body, dict):
+            # JSON preserves repeated fields as arrays (the autosave path).
+            payload = dict(json_body)
+        else:
+            # Form-encoded: collect EVERY value per key so multi-select
+            # fields (credential_sets) survive instead of being flattened.
+            payload = {}
+            for key in request.form:
+                values = request.form.getlist(key)
+                payload[key] = values if len(values) > 1 else values[0]
+        forbidden = {"password", "secret", "token", "passphrase", "private_key"}
+        safe = {
+            key: value for key, value in payload.items()
+            if str(key).casefold() not in forbidden
+        }
+        # Multi-value fields are always stored as lists so the template
+        # membership test is exact (never substring) whether one or many
+        # were selected.
+        for multi_key in ("credential_sets",):
+            if multi_key in safe and not isinstance(safe[multi_key], list):
+                safe[multi_key] = [safe[multi_key]] if safe[multi_key] else []
         identifier = AdministrationRepository(cfg("ATLAS_WORKSPACE_ROOT")).save_draft(
             str(payload.get("draft_id") or "") or None, safe
         )
@@ -1950,8 +2007,76 @@ def register_routes(app) -> None:
             filtered=any(filters.values()),
             record_count=len(records), visible_count=len(visible),
             totals=_evidence_storage_totals(scopes, scope_id),
+            saved_filters=[f.to_dict() for f in _saved_filter_store().list(
+                owner=current_actor(), surface="evidence")],
+            current_query=_shareable_query(),
             **context,
         )
+
+    def _saved_filter_store():
+        from .saved_filters import SavedFilterStore
+
+        return SavedFilterStore(cfg("ATLAS_WORKSPACE_ROOT"))
+
+    def _shareable_query() -> str:
+        from .saved_filters import _normalize_query
+
+        return _normalize_query(request.query_string.decode("utf-8"))
+
+    @app.route("/evidence/saved-filters", methods=["POST"])
+    def evidence_saved_filter_create():
+        from founderos_atlas.audit import AuditEvent, AuditLog
+
+        store = _saved_filter_store()
+        try:
+            record = store.save(
+                owner=current_actor(), surface="evidence",
+                name=str(request.form.get("name") or ""),
+                query=str(request.form.get("query") or ""),
+            )
+        except ValueError as error:
+            flash(str(error), "error")
+            return redirect(request.form.get("next") or url_for("evidence_page"))
+        AuditLog(cfg("ATLAS_WORKSPACE_ROOT")).append(AuditEvent.create(
+            category="saved-filter", operation="save",
+            subject=f"evidence-filter:{record.filter_id}",
+            actor=current_actor(),
+            after={"name": record.name}, correlation_id=g.correlation_id,
+        ))
+        flash(f"Filter '{record.name}' saved.", "success")
+        return redirect(f"/evidence?{record.query}" if record.query
+                        else url_for("evidence_page"))
+
+    @app.route("/evidence/saved-filters/<filter_id>/rename", methods=["POST"])
+    def evidence_saved_filter_rename(filter_id: str):
+        try:
+            renamed = _saved_filter_store().rename(
+                filter_id, owner=current_actor(),
+                name=str(request.form.get("name") or ""),
+            )
+        except ValueError as error:
+            flash(str(error), "error")
+            return redirect(url_for("evidence_page"))
+        flash("Filter renamed." if renamed else "No such saved filter.",
+              "success" if renamed else "error")
+        return redirect(request.form.get("next") or url_for("evidence_page"))
+
+    @app.route("/evidence/saved-filters/<filter_id>/delete", methods=["POST"])
+    def evidence_saved_filter_delete(filter_id: str):
+        from founderos_atlas.audit import AuditEvent, AuditLog
+
+        removed = _saved_filter_store().delete(
+            filter_id, owner=current_actor()
+        )
+        if removed:
+            AuditLog(cfg("ATLAS_WORKSPACE_ROOT")).append(AuditEvent.create(
+                category="saved-filter", operation="delete",
+                subject=f"evidence-filter:{filter_id}",
+                actor=current_actor(), correlation_id=g.correlation_id,
+            ))
+        flash("Filter deleted." if removed else "No such saved filter.",
+              "success" if removed else "error")
+        return redirect(request.form.get("next") or url_for("evidence_page"))
 
     @app.route("/evidence/device/<path:device_id>")
     def evidence_device_page(device_id: str):
@@ -4978,6 +5103,81 @@ def register_routes(app) -> None:
         response = jsonify(payload)
         response.headers["Content-Disposition"] = 'attachment; filename="atlas-diagnostics.json"'
         return response
+
+    def _history_roots() -> dict:
+        return {
+            scope.scope_id: scope.history_root
+            for scope in known_scopes().values()
+        }
+
+    def _retention_preview():
+        from founderos_atlas.workspace.retention import build_preview
+
+        return build_preview(
+            history_roots=_history_roots(),
+            retention_days=_administration_repository().preferences().retention_days,
+            workspace_root=Path(cfg("ATLAS_WORKSPACE_ROOT")),
+        )
+
+    @app.route("/system/update")
+    def system_update():
+        from founderos_atlas.workspace.update_info import update_information
+
+        return render_template(
+            "system_update.html",
+            info=update_information(cfg("ATLAS_WORKSPACE_ROOT")),
+            **base_context("settings"),
+        )
+
+    @app.route("/settings/retention")
+    def settings_retention():
+        preview = _retention_preview()
+        return render_template(
+            "retention.html",
+            preview=preview.to_dict(),
+            retention_days=preview.retention_days,
+            **base_context("settings"),
+        )
+
+    @app.route("/settings/retention/execute", methods=["POST"])
+    def settings_retention_execute():
+        from founderos_atlas.workspace.retention import execute_retention
+
+        if request.form.get("confirm") != "DELETE OLD HISTORY":
+            flash(
+                "Type DELETE OLD HISTORY to confirm — nothing was deleted.",
+                "error",
+            )
+            return redirect(url_for("settings_retention"))
+        # Re-derive the preview at execution time so the deletion set is
+        # exactly today's removable records, never a stale list.
+        preview = _retention_preview()
+        if not preview.removable:
+            flash("No records are eligible for removal.", "success")
+            return redirect(url_for("settings_retention"))
+        _administration_audit("retention-start", after={
+            "retention_days": preview.retention_days,
+            "candidate_count": len(preview.removable),
+        })
+        manifest = execute_retention(
+            history_roots=_history_roots(),
+            preview=preview,
+            workspace_root=Path(cfg("ATLAS_WORKSPACE_ROOT")),
+            actor=current_actor(),
+        )
+        _administration_audit("retention-complete", after={
+            "removed_count": manifest["removed_count"],
+            "removed_bytes": manifest["removed_bytes"],
+            "errors": len(manifest["errors"]),
+        })
+        flash(
+            f"Retention complete: {manifest['removed_count']} record(s) "
+            f"removed ({manifest['removed_bytes']} bytes). A deletion "
+            "manifest was written under the workspace. Credentials, audit "
+            "records, incidents, and plans were untouched.",
+            "success",
+        )
+        return redirect(url_for("settings_retention"))
 
     @app.route("/settings/backup")
     def settings_backup():

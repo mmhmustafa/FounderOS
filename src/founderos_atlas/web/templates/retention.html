@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Data Retention{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Data Retention</h1></div>
+<p class="muted">
+  Retention removes only old <strong>discovery history records</strong> —
+  the archived point-in-time snapshots. It never deletes live state,
+  audit records, incidents, plans, user accounts, or credentials. The
+  latest record per scope, and any record an open incident references,
+  is always protected. Review the exact preview below before anything is
+  removed; deleting requires a typed confirmation, and a deletion
+  manifest is written.
+</p>
+
+<section class="card">
+  <h2>Policy</h2>
+  <p>Records older than <strong>{{ retention_days }} day(s)</strong> are
+  eligible for removal. Change this window in
+  <a href="/settings">Settings → preferences</a> (retention days).</p>
+</section>
+
+<section class="card">
+  <h2>Preview</h2>
+  <div class="tiles">
+    <div class="tile"><strong>Eligible for removal</strong><span>{{ preview.removable_count }}</span></div>
+    <div class="tile"><strong>Protected</strong><span>{{ preview.protected_count }}</span></div>
+    <div class="tile"><strong>Reclaimable</strong><span class="tile-text">{{ preview.removable_bytes }} bytes</span></div>
+    <div class="tile"><strong>Previewed</strong><span class="tile-text">{{ preview.generated_at }}</span></div>
+  </div>
+
+  {% if preview.decisions %}
+  <div class="table-scroll table-scroll-wide" role="region" aria-label="Retention decisions" tabindex="0">
+    <table class="grid">
+      <thead>
+        <tr><th>Record</th><th>Scope</th><th>Started</th><th>Size</th><th>Decision</th><th>Reason</th></tr>
+      </thead>
+      <tbody>
+        {% for d in preview.decisions %}
+        <tr>
+          <td><code>{{ d.record_id }}</code></td>
+          <td>{{ d.scope_id or '—' }}</td>
+          <td>{{ d.started_at }}</td>
+          <td>{{ d.size_bytes }} B</td>
+          <td>
+            {% if d.removable %}<span class="badge hop-badge hop-badge-failed">remove</span>
+            {% else %}<span class="badge hop-badge">protected</span>{% endif %}
+          </td>
+          <td class="muted">{{ d.reason }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No discovery history records exist yet.</p>
+  {% endif %}
+</section>
+
+{% if preview.removable_count %}
+<section class="card danger-zone">
+  <h2>Execute retention</h2>
+  <p><strong>This permanently removes the {{ preview.removable_count }}
+  record(s) marked "remove" above.</strong> Protected records, live
+  state, credentials, audit, incidents, and plans are untouched. To stop,
+  simply leave this page — nothing is deleted until you confirm.</p>
+  <form class="form" method="post" action="/settings/retention/execute">{{ csrf_field() }}
+    <label>Confirmation
+      <input name="confirm" required placeholder="DELETE OLD HISTORY"
+             autocomplete="off">
+    </label>
+    <button class="btn btn-danger" type="submit">Delete old history records</button>
+  </form>
+</section>
+{% endif %}
+{% endblock %}

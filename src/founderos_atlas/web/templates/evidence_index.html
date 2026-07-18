@@ -116,9 +116,44 @@
     </div>
     <div class="form-actions">
       <button class="btn" type="submit">Filter</button>
-      {% if filtered %}<a class="btn" href="/evidence?session={{ session.session_id | urlencode }}">Clear</a>{% endif %}
+      {% if filtered %}<a class="btn" href="/evidence?session={{ session.session_id | urlencode }}">Reset</a>{% endif %}
     </div>
   </form>
+
+  <section class="saved-filters" aria-label="Saved evidence filters">
+    <h3>Saved filters</h3>
+    {% if saved_filters %}
+    <ul class="saved-filter-list">
+      {% for saved in saved_filters %}
+      <li>
+        <a class="btn btn-sm" href="/evidence?{{ saved.query }}" aria-label="Apply saved filter {{ saved.name }}">{{ saved.name }}</a>
+        <details style="display:inline-block">
+          <summary class="btn btn-sm" role="button" aria-label="Rename {{ saved.name }}">Rename</summary>
+          <form method="post" action="/evidence/saved-filters/{{ saved.filter_id }}/rename" class="filter-bar" style="padding:4px;border:0;">{{ csrf_field() }}
+            <label class="visually-hidden" for="rename-{{ saved.filter_id }}">New name for {{ saved.name }}</label>
+            <input id="rename-{{ saved.filter_id }}" name="name" value="{{ saved.name }}" required>
+            <button class="btn btn-sm" type="submit">Save</button>
+          </form>
+        </details>
+        <form method="post" action="/evidence/saved-filters/{{ saved.filter_id }}/delete" style="display:inline">{{ csrf_field() }}
+          <button class="btn btn-sm" type="submit" aria-label="Delete saved filter {{ saved.name }}">Delete</button>
+        </form>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="muted">No saved filters yet. Save the current view below to reuse it later — saved filters persist for you across browser and server restarts, and their URLs are shareable.</p>
+    {% endif %}
+    <form method="post" action="/evidence/saved-filters" class="filter-bar" style="border:0;padding:0;">{{ csrf_field() }}
+      <input type="hidden" name="query" value="{{ current_query }}">
+      <label>Save current filter as
+        <input name="name" required placeholder="e.g. Failed collections, Chennai">
+      </label>
+      <button class="btn btn-sm btn-primary" type="submit"
+              {{ 'disabled' if not current_query }}>Save filter</button>
+      {% if not current_query %}<span class="muted">Apply a filter first, then save it.</span>{% endif %}
+    </form>
+  </section>
 
   {% if filtered %}
   <p class="muted">Showing {{ visible_count }} of {{ record_count }} evidence records.
@@ -126,7 +161,7 @@
   {% endif %}
 
   {% if devices %}
-  <form method="post" action="/evidence/bulk-export">{{ csrf_field() }}<input type="hidden" name="session" value="{{ session.session_id }}"><div class="form-actions"><button class="btn" type="submit">Export selected (masked)</button><button class="btn" type="button" data-save-evidence-filter>Save filter in this browser</button></div>
+  <form method="post" action="/evidence/bulk-export">{{ csrf_field() }}<input type="hidden" name="session" value="{{ session.session_id }}"><div class="form-actions"><button class="btn" type="submit">Export selected (masked)</button></div>
   <table class="grid">
     <thead>
       <tr><th><span class="visually-hidden">Select</span></th><th>Device</th><th>Platform</th><th>Commands</th><th>Empty</th>

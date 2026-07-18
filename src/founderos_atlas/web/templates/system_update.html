@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Update Information{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Update Information</h1></div>
+<p class="muted">
+  What Atlas can prove about itself. Atlas never checks for or installs
+  updates on its own — any version comparison requires a configured
+  update provider, and no download or installation happens without an
+  explicit, audited action.
+</p>
+
+<section class="card">
+  <h2>Installed</h2>
+  <ul class="kv">
+    <li><span>Application version</span><span>{{ info.application_version }}</span></li>
+    <li><span>Build commit</span><span>{{ info.build_commit or 'not a git checkout' }}</span></li>
+    <li><span>Workspace schema</span><span>
+      v{{ info.schema_version }} of v{{ info.schema_target }}
+      {% if info.schema_current %}<span class="badge hop-badge">current</span>
+      {% else %}<span class="badge hop-badge hop-badge-warning">migrations pending</span>{% endif %}
+    </span></li>
+  </ul>
+</section>
+
+<section class="card">
+  <h2>Update provider</h2>
+  {% set provider = info.update_provider %}
+  {% if provider.state == 'unconfigured' %}
+  <p><span class="badge hop-badge">not configured</span></p>
+  {% elif provider.state == 'unavailable' %}
+  <p><span class="badge hop-badge hop-badge-warning">offline / not integrated</span></p>
+  {% else %}
+  <p><span class="badge hop-badge">available</span> latest known:
+    <strong>{{ provider.latest_version }}</strong></p>
+  {% endif %}
+  <p class="muted">{{ provider.detail }}</p>
+  {% if provider.release_notes_url %}
+  <p><a class="btn btn-sm" href="{{ provider.release_notes_url }}" rel="noreferrer noopener">Release notes / provider</a></p>
+  {% endif %}
+</section>
+{% endblock %}

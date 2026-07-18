@@ -69,10 +69,22 @@
   }
 
   function save() {
+    // Repeated fields (every selected credential set, multiple seeds)
+    // must ALL survive into the draft — flattening to one value per key
+    // was the bug that silently dropped every credential set but the
+    // last. Collect any key that appears more than once as an array.
     var data = {};
-    new FormData(form).forEach(function (value, key) { data[key] = value; });
-    delete data.password;           // drafts never contain credentials
-    delete data._csrf;
+    var multi = {};
+    new FormData(form).forEach(function (value, key) {
+      if (key === "password" || key === "_csrf") { return; }
+      if (Object.prototype.hasOwnProperty.call(data, key)) {
+        if (!multi[key]) { multi[key] = [data[key]]; }
+        multi[key].push(value);
+      } else {
+        data[key] = value;
+      }
+    });
+    Object.keys(multi).forEach(function (key) { data[key] = multi[key]; });
     data.draft_id = form.elements.draft_id.value;
     return fetch("/api/discovery/wizard/drafts", {
       method: "POST",

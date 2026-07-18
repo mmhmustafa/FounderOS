@@ -29,6 +29,17 @@
   <details><summary>Restore metadata</summary><form class="form" method="post" action="/settings/restore" enctype="multipart/form-data">{{ csrf_field() }}<label>Atlas backup<input type="file" name="backup" accept=".zip" required></label><label>Reason<input name="reason" required></label><label>Confirmation<input name="confirm" required placeholder="RESTORE METADATA"></label><button class="btn btn-danger" type="submit">Restore metadata</button></form></details>
 </section>
 
+<section class="card">
+  <h2>Administration</h2>
+  <div class="form-actions">
+    <a class="btn" href="/settings/retention">Data retention…</a>
+    <a class="btn" href="/system/update">Update information</a>
+    <a class="btn" href="/system/integrity">Workspace integrity</a>
+    <a class="btn" href="/users">Users &amp; roles</a>
+  </div>
+  <p class="muted">Retention removes only old discovery history records, with a preview and typed confirmation. Update information is read-only — Atlas never installs updates on its own.</p>
+</section>
+
 <section class="card" id="system-information">
   <h2>System information</h2>
   <ul class="kv">

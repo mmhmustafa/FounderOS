@@ -201,15 +201,19 @@ class BehaviorHookTests(unittest.TestCase):
             self.assertIn("data-dirty-guard", form)
             settings = client.get("/settings").data.decode("utf-8")
             self.assertIn("data-copy-url", settings)
+            # Evidence saved filters are now real server-side forms
+            # (POST /evidence/saved-filters), not a write-only localStorage
+            # key — no client hook remains.
             evidence = client.get("/evidence?scope=all").data.decode("utf-8")
-            self.assertIn("data-save-evidence-filter", evidence)
+            self.assertIn("/evidence/saved-filters", evidence)
+            self.assertNotIn("data-save-evidence-filter", evidence)
             ops = client.get("/discovery/console").data.decode("utf-8")
             self.assertIn("/static/atlas-discovery-console.js", ops)
             shared = (STATIC / "atlas.js").read_text(encoding="utf-8")
             for hook in ("data-dirty-guard", "data-copy-url",
-                         "data-save-evidence-filter", "atlas-console-config",
-                         "AtlasConsole"):
+                         "atlas-console-config", "AtlasConsole"):
                 self.assertIn(hook, shared)
+            self.assertNotIn("data-save-evidence-filter", shared)
             polling = (STATIC / "atlas-discovery-console.js").read_text(
                 encoding="utf-8"
             )

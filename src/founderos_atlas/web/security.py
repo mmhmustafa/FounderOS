@@ -62,6 +62,7 @@ _CSRF_TOKEN_EXEMPT = frozenset({"login_submit"})
 # login_submit is NOT here: sign-in uses the layered limiter below.
 _RATE_LIMITS: dict[str, int] = {
     "credentials_test": 20,
+    "credentials_test_connection": 10,   # touches the network — tighter
     "profile_test": 20,
     "settings_restore": 5,
     "api_advisor_ask": 30,

@@ -21,7 +21,7 @@
   </label>
   <div class="form-row">
     <label>Owner<input name="owner" value="{{ profile.owner if profile else '' }}" placeholder="Network Operations"></label>
-    <label>Tags<input name="tags" value="{{ profile.tags_text if profile else '' }}" placeholder="production, campus, critical"></label>
+    <label>Tags<input name="tags" value="{{ profile.tags_text if profile else '' }}" placeholder="production, campus, critical" data-chips data-chip-kind="tag"></label>
   </div>
   <label>Management IP
     <input name="management_ip" value="{{ profile.management_ip if profile else '' }}"
@@ -66,18 +66,18 @@
       <input name="description" value="{{ profile.description if profile else '' }}" placeholder="Primary campus entry point">
     </label>
     <label>Additional seed devices (comma separated IPs, optional)
-      <input name="seeds" value="{{ profile.seeds_text if profile else '' }}" placeholder="192.168.1.20, 192.168.1.30">
+      <input name="seeds" value="{{ profile.seeds_text if profile else '' }}" placeholder="192.168.1.20, 192.168.1.30" data-chips data-chip-kind="ip">
     </label>
     <div class="form-row">
       <label>Include ranges (CIDRs, optional)
-        <input name="include_cidrs" value="{{ profile.include_cidrs_text if profile else '' }}" placeholder="10.0.0.0/8">
+        <input name="include_cidrs" value="{{ profile.include_cidrs_text if profile else '' }}" placeholder="10.0.0.0/8" data-chips data-chip-kind="cidr">
       </label>
       <label>Exclude ranges (CIDRs, optional)
-        <input name="exclude_cidrs" value="{{ profile.exclude_cidrs_text if profile else '' }}" placeholder="10.99.0.0/16">
+        <input name="exclude_cidrs" value="{{ profile.exclude_cidrs_text if profile else '' }}" placeholder="10.99.0.0/16" data-chips data-chip-kind="cidr">
       </label>
     </div>
     <label>Do not follow hostnames (globs, optional)
-      <input name="deny_hostnames" value="{{ profile.deny_hostnames_text if profile else '' }}" placeholder="isp-*, provider-*">
+      <input name="deny_hostnames" value="{{ profile.deny_hostnames_text if profile else '' }}" placeholder="isp-*, provider-*" data-chips data-chip-kind="hostname">
     </label>
     <fieldset>
       <legend>Credential sets</legend>
@@ -101,4 +101,5 @@
   </div>
   <p class="muted">The password is stored securely in your OS keyring, never in profile files.</p>
 </form>
+<script src="{{ url_for('static', filename='atlas-chips.js') }}" defer></script>
 {% endblock %}

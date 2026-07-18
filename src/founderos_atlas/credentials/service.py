@@ -144,6 +144,62 @@ class CredentialSetService:
             )
         )
 
+    def test_connection(
+        self, set_id: str, entry_id: str, *, target: str, transport_factory,
+    ):
+        """Attempt the minimum safe read-only login against ``target`` and
+        record the outcome as safe metadata. Returns a
+        ``ConnectionTestResult``; the secret never leaves the provider."""
+
+        from dataclasses import replace
+
+        from .connection_test import test_connection
+
+        existing = self._repository.get(set_id)
+        if existing is None:
+            raise InvalidProfileError("The credential set does not exist.")
+        entry = next(
+            (e for e in existing.entries if e.entry_id == entry_id), None
+        )
+        if entry is None:
+            raise InvalidProfileError("The credential entry does not exist.")
+
+        result = test_connection(
+            target=target,
+            credential_ref=entry.credential_ref,
+            provider=self._provider,
+            transport_factory=transport_factory,
+            username=entry.username,
+        )
+        when = self._clock().isoformat(timespec="seconds")
+        # Record only safe metadata: outcome label, not the target detail
+        # or any command output.
+        entries = tuple(
+            replace(
+                item,
+                last_used=when if item.entry_id == entry_id else item.last_used,
+                last_success=(
+                    when if result.succeeded else item.last_success
+                ) if item.entry_id == entry_id else item.last_success,
+                last_failure=(
+                    None if result.succeeded else when
+                ) if item.entry_id == entry_id else item.last_failure,
+                last_failure_reason=(
+                    None if result.succeeded else result.outcome
+                ) if item.entry_id == entry_id else item.last_failure_reason,
+                last_test_status=(
+                    result.outcome if item.entry_id == entry_id
+                    else item.last_test_status
+                ),
+            )
+            for item in existing.entries
+        )
+        self._repository.save(CredentialSet(
+            set_id=existing.set_id, name=existing.name,
+            description=existing.description, entries=entries,
+        ))
+        return result
+
     def test_store_access(self, set_id: str, entry_id: str) -> bool:
         """Verify the referenced secret is readable without returning it.
 

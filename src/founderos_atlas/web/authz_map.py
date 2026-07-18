@@ -90,6 +90,9 @@ ENDPOINT_PERMISSIONS: dict[str, str] = {
     "memory_session_page": EVIDENCE_VIEW,
     "memory_device_page": EVIDENCE_VIEW,
     "memory_evidence_view": EVIDENCE_VIEW,
+    "evidence_saved_filter_create": EVIDENCE_VIEW,
+    "evidence_saved_filter_rename": EVIDENCE_VIEW,
+    "evidence_saved_filter_delete": EVIDENCE_VIEW,
 
     # -- exports (data leaves the system) ----------------------------------
     "evidence_record_download": EXPORT_DATA,
@@ -127,6 +130,7 @@ ENDPOINT_PERMISSIONS: dict[str, str] = {
     "credentials_add": CREDENTIALS_MANAGE,
     "credentials_delete": CREDENTIALS_MANAGE,
     "credentials_test": CREDENTIALS_MANAGE,
+    "credentials_test_connection": CREDENTIALS_MANAGE,
 
     # -- policy ------------------------------------------------------------
     "policy_exception_grant": POLICY_MANAGE,
@@ -200,6 +204,9 @@ ENDPOINT_PERMISSIONS: dict[str, str] = {
     "settings_reset": SETTINGS_MANAGE,
     "system_information": SYSTEM_ADMIN,
     "settings_diagnostics": SYSTEM_ADMIN,
+    "settings_retention": SYSTEM_ADMIN,
+    "settings_retention_execute": SYSTEM_ADMIN,
+    "system_update": SYSTEM_ADMIN,
     "settings_backup": SYSTEM_ADMIN,
     "settings_restore": SYSTEM_ADMIN,
     "system_integrity": SYSTEM_ADMIN,
