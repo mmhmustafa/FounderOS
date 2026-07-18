@@ -9,7 +9,28 @@ from dataclasses import dataclass, field
 from .exceptions import ReadOnlyViolationError
 
 
-_READ_ONLY_FIRST_WORDS = frozenset({"show"})
+# The read-only grammar, by dialect. Every entry is a display/read verb
+# that CANNOT change device state — audited per platform, never a
+# wildcard. This is a deliberately small allowlist: a new platform earns
+# entries here explicitly, in review, or its commands do not run.
+_READ_ONLY_FIRST_WORDS = frozenset({
+    "show",       # Cisco / Arista / Junos / FRR / FortiOS display verb
+    "get",        # FortiOS read verb ("get system status") — display only
+    "display",    # Comware/VRP display verb (future platforms)
+    "list",       # tmsh read verb (F5 BIG-IP)
+})
+
+# Multi-word read-only prefixes for dialects whose read grammar starts
+# with an otherwise-writeful verb. Exact prefixes, never single words:
+# PAN-OS `set cli ...` adjusts the SESSION's presentation (pager, output
+# format) and can never touch configuration — `set` alone stays banned.
+_READ_ONLY_PREFIXES = (
+    "set cli ",
+    # AireOS spells its session pager-off "config paging disable" — the
+    # one `config`-verb form allowed, as an exact presentation-only
+    # prefix. `config` alone (and every other subtree) stays banned.
+    "config paging ",
+)
 
 
 def ensure_read_only(command: str) -> str:
@@ -18,11 +39,15 @@ def ensure_read_only(command: str) -> str:
     if not isinstance(command, str) or not command.strip():
         raise ReadOnlyViolationError("Command must be a non-empty string.")
     normalized = " ".join(command.strip().split())
-    first_word = normalized.split(" ", 1)[0].casefold()
-    if first_word not in _READ_ONLY_FIRST_WORDS:
+    folded = normalized.casefold()
+    first_word = folded.split(" ", 1)[0]
+    if first_word not in _READ_ONLY_FIRST_WORDS and not any(
+        folded.startswith(prefix) for prefix in _READ_ONLY_PREFIXES
+    ):
         raise ReadOnlyViolationError(
             f"Command rejected by the read-only transport policy: {normalized!r}. "
-            "Atlas transports only run 'show' commands."
+            "Atlas transports only run read/display commands "
+            "(show/get/display/list, or a session-presentation 'set cli')."
         )
     return normalized
 

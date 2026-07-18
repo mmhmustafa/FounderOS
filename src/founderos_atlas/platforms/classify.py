@@ -86,6 +86,21 @@ def classify_role(device: Mapping) -> tuple[str, str]:
     # is switching evidence. Without these, the AtlasLab platforms fell through
     # every model regex to the generic "linux" check and rendered as Linux
     # hosts — the terminal icon on a firewall.
+    # PR-056: normalized firewall evidence (zones + security policies) is
+    # firewall proof on any vendor, read the same way for FortiOS, PAN-OS,
+    # or the AtlasLab iptables chain — no vendor branch.
+    firewall_evidence = metadata.get("firewall_evidence")
+    if isinstance(firewall_evidence, Mapping):
+        summary = firewall_evidence.get("summary") or {}
+        policy_count = summary.get("policy_count") if isinstance(summary, Mapping) else 0
+        default_action = (
+            summary.get("default_action") if isinstance(summary, Mapping) else None
+        )
+        return ROLE_FIREWALL, (
+            f"{policy_count} normalized security polic"
+            + ("y" if policy_count == 1 else "ies")
+            + (f", default action {default_action}" if default_action and default_action != "unknown" else "")
+        )
     if metadata.get("firewall"):
         chain = metadata.get("firewall") or {}
         policy = str(chain.get("default_policy", "") if isinstance(chain, Mapping) else "")

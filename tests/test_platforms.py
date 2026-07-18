@@ -158,13 +158,26 @@ class DetectionAndRegistryTests(unittest.TestCase):
                 "Cisco NX-OS",
                 "Arista EOS",
                 "Juniper Junos",
+                "Fortinet FortiOS",
+                "Palo Alto PAN-OS",
+                "Aruba CX",
+                "Cisco Wireless LAN Controller",
+                "F5 BIG-IP",
+                "Citrix ADC",
+                "A10 ACOS",
                 "FRRouting",
                 "AtlasLab firewall",
                 "AtlasLab switch",
             ),
             registry.supported_platforms(),
         )
-        self.assertEqual(("show version",), registry.probe_commands())
+        self.assertEqual(
+            (
+                "show version", "get system status", "show system info",
+                "show sysinfo", "show sys version", "show ns version",
+            ),
+            registry.probe_commands(),
+        )
 
     def test_unsupported_platform_message_explains_why(self) -> None:
         message = default_registry().unsupported_message("JUNOS 21.4R1.12")

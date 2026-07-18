@@ -58,16 +58,28 @@ def _discover_with_registry(
     from founderos_atlas.platforms import UnsupportedPlatformError
 
     probe_output = ""
+    first_probe_output = None
     driver = None
     for probe_command in registry.probe_commands():
-        probe_output = transport.execute(probe_command)
+        # A device that does not understand this dialect's probe may answer
+        # with an error OR break the session attempt — either way that probe
+        # simply did not identify it; the next dialect still gets its turn.
+        try:
+            probe_output = transport.execute(probe_command)
+        except Exception:  # noqa: BLE001 - this probe failed; try the next
+            continue
+        if first_probe_output is None:
+            first_probe_output = probe_output
         driver = registry.detect(probe_output)
-        if driver is not None and driver.probe_command == probe_command:
-            break
         if driver is not None:
             break
     if driver is None:
-        raise UnsupportedPlatformError(registry.unsupported_message(probe_output))
+        raise UnsupportedPlatformError(
+            registry.unsupported_message(
+                first_probe_output
+                if first_probe_output is not None else probe_output
+            )
+        )
     discovery = driver.discover(
         transport, management_ip_hint=host, probe_output=probe_output
     )

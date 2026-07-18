@@ -88,6 +88,14 @@ class PlatformDriver(ABC):
     vendor: str
     probe_command: str = DEFAULT_PROBE_COMMAND
 
+    # Optional detection fingerprints (PR: multi-vendor detection). Regex
+    # fragments matched case-insensitively against the SSH banner and the
+    # CLI prompt when the transport can observe them. Fingerprints add
+    # EVIDENCE and break ties between probe matchers; a fingerprint alone
+    # never selects a driver — the probe output stays authoritative.
+    banner_fingerprints: tuple[str, ...] = ()
+    prompt_fingerprints: tuple[str, ...] = ()
+
     # -- detection -----------------------------------------------------------
 
     @classmethod
