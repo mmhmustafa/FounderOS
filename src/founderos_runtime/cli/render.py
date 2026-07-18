@@ -19,9 +19,10 @@ from founderos_atlas.workspace import DiscoveryProfile
 from founderos_atlas.journeys import MorningBriefJourneyResult
 from founderos_atlas.topology import TopologyGraph, TopologySnapshot
 from founderos_runtime.journey import JourneyResult
+from founderos_atlas.release import DISPLAY_VERSION
 
 
-VERSION_TEXT = "FounderOS v0.3 Alpha"
+VERSION_TEXT = DISPLAY_VERSION
 
 
 def render_help() -> str:
@@ -52,7 +53,7 @@ def render_help() -> str:
             "  founderos help",
             "",
             "Commands:",
-            "  version         Show the FounderOS Alpha version.",
+            "  version         Show the installed FounderOS Atlas version.",
             "  doctor          Check deterministic demo dependencies.",
             "  demo discovery  Run the in-memory Discovery vertical slice.",
             "  atlas demo discovery  Run fixture-only Atlas network discovery.",

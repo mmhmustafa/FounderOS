@@ -12,40 +12,22 @@ provider is an adapter seam).
 from __future__ import annotations
 
 import os
-import subprocess
 from pathlib import Path
 from typing import Any
 
-APPLICATION_VERSION = "0.3-alpha"
+from founderos_atlas.release import VERSION, build_commit
 
 PROVIDER_UNCONFIGURED = "unconfigured"
 PROVIDER_UNAVAILABLE = "unavailable"
 PROVIDER_OK = "ok"
 
 
-def _build_commit() -> str | None:
-    """The short git commit if this is a checkout, else None. Best-effort
-    and side-effect-free; never raises into the caller."""
-
-    repo = Path(__file__).resolve().parents[3]
-    if not (repo / ".git").exists():
-        return None
-    try:
-        result = subprocess.run(
-            ["git", "-C", str(repo), "rev-parse", "--short", "HEAD"],
-            capture_output=True, text=True, timeout=5,
-        )
-        return result.stdout.strip() or None if result.returncode == 0 else None
-    except (OSError, subprocess.SubprocessError):
-        return None
-
-
 def update_information(workspace_root: str | Path) -> dict[str, Any]:
     from .migrations import CURRENT_SCHEMA_VERSION, applied_version
 
     info: dict[str, Any] = {
-        "application_version": APPLICATION_VERSION,
-        "build_commit": _build_commit(),
+        "application_version": VERSION,
+        "build_commit": build_commit(),
         "schema_version": applied_version(workspace_root),
         "schema_target": CURRENT_SCHEMA_VERSION,
         "schema_current": applied_version(workspace_root) == CURRENT_SCHEMA_VERSION,

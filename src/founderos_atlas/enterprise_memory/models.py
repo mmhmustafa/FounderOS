@@ -29,6 +29,8 @@ from dataclasses import dataclass, field
 from hashlib import sha256
 from typing import Any
 
+from founderos_atlas.release import VERSION
+
 
 # The parser generation that interpreted evidence at collection time. Stamped
 # on every record so a later reprocessing pass knows which parser produced the
@@ -39,7 +41,7 @@ PARSER_VERSION = "2026.07"
 # The Atlas build that collected the evidence. Recorded on evidence and
 # snapshots so history can be attributed to the software that produced it —
 # a future reprocessing pass can tell "collected by an older Atlas" apart.
-ATLAS_VERSION = "0.4-alpha"
+ATLAS_VERSION = VERSION
 
 # How the evidence was collected. Reserved values name future transports so
 # the field never needs widening.

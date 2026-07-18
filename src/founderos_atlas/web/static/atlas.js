@@ -309,7 +309,11 @@
       });
     }
     function sync() {
-      var optional = anySetChosen();
+      var preservesExisting = Array.prototype.some.call(fields, function (field) {
+        var form = field.closest("form");
+        return form && form.dataset.preserveCredential === "1";
+      });
+      var optional = preservesExisting || anySetChosen();
       Array.prototype.forEach.call(fields, function (field) {
         field.required = !optional;
         // The browser keeps a stale validity message until the value changes.

@@ -5,9 +5,12 @@ node_modules/
 __pycache__/
 *.log
 .vscode/
+.claude/
 .venv/
 .coverage
 .pytest_cache/
+.audit-cache/
+.tmp-tests/
 build/
 dist/
 *.egg-info/

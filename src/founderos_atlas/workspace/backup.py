@@ -89,8 +89,10 @@ EXCLUDED_REASONS = {
 
 
 def build_manifest(
-    workspace_root: str | Path, *, application_version: str,
+    workspace_root: str | Path, *, application_version: str | None = None,
 ) -> dict[str, Any]:
+    from founderos_atlas.release import DISPLAY_VERSION
+
     root = Path(workspace_root)
     files = []
     for name, classification in sorted(INCLUDED_FILES.items()):
@@ -107,7 +109,7 @@ def build_manifest(
     return {
         "backup_schema_version": BACKUP_SCHEMA_VERSION,
         "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "application_version": application_version,
+        "application_version": application_version or DISPLAY_VERSION,
         "files": files,
         "excluded": {
             "secrets": list(EXCLUDED_SECRETS),
@@ -118,7 +120,7 @@ def build_manifest(
 
 
 def build_backup(
-    workspace_root: str | Path, *, application_version: str,
+    workspace_root: str | Path, *, application_version: str | None = None,
 ) -> tuple[bytes, dict[str, Any]]:
     """The backup archive bytes and its manifest."""
 

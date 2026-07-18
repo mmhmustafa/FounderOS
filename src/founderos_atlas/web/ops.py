@@ -18,6 +18,7 @@ from founderos_atlas.notifications import (
     KIND_APPROVAL_REQUEST,
     NotificationStore,
 )
+from founderos_atlas.web.redirects import safe_redirect_target
 
 
 def register_ops_routes(app) -> None:
@@ -149,7 +150,7 @@ def register_ops_routes(app) -> None:
             flash(f"Notification marked {status}.", "success")
         else:
             flash("That notification no longer exists.", "error")
-        return redirect(request.form.get("next") or "/inbox")
+        return redirect(safe_redirect_target(request.form.get("next"), "/inbox"))
 
     # -- users administration ---------------------------------------------
 

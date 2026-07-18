@@ -632,7 +632,7 @@
       <div class="field"><strong>Membership evidence</strong>${escapeHtml(data.evidence || '')}</div>
       <div class="node-actions">
         <button class="node-action node-action-primary" type="button"
-                onclick="toggleSite('${escapeHtml(data.site_id)}')">${isOpen ? 'Collapse site' : 'Open site'}</button>
+                data-topology-action="toggle-site" data-site-id="${escapeHtml(data.site_id)}">${isOpen ? 'Collapse site' : 'Open site'}</button>
         <span style="font-size:12px;color:#64748b;align-self:center">Tip: double-click any device inside an open site to fold it back.</span>
       </div>
       ${editMode && data.site_id !== '__none__' ? `
@@ -644,7 +644,7 @@
             ).join('')}
           </select>
         </label>
-        <div class="edit-actions"><button type="button" onclick="saveSiteType()">Save site type</button></div>
+        <div class="edit-actions"><button type="button" data-topology-action="save-site-type">Save site type</button></div>
       </div>` : ''}`;
       }
       const unresolved = data.kind === 'observed';
@@ -705,9 +705,9 @@
         </label>
         <label>Reason <input id="site-assignment-reason" placeholder="Why is this correction needed?"></label>
         <div class="edit-actions">
-          <button type="button" onclick="saveSelectedSite()">Save assignment</button>
-          ${assignment.source === 'operator' ? '<button type="button" onclick="revertSelectedSite()">Return to automatic</button>' : ''}
-          ${assignment.subject_key ? '<button type="button" onclick="undoSelectedSite()">Undo last change</button>' : ''}
+          <button type="button" data-topology-action="save-selected-site">Save assignment</button>
+          ${assignment.source === 'operator' ? '<button type="button" data-topology-action="revert-selected-site">Return to automatic</button>' : ''}
+          ${assignment.subject_key ? '<button type="button" data-topology-action="undo-selected-site">Undo last change</button>' : ''}
         </div>
         <p style="margin:8px 0 0;font-size:11px;color:#475569">Saved corrections survive restarts and future discovery. Discovery evidence remains visible underneath.</p>
       </div>`;
@@ -1559,17 +1559,38 @@
       for (const id of [...expandedSites].sort()) {
         html += `<span class="site-chip">${escapeHtml(name(id))}` +
                 `<button type="button" title="Close ${escapeHtml(name(id))}"` +
-                ` onclick="toggleSite('${escapeHtml(id)}')">×</button></span>`;
+                ` data-topology-action="toggle-site" data-site-id="${escapeHtml(id)}">×</button></span>`;
       }
       if (expandedSites.size > 1) {
         html += `<span class="site-chip site-chip-all">` +
                 `<button type="button" style="width:auto;padding:0 8px;border-radius:6px"` +
-                ` title="Close every open site" onclick="closeAllSites()">Close all</button></span>`;
+                ` title="Close every open site" data-topology-action="close-all-sites">Close all</button></span>`;
       }
       bar.innerHTML = html;
     }
 
     window.closeAllSites = () => { expandedSites.clear(); rebuildView(); };
+
+    // Generated artifacts use delegated listeners instead of executable
+    // HTML attributes, in both the embedded and standalone viewer.
+    document.addEventListener('click', event => {
+      const button = event.target.closest('button[data-topology-action]');
+      if (!button) { return; }
+      const action = button.getAttribute('data-topology-action');
+      if (action === 'toggle-site') {
+        window.toggleSite(button.getAttribute('data-site-id'));
+      } else if (action === 'close-all-sites') {
+        window.closeAllSites();
+      } else if (action === 'save-site-type') {
+        window.saveSiteType();
+      } else if (action === 'save-selected-site') {
+        window.saveSelectedSite();
+      } else if (action === 'revert-selected-site') {
+        window.revertSelectedSite();
+      } else if (action === 'undo-selected-site') {
+        window.undoSelectedSite();
+      }
+    });
 
     // Edit mode has one honest drag meaning: move this device to that site.
     // Highlight a forgiving destination zone and snap every non-save drag

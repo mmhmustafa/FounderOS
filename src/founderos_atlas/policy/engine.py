@@ -17,6 +17,7 @@ from collections.abc import Callable
 from datetime import datetime, timezone
 
 from founderos_atlas.enterprise_memory import EnterpriseMemory
+from founderos_atlas.release import VERSION
 from founderos_atlas.reasoning import (
     QUESTION_COMPLY,
     ReasoningEngine,
@@ -43,7 +44,7 @@ class PolicyEngine:
         pack: PolicyPack | None = None,
         *,
         clock: Callable[[], str] | None = None,
-        atlas_version: str = "0.4-alpha",
+        atlas_version: str = VERSION,
     ) -> None:
         self._pack = pack or default_pack()
         self._clock = clock or _utc_now_iso

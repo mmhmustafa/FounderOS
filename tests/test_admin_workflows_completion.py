@@ -24,6 +24,28 @@ from tests.test_production_security import (
 
 
 class WizardDraftTests(unittest.TestCase):
+    def test_candidate_preview_reports_platform_support_honestly(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            _, client = build_world(Path(tmp))
+            response = client.post(
+                "/discovery/wizard/preview",
+                data={
+                    "name": "Support preview",
+                    "mode": "seed",
+                    "seed": "10.0.0.1",
+                    "policy": "balanced",
+                    "max_depth": "1",
+                    "max_devices": "8",
+                    "timeout_seconds": "5",
+                    "concurrency": "1",
+                },
+            )
+            page = response.get_data(as_text=True)
+            self.assertEqual(200, response.status_code)
+            self.assertIn("Supported platforms:", page)
+            self.assertIn("Platform support", page)
+            self.assertIn("Pending identity probe", page)
+
     def test_every_credential_set_survives_a_form_draft_save(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             workdir = Path(tmp)
@@ -371,10 +393,11 @@ class RetentionTests(unittest.TestCase):
 class UpdateInfoTests(unittest.TestCase):
     def test_update_info_is_honest_without_a_provider(self) -> None:
         from founderos_atlas.workspace.update_info import update_information
+        from founderos_atlas.release import VERSION
 
         with tempfile.TemporaryDirectory() as tmp:
             info = update_information(tmp)
-            self.assertEqual("0.3-alpha", info["application_version"])
+            self.assertEqual(VERSION, info["application_version"])
             self.assertIsNotNone(info["schema_target"])
             self.assertEqual("unconfigured", info["update_provider"]["state"])
             self.assertIsNone(info["update_provider"]["latest_version"])

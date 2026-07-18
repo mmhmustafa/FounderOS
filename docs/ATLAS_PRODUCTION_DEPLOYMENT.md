@@ -6,6 +6,14 @@ behind adapters. The administration-security contract in
 `ATLAS_ADMINISTRATION_SECURITY.md` still applies; this document extends
 it to multi-user operation.
 
+Supported Python versions are 3.11 through 3.14. Install with the exact
+dependency lock before starting a service:
+
+```text
+python -m pip install --upgrade pip==26.1.2
+python -m pip install -c constraints.txt -e '.[ssh,credentials,web]'
+```
+
 ## Authentication modes
 
 `ATLAS_AUTH_MODE` selects the mode at startup:
@@ -191,11 +199,20 @@ shared files. The lock releases automatically if the process dies.
 ``/readyz`` reports ``single-instance``; a false value means an
 unsupported multi-process deployment.
 
-Deployment commands:
+Deployment commands (run from the repository/virtual environment):
 
-- Windows/dev: ``python -m founderos_runtime … atlas web`` (one process).
+- Windows/local: ``.\.venv\Scripts\founderos.exe atlas web``.
+- POSIX/local: ``.venv/bin/founderos atlas web``.
 - gunicorn: ``gunicorn --workers 1 --threads 8 'founderos_atlas.web:create_app()'``
   — **exactly** ``--workers 1``; more workers will fail to start by design.
+
+For password mode set `ATLAS_AUTH_MODE=password` and bootstrap the first
+administrator as documented above. For proxy mode set
+`ATLAS_AUTH_MODE=proxy`, a random `ATLAS_PROXY_SECRET` of at least 16
+characters, and `ATLAS_TRUSTED_PROXY_ADDRS` to the proxy peer addresses.
+Set `ATLAS_TLS=1` whenever the browser-facing endpoint is HTTPS. Atlas then
+uses Secure cookies and emits HSTS; it cannot observe or verify the external
+proxy listener/TLS configuration, so monitor that at the proxy.
 
 Nothing in this guide implies multi-worker safety. Scaling beyond one
 process requires a transactional persistence adapter and a shared rate
@@ -265,8 +282,9 @@ its recovery step.
 - **Corruption**: `/system/integrity` parses every known metadata file
   and names the recovery step per file; JSONL readers skip bad lines
   so one damaged line never hides a record.
-- **Jobs**: discovery jobs persist across restarts, and
-  `POST /api/discovery/jobs/<id>/cancel` requests cooperative
+- **Jobs**: discovery job records persist; queued/running jobs are honestly
+  marked interrupted after restart because workers are in-process. New jobs
+  can then be run safely. `POST /api/discovery/jobs/<id>/cancel` requests cooperative
   cancellation — the run stops between observable steps, never
   mid-write, and the job ends in an explicit `cancelled` state.
 - **Probes**: `/healthz` (liveness) and `/readyz` (workspace
@@ -276,9 +294,9 @@ its recovery step.
   duration, correlation id) on stderr; the same correlation id appears
   on the response header and in every audit event the request wrote.
   Bodies, query strings, and cookies are never logged.
-- **Retention**: `retention_days` remains policy metadata; deletion
-  still requires the audited, explicit-confirmation worker described in
-  the administration contract.
+- **Retention**: `/settings/retention` builds a fresh preview and deletion
+  requires the typed confirmation `DELETE OLD HISTORY`; execution is manual,
+  audited, and writes a deletion manifest. No scheduler is shipped.
 
 ## Notifications
 
@@ -299,16 +317,19 @@ to the analysed revision — any later edit returns the plan to draft.
 
 ## Dependencies and supply chain
 
-- Direct dependencies are range-pinned in `pyproject.toml`; the full
+- Direct dependencies are bounded in `pyproject.toml`; the full
   environment is exact-pinned in `constraints.txt`
   (`pip install -c constraints.txt`).
 - No runtime CDN dependencies: xterm.js is vendored, everything else is
   first-party.
-- Scanning: `python -m pip_audit -r constraints.txt --no-deps`.
-  Current status: setuptools upgraded past PYSEC-2026-3447;
-  PYSEC-2026-2858 (paramiko 4.0.0) has **no fixed release listed** at
-  scan time — tracked, revisit on the next paramiko release rather than
-  jumping the untested 5.x major.
+- Scanning: `python scripts/audit_dependencies.py`; CycloneDX inventory:
+  `python scripts/generate_sbom.py`. CI fails on every new unapproved finding
+  and expired exception.
+- PYSEC-2026-2858/CVE-2026-44405: Paramiko 5.0.0 contains the upstream fix,
+  but Netmiko 4.7.0 explicitly requires Paramiko `<5`. Atlas temporarily pins
+  4.0.0 and disables `ssh-rsa` for keys and public-key authentication on every
+  discovery, host-key, and console path. The machine-readable exception
+  expires 2026-10-18; see `DEPENDENCY_SECURITY.md`.
 
 ## Deliberate adapter boundaries
 

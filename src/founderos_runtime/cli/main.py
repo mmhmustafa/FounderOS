@@ -1,4 +1,4 @@
-"""Public command routing for FounderOS v0.3 Alpha."""
+"""Public command routing for the installed FounderOS Atlas release."""
 
 from __future__ import annotations
 
@@ -43,7 +43,9 @@ from .exceptions import CliError
 from .render import render_error
 
 
-_PUBLIC_COMMANDS = {"version", "doctor", "demo", "atlas", "help", "-h", "--help"}
+_PUBLIC_COMMANDS = {
+    "version", "--version", "doctor", "demo", "atlas", "help", "-h", "--help",
+}
 _LEGACY_COMMANDS = {
     "new", "status", "plan", "founder-brief", "approve", "decisions", "events",
     "health", "recover", "audit", "runs", "transitions", "discovery",
@@ -95,7 +97,7 @@ def main(
         return legacy.main(arguments)
     elif arguments in (["help"], ["-h"], ["--help"]):
         code, output = help_command()
-    elif arguments == ["version"]:
+    elif arguments in (["version"], ["--version"]):
         code, output = version_command()
     elif arguments == ["doctor"]:
         code, output = doctor_command()

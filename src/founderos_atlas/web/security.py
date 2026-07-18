@@ -46,6 +46,7 @@ from founderos_atlas.access import (
 from founderos_atlas.audit import AuditEvent, AuditLog
 
 from .authz_map import PUBLIC, permission_for_endpoint
+from .redirects import safe_redirect_target
 
 CSRF_COOKIE = "atlas_csrf"
 CSRF_HEADER = "X-Atlas-CSRF"
@@ -129,6 +130,7 @@ def register_security(app, *, auth_mode: str | None = None) -> None:
         for item in os.environ.get("ATLAS_TRUSTED_PROXY_ADDRS", "").split(",")
         if item.strip()
     )
+    app.config["ATLAS_TRUSTED_PROXY_ADDRS"] = tuple(sorted(trusted_proxies))
     allow_forwarded_local = (
         os.environ.get("ATLAS_LOCAL_ALLOW_FORWARDED", "").strip() == "1"
     )
@@ -586,7 +588,7 @@ def register_security(app, *, auth_mode: str | None = None) -> None:
         if mode != "password" or getattr(g, "principal", None) is not None:
             return redirect("/")
         return render_template(
-            "login.html", next=_safe_next(request.args.get("next")),
+            "login.html", next=safe_redirect_target(request.args.get("next")),
         )
 
     @app.route("/login", methods=["POST"], endpoint="login_submit")
@@ -609,7 +611,7 @@ def register_security(app, *, auth_mode: str | None = None) -> None:
                     "login.html",
                     error="That sign-in didn't work. Check the username "
                           "and password.",
-                    next=_safe_next(request.form.get("next")),
+                    next=safe_redirect_target(request.form.get("next")),
                 ),
                 401,
             )
@@ -619,7 +621,7 @@ def register_security(app, *, auth_mode: str | None = None) -> None:
             correlation_id=g.correlation_id,
         ))
         record = sessions.resolve(token)
-        response = redirect(_safe_next(request.form.get("next")))
+        response = redirect(safe_redirect_target(request.form.get("next")))
         response.set_cookie(
             SESSION_COOKIE, token, httponly=True, samesite="Lax",
             secure=tls_enabled, path="/",
@@ -647,18 +649,6 @@ def register_security(app, *, auth_mode: str | None = None) -> None:
         response.delete_cookie(SESSION_COOKIE, path="/")
         response.delete_cookie(CSRF_COOKIE, path="/")
         return response
-
-
-def _safe_next(target: str | None) -> str:
-    """Only same-app paths; anything absolute or protocol-relative is
-    replaced by the dashboard (open-redirect protection)."""
-
-    candidate = str(target or "").strip()
-    if candidate.startswith("/") and not candidate.startswith("//") and (
-        ":" not in candidate.split("?", 1)[0]
-    ):
-        return candidate
-    return "/"
 
 
 def _bootstrap_admin_from_env(users: UserStore) -> None:

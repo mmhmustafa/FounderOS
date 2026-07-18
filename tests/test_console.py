@@ -470,6 +470,9 @@ class SessionTests(unittest.TestCase):
             session = self._session(tmp, client=client)
             session.connect()
             self.assertTrue(session.connected)
+            self.assertEqual(
+                ["ssh-rsa"], client.connected_with["disabled_algorithms"]["keys"]
+            )
             self.assertEqual(b"core1# ", session.read())
             session.write(b"show version\n")
             self.assertIn(b"show version\n", client.channel.sent)

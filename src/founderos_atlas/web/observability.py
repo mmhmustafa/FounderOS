@@ -24,7 +24,8 @@ class JsonLineFormatter(logging.Formatter):
             "message": record.getMessage(),
         }
         for key in ("correlation_id", "actor", "method", "path",
-                    "endpoint", "status", "duration_ms"):
+                    "endpoint", "status", "duration_ms",
+                    "application_version", "build_commit"):
             value = getattr(record, key, None)
             if value is not None:
                 payload[key] = value
@@ -55,6 +56,12 @@ def register_observability(app) -> None:
         str(app.config.get("ATLAS_LOG_LEVEL") or "INFO")
     )
     app.config["ATLAS_LOGGER"] = logger
+    from founderos_atlas.release import VERSION, build_commit
+
+    logger.info(
+        "startup",
+        extra={"application_version": VERSION, "build_commit": build_commit()},
+    )
 
     @app.after_request
     def _log_request(response):

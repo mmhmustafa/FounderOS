@@ -1,0 +1,27 @@
+name: security-and-release
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "17 3 * * 1"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: python -m pip install --upgrade "pip==26.1.2"
+      - run: python -m pip install -c constraints.txt -e ".[dev,ssh,credentials,web]"
+      - run: python -m pip check
+      - run: python scripts/audit_dependencies.py
+      - run: python scripts/generate_sbom.py
+      - run: git diff --exit-code -- sbom.cdx.json
+      - run: python scripts/check_docs.py
+      - run: python -m pytest -q

@@ -1,13 +1,13 @@
 """Background discovery jobs for the Atlas GUI (PR-032).
 
-A deliberately lightweight, in-process job layer for the local-alpha GUI:
+A deliberately lightweight, in-process job layer for Atlas:
 one daemon thread per job, a global run lock that serializes pipeline
 execution, and a small JSON file that preserves job history across server
 restarts. The manager knows nothing about Flask or the discovery pipeline —
 it drives an injected ``runner`` callable — so a production job backend
 (queue, external workers) can replace it later behind the same interface.
 
-Concurrency policy (local alpha): at most one discovery pipeline executes
+Concurrency policy: at most one discovery pipeline executes
 at a time. Starting a job for a profile that already has a queued/running
 job returns that job instead of creating a duplicate; jobs for different
 profiles queue behind the run lock. Correctness over concurrency.

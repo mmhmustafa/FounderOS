@@ -107,6 +107,7 @@ class SSHDeviceTransport(DeviceTransport):
         if self._connection is not None:
             return
         factory = self._connection_factory or _netmiko_connect_handler()
+        from founderos_atlas.ssh_security import disabled_ssh_algorithms
         try:
             self._connection = factory(
                 device_type=self._device_type,
@@ -115,6 +116,7 @@ class SSHDeviceTransport(DeviceTransport):
                 username=self._credentials.username,
                 password=self._credentials.password,
                 conn_timeout=self._connect_timeout,
+                disabled_algorithms=disabled_ssh_algorithms(),
             )
         except AtlasTransportError:
             raise

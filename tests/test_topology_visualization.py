@@ -52,6 +52,11 @@ class TopologyVisualizationTests(unittest.TestCase):
         self.assertNotIn("'label': 'data(protocol)'", html)
         self.assertIn("data(source_interface)", html)
         self.assertIn("data(display_label)", html)
+        self.assertIsNone(
+            re.search(r"\son(?:click|change|submit|load|error|input|key\w+)\s*=", html),
+            "topology artifacts must not contain executable event attributes",
+        )
+        self.assertIn('data-topology-action="toggle-site"', html)
 
     def test_protocol_views_are_separate_and_derive_domain_boundaries(self) -> None:
         routing_facts = {

@@ -4,6 +4,7 @@
 <h1>{{ 'Edit' if mode == 'edit' else 'Add' }} Discovery Profile</h1>
 
 <form class="form" method="post" data-dirty-guard
+      data-preserve-credential="{{ '1' if mode == 'edit' else '0' }}"
       action="{% if mode == 'edit' %}/profiles/{{ profile.name | urlencode }}{% else %}/profiles{% endif %}">{{ csrf_field() }}
   {% if mode == 'edit' %}<input type="hidden" name="expected_revision" value="{{ profile_revision }}">{% endif %}
   {% if mode != 'edit' %}
@@ -99,7 +100,7 @@
     <button class="btn btn-primary" type="submit">Save Profile</button>
     <a class="btn" href="/profiles">Cancel</a>
   </div>
-  <p class="muted">The password is stored securely in your OS keyring, never in profile files.</p>
+  <p class="muted">The password is stored by the configured secure credential provider, never in profile files.</p>
 </form>
 <script src="{{ url_for('static', filename='atlas-chips.js') }}" defer></script>
 {% endblock %}

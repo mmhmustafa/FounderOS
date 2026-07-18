@@ -14,8 +14,9 @@ unchanged.
 
 ## Secrets
 
-- Passwords exist only in the configured `CredentialProvider` (normally the
-  operating-system keyring) and in short-lived connection variables.
+- Passwords exist only in the configured `CredentialProvider` (OS keyring,
+  AES-256-GCM encrypted file, or non-persistent test memory) and in short-lived
+  connection variables.
 - Profiles, credential-set files, discovery drafts, preferences, diagnostics,
   backups, templates, audit events, and URLs store references and metadata only.
 - Discovery drafts structurally reject password, secret, token, private-key,
@@ -30,10 +31,11 @@ unchanged.
 ## Persistence and backup
 
 Preferences and drafts use atomic replacement under the Atlas workspace.
-Metadata backup includes JSON/JSONL workspace records, but excludes OS-keyring
-secrets and raw network evidence. Restore accepts only an allowlist of root-level
+Metadata backup includes allowlisted JSON/JSONL workspace records, but excludes
+every credential store, sessions, raw network evidence, generated sensitive
+artifacts, temporary files, and unknown future files. Restore accepts only an allowlist of root-level
 Atlas metadata files, validates JSON, limits file size, and requires an explicit
-confirmation phrase. Restore does not modify the OS keyring.
+confirmation phrase. Restore does not modify any credential provider.
 
 ## Audit
 
@@ -44,10 +46,10 @@ payload redaction is defense in depth; callers pass references, never values.
 
 ## Retention
 
-`retention_days` is persisted policy metadata. Prompt 5 deliberately does not
-silently delete evidence: an eventual retention worker must first provide an
-audited preview, protect active baselines and investigations, and require an
-explicit destructive confirmation.
+`retention_days` is persisted policy metadata. Retention is manual: Atlas
+rebuilds a preview immediately before execution, protects non-history records,
+requires a typed destructive confirmation, audits the operation, and writes a
+deletion manifest. No scheduled retention worker ships.
 
 ## External-provider limitations
 

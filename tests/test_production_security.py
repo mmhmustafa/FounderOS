@@ -10,9 +10,11 @@ conscious permission choice.
 from __future__ import annotations
 
 import json
+import io
 import re
 import tempfile
 import unittest
+import zipfile
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -423,8 +425,21 @@ class SecretLeakageTests(unittest.TestCase):
             admin, _ = sign_in(app, "admin")
             backup = admin.get("/settings/backup")
             self.assertNotIn(secret.encode(), backup.data)
-            audit_csv = admin.get("/audit/export.csv")
-            self.assertNotIn(secret.encode(), audit_csv.data)
+            with zipfile.ZipFile(io.BytesIO(backup.data)) as archive:
+                for member in archive.infolist():
+                    self.assertNotIn(
+                        secret.encode(), archive.read(member),
+                        f"credential canary leaked into backup member {member.filename}",
+                    )
+            for export_path in (
+                "/settings/diagnostics.json",
+                "/audit/export.csv",
+                "/policy/export.csv?scope=all",
+                "/changes/export.csv?scope=all",
+            ):
+                exported = admin.get(export_path)
+                self.assertEqual(200, exported.status_code, export_path)
+                self.assertNotIn(secret.encode(), exported.data, export_path)
 
     def test_audit_events_redact_forbidden_keys(self) -> None:
         from founderos_atlas.audit import AuditEvent

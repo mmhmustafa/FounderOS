@@ -68,6 +68,105 @@
     updateModes();
   }
 
+  function validIpv4(value) {
+    var parts = value.split(".");
+    if (parts.length !== 4) { return false; }
+    return parts.every(function (part) {
+      if (!/^\d{1,3}$/.test(part)) { return false; }
+      if (part.length > 1 && part.charAt(0) === "0") { return false; }
+      var number = Number(part);
+      return number >= 0 && number <= 255;
+    });
+  }
+
+  function validIpv6(value) {
+    // This is deliberately a conservative syntax gate, not the security
+    // authority. The Python ipaddress validator runs again at preview.
+    if (!value || value === ":" || value.indexOf(":") < 0 ||
+        !/^[0-9a-fA-F:.]+$/.test(value)) {
+      return false;
+    }
+    var halves = value.split("::");
+    if (halves.length > 2) { return false; }
+    var groups = value.split(":").filter(function (item) { return item !== ""; });
+    if (groups.length > 8 || (halves.length === 1 && groups.length !== 8) ||
+        (halves.length === 2 && groups.length >= 8)) { return false; }
+    return groups.every(function (group) {
+      return validIpv4(group) || /^[0-9a-fA-F]{1,4}$/.test(group);
+    });
+  }
+
+  function validAddress(value) {
+    return validIpv4(value) || validIpv6(value);
+  }
+
+  function validNetwork(value) {
+    var slash = value.lastIndexOf("/");
+    if (slash <= 0 || slash === value.length - 1) { return false; }
+    var address = value.slice(0, slash);
+    var prefixText = value.slice(slash + 1);
+    if (!/^\d{1,3}$/.test(prefixText) || !validAddress(address)) {
+      return false;
+    }
+    var prefix = Number(prefixText);
+    return prefix >= 0 && prefix <= (address.indexOf(":") >= 0 ? 128 : 32);
+  }
+
+  function setValidity(control, message) {
+    if (control) { control.setCustomValidity(message || ""); }
+    return !message;
+  }
+
+  function tokens(value) {
+    return String(value || "").split(/[\s,]+/).filter(Boolean);
+  }
+
+  function validateAddressList(control, options) {
+    if (!control) { return true; }
+    var values = tokens(control.value);
+    if (options.required && values.length === 0) {
+      return setValidity(control, options.requiredMessage);
+    }
+    var invalid = values.find(function (value) {
+      return !(validAddress(value) || (options.networks && validNetwork(value)));
+    });
+    return setValidity(
+      control,
+      invalid ? options.invalidMessage.replace("{value}", invalid) : ""
+    );
+  }
+
+  function validateStep() {
+    if (step === 1) {
+      var mode = (form.elements.mode && form.elements.mode.value) || "seed";
+      if (mode === "seed" && !validateAddressList(form.elements.seed, {
+        required: true,
+        requiredMessage: "Enter a seed IP address.",
+        invalidMessage: "{value} is not a valid IP address."
+      })) { return false; }
+      if (mode === "management-network") {
+        var cidr = form.elements.cidr;
+        var cidrValue = String(cidr && cidr.value || "").trim();
+        if (!setValidity(
+          cidr,
+          !cidrValue ? "Enter a management CIDR." :
+            (!validNetwork(cidrValue) ? cidrValue + " is not a valid CIDR." : "")
+        )) { return false; }
+      }
+      if (mode === "multiple-seeds" && !validateAddressList(form.elements.seeds, {
+        required: true,
+        requiredMessage: "Enter at least one seed IP address.",
+        invalidMessage: "{value} is not a valid seed IP address."
+      })) { return false; }
+    }
+    if (step === 3 && !validateAddressList(form.elements.exclusions, {
+      required: false,
+      networks: true,
+      invalidMessage: "{value} is not a valid exclusion address or CIDR."
+    })) { return false; }
+    return true;
+  }
+
   function save() {
     // Repeated fields (every selected credential set, multiple seeds)
     // must ALL survive into the draft — flattening to one value per key
@@ -119,12 +218,22 @@
         : null;
       var invalid = current ? current.querySelector(":invalid") : null;
       if (invalid) { invalid.reportValidity(); return; }
+      if (!validateStep()) {
+        var customInvalid = current ? current.querySelector(":invalid") : null;
+        if (customInvalid) { customInvalid.reportValidity(); }
+        return;
+      }
       save().then(function () {
         step = Math.min(4, step + 1);
         show();
       });
     });
   }
+  form.addEventListener("input", function (event) {
+    if (event.target && typeof event.target.setCustomValidity === "function") {
+      event.target.setCustomValidity("");
+    }
+  });
   if (prev) {
     prev.addEventListener("click", function () {
       step = Math.max(1, step - 1);

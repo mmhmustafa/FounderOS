@@ -25,7 +25,7 @@
 <section class="card">
   <h2>Backup, restore, and diagnostics</h2>
   <div class="form-actions"><a class="btn" href="/settings/backup">Download metadata backup</a><a class="btn" href="/settings/diagnostics.json">Download diagnostics</a><button class="btn" type="button" data-copy-url="/settings/diagnostics.json">Copy diagnostics</button></div>
-  <p class="muted">Backups include workspace JSON metadata and audit records. OS-keyring secrets and raw network evidence are deliberately excluded.</p>
+  <p class="muted">Backups include workspace JSON metadata and audit records. Credential-provider secrets and raw network evidence are deliberately excluded.</p>
   <details><summary>Restore metadata</summary><form class="form" method="post" action="/settings/restore" enctype="multipart/form-data">{{ csrf_field() }}<label>Atlas backup<input type="file" name="backup" accept=".zip" required></label><label>Reason<input name="reason" required></label><label>Confirmation<input name="confirm" required placeholder="RESTORE METADATA"></label><button class="btn btn-danger" type="submit">Restore metadata</button></form></details>
 </section>
 
@@ -43,18 +43,29 @@
 <section class="card" id="system-information">
   <h2>System information</h2>
   <ul class="kv">
-    <li><span>Atlas version</span><span>{{ atlas_version }}</span></li>
+    <li><span>Atlas version</span><span>{{ system_info.display_version }}</span></li>
+    <li><span>Build commit</span><span><code>{{ system_info.build_commit or 'not observable in this installed build' }}</code></span></li>
+    <li><span>Workspace schema</span><span>v{{ system_info.workspace_schema_version }} of v{{ system_info.workspace_schema_target }}</span></li>
     <li><span>Workspace root</span><span><code>{{ workspace_root }}</code></span></li>
     <li><span>Output directory</span><span><code>{{ output_dir }}</code></span></li>
     <li><span>History root</span><span><code>{{ history_root }}</code></span></li>
-    <li><span>Bind host</span><span>{{ bind_host }}</span></li>
-    <li><span>TLS</span><span class="{{ 'ok' if tls_enabled else 'warn' }}">{{ 'enabled' if tls_enabled else 'disabled' }}</span></li>
-    <li><span>Credential provider</span><span>{{ credential_provider }} · {{ provider_status }}</span></li>
+    <li><span>Authentication</span><span>{{ system_info.authentication_mode }}</span></li>
+    <li><span>Application bind</span><span>{{ system_info.bind }} · {{ system_info.bind_observation }}</span></li>
+    <li><span>Trusted proxies</span><span>{{ system_info.trusted_proxies | join(', ') if system_info.trusted_proxies else 'none configured' }}</span></li>
+    <li><span>TLS / HSTS</span><span class="{{ 'ok' if system_info.tls_enabled else 'warn' }}">TLS {{ 'enabled' if system_info.tls_enabled else 'disabled' }} · HSTS {{ 'enabled' if system_info.hsts_enabled else 'disabled' }}</span></li>
+    <li><span>Credential provider</span><span>{{ system_info.credential_provider }} · {{ 'available' if system_info.credential_provider_available else 'unavailable' }}</span></li>
+    <li><span>Session mode</span><span>{{ system_info.session_mode }}</span></li>
+    <li><span>Session expiry</span><span>{{ system_info.session_expiry }}</span></li>
+    <li><span>Worker model</span><span>{{ system_info.worker_model }}</span></li>
+    <li><span>Worker status</span><span>{{ system_info.worker_status }}</span></li>
+    <li><span>Logging</span><span>{{ system_info.logging_level }}</span></li>
+    <li><span>Retention</span><span>{{ system_info.retention_policy }}</span></li>
+    <li><span>Update provider</span><span>{{ system_info.update_provider.state }} · {{ system_info.update_provider.detail }}</span></li>
     <li><span>Stored timestamps</span><span>UTC</span></li>
     <li><span>Displayed timezone</span><span>{{ display_timezone_label }}</span></li>
   </ul>
-  {% if bind_host not in ['127.0.0.1','localhost','::1'] %}<div class="flash flash-error">Atlas is not bound to loopback. Authentication and TLS must be configured before exposing this service.</div>{% endif %}
-  <p class="muted">Current deployment mode is local single-user. Secure credentials live in the OS keyring and are referenced, never serialized into workspace files.</p>
+  {% if system_info.authentication_mode == 'local' %}<p class="muted">Local mode is a loopback-only development boundary. Use password or proxy mode for shared operation.</p>{% endif %}
+  {% if system_info.authentication_mode == 'proxy' %}<p class="muted">Atlas can report its application listener and trusted-proxy configuration, but cannot observe the reverse proxy's external bind or TLS policy. Verify those at the proxy.</p>{% endif %}
   <p class="muted">Timestamps are stored as UTC. Override display only with <code>ATLAS_DISPLAY_TIMEZONE</code> or the preference above; stored history is never rewritten.</p>
 </section>
 

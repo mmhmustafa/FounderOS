@@ -24,6 +24,8 @@ from collections.abc import Callable
 from datetime import datetime, timezone
 from hashlib import sha256
 
+from founderos_atlas.release import VERSION
+
 from .calculus import assess
 from .evidence import Evidence, EvidenceGap
 from .provider import EvidenceProvider
@@ -55,7 +57,7 @@ class ReasoningEngine:
         *,
         clock: Callable[[], str] | None = None,
         rule_set_version: str = "unversioned",
-        atlas_version: str = "0.4-alpha",
+        atlas_version: str = VERSION,
         engine_version: str = ENGINE_VERSION,
     ) -> None:
         self._registry = registry

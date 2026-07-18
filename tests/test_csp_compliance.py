@@ -182,7 +182,9 @@ class BehaviorHookTests(unittest.TestCase):
             self.assertIn("data-mode-fields", page)
             script = (STATIC / "atlas-wizard.js").read_text(encoding="utf-8")
             for hook in ("data-draft-jump", "reportValidity",
-                         "/api/discovery/wizard/drafts", "updateModes"):
+                         "/api/discovery/wizard/drafts", "updateModes",
+                         "validateStep", "validNetwork",
+                         "not a valid exclusion address or CIDR"):
                 self.assertIn(hook, script)
 
     def test_scope_switcher_autosubmits_with_noscript_fallback(self) -> None:
@@ -224,6 +226,10 @@ class BehaviorHookTests(unittest.TestCase):
         self.assertIn('type="application/json" id="atlas-console-config"', text)
         self.assertNotIn("window.ATLAS_CONSOLE", text)
 
+    def test_advisor_question_has_a_programmatic_label(self) -> None:
+        text = (TEMPLATES / "advisor.html").read_text(encoding="utf-8")
+        self.assertIn('for="advisor-question">Ask Atlas Advisor</label>', text)
+
 
 class DestructiveConfirmationTests(unittest.TestCase):
     @staticmethod
@@ -250,6 +256,28 @@ class DestructiveConfirmationTests(unittest.TestCase):
             )
             self.assertEqual(200, confirmed.status_code)
             self.assertFalse(service.repository.exists("Hyderabad"))
+
+    def test_profile_archive_requires_server_confirmation_and_is_reversible(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            service, client = build_world(Path(tmp))
+            first = client.post("/profiles/Hyderabad/archive", data={})
+            self.assertEqual(200, first.status_code)
+            body = first.data.decode("utf-8")
+            self.assertIn("Archive profile Hyderabad", body)
+            self.assertFalse(service.get_profile("Hyderabad").archived)
+
+            confirmed = client.post(
+                "/profiles/Hyderabad/archive",
+                data={"_confirm_token": self._token(body)},
+            )
+            self.assertEqual(302, confirmed.status_code)
+            self.assertTrue(service.get_profile("Hyderabad").archived)
+
+            restored = client.post(
+                "/profiles/Hyderabad/archive", data={"restore": "1"}
+            )
+            self.assertEqual(302, restored.status_code)
+            self.assertFalse(service.get_profile("Hyderabad").archived)
 
     def test_confirmation_token_is_bound_to_its_action(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

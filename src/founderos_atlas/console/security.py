@@ -2,9 +2,9 @@
 
 ## The problem this solves
 
-Atlas's GUI is unauthenticated by design: a local, single-user alpha bound
-to 127.0.0.1. For read-only pages that is a defensible trade. An interactive
-SSH endpoint is a different proposition, for one specific reason:
+Atlas supports local, password, and proxy authentication modes. Regardless
+of mode, an interactive SSH endpoint needs an additional browser-origin
+boundary for one specific reason:
 
 **WebSockets are not subject to the same-origin policy.** A browser will
 happily let ``https://somewhere-else.example`` open

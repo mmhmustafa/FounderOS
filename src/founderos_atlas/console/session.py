@@ -136,6 +136,8 @@ class ConsoleSession:
     # -- lifecycle ---------------------------------------------------------
 
     def connect(self) -> None:
+        from founderos_atlas.ssh_security import disabled_ssh_algorithms
+
         client = (self._client_factory or _paramiko_client)()
         policy = _VerifyingPolicy(
             self._store,
@@ -153,6 +155,7 @@ class ConsoleSession:
                 timeout=self._connect_timeout,
                 allow_agent=False,
                 look_for_keys=False,
+                disabled_algorithms=disabled_ssh_algorithms(),
             )
         except (ConsoleHostKeyBlocked, ConsoleHostKeyUnknown):
             self._safe_close_client(client)
@@ -304,7 +307,9 @@ def _paramiko_transport(host: str, port: int, timeout: float):
             "pip install paramiko"
         ) from error
     sock = socket.create_connection((host, port), timeout=timeout)
-    transport = Transport(sock)
+    from founderos_atlas.ssh_security import disabled_ssh_algorithms
+
+    transport = Transport(sock, disabled_algorithms=disabled_ssh_algorithms())
     transport.start_client(timeout=timeout)
     return transport
 

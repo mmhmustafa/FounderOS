@@ -82,6 +82,23 @@ class CredentialLifecycleTests(unittest.TestCase):
 
 
 class AdministrationWebTests(unittest.TestCase):
+    def test_edit_profile_preserves_existing_credential_in_browser_contract(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            client, service, _provider = client_for(root)
+            service.add_profile(
+                name="Campus", management_ip="10.0.0.1",
+                username="atlas", password="stored-not-rendered",
+            )
+            page = client.get("/profiles/Campus/edit").get_data(as_text=True)
+            self.assertIn('data-preserve-credential="1"', page)
+            self.assertIn("leave blank to keep current", page)
+            self.assertNotIn("stored-not-rendered", page)
+            script = Path(
+                "src/founderos_atlas/web/static/atlas.js"
+            ).read_text(encoding="utf-8")
+            self.assertIn("preservesExisting || anySetChosen()", script)
+
     def test_wizard_api_drops_password_and_resumes_after_new_client(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

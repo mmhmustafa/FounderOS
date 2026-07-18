@@ -106,7 +106,9 @@ def create_app(
         ATLAS_WORKSPACE_ROOT=resolved_workspace,
         ATLAS_TRANSPORT_FACTORY=transport_factory,
         ATLAS_CLOCK=clock,
-        ATLAS_HOST=DEFAULT_HOST,
+        ATLAS_HOST=os.environ.get("ATLAS_HOST", DEFAULT_HOST),
+        ATLAS_PORT=int(os.environ.get("ATLAS_PORT", DEFAULT_PORT)),
+        ATLAS_LOG_LEVEL=os.environ.get("ATLAS_LOG_LEVEL", "INFO"),
         # Display only. Every stored timestamp stays UTC; this decides the
         # zone the GUI renders them in. "auto" = the local operator's own
         # system clock; "UTC" or an IANA name (e.g. "Asia/Kolkata")

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "founderos-runtime"
-version = "0.3.0a1"
+dynamic = ["version"]
 description = "Minimal contract-enforcing runtime foundation for FounderOS"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -16,6 +16,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
   "pytest>=8,<10",
+  "pip-audit>=2.10,<3",
 ]
 ssh = [
   "netmiko>=4.3,<5",
@@ -27,11 +28,13 @@ web = [
   "flask>=3,<4",
   # PR-044A (CONSOLE): interactive SSH terminal over a WebSocket.
   "flask-sock>=0.7,<1",
-  "paramiko>=3,<5",
+  # Netmiko 4.7 requires Paramiko <5. CVE-2026-44405 is mitigated in code by
+  # disabling ssh-rsa/SHA-1 on every SSH path; see security exception record.
+  "paramiko==4.0.0",
   # Encrypted-file credential provider (headless production servers).
   # Already a paramiko dependency; declared so the provider never rides
   # on a transitive accident.
-  "cryptography>=42,<46",
+  "cryptography>=42,<50",
 ]
 
 [project.scripts]
@@ -51,6 +54,9 @@ founderos_atlas = [
   "web/static/*",
   "web/static/vendor/*",
 ]
+
+[tool.setuptools.dynamic]
+version = {attr = "founderos_atlas.release.VERSION"}
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -150,6 +150,8 @@ class SSHDeviceTransportTests(unittest.TestCase):
         self.assertEqual("10.0.0.10", seen["host"])
         self.assertEqual(22, seen["port"])
         self.assertEqual("atlas", seen["username"])
+        self.assertEqual(["ssh-rsa"], seen["disabled_algorithms"]["keys"])
+        self.assertEqual(["ssh-rsa"], seen["disabled_algorithms"]["pubkeys"])
 
     def test_execute_returns_raw_output_unchanged(self) -> None:
         outputs = load_fixture_outputs()

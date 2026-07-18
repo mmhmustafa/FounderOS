@@ -18,6 +18,7 @@ def register_lifecycle_routes(app, h) -> None:
     )
 
     from founderos_atlas.audit import AuditEvent, AuditLog
+    from founderos_atlas.web.redirects import safe_redirect_target
     from founderos_atlas.incidents.records import (
         CASE_STATUSES,
         IncidentCaseRepository,
@@ -239,8 +240,10 @@ def register_lifecycle_routes(app, h) -> None:
         except ValueError as error:
             flash(str(error), "error")
         return redirect(
-            request.form.get("next") or url_for("incident_case_page",
-                                                case_id=case_id)
+            safe_redirect_target(
+                request.form.get("next"),
+                url_for("incident_case_page", case_id=case_id),
+            )
         )
 
     @app.route("/incidents/case/<case_id>/link", methods=["POST"])
@@ -258,8 +261,10 @@ def register_lifecycle_routes(app, h) -> None:
         except ValueError as error:
             flash(str(error), "error")
         return redirect(
-            request.form.get("next") or url_for("incident_case_page",
-                                                case_id=case_id)
+            safe_redirect_target(
+                request.form.get("next"),
+                url_for("incident_case_page", case_id=case_id),
+            )
         )
 
     # -- compass lifecycle -------------------------------------------------
@@ -534,7 +539,7 @@ def register_lifecycle_routes(app, h) -> None:
             correlation_id=_correlation(),
         ))
         flash("Feedback recorded — thank you.", "success")
-        return redirect(request.form.get("next") or "/advisor")
+        return redirect(safe_redirect_target(request.form.get("next"), "/advisor"))
 
     @app.route("/advisor/conversations/<int:index>/delete", methods=["POST"])
     def advisor_conversation_delete(index: int):

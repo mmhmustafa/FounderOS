@@ -1448,6 +1448,8 @@ def atlas_web_command(
         app = create_app(output_dir=output_dir, history_root=history_root)
     except (RuntimeError, OSError) as error:
         raise CliError(f"Could not start the Atlas web GUI: {error}") from error
+    app.config["ATLAS_HOST"] = host
+    app.config["ATLAS_PORT"] = port
 
     url = f"http://{host}:{port}"
     print("Atlas web UI running at:")

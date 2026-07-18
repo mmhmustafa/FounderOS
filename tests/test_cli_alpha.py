@@ -1,4 +1,4 @@
-"""Acceptance tests for the presentation-only FounderOS v0.3 Alpha CLI."""
+"""Acceptance tests for the FounderOS Atlas CLI."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ import urllib.request
 from founderos_runtime.cli import main
 from founderos_runtime.cli.render import render_discovery
 from founderos_runtime.demo import discovery_example_root, run_discovery_vertical_slice
+from founderos_atlas.release import DISPLAY_VERSION
 
 from tests.helpers import RuntimeFixture
 
@@ -26,7 +27,7 @@ class FounderOSAlphaCliTests(unittest.TestCase):
     def test_version_command(self) -> None:
         code, output, error = self.invoke("version")
         self.assertEqual(0, code)
-        self.assertEqual("FounderOS v0.3 Alpha\n", output)
+        self.assertEqual(f"{DISPLAY_VERSION}\n", output)
         self.assertEqual("", error)
 
     def test_help_command(self) -> None:

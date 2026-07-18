@@ -8,6 +8,7 @@
 
 <section class="card">
   <form class="advisor-ask" method="post" action="/advisor/ask" id="advisor-ask-form">{{ csrf_field() }}
+    <label class="visually-hidden" for="advisor-question">Ask Atlas Advisor</label>
     <input type="text" name="question" id="advisor-question" autocomplete="off"
            value="{{ request.args.get('retry', '') }}"
            placeholder="Ask Atlas Advisor… (e.g. Explain enterprise health · Find SW2 · What changed?)" required>

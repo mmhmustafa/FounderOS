@@ -1,7 +1,15 @@
-# Atlas release report — operational lifecycle (PR-055)
+# FounderOS Atlas 0.3.0a1 release report
 
-Date: 2026-07-18 · Suite: `python -m pytest tests/` →
-**1668 passed, 1 skipped, 312 subtests** (~7 min).
+Date: 2026-07-18. Authoritative version source:
+`src/founderos_atlas/release.py`. Package metadata, CLI, Settings,
+diagnostics, update information, backups, evidence provenance, policy/reasoning
+results, and startup logs use that identity. Workspace schema target: v1.
+
+Final verification: **1,745 passed, 1 skipped, 436 subtests passed** in the
+complete automated suite. The final release/SSH-control gate passed another
+110 tests and 44 subtests with one intentional skip. The wheel built and
+installed as `founderos-runtime==0.3.0a1`; its CLI and installed metadata
+reported the same authoritative version.
 
 ## What this release completes
 
@@ -99,6 +107,14 @@ audit log carries every stage and the CAB export tells the whole story.
 
 ## Browser verification (this release's sweep)
 
+- Live Settings/System Information inspection verified the authoritative
+  version, build commit, schema, effective local auth and credential provider,
+  application bind, TLS/HSTS state, trusted proxies, session policy, worker
+  state, logging, retention, and update-provider state. `/system` redirects to
+  `/settings#system-information`, and the browser console had no warnings or
+  errors. The sweep found and corrected one stale OS-keyring-specific backup
+  sentence so the UI now accurately covers every credential provider.
+
 - Live walk in local mode: incident opened from the enterprise page,
   case actions, path picker (typed "core" → 6 async matches, combobox
   semantics), dependent interface picker (device pick → 7 interfaces
@@ -133,11 +149,27 @@ table (completeness is a failing test).
   the DOM-level gates above and the manual sweep. This is the one gap
   that requires an external dependency.
 - **Live device execution**: Atlas deliberately does not push
-  configuration; Compass execution is checkpoint-tracked by design (the
-  console provides interactive access under its own audit).
+configuration; Compass execution is checkpoint-tracked by design (the
+console provides interactive access under its own audit).
 - **L4 policy evaluation** (ACL/firewall for protocol/port intent)
   requires ACL parsing evidence the collectors do not yet gather; the
   UI records intent and says exactly this.
+
+## Release-trust hardening
+
+- System Information reports effective auth mode, credential provider and
+  availability, TLS/HSTS, application bind and proxy visibility boundary,
+  trusted proxies, session policy, one-process worker model/status, schema,
+  build commit, logging, retention, and update-provider state.
+- All submitted `next` targets use one fail-closed same-origin validator.
+- `constraints.txt` is the reviewed exact lock and `sbom.cdx.json` is the
+  CycloneDX inventory. CI audits dependencies and rejects unapproved or expired
+  findings.
+- Paramiko PYSEC-2026-2858 is explicit, expires 2026-10-18, and is mitigated by
+  disabling `ssh-rsa`/SHA-1 on every Atlas SSH path pending Netmiko support for
+  Paramiko 5.
+- `LICENSE` explicitly records that licensing is an owner/legal decision; no
+  distribution permission is invented.
 - **Streaming Advisor answers**: answers are synchronous single
   responses by architecture (deterministic orchestration, no token
   stream); the UI provides an explicit in-progress state instead.
