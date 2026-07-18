@@ -74,6 +74,7 @@ def build_app(workdir: Path, service, *, transport_factory=None):
         output_dir=workdir,
         history_root=workdir / ".atlas" / "history",
         transport_factory=transport_factory,
+        workspace_root=workdir / "workspace",
     )
     app.config.update(TESTING=True)
     return app, app.test_client(), app.config["ATLAS_JOB_MANAGER"]

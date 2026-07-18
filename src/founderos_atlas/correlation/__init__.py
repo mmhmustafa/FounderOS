@@ -6,6 +6,7 @@ from Enterprise Knowledge.
 """
 
 from .engine import EvidenceCorrelationEngine, build_ownership_index
+from .metadata import correlation_metadata
 from .models import (
     AddressClaim,
     AddressOwnershipIndex,
@@ -37,6 +38,7 @@ __all__ = [
     "EVIDENCE_KINDS",
     "EvidenceCorrelationEngine",
     "OwnershipConflict",
+    "correlation_metadata",
     "RELATIONSHIP_TYPES",
     "RelationshipEvidence",
     "REL_BGP",

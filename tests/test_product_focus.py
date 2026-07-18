@@ -185,7 +185,8 @@ class TimelineWorkflowTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             app = create_app(
-                output_dir=Path(tmp), history_root=Path(tmp) / ".atlas" / "history"
+                output_dir=Path(tmp), history_root=Path(tmp) / ".atlas" / "history",
+                workspace_root=Path(tmp) / "workspace",
             )
             app.config.update(TESTING=True, ATLAS_DISPLAY_TIMEZONE="UTC")
             activity = [
@@ -335,7 +336,8 @@ class ConsistencyTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             app = create_app(
-                output_dir=Path(tmp), history_root=Path(tmp) / ".atlas" / "history"
+                output_dir=Path(tmp), history_root=Path(tmp) / ".atlas" / "history",
+                workspace_root=Path(tmp) / "workspace",
             )
             adapter = app.url_map.bind("127.0.0.1")
 

@@ -96,6 +96,24 @@ class WizardDraftTests(unittest.TestCase):
             )
             self.assertNotIn("must-not-persist-1", raw)
 
+    def test_resume_picker_lists_newest_draft_first(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workdir = Path(tmp)
+            _, client = build_world(workdir)
+            older = client.post("/api/discovery/wizard/drafts", data={
+                "name": "Older draft", "mode": "seed",
+            }).get_json()["draft_id"]
+            import time as _time
+            _time.sleep(0.02)
+            newer = client.post("/api/discovery/wizard/drafts", data={
+                "name": "Newer draft", "mode": "seed",
+            }).get_json()["draft_id"]
+            page = client.get("/discovery/wizard").get_data(as_text=True)
+            self.assertLess(
+                page.index(newer), page.index(older),
+                "the resume picker must list the newest draft first",
+            )
+
     def test_single_credential_set_is_still_stored_as_a_list(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             workdir = Path(tmp)

@@ -645,6 +645,7 @@ class WizardAcceptsACredentialSetTests(unittest.TestCase):
             output_dir=tmp,
             history_root=tmp / ".atlas" / "history",
             transport_factory=unreachable,
+            workspace_root=tmp / "workspace",
         )
         app.config.update(TESTING=True)
         return app

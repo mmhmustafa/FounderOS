@@ -10,6 +10,7 @@ merge evidence) rides in metadata.
 
 from __future__ import annotations
 
+from founderos_atlas.correlation import correlation_metadata
 from founderos_atlas.topology import TopologySnapshot, content_address
 
 from .models import FEDERATION_SCHEMA_VERSION, EnterpriseGraph
@@ -47,6 +48,13 @@ def build_enterprise_snapshot(graph: EnterpriseGraph) -> TopologySnapshot:
         "merged_device_count": graph.merged_device_count,
         "deterministic": True,
         "in_memory_only": True,
+        # Evidence Correlation runs over the FEDERATED devices and edges
+        # so the enterprise snapshot carries the same knowledge keys as
+        # every per-profile snapshot: address ownership spanning all
+        # profiles, fused relationships (this is what resolves a peer
+        # observed in one profile onto a device discovered in another),
+        # honest unresolved observations, and fail-closed conflicts.
+        **correlation_metadata(devices, edges, observed_at=created_at),
     }
     snapshot_id = content_address(
         created_at=created_at,
@@ -101,6 +109,9 @@ def _device_entry(graph: EnterpriseGraph, device) -> dict:
             ),
             "enterprise_id": device.enterprise_id,
             "aliases": list(device.aliases),
+            # The engine's hostname map reads identity.aliases — mirror
+            # the canonical aliases there so observed names resolve.
+            "identity": {"aliases": list(device.aliases)},
             "management_ips": list(device.management_ips),
             "site": device.site.label,
             "observed_by": list(device.profile_names),

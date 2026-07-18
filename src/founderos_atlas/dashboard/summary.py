@@ -392,6 +392,28 @@ def _recent_activity(
 
 
 def _logical_relationship_count(snapshot: dict[str, Any]) -> int:
+    """The canonical relationship count for a snapshot.
+
+    Matches the topology vocabulary ("every displayed connection"):
+    fused correlated relationships plus one connection per unresolved
+    observed peer — exactly what the topology page's Relationships tile
+    counts — so Mission's number always agrees with Topology's. The
+    raw-edge dedup below survives only for pre-correlation snapshots.
+    """
+
+    metadata = dict(snapshot.get("metadata") or {})
+    if metadata.get("correlated_relationships") is not None:
+        observed_connections = {
+            (
+                str(item.get("local_device_id")),
+                str(item.get("remote_identity") or "").casefold(),
+            )
+            for item in metadata.get("unresolved_observations") or ()
+        }
+        return (
+            EnterpriseKnowledge(snapshot).relationship_count
+            + len(observed_connections)
+        )
     hostname_by_id = {
         str(device.get("device_id")): str(device.get("hostname"))
         for device in snapshot.get("devices") or ()

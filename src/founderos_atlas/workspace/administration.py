@@ -139,6 +139,18 @@ class AdministrationRepository:
         identifier = (draft_id or f"draft-{uuid4().hex[:12]}").strip()
         cleaned["updated_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
         drafts = self.drafts()
+        # updated_at has second precision; the monotonic sequence breaks
+        # ties so "most recently saved" is always well-defined (the
+        # resume picker sorts by it). Existing drafts without one are
+        # older than any draft that has one.
+        cleaned["sequence"] = 1 + max(
+            (
+                int(value.get("sequence") or 0)
+                for value in drafts.values()
+                if isinstance(value, dict)
+            ),
+            default=0,
+        )
         drafts[identifier] = cleaned
         _atomic_json(self.drafts_path, {"schema_version": "1.0.0", "drafts": drafts})
         return identifier

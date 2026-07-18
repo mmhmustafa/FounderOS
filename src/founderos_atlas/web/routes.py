@@ -1589,9 +1589,24 @@ def register_routes(app) -> None:
             error=None,
             draft_id=draft_id,
             draft=drafts.get_draft(draft_id) if draft_id else None,
-            drafts=drafts.drafts(),
+            drafts=_drafts_newest_first(),
             **base_context("discovery"),
         )
+
+    def _drafts_newest_first() -> dict:
+        """Resume picker order: most recently updated draft first."""
+
+        items = AdministrationRepository(cfg("ATLAS_WORKSPACE_ROOT")).drafts()
+        # updated_at has second precision; the save-order sequence breaks
+        # ties, so the most recently saved draft is always first.
+        return dict(sorted(
+            items.items(),
+            key=lambda kv: (
+                str((kv[1] or {}).get("updated_at") or ""),
+                int((kv[1] or {}).get("sequence") or 0),
+            ),
+            reverse=True,
+        ))
 
     @app.route("/api/discovery/wizard/drafts", methods=["POST"])
     def discovery_wizard_draft_save():
@@ -1664,7 +1679,7 @@ def register_routes(app) -> None:
             error=error,
             draft_id=draft_id,
             draft=safe,
-            drafts=AdministrationRepository(cfg("ATLAS_WORKSPACE_ROOT")).drafts(),
+            drafts=_drafts_newest_first(),
             estimate_minutes=estimate,
             **base_context("discovery"),
         )

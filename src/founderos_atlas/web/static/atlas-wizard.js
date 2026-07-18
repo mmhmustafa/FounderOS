@@ -167,7 +167,19 @@
     return true;
   }
 
+  // Saves are serialized: a save fired while another is in flight waits
+  // for it, so the second one reuses the draft_id the first was
+  // assigned. Two concurrent first-saves each carried an empty draft_id
+  // and the server duly created two drafts — the flood of anonymous
+  // duplicate drafts in the resume picker.
+  var pendingSave = Promise.resolve();
+
   function save() {
+    pendingSave = pendingSave.then(saveNow, saveNow);
+    return pendingSave;
+  }
+
+  function saveNow() {
     // Repeated fields (every selected credential set, multiple seeds)
     // must ALL survive into the draft — flattening to one value per key
     // was the bug that silently dropped every credential set but the

@@ -349,15 +349,28 @@ def _identity(snapshot: Mapping[str, Any] | None) -> HealthDimension:
         )
     warnings = len(snapshot.get("warnings") or ())
     devices = int(snapshot.get("device_count") or len(snapshot.get("devices") or ()))
-    hostnames = {
-        str(device.get("hostname") or "").casefold()
-        for device in snapshot.get("devices") or ()
-    }
-    unresolved = {
-        str(edge.get("remote_hostname") or "").casefold()
-        for edge in snapshot.get("edges") or ()
-        if str(edge.get("remote_hostname") or "").casefold() not in hostnames
-    }
+    metadata = dict(snapshot.get("metadata") or {})
+    if metadata.get("correlated_relationships") is not None:
+        # Evidence Correlation ran for this snapshot: its honest
+        # unresolved observations ARE the identity verdict. Counting raw
+        # edge names here would re-declare every address-named peer
+        # unresolved even though ownership resolved it — the exact
+        # disagreement this dimension once showed against topology.
+        unresolved = {
+            str(item.get("remote_identity") or "").casefold()
+            for item in metadata.get("unresolved_observations") or ()
+        }
+        unresolved.discard("")
+    else:
+        hostnames = {
+            str(device.get("hostname") or "").casefold()
+            for device in snapshot.get("devices") or ()
+        }
+        unresolved = {
+            str(edge.get("remote_hostname") or "").casefold()
+            for edge in snapshot.get("edges") or ()
+            if str(edge.get("remote_hostname") or "").casefold() not in hostnames
+        }
     observed_at = _snapshot_time(snapshot)
     problems: list[str] = []
     if unresolved:

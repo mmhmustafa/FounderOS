@@ -505,6 +505,9 @@ class EnterpriseGuiTests(unittest.TestCase):
             profile_service=service,
             output_dir=workdir,
             history_root=workdir / ".atlas" / "history",
+            # Without this the app falls back to the REAL operator
+            # workspace — locking (and potentially writing) real data.
+            workspace_root=workdir / "workspace",
         )
         app.config.update(TESTING=True)
         return service, app.test_client()

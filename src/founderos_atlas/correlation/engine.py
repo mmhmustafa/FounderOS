@@ -92,6 +92,24 @@ def _valid_ip(value: Any) -> str | None:
         return None
 
 
+def _claimable_ip(value: Any) -> str | None:
+    """An address a device can meaningfully OWN as identity evidence.
+
+    Host-local and non-unicast addresses (127.0.0.1 on every Linux
+    device's ``lo``, 0.0.0.0, multicast) can never identify a remote
+    peer; claiming them would manufacture ownership "conflicts" between
+    unrelated devices and degrade health over nothing.
+    """
+
+    cleaned = _valid_ip(value)
+    if cleaned is None:
+        return None
+    parsed = ip_address(cleaned)
+    if parsed.is_loopback or parsed.is_unspecified or parsed.is_multicast:
+        return None
+    return cleaned
+
+
 class EvidenceCorrelationEngine:
     """Deterministic evidence fusion over canonical devices and observations.
 
@@ -256,7 +274,7 @@ def build_ownership_index(
     claims: list[AddressClaim] = []
     for device in devices:
         device_id = str(device["device_id"])
-        management = _valid_ip(device.get("management_ip"))
+        management = _claimable_ip(device.get("management_ip"))
         if management:
             claims.append(AddressClaim(
                 address=management, device_id=device_id, kind=KIND_MANAGEMENT,
@@ -266,7 +284,7 @@ def build_ownership_index(
             name = str(interface.get("name") or "")
             metadata = dict(interface.get("metadata") or {})
             source = metadata.get("source_command")
-            address = _valid_ip(interface.get("ip_address"))
+            address = _claimable_ip(interface.get("ip_address"))
             if address:
                 kind = (
                     KIND_LOOPBACK if _LOOPBACK_NAME.match(name)
@@ -279,7 +297,7 @@ def build_ownership_index(
                     detail=f"assigned to {name}",
                 ))
             for secondary in metadata.get("secondary_ips") or ():
-                cleaned = _valid_ip(str(secondary).split("/", 1)[0])
+                cleaned = _claimable_ip(str(secondary).split("/", 1)[0])
                 if cleaned:
                     claims.append(AddressClaim(
                         address=cleaned, device_id=device_id,
@@ -288,8 +306,18 @@ def build_ownership_index(
                         detail=f"secondary on {name}",
                     ))
         metadata = dict(device.get("metadata") or {})
+        # A canonical (federated) device can carry several management
+        # addresses — one per merged observation. Every one of them is
+        # this device's claim; only the first rides in ``management_ip``.
+        for extra in metadata.get("management_ips") or ():
+            cleaned = _claimable_ip(extra)
+            if cleaned and cleaned != management:
+                claims.append(AddressClaim(
+                    address=cleaned, device_id=device_id,
+                    kind=KIND_MANAGEMENT, detail="management address",
+                ))
         for key in ("router_id", "bgp_router_id", "ospf_router_id"):
-            router_id = _valid_ip(metadata.get(key))
+            router_id = _claimable_ip(metadata.get(key))
             if router_id:
                 claims.append(AddressClaim(
                     address=router_id, device_id=device_id,
@@ -297,7 +325,7 @@ def build_ownership_index(
                     detail=key.replace("_", " "),
                 ))
         for virtual in metadata.get("virtual_ips") or ():
-            cleaned = _valid_ip(virtual)
+            cleaned = _claimable_ip(virtual)
             if cleaned:
                 claims.append(AddressClaim(
                     address=cleaned, device_id=device_id, kind=KIND_VIRTUAL,

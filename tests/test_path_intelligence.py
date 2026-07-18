@@ -441,6 +441,7 @@ class PathsGuiTests(unittest.TestCase):
             profile_service=service,
             output_dir=workdir,
             history_root=workdir / ".atlas" / "history",
+            workspace_root=workdir / "workspace",
         )
         app.config.update(TESTING=True)
         return service, app.test_client()

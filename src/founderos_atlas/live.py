@@ -183,7 +183,7 @@ def _correlation_metadata(graph: TopologyGraph) -> dict:
     ownership index summary, and honest unresolved observations. Topology
     presentation consumes THIS — never raw per-protocol edges alone."""
 
-    from founderos_atlas.correlation import EvidenceCorrelationEngine
+    from founderos_atlas.correlation import correlation_metadata
 
     devices = [
         {
@@ -215,25 +215,10 @@ def _correlation_metadata(graph: TopologyGraph) -> dict:
         }
         for edge in graph.edges()
     ]
-    correlation = EvidenceCorrelationEngine().correlate(devices, edges)
-    ownership = correlation.ownership.to_dict()
-    return {
-        "correlation": correlation.summary(),
-        "correlated_relationships": tuple(
-            relationship.to_dict() for relationship in correlation.relationships
-        ),
-        "unresolved_observations": tuple(
-            observation.to_dict() for observation in correlation.unresolved
-        ),
-        # The Enterprise Address Ownership Index (Part 4): every
-        # discovered address belongs to exactly one canonical device;
-        # conflicted addresses are excluded and reported.
-        "address_ownership": ownership["addresses"],
-        **(
-            {"ownership_conflicts": ownership["conflicts"]}
-            if ownership["conflicts"] else {}
-        ),
-    }
+    # The shared producer of the canonical correlation keys — the same
+    # helper builds the federated enterprise snapshot's metadata, so the
+    # two pipelines can never drift apart.
+    return correlation_metadata(devices, edges)
 
 
 def _reconcile_results(results, *, metadata_extra: dict) -> tuple[
