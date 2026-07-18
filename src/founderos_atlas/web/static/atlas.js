@@ -782,3 +782,22 @@
     }
   }
 })();
+
+// -- Navigation accordion (PR: calmer navigation) ---------------------------
+// One primary area open at a time. Progressive enhancement only: without
+// JavaScript every <details> group still opens and closes natively with
+// the keyboard — the enhancement merely closes the OTHERS.
+(function () {
+  "use strict";
+  var sidebar = document.getElementById("atlas-sidebar");
+  if (!sidebar) { return; }
+  sidebar.addEventListener("toggle", function (event) {
+    var opened = event.target;
+    if (!opened.classList || !opened.classList.contains("nav-details")) { return; }
+    if (!opened.open) { return; }
+    var all = sidebar.querySelectorAll("details.nav-details[open]");
+    for (var i = 0; i < all.length; i++) {
+      if (all[i] !== opened) { all[i].open = false; }
+    }
+  }, true);
+})();

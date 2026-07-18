@@ -744,3 +744,103 @@ textarea:focus-visible, summary:focus-visible, [tabindex]:focus-visible {
 .chip-remove:hover, .chip-remove:focus { background: var(--danger, #c0392b); color: #fff; }
 .chip-entry { border: 0; outline: none; flex: 1; min-width: 120px; background: transparent; padding: 4px; }
 .chip-status { flex-basis: 100%; font-size: 0.78rem; }
+
+/* -- Progressive disclosure (PR: calmer UX) -------------------------------- */
+/* Consolidated tokens the disclosure system leans on. Borders stay thin and
+   uniform; backgrounds are LEVELS (page, panel, inset) — never decoration;
+   no transforms on text or icons, so everything stays crisp. */
+:root {
+  --border-w: 1px;
+  --border-w-strong: 2px;
+  --bg-page: var(--bg);
+  --bg-panel: var(--panel);
+  --bg-inset: #eef2f7;
+  --status-ok: var(--green);
+  --status-warn: var(--amber);
+  --status-error: var(--red);
+  --status-info: var(--accent);
+}
+body[data-theme="dark"] { --bg-inset: #16233b; }
+
+.page-summary { font-size: 1.02rem; line-height: var(--leading-body); max-width: 70ch; }
+.page-summary-good { color: var(--status-ok); }
+.page-summary-warning { color: var(--status-warn); }
+.page-summary-error { color: var(--status-error); }
+
+.disclosure {
+  border: var(--border-w) solid var(--line);
+  border-radius: var(--radius-sm);
+  margin: var(--space-2) 0;
+  background: var(--bg-panel);
+}
+.disclosure > summary {
+  cursor: pointer;
+  padding: var(--space-2) var(--space-3);
+  font-weight: var(--weight-medium);
+  color: var(--muted);
+  list-style-position: inside;
+  min-height: var(--control-height-sm);
+}
+.disclosure > summary:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-offset);
+  border-radius: var(--radius-sm);
+}
+.disclosure[open] > summary { color: var(--ink); border-bottom: var(--border-w) solid var(--line); }
+.disclosure-body { padding: var(--space-3); }
+.disclosure-help { border-style: dashed; background: transparent; }
+.disclosure-technical .meta-list { padding: var(--space-3); margin: 0; }
+
+.callout {
+  border: var(--border-w) solid var(--line);
+  border-left: var(--border-w-strong) solid var(--status-info);
+  border-radius: var(--radius-sm);
+  padding: var(--space-3);
+  margin: var(--space-3) 0;
+  background: var(--bg-panel);
+}
+.callout-warning { border-left-color: var(--status-warn); }
+.callout-error { border-left-color: var(--status-error); }
+.callout-text { margin: 0 0 var(--space-1); font-weight: var(--weight-medium); }
+
+.empty-state { text-align: center; padding: var(--space-6); color: var(--muted); }
+.empty-title { font-weight: var(--weight-semibold); color: var(--ink); margin-bottom: var(--space-1); }
+
+.meta-list { display: grid; grid-template-columns: max-content 1fr; gap: 2px var(--space-4); }
+.meta-list dt { color: var(--muted); }
+.meta-list dd { margin: 0; overflow-wrap: anywhere; }
+.mono { font-family: var(--font-mono); font-size: 0.85em; }
+
+/* Shell display-level selector mirrors the scope selector. */
+.level-form { display: flex; align-items: center; }
+.level-label { display: flex; align-items: center; gap: 6px; color: var(--topbar-ink); font-size: 0.85rem; }
+.level-label select { min-height: var(--control-height-sm); }
+.level-choices { display: grid; gap: var(--space-2); border: 0; padding: 0; margin: 0 0 var(--space-3); }
+.level-choice {
+  display: grid; grid-template-columns: max-content max-content 1fr;
+  gap: var(--space-2); align-items: baseline;
+  border: var(--border-w) solid var(--line); border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3);
+}
+.level-choice:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+.level-choice input:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+body[data-theme="dark"] .level-choice:has(input:checked) { background: #1a2c4f; }
+@media (max-width: 900px) {
+  .level-label span, .level-label { font-size: 0.8rem; }
+  .level-choice { grid-template-columns: max-content 1fr; }
+  .level-choice .muted { grid-column: 2; }
+}
+
+/* -- Navigation accordion (PR: calmer navigation) -------------------------- */
+.nav-details > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 8px; }
+.nav-details > summary::-webkit-details-marker { display: none; }
+.nav-details > summary::after { content: "\25B8"; margin-left: auto; font-size: 0.7rem; color: var(--topbar-muted); }
+.nav-details[open] > summary::after { content: "\25BE"; }
+.nav-details > summary:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); border-radius: var(--radius-sm); }
+.nav-group-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.nav-count {
+  background: var(--accent); color: #fff; border-radius: var(--radius-pill);
+  font-size: 0.68rem; line-height: 1; padding: 3px 7px; font-weight: var(--weight-semibold);
+}
+.subnav a { display: flex; align-items: center; gap: 6px; }
+.subnav a .nav-count { margin-left: auto; }

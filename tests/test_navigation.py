@@ -167,7 +167,7 @@ class ScopeSafetyTests(unittest.TestCase):
             self.assertEqual(200, response.status_code)
             page = response.data.decode("utf-8")
             self.assertIn("no longer exists", page)
-            self.assertIn("Mission — Enterprise", page)
+            self.assertIn("Home — Enterprise", page)
 
     def test_device_page_is_addressable_by_stable_hostname(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

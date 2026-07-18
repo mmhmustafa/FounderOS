@@ -8,7 +8,7 @@
   <meta name="atlas-csrf" content="{{ csrf_token() }}">
   {% block head %}{% endblock %}
 </head>
-<body data-theme="{{ ui_theme or 'system' }}" data-density="{{ ui_density or 'comfortable' }}">
+<body data-theme="{{ ui_theme or 'system' }}" data-density="{{ ui_density or 'comfortable' }}" data-display-level="{{ display_level or 'simple' }}">
 {% import "_icons.html" as icons %}
   <a class="skip-link" href="#atlas-main">Skip to content</a>
   <header class="topbar">
@@ -39,6 +39,18 @@
       <noscript><button class="btn btn-sm" type="submit">Apply</button></noscript>
     </form>
     {% endif %}
+    <form class="level-form" method="post" action="/preferences/display-level">{{ csrf_field() }}
+      <input type="hidden" name="next" value="{{ request.full_path if request.args else request.path }}">
+      <label class="level-label">Detail
+        <select name="display_level" data-autosubmit
+                aria-label="Display level: how much detail pages show">
+          {% for level in display_levels or ['simple', 'detailed', 'expert'] %}
+          <option value="{{ level }}" {{ 'selected' if level == display_level else '' }}>{{ level | capitalize }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <noscript><button class="btn btn-sm" type="submit">Apply</button></noscript>
+    </form>
     <form class="run-form" method="get" action="/discovery">
       <button class="btn btn-primary" type="submit">Run Discovery</button>
     </form>
@@ -60,36 +72,34 @@
   <div class="layout">
     <div class="sidebar-backdrop" id="atlas-sidebar-backdrop" hidden></div>
     {#
-      Six workflows, not eighteen destinations (PR-047A FOCUS).
+      Five primary areas, one open at a time (PR: calmer navigation).
 
-      The views are grouped under the question they answer, not the package that
-      answers it — but every view stays visible and ONE click away. Mission is
-      the front door, never a replacement for expert navigation: an engineer who
-      lives in Predict should not have to open a menu to reach it.
-
-      A group with a single view is its own link (a "Network" label above a lone
-      "Topology" link is just noise). See NAV_GROUPS in web/models.py.
+      Native <details>/<summary> keeps every destination reachable with
+      the keyboard and WITHOUT JavaScript — the current page's area opens
+      server-side, and a small enhancement in atlas.js closes the others
+      when one is expanded. Items a user's roles cannot open are filtered
+      out server-side (the nav_groups context is RBAC-aware); RBAC itself
+      stays enforced on every request regardless of what renders here.
     #}
     <nav class="sidebar" id="atlas-sidebar" aria-label="Workflows">
       <ul>
         {% for group in nav_groups %}
         <li class="nav-group{{ ' nav-group-current' if group.key == active_group else '' }}">
-          {% if group.has_views %}
-          <div class="nav-group-label">{{ icons.icon(group.key) }}<span>{{ group.label }}</span></div>
-          <ul class="subnav">
-            {% for item in group.items %}
-            <li>
-              <a class="{{ 'active' if active == item.key else '' }}"
-                 {% if active == item.key %}aria-current="page"{% endif %}
-                 href="{{ item.href }}">{{ item.label }}</a>
-            </li>
-            {% endfor %}
-          </ul>
-          {% else %}
-          <a class="nav-group-link{{ ' active' if group.key == active_group else '' }}"
-             {% if group.key == active_group %}aria-current="page"{% endif %}
-             href="{{ group.href }}">{{ icons.icon(group.key) }}<span>{{ group.label }}</span></a>
-          {% endif %}
+          <details class="nav-details" {{ 'open' if group.key == active_group else '' }}>
+            <summary class="nav-group-label">
+              {{ icons.icon(group.key) }}<span class="nav-group-name">{{ group.label }}</span>
+              {% if group.key == 'home' and inbox_unread %}<span class="nav-count" aria-label="{{ inbox_unread }} unread notifications">{{ inbox_unread }}</span>{% endif %}
+            </summary>
+            <ul class="subnav">
+              {% for item in group.items %}
+              <li>
+                <a class="{{ 'active' if active == item.key else '' }}"
+                   {% if active == item.key %}aria-current="page"{% endif %}
+                   href="{{ item.href }}">{{ item.label }}{% if item.key == 'inbox' and inbox_unread %} <span class="nav-count">{{ inbox_unread }}</span>{% endif %}</a>
+              </li>
+              {% endfor %}
+            </ul>
+          </details>
         </li>
         {% endfor %}
       </ul>

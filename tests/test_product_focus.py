@@ -50,10 +50,10 @@ def _client(tmp: Path):
 
 
 class NavigationStructureTests(unittest.TestCase):
-    def test_navigation_is_six_workflows(self) -> None:
-        self.assertEqual(6, len(NAV_GROUPS))
+    def test_navigation_is_five_areas(self) -> None:
+        self.assertEqual(5, len(NAV_GROUPS))
         self.assertEqual(
-            ["Mission", "Network", "Timeline", "Policy", "Analyze", "Setup"],
+            ["Home", "Network", "Operations", "Analyze", "Administration"],
             [group.label for group in NAV_GROUPS],
         )
 
@@ -65,12 +65,15 @@ class NavigationStructureTests(unittest.TestCase):
                 seen[item.key] = group.key
         self.assertEqual(seen, NAV_GROUP_FOR_ITEM)
 
-    def test_the_four_past_pages_are_one_workflow(self) -> None:
-        """Changes, Configuration, Discoveries and Evidence answered one
-        question from four top-level items. They are one workflow now."""
+    def test_change_history_views_group_under_operations(self) -> None:
+        """Timeline, Discoveries and Changes answer "what happened?" —
+        one Operations area. Configuration and Evidence are properties
+        of the NETWORK itself and live beside Topology."""
 
-        for key in ("changes", "configuration", "history", "memory", "timeline"):
-            self.assertEqual("timeline", nav_group_for(key), key)
+        for key in ("timeline", "history", "changes", "policy"):
+            self.assertEqual("operations", nav_group_for(key), key)
+        for key in ("topology", "configuration", "memory"):
+            self.assertEqual("network", nav_group_for(key), key)
 
     def test_device_access_is_not_a_workflow(self) -> None:
         """SSH and web management are actions on a device, not menu items."""
@@ -116,7 +119,7 @@ class NavigationStructureTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             page = _client(Path(tmp)).get("/policy").get_data(as_text=True)
             # Six workflow labels orient the reader...
-            for label in ("Mission", "Network", "Timeline", "Policy", "Analyze", "Setup"):
+            for label in ("Home", "Network", "Operations", "Analyze", "Administration"):
                 self.assertIn(label, page)
             # ...and a single-view group is its own link, not a label above one
             # lonely child.

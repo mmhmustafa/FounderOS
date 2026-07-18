@@ -19,7 +19,25 @@
 </section>
 {% endif %}
 
+{# Simple mode: one honest headline; the full canonical fact tables
+   stay one disclosure away. Detailed/Expert keep them inline. #}
+{% if display_level == 'simple' and facts %}
+<p class="page-summary">
+  {{ facts.counts.relationships }} relationship(s) ·
+  {{ facts.counts.inter_site_links }} inter-site link(s)
+  {%- if facts.counts.unresolved_peer_identities %} ·
+  <span class="badge">{{ facts.counts.unresolved_peer_identities }} connection(s) awaiting identification</span>
+  {%- endif %}
+</p>
+<details class="disclosure disclosure-advanced">
+  <summary>Topology facts and evidence</summary>
+  <div class="disclosure-body">
 {{ topo.facts_sections(facts, topology_src if has_topology else None) }}
+  </div>
+</details>
+{% else %}
+{{ topo.facts_sections(facts, topology_src if has_topology else None) }}
+{% endif %}
 
 {% if enterprise %}
 <section class="card">
@@ -194,6 +212,24 @@
 {% else %}
 <p class="muted">No topology has been generated yet for this network. <a href="/discovery">Run a discovery</a> to build the interactive topology viewer.</p>
 {% endif %}
+{# Simple mode: one honest headline; the full canonical fact tables
+   stay one disclosure away. Detailed/Expert keep them inline. #}
+{% if display_level == 'simple' and facts %}
+<p class="page-summary">
+  {{ facts.counts.relationships }} relationship(s) ·
+  {{ facts.counts.inter_site_links }} inter-site link(s)
+  {%- if facts.counts.unresolved_peer_identities %} ·
+  <span class="badge">{{ facts.counts.unresolved_peer_identities }} connection(s) awaiting identification</span>
+  {%- endif %}
+</p>
+<details class="disclosure disclosure-advanced">
+  <summary>Topology facts and evidence</summary>
+  <div class="disclosure-body">
 {{ topo.facts_sections(facts, topology_src if has_topology else None) }}
+  </div>
+</details>
+{% else %}
+{{ topo.facts_sections(facts, topology_src if has_topology else None) }}
+{% endif %}
 {% endif %}
 {% endblock %}

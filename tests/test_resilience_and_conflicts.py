@@ -227,7 +227,10 @@ class MigrationTests(unittest.TestCase):
             self.assertTrue(
                 (root / "migration-backups" / "v1" / "profiles.json").is_file()
             )
-            self.assertEqual(1, applied_version(root))
+            self.assertEqual(2, applied_version(root))
+            # v2: a workspace with prior activity gains the pre-disclosure
+            # expert-default marker.
+            self.assertTrue((root / "ux-defaults.json").is_file())
             # Idempotent: a second run applies nothing and changes nothing.
             self.assertEqual([], migrate_workspace(root))
 

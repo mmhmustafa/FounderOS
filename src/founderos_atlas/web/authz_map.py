@@ -76,6 +76,7 @@ ENDPOINT_PERMISSIONS: dict[str, str] = {
     "device_details": PAGES_VIEW,
     "incidents": PAGES_VIEW,
     "settings": PAGES_VIEW,
+    "preferences_display_level": PAGES_VIEW,
     "device_actions_api": PAGES_VIEW,
     "management_index": PAGES_VIEW,
     "artifacts": PAGES_VIEW,

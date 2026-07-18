@@ -50,7 +50,7 @@ class EnterpriseFirstLanguageTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             _, client = build_world(Path(tmp))
             page = client.get("/?scope=all").data
-            self.assertIn(b"Mission \xe2\x80\x94 Enterprise", page)
+            self.assertIn(b"Home \xe2\x80\x94 Enterprise", page)
             self.assertIn(b'<option value="all" selected>Enterprise</option>', page)
             self.assertIn(b"Scope", page)
             self.assertNotIn(b"All Networks", page)

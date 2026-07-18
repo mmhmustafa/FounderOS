@@ -396,8 +396,10 @@ def register_routes(app) -> None:
             ).preferences()
         except Exception:
             preferences = None
+        from .models import visible_nav_groups
+
         return {
-            "nav_groups": NAV_GROUPS,
+            "nav_groups": visible_nav_groups(app),
             "active": active,
             "active_group": nav_group_for(active),
             "product": "Atlas",
@@ -5097,6 +5099,40 @@ def register_routes(app) -> None:
             "system_info": system_info,
         }
         return render_template("settings.html", **context, **base_context("settings"))
+
+    @app.route("/preferences/display-level", methods=["POST"])
+    def preferences_display_level():
+        """Set the CURRENT user's display level (simple/detailed/expert).
+
+        Personal, not workspace policy: any signed-in user (or the local
+        operator) may set their own; it never touches another user's
+        preference and never changes what RBAC allows — only how much
+        detail pages open with.
+        """
+
+        from founderos_atlas.workspace.user_preferences import (
+            UserPreferenceStore,
+        )
+        from .redirects import safe_redirect_target
+
+        try:
+            level = UserPreferenceStore(cfg("ATLAS_WORKSPACE_ROOT")).set_display_level(
+                current_actor(), request.form.get("display_level", "")
+            )
+        except ValueError as error:
+            flash(str(error), "error")
+            return redirect(
+                safe_redirect_target(request.form.get("next"), "/settings")
+            )
+        _administration_audit(
+            "display-level",
+            after={"owner": current_actor(), "display_level": level},
+            reason="Operator changed their display level",
+        )
+        flash(f"Display level set to {level}.", "success")
+        return redirect(
+            safe_redirect_target(request.form.get("next"), "/settings")
+        )
 
     @app.route("/settings", methods=["POST"])
     def settings_update():

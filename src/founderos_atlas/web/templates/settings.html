@@ -23,6 +23,32 @@
 </section>
 
 <section class="card">
+  <h2>Display level</h2>
+  <p class="muted">How much detail pages open with — personal to your
+  account, separate from density, and never a permission: everything your
+  roles allow stays reachable at every level.</p>
+  <form class="form" method="post" action="/preferences/display-level">{{ csrf_field() }}
+    <input type="hidden" name="next" value="/settings">
+    <fieldset class="level-choices">
+      <legend class="visually-hidden">Display level</legend>
+      {% for level, blurb in [
+        ('simple', 'Conclusions, health, primary actions and important warnings.'),
+        ('detailed', 'Adds operational evidence, secondary actions and common filters.'),
+        ('expert', 'Everything: full protocol detail, provenance, diagnostics and advanced controls.'),
+      ] %}
+      <label class="level-choice">
+        <input type="radio" name="display_level" value="{{ level }}"
+               {{ 'checked' if display_level == level else '' }}>
+        <strong>{{ level | capitalize }}</strong>
+        <span class="muted">{{ blurb }}</span>
+      </label>
+      {% endfor %}
+    </fieldset>
+    <div class="form-actions"><button class="btn btn-primary" type="submit">Save display level</button></div>
+  </form>
+</section>
+
+<section class="card">
   <h2>Backup, restore, and diagnostics</h2>
   <div class="form-actions"><a class="btn" href="/settings/backup">Download metadata backup</a><a class="btn" href="/settings/diagnostics.json">Download diagnostics</a><button class="btn" type="button" data-copy-url="/settings/diagnostics.json">Copy diagnostics</button></div>
   <p class="muted">Backups include workspace JSON metadata and audit records. Credential-provider secrets and raw network evidence are deliberately excluded.</p>

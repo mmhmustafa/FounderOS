@@ -2,47 +2,106 @@
 {% import "_icons.html" as icons %}
 {% import "_fmt.html" as fmt %}
 {% import "_health.html" as health_ui %}
-{% block title %}Mission — Enterprise{% endblock %}
+{% import "_disclosure.html" as d with context %}
+{% block title %}Home — Enterprise{% endblock %}
 {% block content %}
-<h1>Mission — Enterprise</h1>
+<h1>Home — Enterprise</h1>
 
+{# 1 — Overall network state. Canonical health from Enterprise Knowledge;
+     unknown is stated as unknown with the reason (missing evidence),
+     never dressed up as healthy. #}
 {% if summary.networks %}
 {{ health_ui.banner(health) }}
+{% else %}
+<div class="callout" role="status">
+  <p class="callout-text">Network state is unknown — no discovery has run yet.</p>
+  <p class="muted">Atlas reports only what evidence proves. Run a discovery to give it something to reason about.</p>
+</div>
 {% endif %}
 
-<section class="card mission-actions">
-  <h2>What would you like to do?</h2>
-  <div class="mission-grid">
-    <a class="mission-action" href="/paths?scope=all">
-      <span class="mission-icon">{{ icons.icon('paths') }}</span>
-      <strong>Investigate an Issue</strong>
-      <span class="muted">Why can't A reach B? Walk the evidence hop by hop.</span>
-    </a>
-    <a class="mission-action" href="/compass">
-      <span class="mission-icon">{{ icons.icon('wrench') }}</span>
-      <strong>Plan a Change</strong>
-      <span class="muted">Order tonight's window safely with Compass.</span>
-    </a>
-    <a class="mission-action" href="/discovery">
-      <span class="mission-icon">{{ icons.icon('discovery') }}</span>
-      <strong>Run Discovery</strong>
-      <span class="muted">Refresh or extend the enterprise evidence.</span>
-    </a>
-    <a class="mission-action" href="/changes?scope=all">
-      <span class="mission-icon">{{ icons.icon('clipboard') }}</span>
-      <strong>Review Changes</strong>
-      <span class="muted">What changed since the last discovery?</span>
-    </a>
-    <button type="button" class="mission-action js-open-search">
-      <span class="mission-icon">{{ icons.icon('search') }}</span>
-      <strong>Search Enterprise</strong>
-      <span class="muted">Ctrl+K — devices, interfaces, plans, history.</span>
-    </button>
-    <a class="mission-action" href="/advisor">
-      <span class="mission-icon">{{ icons.icon('advisor') }}</span>
-      <strong>Ask Atlas Advisor</strong>
-      <span class="muted">Evidence-cited answers that guide you to a workflow.</span>
-    </a>
+{# 2 — Does anything need attention? Top three issues, each linking to
+     its filtered workflow; the rest stay one disclosure away. #}
+<section class="card">
+  <h2>Needs your attention</h2>
+  {% if recommendations %}
+  {% set visible_recs = recommendations[:3] if display_level == 'simple' else recommendations %}
+  <ul class="mission-recs">
+    {% for rec in visible_recs %}
+    <li>
+      <span>{{ rec.text }}</span>
+      <span class="muted">Evidence: {{ rec.evidence }}</span>
+      <a class="btn btn-sm" href="{{ rec.href }}">{{ rec.action }}</a>
+    </li>
+    {% endfor %}
+  </ul>
+  {% if display_level == 'simple' and recommendations | length > 3 %}
+  <details class="disclosure">
+    <summary>{{ recommendations | length - 3 }} more item(s)</summary>
+    <ul class="mission-recs disclosure-body">
+      {% for rec in recommendations[3:] %}
+      <li>
+        <span>{{ rec.text }}</span>
+        <span class="muted">Evidence: {{ rec.evidence }}</span>
+        <a class="btn btn-sm" href="{{ rec.href }}">{{ rec.action }}</a>
+      </li>
+      {% endfor %}
+    </ul>
+  </details>
+  {% endif %}
+  {% else %}
+  {{ d.empty_state(
+      "Nothing needs your attention.",
+      "Evidence is fresh, plans are analysed, and no active issues are recorded. Items appear here only when deterministic evidence produces them."
+  ) }}
+  {% endif %}
+
+  {# 5 — One visually dominant primary action, chosen from real state. #}
+  <div class="form-actions mission-primary">
+    {% if not summary.networks %}
+    <a class="btn btn-primary" href="/discovery">Run your first discovery</a>
+    {% elif recommendations %}
+    <a class="btn btn-primary" href="{{ recommendations[0].href }}">{{ recommendations[0].action }}</a>
+    {% else %}
+    <a class="btn btn-primary" href="/paths?scope=all">Investigate a path</a>
+    {% endif %}
+  </div>
+</section>
+
+{# 4 — Evidence freshness, stated per observation point. #}
+{% if enterprise_contributions %}
+<section class="card">
+  <h2>Evidence freshness</h2>
+  <p>
+    {% for c in enterprise_contributions %}
+    <strong>{{ c.profile_name }}</strong>
+    ({% if c.fresh %}<span class="ok">fresh</span>{% elif c.fresh is sameas false %}<span class="warn">stale{% if freshness_ages.get(c.profile_id) %} — {{ freshness_ages.get(c.profile_id) }}{% endif %}</span>{% else %}unknown{% endif %}){{ ", " if not loop.last }}
+    {% endfor %}
+  </p>
+  {% if display_level == 'simple' %}
+  <p class="muted">Stale evidence weakens every conclusion above. <a href="/discovery">Refresh discovery</a> when a scope goes stale.</p>
+  {% endif %}
+</section>
+{% endif %}
+
+{# 3 — Recent meaningful changes. #}
+<section class="card">
+  <h2>Recent Activity</h2>
+  {% if activity %}
+  <ul class="activity-stream">
+    {% for item in (activity[:5] if display_level == 'simple' else activity) %}
+    <li>
+      <span class="activity-kind">{{ item.kind }}</span>
+      <a href="{{ item.href }}">{{ item.text }}</a>
+      <span class="muted">{{ item.when or '' }}</span>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="muted">The operational timeline appears here: discoveries, investigations, predictions, maintenance plans, and detected changes — newest first.</p>
+  {% endif %}
+  <div class="mission-inline-recent">
+    <span class="muted">Recently viewed devices:</span>
+    <ul id="mission-recent-devices" class="mission-chips"><li class="muted">appear here — stored in this browser only</li></ul>
   </div>
 </section>
 
@@ -90,26 +149,66 @@
   </div>
 </section>
 
-<section class="card">
-  <h2>Today's Recommendations</h2>
-  {% if recommendations %}
-  <ul class="mission-recs">
-    {% for rec in recommendations %}
-    <li>
-      <span>{{ rec.text }}</span>
-      <span class="muted">Evidence: {{ rec.evidence }}</span>
-      <a class="btn btn-sm" href="{{ rec.href }}">{{ rec.action }}</a>
-    </li>
-    {% endfor %}
-  </ul>
-  {% else %}
-  <p class="muted">Nothing needs your attention: evidence is fresh, plans are analysed, and no active issues are recorded. Recommendations appear only when deterministic evidence produces them.</p>
-  {% endif %}
+{# The workflow grid: inline from Detailed up; one disclosure away in
+   Simple. Same six destinations, never duplicated elsewhere on the page. #}
+{% if display_level == 'simple' %}
+<section class="card mission-actions">
+  <details class="disclosure disclosure-actions">
+    <summary>All workflows</summary>
+    <div class="disclosure-body">
+{% endif %}
+{% if display_level != 'simple' %}<section class="card mission-actions">
+  <h2>What would you like to do?</h2>{% endif %}
+  <div class="mission-grid">
+    <a class="mission-action" href="/paths?scope=all">
+      <span class="mission-icon">{{ icons.icon('paths') }}</span>
+      <strong>Investigate an Issue</strong>
+      <span class="muted">Why can't A reach B? Walk the evidence hop by hop.</span>
+    </a>
+    <a class="mission-action" href="/compass">
+      <span class="mission-icon">{{ icons.icon('wrench') }}</span>
+      <strong>Plan a Change</strong>
+      <span class="muted">Order tonight's window safely with Compass.</span>
+    </a>
+    <a class="mission-action" href="/discovery">
+      <span class="mission-icon">{{ icons.icon('discovery') }}</span>
+      <strong>Run Discovery</strong>
+      <span class="muted">Refresh or extend the enterprise evidence.</span>
+    </a>
+    <a class="mission-action" href="/changes?scope=all">
+      <span class="mission-icon">{{ icons.icon('clipboard') }}</span>
+      <strong>Review Changes</strong>
+      <span class="muted">What changed since the last discovery?</span>
+    </a>
+    <button type="button" class="mission-action js-open-search">
+      <span class="mission-icon">{{ icons.icon('search') }}</span>
+      <strong>Search Enterprise</strong>
+      <span class="muted">Ctrl+K — devices, interfaces, plans, history.</span>
+    </button>
+    <a class="mission-action" href="/advisor">
+      <span class="mission-icon">{{ icons.icon('advisor') }}</span>
+      <strong>Ask Atlas Advisor</strong>
+      <span class="muted">Evidence-cited answers that guide you to a workflow.</span>
+    </a>
+  </div>
+{% if display_level == 'simple' %}
+    </div>
+  </details>
 </section>
+{% else %}</section>{% endif %}
 
+{# Enterprise metrics: canonical counts. Inline from Detailed up; one
+   disclosure away in Simple. Expert adds provenance. #}
 {% if summary.networks %}
+{% if display_level == 'simple' %}
+<section class="card">
+  <details class="disclosure disclosure-advanced">
+    <summary>Enterprise metrics</summary>
+    <div class="disclosure-body">
+{% else %}
 <section class="card">
   <h2>Enterprise Health</h2>
+{% endif %}
   <div class="tiles">
     <div class="tile"><strong>Networks</strong><span>{{ summary.network_count }}</span></div>
     <div class="tile"><strong>Devices</strong><span>{{ summary.device_count }}</span></div>
@@ -121,15 +220,6 @@
     <div class="tile"><strong>Merged devices</strong><span>{{ enterprise_merged_count }}</span></div>
     {% endif %}
   </div>
-  {% if enterprise_contributions %}
-  <p>
-    Discovery freshness:
-    {% for c in enterprise_contributions %}
-    <strong>{{ c.profile_name }}</strong>
-    ({% if c.fresh %}<span class="ok">fresh</span>{% elif c.fresh is sameas false %}<span class="warn">stale{% if freshness_ages.get(c.profile_id) %} — {{ freshness_ages.get(c.profile_id) }}{% endif %}</span>{% else %}unknown{% endif %}){{ ", " if not loop.last }}
-    {% endfor %}
-  </p>
-  {% endif %}
   <div class="table-scroll" role="region" aria-label="Networks" tabindex="0">
   <table class="grid">
     <thead>
@@ -152,32 +242,13 @@
   </table>
   </div>
   <p class="muted">Metrics support decisions — the workflows above are the point. <a href="/topology?scope=all">Open the enterprise topology</a> for the full graph.</p>
-</section>
-{% else %}
-<section class="card">
-  <h2>Enterprise Health</h2>
-  <p class="muted">No discovery has run yet in any scope. <a href="/discovery">Run a discovery</a> to give Atlas evidence to reason about.</p>
-</section>
+{% if display_level == 'expert' and summary.snapshot_id %}
+  {{ d.technical_metadata([("snapshot", summary.snapshot_id)]) }}
 {% endif %}
-
-<section class="card">
-  <h2>Recent Activity</h2>
-  {% if activity %}
-  <ul class="activity-stream">
-    {% for item in activity %}
-    <li>
-      <span class="activity-kind">{{ item.kind }}</span>
-      <a href="{{ item.href }}">{{ item.text }}</a>
-      <span class="muted">{{ item.when or '' }}</span>
-    </li>
-    {% endfor %}
-  </ul>
-  {% else %}
-  <p class="muted">The operational timeline appears here: discoveries, investigations, predictions, maintenance plans, and detected changes — newest first.</p>
-  {% endif %}
-  <div class="mission-inline-recent">
-    <span class="muted">Recently viewed devices:</span>
-    <ul id="mission-recent-devices" class="mission-chips"><li class="muted">appear here — stored in this browser only</li></ul>
-  </div>
+{% if display_level == 'simple' %}
+    </div>
+  </details>
 </section>
+{% else %}</section>{% endif %}
+{% endif %}
 {% endblock %}

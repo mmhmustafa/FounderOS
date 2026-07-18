@@ -65,33 +65,25 @@ class NavGroup:
 
 
 NAV_GROUPS: tuple[NavGroup, ...] = (
-    NavGroup("mission", "Mission", "/", (
+    # Five primary areas (PR: calmer navigation). Item KEYS are frozen —
+    # every route keeps passing the same ``active`` key it always passed
+    # and every href is unchanged, so deep links, bookmarks and RBAC are
+    # untouched; only the grouping above them changed.
+    NavGroup("home", "Home", "/", (
         NavItem("dashboard", "Overview", "/"),
-        NavItem("incidents", "Incidents", "/incidents"),
         NavItem("inbox", "Inbox", "/inbox"),
+        NavItem("incidents", "Incidents", "/incidents"),
     )),
     NavGroup("network", "Network", "/topology", (
         NavItem("topology", "Topology", "/topology"),
-    )),
-    # PR-047A: Changes / Configuration / Discoveries / Evidence were four
-    # top-level items answering one question — "what changed?". They are one
-    # workflow now, entered through the Timeline overview. Nothing was removed;
-    # every view is intact beneath it. This is also the natural home for the
-    # future Change → Impact capability.
-    # PR-047B ordered these the way the work actually happens: a discovery runs,
-    # it changes things, the configurations are what changed, and the evidence
-    # is what proves all of it. Evidence sits last deliberately — it is where
-    # the other views lead when an operator asks "why do you say that?", not a
-    # place to start.
-    NavGroup("timeline", "Timeline", "/timeline", (
-        NavItem("timeline", "Overview", "/timeline"),
-        NavItem("history", "Discoveries", "/history"),
-        NavItem("changes", "Changes", "/changes"),
         NavItem("configuration", "Configuration", "/configuration"),
         NavItem("memory", "Evidence", "/evidence"),
     )),
-    NavGroup("policy", "Policy", "/policy", (
-        NavItem("policy", "Compliance", "/policy"),
+    NavGroup("operations", "Operations", "/timeline", (
+        NavItem("timeline", "Timeline", "/timeline"),
+        NavItem("history", "Discoveries", "/history"),
+        NavItem("changes", "Changes", "/changes"),
+        NavItem("policy", "Policy", "/policy"),
     )),
     NavGroup("analyze", "Analyze", "/advisor", (
         NavItem("advisor", "Advisor", "/advisor"),
@@ -99,12 +91,14 @@ NAV_GROUPS: tuple[NavGroup, ...] = (
         NavItem("predict", "Predict", "/predict"),
         NavItem("compass", "Compass", "/compass"),
     )),
-    NavGroup("setup", "Setup", "/discovery", (
+    # Administration renders last and is RBAC-filtered per item, so a
+    # viewer sees only what their roles can actually open.
+    NavGroup("administration", "Administration", "/discovery", (
         NavItem("discovery", "Discover", "/discovery"),
         NavItem("profiles", "Profiles", "/profiles"),
         NavItem("credentials", "Credentials", "/credentials"),
-        NavItem("audit", "Audit", "/audit"),
         NavItem("users", "Users", "/users"),
+        NavItem("audit", "Audit", "/audit"),
         NavItem("settings", "Settings", "/settings"),
     )),
 )
@@ -455,3 +449,51 @@ def device_inventory(scoped_snapshots) -> list[dict[str, Any]]:
             )
     devices.sort(key=lambda row: (row["network"].casefold(), row["hostname"].casefold()))
     return devices
+
+
+def visible_nav_groups(app) -> tuple[NavGroup, ...]:
+    """NAV_GROUPS filtered to what the CURRENT request's principal can
+    open. The one builder both the context processor and base_context
+    use — two copies once disagreed, and the unfiltered one won.
+
+    Display fails open (an unresolvable path stays visible); access
+    stays closed — RBAC is enforced on every request regardless.
+    """
+
+    from dataclasses import replace as _dc_replace
+
+    from flask import g
+
+    from .authz_map import PUBLIC, permission_for_endpoint
+
+    principal = getattr(g, "principal", None)
+    if principal is None:
+        return NAV_GROUPS
+
+    cache = app.extensions.setdefault("atlas_nav_endpoints", {})
+
+    def _endpoint(path: str):
+        if path not in cache:
+            try:
+                cache[path] = app.url_map.bind("nav.localhost").match(
+                    path, method="GET"
+                )[0]
+            except Exception:  # noqa: BLE001 - display fails open
+                cache[path] = None
+        return cache[path]
+
+    def _allowed(path: str) -> bool:
+        endpoint = _endpoint(path)
+        if endpoint is None:
+            return True
+        permission = permission_for_endpoint(endpoint)
+        if permission == PUBLIC or permission is None:
+            return True
+        return permission in principal.permissions
+
+    groups = []
+    for group in NAV_GROUPS:
+        items = tuple(item for item in group.items if _allowed(item.href))
+        if items:
+            groups.append(_dc_replace(group, items=items))
+    return tuple(groups)

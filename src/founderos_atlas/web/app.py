@@ -220,7 +220,15 @@ def create_app(
         empty navigation pane exactly because its render call forgot it.
         Explicit render arguments always override these defaults, so
         pages that DO pass base_context keep their active highlighting.
+
+        This is also the ONE canonical mechanism handing the display
+        level to templates (and, via ``body[data-display-level]``, to
+        JavaScript): per-user, read from the workspace store, never
+        from localStorage. Display level and density stay separate
+        preferences.
         """
+
+        from flask import g as _g
 
         try:
             from founderos_atlas.workspace.administration import (
@@ -232,8 +240,24 @@ def create_app(
             ).preferences()
         except Exception:
             preferences = None
+        try:
+            from founderos_atlas.workspace.user_preferences import (
+                DISPLAY_LEVELS,
+                UserPreferenceStore,
+            )
+
+            principal = getattr(_g, "principal", None)
+            owner = principal.username if principal else "local-operator"
+            display_level = UserPreferenceStore(
+                app.config["ATLAS_WORKSPACE_ROOT"]
+            ).display_level(owner)
+            levels = DISPLAY_LEVELS
+        except Exception:
+            display_level, levels = "simple", (
+                "simple", "detailed", "expert",
+            )
         return {
-            "nav_groups": NAV_GROUPS,
+            "nav_groups": __import__("founderos_atlas.web.models", fromlist=["visible_nav_groups"]).visible_nav_groups(app),
             "active": "",
             "active_group": "",
             "product": "Atlas",
@@ -241,6 +265,8 @@ def create_app(
             "ui_density": (
                 preferences.density if preferences else "comfortable"
             ),
+            "display_level": display_level,
+            "display_levels": levels,
         }
 
     register_routes(app)

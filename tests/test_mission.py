@@ -145,7 +145,7 @@ class MissionGuiTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             _, client = self.build_world(Path(tmp))
             page = client.get("/?scope=all").data
-            self.assertIn(b"Mission", page)
+            self.assertIn(b"Home", page)
             # PR-040.1: the page opens with the question, not metrics.
             self.assertIn(b"What would you like to do?", page)
             for action in (
@@ -163,18 +163,19 @@ class MissionGuiTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             _, client = self.build_world(Path(tmp))
             page = client.get("/?scope=all").data.decode("utf-8")
+            # Attention-first: state, then issues, then everything else;
+            # metrics stay last.
             self.assertLess(
-                page.index("What would you like to do?"),
+                page.index("status-banner"),
+                page.index("Needs your attention"),
+            )
+            self.assertLess(
+                page.index("Needs your attention"),
                 page.index("Enterprise Health"),
             )
             self.assertLess(
                 page.index("Continue Working"),
                 page.index("Enterprise Health"),
-            )
-            # The status strip (one sentence, not metrics) may lead.
-            self.assertLess(
-                page.index("status-banner"),
-                page.index("What would you like to do?"),
             )
 
     def test_enterprise_health_freshness_and_activity(self) -> None:
@@ -209,7 +210,7 @@ class MissionGuiTests(unittest.TestCase):
                 maintenance_window="Sat", engineer="netops", created_at=NOW,
             )
             page = client.get("/?scope=all").data.decode("utf-8")
-            self.assertIn("Today's Recommendations", page)
+            self.assertIn("Needs your attention", page)
             # The world was discovered at FIXED (2026-07-10) and the app
             # clock is real time: the evidence is deterministically stale.
             self.assertIn("run discovery to refresh", page)

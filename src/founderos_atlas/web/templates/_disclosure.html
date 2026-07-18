@@ -1,0 +1,119 @@
+{# Progressive-disclosure primitives (PR: calmer UX).
+
+   Import WITH CONTEXT — plain imports are context-free in Jinja and
+   the macros would never see the display level:
+
+       {% import "_disclosure.html" as d with context %}
+
+   Every macro is semantic HTML, keyboard-operable, and level-aware
+   through the ``display_level`` context (simple | detailed | expert).
+   The rule that keeps this compatible: content is NEVER removed — a
+   section below the current level renders as a collapsed, labelled
+   <details> the user can always open. Nothing here gates permissions;
+   RBAC stays entirely server-side.
+
+   ``min_level`` semantics per macro: at or above that level the section
+   renders OPEN (or inline); below it, collapsed but present.
+#}
+
+{% macro _open_at(min_level) -%}
+  {%- set order = {'simple': 0, 'detailed': 1, 'expert': 2} -%}
+  {{- 'open' if order.get(display_level or 'simple', 0) >= order.get(min_level, 1) else '' -}}
+{%- endmacro %}
+
+{# The one-paragraph conclusion a page leads with — visible at EVERY level. #}
+{% macro page_summary(text, tone='neutral') -%}
+<p class="page-summary page-summary-{{ tone }}">{{ text }}</p>
+{%- endmacro %}
+
+{# The single primary action for the page. #}
+{% macro primary_action(label, href=None, method=None, action=None, extra='') -%}
+{%- if href -%}
+<a class="btn btn-primary" href="{{ href }}">{{ label }}</a>
+{%- else -%}
+<form class="inline-form" method="{{ method or 'post' }}" action="{{ action }}">{{ csrf_field() }}{{ extra }}
+  <button class="btn btn-primary" type="submit">{{ label }}</button>
+</form>
+{%- endif -%}
+{%- endmacro %}
+
+{# Secondary actions: inline from Detailed up, collapsed under a labelled
+   disclosure at Simple. Callers pass rendered controls via caller(). #}
+{% macro secondary_actions(label='More actions') -%}
+<details class="disclosure disclosure-actions" {{ _open_at('detailed') }}>
+  <summary>{{ label }}</summary>
+  <div class="disclosure-body">{{ caller() }}</div>
+</details>
+{%- endmacro %}
+
+{# Advanced details: open only at Expert. #}
+{% macro advanced_details(label='Advanced details') -%}
+<details class="disclosure disclosure-advanced" {{ _open_at('expert') }}>
+  <summary>{{ label }}</summary>
+  <div class="disclosure-body">{{ caller() }}</div>
+</details>
+{%- endmacro %}
+
+{# Evidence / provenance: which command or endpoint produced a fact.
+   Open at Expert, collapsed-but-present below. #}
+{% macro evidence_disclosure(label='Evidence and provenance') -%}
+<details class="disclosure disclosure-evidence" {{ _open_at('expert') }}>
+  <summary>{{ label }}</summary>
+  <div class="disclosure-body">{{ caller() }}</div>
+</details>
+{%- endmacro %}
+
+{# Warnings are important at every level: always visible, never collapsed.
+   The optional caller() carries the expanded explanation, open from
+   Detailed up. #}
+{% macro warning_disclosure(text, label='Why this matters') -%}
+<div class="callout callout-warning" role="status">
+  <p class="callout-text">{{ text }}</p>
+  {% if caller is defined and caller %}
+  <details class="disclosure" {{ _open_at('detailed') }}>
+    <summary>{{ label }}</summary>
+    <div class="disclosure-body">{{ caller() }}</div>
+  </details>
+  {% endif %}
+</div>
+{%- endmacro %}
+
+{# Empty state: what is absent, why, and the one action that changes it. #}
+{% macro empty_state(title, detail='', action_label=None, action_href=None) -%}
+<div class="empty-state">
+  <p class="empty-title">{{ title }}</p>
+  {% if detail %}<p class="muted">{{ detail }}</p>{% endif %}
+  {% if action_label and action_href %}
+  <a class="btn" href="{{ action_href }}">{{ action_label }}</a>
+  {% endif %}
+</div>
+{%- endmacro %}
+
+{# Error state: honest, with the correlation id when one exists. #}
+{% macro error_state(title, detail='', correlation_id=None) -%}
+<div class="callout callout-error" role="alert">
+  <p class="callout-text">{{ title }}</p>
+  {% if detail %}<p class="muted">{{ detail }}</p>{% endif %}
+  {% if correlation_id %}<p class="muted mono">Correlation id: {{ correlation_id }}</p>{% endif %}
+</div>
+{%- endmacro %}
+
+{# Technical metadata (ids, hashes, versions): expert-open, mono. #}
+{% macro technical_metadata(pairs, label='Technical metadata') -%}
+<details class="disclosure disclosure-technical" {{ _open_at('expert') }}>
+  <summary>{{ label }}</summary>
+  <dl class="meta-list">
+    {% for key, value in pairs %}
+    <dt>{{ key }}</dt><dd class="mono">{{ value }}</dd>
+    {% endfor %}
+  </dl>
+</details>
+{%- endmacro %}
+
+{# Contextual help: a quiet inline explainer, collapsed at every level. #}
+{% macro contextual_help(label='What is this?') -%}
+<details class="disclosure disclosure-help">
+  <summary>{{ label }}</summary>
+  <div class="disclosure-body muted">{{ caller() }}</div>
+</details>
+{%- endmacro %}

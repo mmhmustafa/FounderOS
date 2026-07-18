@@ -64,11 +64,53 @@ def _migrate_1_revisions(workspace_root: Path, backup_dir: Path) -> None:
             )
 
 
+def _migrate_2_display_default(workspace_root: Path, backup_dir: Path) -> None:
+    """Existing workspaces keep everything visible by default.
+
+    Progressive disclosure defaults NEW workspaces to the ``simple``
+    display level. A workspace that predates the feature has operators
+    who already rely on today's full-detail pages, so the upgrade stamps
+    ``ux-defaults.json`` with an ``expert`` default — nobody's controls
+    disappear on upgrade, and any user can still choose ``simple``.
+
+    "Existing" is judged from prior activity evidence: any workspace
+    store already on disk. A brand-new workspace runs this migration
+    with an empty directory (only the schema file it is writing) and
+    gets no marker — its users honestly start at ``simple``.
+    """
+
+    marker = workspace_root / "ux-defaults.json"
+    if marker.is_file():
+        return  # idempotent
+    activity = ("preferences.json", "profiles.json", "users.json",
+                "audit.jsonl", "credential-sets.json")
+    if not any((workspace_root / name).is_file() for name in activity):
+        return
+    marker.write_text(
+        json.dumps({
+            "schema_version": "1.0.0",
+            "display_level_default": "expert",
+            "reason": (
+                "workspace predates progressive disclosure; existing "
+                "operators keep full detail by default"
+            ),
+        }, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         version=1,
         description="revision counters on profiles and policy exceptions",
         apply=_migrate_1_revisions,
+    ),
+    Migration(
+        version=2,
+        description=(
+            "expert display-level default for pre-disclosure workspaces"
+        ),
+        apply=_migrate_2_display_default,
     ),
 )
 
