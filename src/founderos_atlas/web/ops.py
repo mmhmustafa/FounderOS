@@ -18,6 +18,7 @@ from founderos_atlas.notifications import (
     KIND_APPROVAL_REQUEST,
     NotificationStore,
 )
+from founderos_atlas.web.models import nav_group_for
 from founderos_atlas.web.redirects import safe_redirect_target
 
 
@@ -135,7 +136,8 @@ def register_ops_routes(app) -> None:
             principal.username, principal.roles, include_done=include_done,
         )
         return render_template(
-            "inbox.html", notifications=items, include_done=include_done,
+            "inbox.html",
+            active="inbox", active_group=nav_group_for("inbox"), notifications=items, include_done=include_done,
         )
 
     @app.route("/inbox/<notification_id>", methods=["POST"])
@@ -214,6 +216,7 @@ def register_ops_routes(app) -> None:
             accounts.append(row)
         return render_template(
             "users.html",
+            active="users", active_group=nav_group_for("users"),
             accounts=accounts,
             revision=store.revision(),
             roles=ALL_ROLES,
@@ -425,6 +428,7 @@ def register_ops_routes(app) -> None:
         statuses = verify_workspace(_workspace_root())
         return render_template(
             "system_integrity.html",
+            active="settings", active_group=nav_group_for("settings"),
             statuses=statuses,
             corrupt=[item for item in statuses if item.state == "corrupt"],
             schema_version=applied_version(_workspace_root()),

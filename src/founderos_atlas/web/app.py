@@ -211,6 +211,38 @@ def create_app(
 
     migrate_workspace(resolved_workspace)
 
+    from .models import NAV_GROUPS
+
+    @app.context_processor
+    def _navigation_defaults():
+        """Every page gets the workflow sidebar, even when its route does
+        not pass the full base context — /users once rendered with an
+        empty navigation pane exactly because its render call forgot it.
+        Explicit render arguments always override these defaults, so
+        pages that DO pass base_context keep their active highlighting.
+        """
+
+        try:
+            from founderos_atlas.workspace.administration import (
+                AdministrationRepository,
+            )
+
+            preferences = AdministrationRepository(
+                app.config["ATLAS_WORKSPACE_ROOT"]
+            ).preferences()
+        except Exception:
+            preferences = None
+        return {
+            "nav_groups": NAV_GROUPS,
+            "active": "",
+            "active_group": "",
+            "product": "Atlas",
+            "ui_theme": preferences.theme if preferences else "system",
+            "ui_density": (
+                preferences.density if preferences else "comfortable"
+            ),
+        }
+
     register_routes(app)
 
     # Authentication, authorization, CSRF, rate limits, security headers,
