@@ -61,22 +61,31 @@
     <label class="checkbox" style="align-self:center;">
       <input type="checkbox" name="suppressed" value="1" {{ 'checked' if case_filters.suppressed }}> include suppressed
     </label>
+    <label class="checkbox" style="align-self:center;">
+      <input type="checkbox" name="resolved" value="1" {{ 'checked' if case_filters.resolved }}> include resolved
+    </label>
     <button class="btn btn-sm btn-primary" type="submit">Apply filters</button>
     <a class="btn btn-sm" href="{{ scoped_url('/incidents', active_scope_id) }}">Clear</a>
   </form>
   </details>
 
-  <p class="muted" role="status" aria-live="polite">{{ cases | length }} case(s) match.</p>
+  <p class="muted" role="status" aria-live="polite">{{ cases | length }} case(s) match.{% if hidden_resolved %}
+    {{ hidden_resolved }} resolved case(s) hidden —
+    <a href="{{ scoped_url('/incidents', active_scope_id, resolved='1') }}">include resolved</a>.{% endif %}</p>
 
   {% if cases %}
+  <form method="post" action="/incidents/bulk">{{ csrf_field() }}
+    <input type="hidden" name="next" value="{{ request.full_path }}">
   <div class="table-scroll table-scroll-wide" role="region" aria-label="Incident cases" tabindex="0">
     <table class="grid" data-columns="incidents">
       <thead>
-        <tr><th data-col="opened" data-col-preset="simple">Opened</th><th data-col="severity" data-col-preset="simple">Severity</th><th data-col="status" data-col-preset="simple">Status</th><th data-col="case" data-col-preset="simple">Case</th><th data-col="scope">Scope</th><th data-col="owner">Owner</th><th data-col="confidence" data-col-preset="expert">Confidence</th><th data-col="evidence-age">Evidence age</th><th data-col="open" data-col-preset="simple" data-col-label="Open"><span class="visually-hidden">Open</span></th></tr>
+        <tr><th data-col="select" data-col-preset="simple" data-col-label="Select"><span class="visually-hidden">Select</span></th><th data-col="opened" data-col-preset="simple">Opened</th><th data-col="severity" data-col-preset="simple">Severity</th><th data-col="status" data-col-preset="simple">Status</th><th data-col="case" data-col-preset="simple">Case</th><th data-col="scope">Scope</th><th data-col="owner">Owner</th><th data-col="confidence" data-col-preset="expert">Confidence</th><th data-col="evidence-age">Evidence age</th><th data-col="open" data-col-preset="simple" data-col-label="Open"><span class="visually-hidden">Open</span></th></tr>
       </thead>
       <tbody>
         {% for case in cases %}
         <tr>
+          <td><input type="checkbox" name="case_ids" value="{{ case.case_id }}"
+                     aria-label="Select case {{ case.title }}"></td>
           <td>{{ fmt.when(case.opened_at) }}</td>
           <td><span class="badge hop-badge sev-{{ case.severity }}">{{ case.severity }}</span></td>
           <td><span class="badge hop-badge">{{ case.status }}</span></td>
@@ -98,6 +107,21 @@
       </tbody>
     </table>
   </div>
+  <div class="actions" style="margin-top:10px;">
+    <label>With selected
+      <select name="bulk_action" aria-label="Bulk action for the selected cases">
+        <option value="resolve">Resolve</option>
+        <option value="suppress">Suppress</option>
+      </select>
+    </label>
+    <label>Reason
+      <input name="reason" required placeholder="fixed by fw change / duplicate of CASE-…"
+             aria-label="Reason — becomes each case's resolution or suppression reason">
+    </label>
+    <button class="btn btn-sm" type="submit">Apply to selected</button>
+    <span class="muted">One audited action; every case keeps its evidence and history.</span>
+  </div>
+  </form>
   {% else %}
   <p class="muted">
     {% if case_filters.status or case_filters.owner %}

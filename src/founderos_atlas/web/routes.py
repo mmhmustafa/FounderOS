@@ -5346,12 +5346,24 @@ def register_routes(app) -> None:
         context, scopes, scope_id = scoped_context("incidents")
         repo = IncidentCaseRepository(cfg("ATLAS_WORKSPACE_ROOT"))
         include_suppressed = request.args.get("suppressed") == "1"
+        include_resolved = request.args.get("resolved") == "1"
         status = request.args.get("status", "").strip() or None
+        list_scope = None if scope_id == GLOBAL_SCOPE_ID else scope_id
         cases = repo.list(
-            scope_id=None if scope_id == GLOBAL_SCOPE_ID else scope_id,
+            scope_id=list_scope,
             include_suppressed=include_suppressed,
             status=status,
+            include_resolved=include_resolved,
         )
+        # Say what the default view is hiding, so "18 cases" never
+        # silently becomes "9" without an explanation on the page.
+        hidden_resolved = 0
+        if not status and not include_resolved:
+            hidden_resolved = sum(
+                1 for case in repo.list(
+                    scope_id=list_scope, include_suppressed=include_suppressed,
+                ) if case.status == "resolved"
+            )
         owner = request.args.get("owner", "").strip()
         if owner:
             cases = [case for case in cases if (case.owner or "") == owner]
@@ -5367,7 +5379,9 @@ def register_routes(app) -> None:
             global_view=scope_id == GLOBAL_SCOPE_ID,
             cases=cases,
             case_filters={"status": status or "", "owner": owner,
-                          "suppressed": include_suppressed},
+                          "suppressed": include_suppressed,
+                          "resolved": include_resolved},
+            hidden_resolved=hidden_resolved,
             case_statuses=CASE_STATUSES,
             severities=SEVERITIES,
             selectable_profiles=selectable,
@@ -5382,6 +5396,66 @@ def register_routes(app) -> None:
             artifact_prefix=artifact_prefix(scope) if scope else "",
             **context,
         )
+
+    @app.route("/incidents/bulk", methods=["POST"])
+    def incidents_bulk():
+        """Resolve or suppress several cases in one audited action —
+        every case keeps its evidence and history; the shared
+        correlation id ties the batch together in the audit log."""
+
+        from uuid import uuid4
+
+        from founderos_atlas.incidents.records import (
+            IncidentCaseRepository,
+        )
+
+        action = str(request.form.get("bulk_action") or "").strip()
+        case_ids = [
+            case_id for case_id in request.form.getlist("case_ids")
+            if str(case_id or "").strip()
+        ]
+        reason = str(request.form.get("reason") or "").strip()
+        next_url = safe_redirect_target(
+            request.form.get("next"), scoped_url("/incidents")
+        )
+        if action not in ("resolve", "suppress") or not case_ids:
+            flash("Select at least one case and choose an action.", "error")
+            return redirect(next_url)
+        if not reason:
+            flash(
+                "A reason is required — it becomes each case's "
+                + ("resolution." if action == "resolve"
+                   else "suppression reason."),
+                "error",
+            )
+            return redirect(next_url)
+        repo = IncidentCaseRepository(cfg("ATLAS_WORKSPACE_ROOT"))
+        correlation = f"bulk:{uuid4().hex}"
+        done = 0
+        skipped: list[str] = []
+        for case_id in case_ids:
+            try:
+                if action == "resolve":
+                    repo.resolve(
+                        case_id, resolution=reason,
+                        actor=current_actor(),
+                        correlation_id=correlation,
+                    )
+                else:
+                    repo.suppress(
+                        case_id, reason=reason, actor=current_actor(),
+                        correlation_id=correlation,
+                    )
+                done += 1
+            except ValueError as error:
+                skipped.append(f"{case_id}: {error}")
+        message = (
+            f"{done} case(s) {action}d (audited under one correlation id)."
+        )
+        if skipped:
+            message += f" Skipped {len(skipped)}: " + "; ".join(skipped[:3])
+        flash(message, "success" if done else "error")
+        return redirect(next_url)
 
     @app.route("/incidents/run", methods=["POST"])
     def incidents_run():
@@ -5433,22 +5507,39 @@ def register_routes(app) -> None:
         (out / "incident_report.md").write_text(incident_markdown, encoding="utf-8")
         from founderos_atlas.incidents.records import IncidentCaseRepository
 
-        case = IncidentCaseRepository(cfg("ATLAS_WORKSPACE_ROOT")).open_case(
-            scope_id=scope.scope_id,
-            scope_label=scope.label,
-            title=title,
-            description=description,
-            severity=(
-                request.form.get("severity", "").strip() or "medium"
-            ),
-            actor=current_actor(),
-            report=report.to_dict(),
-        )
-        flash(
-            "Incident investigated and case opened — the report below is "
-            "its evidence.",
-            "success",
-        )
+        repo = IncidentCaseRepository(cfg("ATLAS_WORKSPACE_ROOT"))
+        existing = repo.find_active(scope_id=scope.scope_id, title=title)
+        if existing is not None:
+            # Duplicate guard: the same investigation re-run attaches its
+            # fresh report to the still-active case instead of opening an
+            # identical new one — audited as a reinvestigation.
+            case = repo.refresh_evidence(
+                existing.case_id, report=report.to_dict(),
+                actor=current_actor(),
+            )
+            flash(
+                f"Re-investigated — the fresh report is now the evidence "
+                f"of the existing open case '{case.title}' "
+                "(no duplicate case was created).",
+                "success",
+            )
+        else:
+            case = repo.open_case(
+                scope_id=scope.scope_id,
+                scope_label=scope.label,
+                title=title,
+                description=description,
+                severity=(
+                    request.form.get("severity", "").strip() or "medium"
+                ),
+                actor=current_actor(),
+                report=report.to_dict(),
+            )
+            flash(
+                "Incident investigated and case opened — the report below "
+                "is its evidence.",
+                "success",
+            )
         return redirect(url_for("incident_case_page", case_id=case.case_id))
 
     # -- Settings -----------------------------------------------------------

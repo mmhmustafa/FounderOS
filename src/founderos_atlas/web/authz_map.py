@@ -161,6 +161,7 @@ ENDPOINT_PERMISSIONS: dict[str, str] = {
     "predict_run": PREDICT_RUN,
     "paths_run": INVESTIGATE_RUN,
     "incidents_run": INVESTIGATE_RUN,
+    "incidents_bulk": INVESTIGATE_RUN,
     "advisor_ask_route": INVESTIGATE_RUN,
     "api_advisor_ask": INVESTIGATE_RUN,
 

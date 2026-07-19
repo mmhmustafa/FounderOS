@@ -186,8 +186,13 @@ class IncidentCaseRepository:
 
     def list(
         self, *, scope_id: str | None = None, include_suppressed: bool = False,
-        status: str | None = None,
+        status: str | None = None, include_resolved: bool = True,
     ) -> list[IncidentCase]:
+        """``include_resolved`` defaults True so every existing caller
+        (including the writers, which rebuild the catalog through this
+        method) keeps seeing the full set; the list PAGE passes False so
+        its default view shows active work only."""
+
         cases = [
             IncidentCase.from_dict(item)
             for item in self._read().get("cases") or ()
@@ -196,12 +201,35 @@ class IncidentCaseRepository:
             cases = [case for case in cases if case.scope_id == scope_id]
         if status:
             cases = [case for case in cases if case.status == status]
-        elif not include_suppressed:
-            cases = [
-                case for case in cases if case.status != STATUS_SUPPRESSED
-            ]
+        else:
+            if not include_suppressed:
+                cases = [
+                    case for case in cases
+                    if case.status != STATUS_SUPPRESSED
+                ]
+            if not include_resolved:
+                cases = [
+                    case for case in cases
+                    if case.status != STATUS_RESOLVED
+                ]
         cases.sort(key=lambda case: case.opened_at, reverse=True)
         return cases
+
+    def find_active(
+        self, *, scope_id: str, title: str
+    ) -> IncidentCase | None:
+        """The newest open/acknowledged case with this title in this
+        scope — the duplicate guard's question when an investigation is
+        re-run."""
+
+        wanted = str(title or "").strip().casefold()
+        for case in self.list(scope_id=scope_id):
+            if (
+                case.status in (STATUS_OPEN, STATUS_ACKNOWLEDGED)
+                and case.title.strip().casefold() == wanted
+            ):
+                return case
+        return None
 
     def get(self, case_id: str) -> IncidentCase | None:
         for item in self._read().get("cases") or ():
@@ -346,18 +374,48 @@ class IncidentCaseRepository:
             operation="annotate", actor=actor, reason=text.strip()[:200],
         )
 
+    def refresh_evidence(
+        self, case_id: str, *, report, actor: str,
+        correlation_id: str | None = None,
+    ) -> IncidentCase:
+        """Attach a newer investigation report to an existing case.
+        The case's identity, status, ownership, and annotations stay;
+        only the evidence pointers move to the fresh report — audited
+        as a reinvestigation, never as a new case."""
+
+        stamp = _now()
+        return self._mutate(
+            case_id, None,
+            lambda case: replace(
+                case,
+                report_incident_id=(report or {}).get("incident_id"),
+                report_generated_at=(report or {}).get("generated_at"),
+                confidence=(report or {}).get("confidence"),
+                affected_devices=tuple(
+                    str(item)
+                    for item in (report or {}).get("affected_devices") or ()
+                ),
+                updated_at=stamp,
+            ),
+            operation="reinvestigate", actor=actor,
+            correlation_id=correlation_id,
+        )
+
     def suppress(self, case_id: str, *, reason: str, actor: str,
-                 expected_revision: int | None = None) -> IncidentCase:
+                 expected_revision: int | None = None,
+                 correlation_id: str | None = None) -> IncidentCase:
         if not str(reason or "").strip():
             raise ValueError("suppressing an incident requires a reason")
         return self._mutate(
             case_id, expected_revision,
             lambda case: replace(case, status=STATUS_SUPPRESSED),
             operation="suppress", actor=actor, reason=reason,
+            correlation_id=correlation_id,
         )
 
     def resolve(self, case_id: str, *, resolution: str, actor: str,
-                expected_revision: int | None = None) -> IncidentCase:
+                expected_revision: int | None = None,
+                correlation_id: str | None = None) -> IncidentCase:
         if not str(resolution or "").strip():
             raise ValueError("resolving an incident requires a resolution")
         stamp = _now()
@@ -368,6 +426,7 @@ class IncidentCaseRepository:
                 resolution=resolution.strip(), resolved_at=stamp,
             ),
             operation="resolve", actor=actor, reason=resolution,
+            correlation_id=correlation_id,
         )
 
     def reopen(self, case_id: str, *, reason: str, actor: str,
