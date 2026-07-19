@@ -122,10 +122,18 @@
 </section>
 
 <section class="card">
-  <h2>Continue Working</h2>
-  {% set latest_plan = plans | first if plans else none %}
-  {% set latest_investigation = investigations | first if investigations else none %}
-  {% set latest_prediction = predictions | first if predictions else none %}
+  <div class="page-head" style="margin-bottom:0;"><h2>Continue Working</h2>
+    {% if continue_working and (continue_working.plan or continue_working.investigation or continue_working.prediction) %}
+    <form method="post" action="/home/continue-working/clear">{{ csrf_field() }}
+      <input type="hidden" name="next" value="/">
+      <button class="btn btn-sm" type="submit"
+              title="Clears this card for you only — everything stays in Compass, Paths, and Predict">Clean slate</button>
+    </form>
+    {% endif %}
+  </div>
+  {% set latest_plan = continue_working.plan if continue_working else (plans | first if plans else none) %}
+  {% set latest_investigation = continue_working.investigation if continue_working else (investigations | first if investigations else none) %}
+  {% set latest_prediction = continue_working.prediction if continue_working else (predictions | first if predictions else none) %}
   {% if latest_investigation or latest_plan or latest_prediction %}
   <ul class="mission-list">
     {% if latest_investigation %}

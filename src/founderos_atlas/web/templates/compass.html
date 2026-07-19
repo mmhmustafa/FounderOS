@@ -36,7 +36,12 @@
 </section>
 
 <section class="card">
-  <h2>Plans</h2>
+  <div class="page-head" style="margin-bottom:0;"><h2>Plans</h2>
+    {% if archived_count %}
+    <a class="btn btn-sm" href="/compass{{ '' if show_archived else '?archived=1' }}">
+      {{ 'Hide archived' if show_archived else 'Show archived (' ~ archived_count ~ ')' }}</a>
+    {% endif %}
+  </div>
   {% if plans %}
   <div class="table-scroll" role="region" aria-label="Maintenance plans" tabindex="0">
   <table class="grid" data-columns="compass-plans">
@@ -49,17 +54,29 @@
         <td>{{ row.plan.engineer or '—' }}</td>
         <td>{{ row.plan.cab_reference or '—' }}</td>
         <td>{{ row.plan.changes | length }}</td>
-        <td><span class="badge hop-badge hop-badge-{{ 'pass' if row.plan.status == 'analysed' else 'unknown' }}">{{ row.plan.status | title }}</span></td>
+        <td><span class="badge hop-badge hop-badge-{{ 'pass' if row.plan.status == 'analysed' else 'unknown' }}">{{ row.plan.status | title }}</span>
+          {% if row.plan.archived %}<span class="hop-badge badge-muted" title="Archived {{ row.plan.archived.at | timestamp }} by {{ row.plan.archived.by }}">archived</span>{% endif %}</td>
         <td>{% if row.risk %}<span class="badge hop-badge hop-badge-{{ 'failed' if row.risk.overall_risk in ('high', 'critical') else ('warning' if row.risk.overall_risk == 'medium' else 'pass') }}">{{ row.risk.overall_risk | title }}</span>{% else %}—{% endif %}</td>
         <td>{{ fmt.when(row.plan.updated_at) }}</td>
-        <td><a class="btn btn-sm" href="/compass/{{ row.plan.plan_id }}{% if request.args.get('device') %}?device={{ request.args.get('device') | urlencode }}{% if request.args.get('reason') %}&reason={{ request.args.get('reason') | urlencode }}{% endif %}{% endif %}" aria-label="Open plan {{ row.plan.title }}">Open</a></td>
+        <td class="row-actions"><a class="btn btn-sm" href="/compass/{{ row.plan.plan_id }}{% if request.args.get('device') %}?device={{ request.args.get('device') | urlencode }}{% if request.args.get('reason') %}&reason={{ request.args.get('reason') | urlencode }}{% endif %}{% endif %}" aria-label="Open plan {{ row.plan.title }}">Open</a>
+          <form method="post" action="/compass/{{ row.plan.plan_id }}/archive" style="display:inline">{{ csrf_field() }}
+            <input type="hidden" name="next" value="{{ request.full_path }}">
+            {% if row.plan.archived %}
+            <input type="hidden" name="action" value="unarchive">
+            <button class="btn btn-sm" type="submit" aria-label="Restore plan {{ row.plan.title }} to the active list">Unarchive</button>
+            {% else %}
+            <button class="btn btn-sm" type="submit" aria-label="Archive plan {{ row.plan.title }} — kept in history, removed from active lists"
+                    title="Taken care of: leaves Home and the active list; kept in history and audit; reversible">Archive</button>
+            {% endif %}
+          </form></td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
   </div>
   {% else %}
-  <p class="muted">No maintenance plans yet — create one above.</p>
+  <p class="muted">{% if archived_count and not show_archived %}No active plans —
+  {{ archived_count }} archived plan(s) are one click away above.{% else %}No maintenance plans yet — create one above.{% endif %}</p>
   {% endif %}
 </section>
 {% endblock %}

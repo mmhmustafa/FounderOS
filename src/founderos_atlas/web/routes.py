@@ -911,6 +911,10 @@ def register_routes(app) -> None:
         plans = []
         draft_plan_count = 0
         for plan in repository.list_plans():
+            if plan.archived is not None:
+                # "Taken care of": archived plans stay in history and
+                # audit but never nag from Home again.
+                continue
             _, assessment = repository.get(plan.plan_id)
             if plan.status != "analysed":
                 draft_plan_count += 1
@@ -1053,6 +1057,40 @@ def register_routes(app) -> None:
             plans=plans,
             changes=change_rows,
         )
+        # Continue Working is a personal workbench: a per-user "clean
+        # slate" stores a cutoff instant (nothing is deleted — history,
+        # Compass, and audit keep everything) and only items updated
+        # after it reappear here.
+        from founderos_atlas.workspace.user_preferences import (
+            UserPreferenceStore,
+        )
+
+        cleared_value = UserPreferenceStore(
+            cfg("ATLAS_WORKSPACE_ROOT")
+        ).ui_value(current_actor(), "workflow:continue-cleared") or {}
+        cleared_at = str(cleared_value.get("at") or "")
+
+        def _first_after(items, stamp_of):
+            for item in items:
+                if str(stamp_of(item) or "") > cleared_at:
+                    return item
+            return None
+
+        continue_working = {
+            "plan": _first_after(
+                plans,
+                lambda entry: entry["plan"].updated_at
+                or entry["plan"].created_at,
+            ),
+            "investigation": _first_after(
+                investigations, lambda entry: entry.get("generated_at")
+            ),
+            "prediction": _first_after(
+                predictions, lambda entry: entry.get("generated_at")
+            ),
+            "cleared_at": cleared_at,
+        }
+
         return render_template(
             "mission.html",
             summary=summary,
@@ -1061,6 +1099,7 @@ def register_routes(app) -> None:
             plans=plans,
             investigations=investigations,
             predictions=predictions[:4],
+            continue_working=continue_working,
             change_rows=change_rows,
             recommendations=recommendations,
             freshness_ages=freshness_ages,
@@ -1068,6 +1107,28 @@ def register_routes(app) -> None:
             **(enterprise_context(graph) if graph.devices else {}),
             **context,
         )
+
+    @app.route("/home/continue-working/clear", methods=["POST"])
+    def continue_working_clear():
+        """Personal clean slate for the Continue Working card. Stores a
+        per-user cutoff instant; nothing is deleted anywhere — plans stay
+        in Compass, investigations in Paths history, predictions in
+        Predict, and every audit record remains."""
+
+        from founderos_atlas.workspace.user_preferences import (
+            UserPreferenceStore,
+        )
+
+        UserPreferenceStore(cfg("ATLAS_WORKSPACE_ROOT")).set_ui_value(
+            current_actor(), "workflow:continue-cleared",
+            {"at": now_iso()},
+        )
+        flash(
+            "Continue Working cleared for you — everything stays in "
+            "Compass, Paths, and Predict; new work will reappear here.",
+            "success",
+        )
+        return redirect(safe_redirect_target(request.form.get("next"), "/"))
 
     # -- Profiles -----------------------------------------------------------
 
@@ -4830,8 +4891,14 @@ def register_routes(app) -> None:
 
         context, _scopes, _scope_id = scoped_context("compass")
         repository = compass_repository()
+        show_archived = request.args.get("archived") == "1"
         plans = []
+        archived_count = 0
         for plan in repository.list_plans():
+            if plan.archived is not None:
+                archived_count += 1
+                if not show_archived:
+                    continue
             _, assessment = repository.get(plan.plan_id)
             plans.append(
                 {
@@ -4842,9 +4909,61 @@ def register_routes(app) -> None:
         return render_template(
             "compass.html",
             plans=plans,
+            archived_count=archived_count,
+            show_archived=show_archived,
             change_types=CHANGE_TYPES,
             **context,
         )
+
+    @app.route("/compass/<plan_id>/archive", methods=["POST"])
+    def compass_archive(plan_id: str):
+        """Mark a plan "taken care of": it leaves Home attention,
+        Continue Working, and the default Compass list, but nothing is
+        deleted — the record, its assessment, its audit trail, and the
+        activity history all remain, and unarchive is one click."""
+
+        from dataclasses import replace as _replace
+
+        from founderos_atlas.audit import AuditEvent, AuditLog
+
+        repository = compass_repository()
+        plan, assessment = repository.get(plan_id)
+        if plan is None:
+            flash("That maintenance plan no longer exists.", "error")
+            return redirect(url_for("compass_page"))
+        unarchive = request.form.get("action") == "unarchive"
+        if unarchive == (plan.archived is None):
+            flash(
+                "That plan is already "
+                + ("active." if unarchive else "archived."),
+                "warning",
+            )
+            return redirect(safe_redirect_target(
+                request.form.get("next"), url_for("compass_page")
+            ))
+        marker = (
+            None if unarchive
+            else {"at": now_iso(), "by": current_actor()}
+        )
+        repository.save(_replace(plan, archived=marker), assessment)
+        AuditLog(cfg("ATLAS_WORKSPACE_ROOT")).append(AuditEvent.create(
+            category="compass-plan",
+            operation="unarchive" if unarchive else "archive",
+            subject=plan.plan_id,
+            actor=current_actor(),
+            before={"archived": plan.archived},
+            after={"archived": marker},
+            reason=str(request.form.get("reason") or "") or None,
+        ))
+        flash(
+            f"Plan '{plan.title}' "
+            + ("restored to the active list." if unarchive
+               else "archived — kept in history, out of your way."),
+            "success",
+        )
+        return redirect(safe_redirect_target(
+            request.form.get("next"), url_for("compass_page")
+        ))
 
     @app.route("/compass/new", methods=["POST"])
     def compass_new():

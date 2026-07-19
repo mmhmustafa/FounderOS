@@ -166,6 +166,8 @@ ENDPOINT_PERMISSIONS: dict[str, str] = {
 
     # -- compass -----------------------------------------------------------
     "compass_new": PLANS_EDIT,
+    "compass_archive": PLANS_EDIT,
+    "continue_working_clear": PAGES_VIEW,
     "compass_add_change": PLANS_EDIT,
     "compass_remove_change": PLANS_EDIT,
     "compass_analyse": PLANS_EDIT,

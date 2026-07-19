@@ -186,6 +186,11 @@ class ChangePlan:
     window_end: str | None = None
     incident_ref: str | None = None     # the incident case this plan serves
     execution_log: tuple[dict, ...] = ()  # {at, actor, change_id?, event, note}
+    # "Taken care of": archived plans leave every active list (Home
+    # attention, Continue Working, the default Compass view) but are
+    # never deleted — history and audit stay intact, and unarchive is
+    # one click. {at, by} when archived, None otherwise.
+    archived: dict | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -210,6 +215,7 @@ class ChangePlan:
             "window_end": self.window_end,
             "incident_ref": self.incident_ref,
             "execution_log": list(self.execution_log),
+            "archived": self.archived,
         }
 
     @classmethod
@@ -247,6 +253,10 @@ class ChangePlan:
             incident_ref=value.get("incident_ref"),
             execution_log=tuple(
                 dict(item) for item in value.get("execution_log") or ()
+            ),
+            archived=(
+                dict(value["archived"])
+                if isinstance(value.get("archived"), dict) else None
             ),
         )
 
