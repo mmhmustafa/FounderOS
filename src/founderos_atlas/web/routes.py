@@ -4783,36 +4783,24 @@ def register_routes(app) -> None:
             **context,
         )
 
-    @app.route("/paths/run", methods=["POST"])
-    def paths_run():
-        from founderos_atlas.path_intelligence import investigate_path_for_scope
+    def _run_path_trace(source, destination, intent, case_id=""):
+        """Run one deterministic path investigation for the active scope
+        and return the stored report dict (with declared intent attached)
+        or an error string. Shared by the Paths form and the topology
+        viewer's packet-trace API — one engine, one record, one honesty
+        note about what policy evidence Atlas cannot yet evaluate."""
+
+        from founderos_atlas.path_intelligence import (
+            investigate_path_for_scope,
+        )
 
         scopes = known_scopes()
         scope_id = active_scope_id(scopes)
-        source = request.form.get("source", "").strip()
-        destination = request.form.get("destination", "").strip()
-        if not source or not destination:
-            flash("A source and a destination device are required.", "error")
-            return redirect(url_for("paths_page"))
-        # Declared L3/L4 intent rides with the investigation as context.
-        # Atlas records it honestly: the deterministic engine evaluates
-        # topology and state; ACL/firewall policy evaluation is listed
-        # under what it cannot see.
-        intent = {
-            "vrf": request.form.get("vrf", "").strip(),
-            "source_address": request.form.get("source_address", "").strip(),
-            "protocol": request.form.get("protocol", "").strip(),
-            "port": request.form.get("port", "").strip(),
-        }
-        intent = {key: value for key, value in intent.items() if value}
         generated_at = now_iso()
-        # The engine itself resolves and reports unknown devices with
-        # evidence-based explanations — no pre-validation needed here.
         if scope_id == GLOBAL_SCOPE_ID:
             graph, snapshot = enterprise_world()
             if snapshot is None:
-                flash("No discovery has run yet in any network.", "error")
-                return redirect(url_for("paths_page"))
+                return None, "No discovery has run yet in any network."
             profiles = profile_service().list_profiles()
             enterprise_dir = enterprise_scope_dir(output_dir())
             investigate_path_for_scope(
@@ -4828,6 +4816,7 @@ def register_routes(app) -> None:
                     output_dir(), profiles, graph
                 ),
             )
+            report_dir = enterprise_dir
         else:
             scope = scopes[scope_id]
             investigate_path_for_scope(
@@ -4838,45 +4827,100 @@ def register_routes(app) -> None:
                 generated_at=generated_at,
                 profile_id=scope.scope_id,
             )
-        # Attach the declared intent to the stored report (and to an
-        # incident case when the investigation came from one).
-        report_dir = (
-            enterprise_scope_dir(output_dir())
-            if scope_id == GLOBAL_SCOPE_ID else scopes[scope_id].output_dir
-        )
+            report_dir = scope.output_dir
         report_path = report_dir / "path_investigation_report.json"
         stored = load_json(report_path)
-        if isinstance(stored, dict):
-            if intent:
-                stored["intent"] = intent
-                stored["intent_note"] = (
-                    "Declared intent, recorded with the investigation. "
-                    "Atlas evaluated topology and device state; ACL and "
-                    "firewall policy for this protocol/port were NOT "
-                    "evaluated and are listed under what Atlas cannot see."
-                )
-            case_id = request.form.get("case_id", "").strip()
-            if case_id:
-                stored["case_id"] = case_id
-                from founderos_atlas.incidents.records import (
-                    IncidentCaseRepository,
-                )
+        if not isinstance(stored, dict):
+            return None, "The investigation produced no readable report."
+        if intent:
+            stored["intent"] = intent
+            stored["intent_note"] = (
+                "Declared intent, recorded with the investigation. "
+                "Atlas evaluated topology and device state; ACL and "
+                "firewall policy for this protocol/port were NOT "
+                "evaluated and are listed under what Atlas cannot see."
+            )
+        if case_id:
+            stored["case_id"] = case_id
+            from founderos_atlas.incidents.records import (
+                IncidentCaseRepository,
+            )
 
-                try:
-                    IncidentCaseRepository(cfg("ATLAS_WORKSPACE_ROOT")).link(
-                        case_id, kind="path",
-                        value=f"{source} → {destination}",
-                        actor=current_actor(),
-                    )
-                except ValueError:
-                    pass
+            try:
+                IncidentCaseRepository(cfg("ATLAS_WORKSPACE_ROOT")).link(
+                    case_id, kind="path",
+                    value=f"{source} → {destination}",
+                    actor=current_actor(),
+                )
+            except ValueError:
+                pass
+        if intent or case_id:
+            import json as _json
+
             report_path.write_text(
-                __import__("json").dumps(stored, indent=2, sort_keys=True)
-                + "\n",
+                _json.dumps(stored, indent=2, sort_keys=True) + "\n",
                 encoding="utf-8",
             )
+        return stored, None
+
+    @app.route("/paths/run", methods=["POST"])
+    def paths_run():
+        source = request.form.get("source", "").strip()
+        destination = request.form.get("destination", "").strip()
+        if not source or not destination:
+            flash("A source and a destination device are required.", "error")
+            return redirect(url_for("paths_page"))
+        # Declared L3/L4 intent rides with the investigation as context.
+        intent = {
+            "vrf": request.form.get("vrf", "").strip(),
+            "source_address": request.form.get("source_address", "").strip(),
+            "protocol": request.form.get("protocol", "").strip(),
+            "port": request.form.get("port", "").strip(),
+        }
+        intent = {key: value for key, value in intent.items() if value}
+        _stored, error = _run_path_trace(
+            source, destination, intent,
+            case_id=request.form.get("case_id", "").strip(),
+        )
+        if error:
+            flash(error, "error")
+            return redirect(url_for("paths_page"))
         flash("Path investigation complete.", "success")
         return redirect(url_for("paths_page"))
+
+    @app.route("/api/paths/trace", methods=["POST"])
+    def api_paths_trace():
+        """The topology viewer's packet trace: same engine, same stored
+        record as the Paths page, returned as JSON for the animation.
+        The hops carry per-hop status (pass/warning/failed/unknown) and
+        the animation stops exactly where the engine did."""
+
+        body = request.get_json(silent=True) or {}
+        source = str(body.get("source") or "").strip()
+        destination = str(body.get("destination") or "").strip()
+        if not source or not destination:
+            return {"error": "source and destination are required"}, 400
+        protocol = str(body.get("protocol") or "").strip().lower()
+        if protocol and protocol not in ("tcp", "udp", "icmp"):
+            return {"error": "protocol must be tcp, udp, or icmp"}, 400
+        port_raw = body.get("port")
+        port = None
+        if port_raw not in (None, ""):
+            try:
+                port = int(port_raw)
+            except (TypeError, ValueError):
+                return {"error": "port must be a number"}, 400
+            if not 1 <= port <= 65535:
+                return {"error": "port must be between 1 and 65535"}, 400
+            if protocol == "icmp":
+                return {"error": "icmp has no port — leave it blank"}, 400
+        intent = {"protocol": protocol} if protocol else {}
+        if port is not None:
+            intent["port"] = str(port)
+        stored, error = _run_path_trace(source, destination, intent)
+        if error:
+            return {"error": error}, 409
+        return stored
 
     # -- Compass (PR-039: deterministic change planning) -----------------------
 

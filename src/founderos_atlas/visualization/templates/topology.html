@@ -113,6 +113,30 @@
     #context-menu button.menu-item { width: 100%; text-align: left; border: 0; background: transparent; font: inherit; color: #0f172a; cursor: pointer; }
     #context-menu button.menu-item:hover { background: #eff6ff; }
     #hidden-note { color: #0f172a; }
+    #trace-panel { position: absolute; left: 12px; bottom: 12px; z-index: 25;
+      background: #fff; color: #0f172a; border: 1px solid #d6dbe3;
+      border-radius: 8px; padding: 10px 12px; min-width: 250px; max-width: 320px;
+      box-shadow: 0 6px 20px rgba(15,23,42,.15); font-size: 13px; }
+    #trace-panel h3 { margin: 0 0 6px; font-size: 13px; }
+    #trace-panel .trace-row { display: flex; gap: 6px; align-items: center; margin: 4px 0; }
+    #trace-panel .trace-row label { flex: 0 0 74px; color: #475569; font-size: 12px; }
+    #trace-panel .trace-row output { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #trace-panel select, #trace-panel input[type="number"] { font: inherit; padding: 3px 6px; border: 1px solid #d6dbe3; border-radius: 5px; width: 100%; }
+    #trace-panel .trace-actions { display: flex; gap: 6px; margin-top: 8px; }
+    #trace-panel button { font: inherit; font-size: 12px; padding: 4px 10px; border: 1px solid #d6dbe3; border-radius: 6px; background: #f8fafc; color: #0f172a; cursor: pointer; }
+    #trace-panel button.trace-primary { background: #2563eb; border-color: #2563eb; color: #fff; }
+    #trace-status { margin: 6px 0 0; font-size: 12px; max-width: 300px; }
+    #trace-status[data-tone="failed"] { color: #b91c1c; font-weight: 600; }
+    #trace-status[data-tone="warn"] { color: #b45309; }
+    #trace-status[data-tone="ok"] { color: #166534; }
+    body[data-theme="dark"] #trace-panel { background: #111c30; color: #e5edf8; border-color: #28364b; }
+    body[data-theme="dark"] #trace-panel .trace-row label { color: #a9b6c8; }
+    body[data-theme="dark"] #trace-panel select, body[data-theme="dark"] #trace-panel input { background: #1a2740; color: #e5edf8; border-color: #3a4b63; }
+    body[data-theme="dark"] #trace-panel button { background: #1a2740; color: #e5edf8; border-color: #3a4b63; }
+    body[data-theme="dark"] #trace-panel button.trace-primary { background: #2563eb; border-color: #2563eb; color: #fff; }
+    body[data-theme="dark"] #trace-status[data-tone="failed"] { color: #fca5a5; }
+    body[data-theme="dark"] #trace-status[data-tone="warn"] { color: #fcd34d; }
+    body[data-theme="dark"] #trace-status[data-tone="ok"] { color: #86efac; }
     body[data-theme="dark"] #context-menu button.menu-item { color: #e5edf8; }
     body[data-theme="dark"] #hidden-note { color: #e5edf8; }
     /* PR-050A: the way back down. Chips for every open site. */
@@ -271,6 +295,21 @@
     <div class="graph-wrap">
       <div id="cy" aria-label="Interactive topology graph"></div>
       <div id="context-menu" role="menu" aria-label="Device actions"></div>
+      <div id="trace-panel" hidden aria-label="Packet trace">
+        <h3>Packet trace</h3>
+        <div class="trace-row"><label for="trace-proto">Source</label><output id="trace-source">—</output></div>
+        <div class="trace-row"><label>Destination</label><output id="trace-destination">—</output></div>
+        <div class="trace-row"><label for="trace-proto">Protocol</label>
+          <select id="trace-proto"><option value="">any</option><option value="tcp">TCP</option><option value="udp">UDP</option><option value="icmp">ICMP</option></select></div>
+        <div class="trace-row"><label for="trace-port">Port</label>
+          <input id="trace-port" type="number" min="1" max="65535" placeholder="e.g. 443"></div>
+        <div class="trace-actions">
+          <button type="button" class="trace-primary" id="trace-run">Trace</button>
+          <button type="button" id="trace-replay" hidden>Replay</button>
+          <button type="button" id="trace-clear">Clear</button>
+        </div>
+        <p id="trace-status" role="status" aria-live="polite" hidden></p>
+      </div>
       <div id="open-sites" aria-label="Open sites"></div>
       <div id="viewport-hint" role="status" aria-live="polite" hidden></div>
       <div id="legend" aria-label="Legend">
@@ -1145,6 +1184,8 @@
       }
       items += contextItem('Device Details', `/devices/${id}`);
       items += contextItem('Configuration History', `/configuration/${id}`);
+      items += `<button type="button" class="menu-item" data-action="trace-src" data-node-label="${escapeHtml(data.hostname || data.label || data.id)}">Trace packet from here</button>`;
+      items += `<button type="button" class="menu-item" data-action="trace-dst" data-node-label="${escapeHtml(data.hostname || data.label || data.id)}">Trace packet to here</button>`;
       items += `<button type="button" class="menu-item" data-action="hide" data-node-id="${escapeHtml(data.id)}" title="Hides it from YOUR view only — evidence, statistics, and other operators are unaffected">Hide from my view</button>`;
 
       contextMenu.innerHTML = items;
@@ -1159,9 +1200,17 @@
     });
 
     contextMenu.addEventListener('click', event => {
-      const button = event.target.closest('[data-action="hide"]');
-      if (button && window.atlasHideNode) {
-        window.atlasHideNode(button.dataset.nodeId);
+      const hideButton = event.target.closest('[data-action="hide"]');
+      if (hideButton && window.atlasHideNode) {
+        window.atlasHideNode(hideButton.dataset.nodeId);
+        hideContextMenu();
+      }
+      const traceButton = event.target.closest('[data-action="trace-src"], [data-action="trace-dst"]');
+      if (traceButton && window.atlasTraceSet) {
+        window.atlasTraceSet(
+          traceButton.dataset.action === 'trace-src' ? 'source' : 'destination',
+          traceButton.dataset.nodeLabel
+        );
         hideContextMenu();
       }
     });
@@ -2288,6 +2337,297 @@
           syncChrome();
         })
         .catch(function () { /* fresh view; nothing hidden */ });
+    })();
+
+    // -- Packet trace ------------------------------------------------------
+    // Animates the deterministic path engine's verdict: the SAME
+    // investigation the Paths page runs (recorded in its history), drawn
+    // hop by hop. The dot stops exactly where the engine's evidence
+    // stops — a failed hop turns red with the engine's explanation, and
+    // hops it could not evaluate are dashed, never painted healthy.
+    (function () {
+      if (typeof cy === 'undefined' || !servedByAtlas) { return; }
+      var panel = document.getElementById('trace-panel');
+      if (!panel) { return; }
+      var sourceOut = document.getElementById('trace-source');
+      var destinationOut = document.getElementById('trace-destination');
+      var protoSelect = document.getElementById('trace-proto');
+      var portInput = document.getElementById('trace-port');
+      var runButton = document.getElementById('trace-run');
+      var replayButton = document.getElementById('trace-replay');
+      var clearButton = document.getElementById('trace-clear');
+      var statusEl = document.getElementById('trace-status');
+      var state = { source: '', destination: '', report: null, running: false };
+      var reducedMotion = window.matchMedia(
+        '(prefers-reduced-motion: reduce)'
+      ).matches;
+
+      cy.style()
+        .selector('edge.trace-pass')
+        .style({ 'line-color': '#16a34a', 'target-arrow-color': '#16a34a',
+                 width: 4, 'z-index': 30 })
+        .selector('edge.trace-warn')
+        .style({ 'line-color': '#d97706', 'target-arrow-color': '#d97706',
+                 width: 4, 'z-index': 30 })
+        .selector('edge.trace-unknown')
+        .style({ 'line-color': '#d97706', 'line-style': 'dashed', width: 3 })
+        .selector('node.trace-hop')
+        .style({ 'border-width': 3, 'border-color': '#16a34a' })
+        .selector('node.trace-warn-hop')
+        .style({ 'border-width': 3, 'border-color': '#d97706' })
+        .selector('node.trace-failed')
+        .style({ 'border-width': 5, 'border-color': '#dc2626' })
+        .selector('node.trace-dot')
+        .style({ width: 14, height: 14, shape: 'ellipse',
+                 'background-color': '#2563eb', 'border-width': 2,
+                 'border-color': '#fff', label: '', 'z-index': 40,
+                 events: 'no' })
+        .update();
+
+      function showStatus(text, tone) {
+        statusEl.textContent = text || '';
+        statusEl.dataset.tone = tone || '';
+        statusEl.hidden = !text;
+      }
+
+      function syncProto() {
+        var icmp = protoSelect.value === 'icmp';
+        portInput.disabled = icmp;
+        if (icmp) { portInput.value = ''; }
+      }
+      protoSelect.addEventListener('change', syncProto);
+
+      window.atlasTraceSet = function (which, label) {
+        state[which] = label;
+        (which === 'source' ? sourceOut : destinationOut).textContent = label;
+        panel.hidden = false;
+        showStatus(
+          state.source && state.destination
+            ? '' : 'Right-click another device to set the '
+              + (state.source ? 'destination.' : 'source.'), ''
+        );
+      };
+
+      function nodeFor(name) {
+        var wanted = String(name || '').trim().toLowerCase();
+        var match = cy.nodes().filter(function (node) {
+          var d = node.data();
+          if (d.kind === 'site' || d.kind === 'protocol-domain') { return false; }
+          return String(d.hostname || '').toLowerCase() === wanted
+            || String(d.label || '').toLowerCase() === wanted;
+        });
+        return match.length ? match[0] : null;
+      }
+
+      function clearTrace(keepReport) {
+        cy.elements().removeClass(
+          'trace-pass trace-warn trace-unknown trace-hop '
+          + 'trace-warn-hop trace-failed'
+        );
+        cy.getElementById('__trace_dot').remove();
+        if (!keepReport) {
+          state.report = null;
+          replayButton.hidden = true;
+        }
+      }
+
+      function segmentEdge(fromNode, toNode) {
+        var edges = fromNode.edgesWith(toNode).filter(function (edge) {
+          return edge.style('display') !== 'none';
+        });
+        return edges.length ? edges[0] : fromNode.edgesWith(toNode)[0] || null;
+      }
+
+      function ensureDevicesVisible(hops, done) {
+        // The trace outranks the current view: hop devices inside a
+        // collapsed site overview are materialized by switching to the
+        // full device view, and hop devices the operator hid are
+        // revealed for the animation (their hidden preference stays).
+        var allResolved = hops.every(function (hop) {
+          return nodeFor(hop.device) !== null;
+        });
+        var finishReveal = function () {
+          var revealed = [];
+          hops.forEach(function (hop) {
+            var node = nodeFor(hop.device);
+            if (node && node.style('display') === 'none') {
+              node.style('display', 'element');
+              revealed.push(hop.device);
+            }
+          });
+          done(revealed);
+        };
+        if (allResolved) { finishReveal(); return; }
+        var viewSelect = document.getElementById('view-mode');
+        var fullOption = viewSelect
+          && viewSelect.querySelector('option[value="full"]');
+        if (!fullOption || viewSelect.value === 'full') {
+          finishReveal();
+          return;
+        }
+        viewSelect.value = 'full';
+        viewSelect.dispatchEvent(new Event('change', { bubbles: true }));
+        var settle = function () {
+          setTimeout(finishReveal, 250);
+        };
+        cy.one('layoutstop', settle);
+        setTimeout(settle, 2500);   // belt and braces if no layout fires
+      }
+
+      var animating = false;
+      function animateReport(report) {
+        clearTrace(true);
+        var hops = report.hops || [];
+        if (!hops.length) {
+          showStatus(report.failure_summary
+            || 'The engine returned no hops — see the Paths page for the '
+            + 'full report.', 'failed');
+          return;
+        }
+        if (animating) { return; }
+        animating = true;
+        ensureDevicesVisible(hops, function (revealed) {
+          animating = false;
+          runAnimation(report, hops, revealed);
+        });
+      }
+
+      function runAnimation(report, hops, revealed) {
+        var nodes = hops.map(function (hop) { return nodeFor(hop.device); });
+        var missing = hops.filter(function (hop, i) { return !nodes[i]; });
+        var notes = [];
+        if (revealed && revealed.length) {
+          notes.push(revealed.join(', ')
+            + ' shown for this trace (still in your hidden list)');
+        }
+        if (missing.length) {
+          notes.push(missing.map(function (hop) { return hop.device; })
+            .join(', ') + ' not drawable in this view');
+        }
+        state.notes = notes.length ? ' — ' + notes.join('; ') : '';
+        state.running = true;
+        var stepMs = reducedMotion ? 0 : 620;
+        var index = 0;
+
+        function finish() {
+          state.running = false;
+          replayButton.hidden = false;
+          var failed = hops.filter(function (hop) { return hop.status === 'failed'; });
+          if (failed.length) {
+            var f = failed[0];
+            showStatus('Stopped at ' + f.device + ': ' + f.explanation
+              + (f.failure_type ? ' [' + f.failure_type + ']' : ''), 'failed');
+          } else if (report.status && report.status !== 'connected') {
+            showStatus(report.failure_summary || ('Result: ' + report.status), 'warn');
+          } else {
+            var caveat = report.intent && report.intent.protocol
+              ? ' (topology and state verdict — '
+                + report.intent.protocol.toUpperCase()
+                + (report.intent.port ? '/' + report.intent.port : '')
+                + ' policy is not evaluated yet)'
+              : '';
+            showStatus('Connected: ' + hops.length + ' hop(s)' + caveat
+              + (state.notes || ''), 'ok');
+          }
+        }
+
+        function step() {
+          if (index >= hops.length) { finish(); return; }
+          var hop = hops[index];
+          var node = nodes[index];
+          if (node) {
+            node.addClass(
+              hop.status === 'failed' ? 'trace-failed'
+                : hop.status === 'warning' ? 'trace-warn-hop' : 'trace-hop'
+            );
+            if (index > 0 && nodes[index - 1]) {
+              var edge = segmentEdge(nodes[index - 1], node);
+              if (edge) {
+                edge.addClass(
+                  hop.status === 'failed' || hop.status === 'unknown'
+                    ? 'trace-unknown'
+                    : hop.status === 'warning' ? 'trace-warn' : 'trace-pass'
+                );
+              }
+            }
+            var dot = cy.getElementById('__trace_dot');
+            if (!dot.length) {
+              dot = cy.add({
+                group: 'nodes',
+                data: { id: '__trace_dot' },
+                position: { x: node.position('x'), y: node.position('y') },
+                classes: 'trace-dot',
+              });
+            }
+            if (stepMs && hop.status !== 'failed') {
+              dot.animate(
+                { position: { x: node.position('x'), y: node.position('y') } },
+                { duration: stepMs - 120 }
+              );
+            } else {
+              dot.position({ x: node.position('x'), y: node.position('y') });
+            }
+            if (hop.status === 'failed') {
+              cy.animate({ center: { eles: node }, duration: 300 });
+              index = hops.length;   // the packet goes no further
+              setTimeout(finish, stepMs || 0);
+              return;
+            }
+          }
+          index += 1;
+          setTimeout(step, stepMs);
+        }
+        step();
+      }
+
+      runButton.addEventListener('click', function () {
+        if (state.running) { return; }
+        if (!state.source || !state.destination) {
+          showStatus('Right-click a device to set the source, another for '
+            + 'the destination.', 'warn');
+          panel.hidden = false;
+          return;
+        }
+        showStatus('Investigating…', '');
+        var csrfMatch = document.cookie.match(/(?:^|; )atlas_csrf=([^;]*)/);
+        var headers = { 'Content-Type': 'application/json' };
+        if (csrfMatch) {
+          headers['X-Atlas-CSRF'] = decodeURIComponent(csrfMatch[1]);
+        }
+        fetch('/api/paths/trace', {
+          method: 'POST', credentials: 'same-origin', headers: headers,
+          body: JSON.stringify({
+            source: state.source, destination: state.destination,
+            protocol: protoSelect.value, port: portInput.value,
+          }),
+        }).then(function (response) {
+          return response.json().then(function (body) {
+            if (!response.ok) {
+              showStatus(body.error || ('Trace failed (HTTP '
+                + response.status + ').'), 'failed');
+              return;
+            }
+            state.report = body;
+            animateReport(body);
+          });
+        }).catch(function () {
+          showStatus('Trace failed — Atlas could not be reached.', 'failed');
+        });
+      });
+
+      replayButton.addEventListener('click', function () {
+        if (state.report && !state.running) { animateReport(state.report); }
+      });
+
+      clearButton.addEventListener('click', function () {
+        clearTrace(false);
+        state.source = '';
+        state.destination = '';
+        sourceOut.textContent = '—';
+        destinationOut.textContent = '—';
+        showStatus('', '');
+        panel.hidden = true;
+      });
     })();
   </script>
 </body>
