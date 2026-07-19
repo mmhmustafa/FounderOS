@@ -24,6 +24,8 @@
 <section class="card" id="events">
   <h2>Events</h2>
 
+  <details class="disclosure disclosure-filters" {{ 'open' if display_level != 'simple' else '' }}>
+    <summary>Filters</summary>
   <form method="get" action="/timeline" class="filter-bar">
     <input type="hidden" name="scope" value="{{ active_scope_id }}">
     <label>Search
@@ -69,6 +71,7 @@
     <button class="btn btn-sm btn-primary" type="submit">Apply filters</button>
     <a class="btn btn-sm" href="{{ scoped_url('/timeline', active_scope_id) }}">Clear</a>
   </form>
+  </details>
 
   <p class="muted" role="status" aria-live="polite">
     {{ page.total }} event(s) match — showing {{ page.start }}–{{ page.end }}{% if page.pages > 1 %} (page {{ page.page }} of {{ page.pages }}){% endif %}.

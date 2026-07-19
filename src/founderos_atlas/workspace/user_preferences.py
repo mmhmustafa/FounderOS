@@ -105,6 +105,13 @@ class UserPreferenceStore:
             else self.default_display_level()
         )
 
+    def has_explicit_level(self, owner: str) -> bool:
+        """Whether this owner ever CHOSE a level (vs the workspace
+        default) — drives the one-time upgrade explanation on Home."""
+
+        record = self._read().get(str(owner or "").casefold()) or {}
+        return str(record.get("display_level") or "") in DISPLAY_LEVELS
+
     # -- writing ----------------------------------------------------------------
 
     def set_display_level(self, owner: str, level: str) -> str:

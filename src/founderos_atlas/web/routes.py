@@ -746,13 +746,50 @@ def register_routes(app) -> None:
             link_base=out,
         )
 
+    def _policy_store_fingerprint(store_dir: Path) -> tuple:
+        """Identity of everything a policy evaluation reads: the store's
+        mutable index files (blobs are content-addressed and immutable —
+        any change to evidence rewrites these indexes) plus the Atlas
+        version, so an upgrade with new policies re-evaluates."""
+
+        from founderos_atlas.release import VERSION
+
+        parts: list[tuple] = [("atlas", VERSION)]
+        for name in (
+            "sessions.json",
+            "snapshots.json",
+            "evidence/records.json",
+            "evidence/observations.json",
+        ):
+            try:
+                stamp = (store_dir / name).stat()
+                parts.append((name, stamp.st_size, stamp.st_mtime_ns))
+            except OSError:
+                parts.append((name, None, None))
+        return tuple(parts)
+
+    # scope_id -> (fingerprint, summary). Derived workspace data, identical
+    # for every operator (no user input reaches the evaluation), so a
+    # process-level cache leaks nothing between users. Invalidation is
+    # deterministic: any evidence write changes the fingerprint.
+    _policy_summary_cache: dict[str, tuple[tuple, dict | None]] = {}
+
     def policy_summary_for(scope) -> dict | None:
         """Aggregate policy verdict counts for the canonical health model,
-        or ``None`` when the policy engine has nothing to say (no memory)."""
+        or ``None`` when the policy engine has nothing to say (no memory).
+
+        Re-running the full policy engine on every Home render cost ~4.4 s
+        against a real workspace (480 evaluations re-reading the evidence
+        store); the fingerprint cache keeps warm renders honest AND fast.
+        """
 
         store_dir = scope.output_dir / "enterprise-memory"
         if not store_dir.is_dir():
             return None
+        fingerprint = _policy_store_fingerprint(store_dir)
+        cached = _policy_summary_cache.get(scope.scope_id)
+        if cached is not None and cached[0] == fingerprint:
+            return cached[1]
         try:
             from founderos_atlas.policy import PolicyEngine
 
@@ -761,17 +798,21 @@ def register_routes(app) -> None:
             )
         except Exception:  # noqa: BLE001 - health degrades, pages never 500
             return None
+        summary: dict | None
         if report.total == 0:
-            return None
-        return {
-            "total": report.total,
-            "judged": report.judged,
-            "passed": report.passed,
-            "failed": report.failed,
-            "warnings": report.warnings,
-            "unknown": report.unknown,
-            "generated_at": report.generated_at,
-        }
+            summary = None
+        else:
+            summary = {
+                "total": report.total,
+                "judged": report.judged,
+                "passed": report.passed,
+                "failed": report.failed,
+                "warnings": report.warnings,
+                "unknown": report.unknown,
+                "generated_at": report.generated_at,
+            }
+        _policy_summary_cache[scope.scope_id] = (fingerprint, summary)
+        return summary
 
     def health_for(scope, summary) -> "HealthAssessment":
         """The canonical health assessment for one scope (see health/)."""
@@ -977,6 +1018,30 @@ def register_routes(app) -> None:
             has_any_data=bool(aggregated),
             now=now,
         )
+        # The canonical health assessment is authoritative (audit-2 High
+        # #2): every degraded/critical dimension becomes an attention
+        # item, so a Degraded banner can never sit above "nothing needs
+        # your attention". Freshness stays with the richer
+        # per-contribution recommendations when those exist.
+        from .mission import attention_from_health
+
+        has_stale_recs = any(
+            c.fresh is False for c in graph.contributions
+        )
+        health_items = attention_from_health(
+            health,
+            skip=(
+                frozenset({"discovery-freshness"}) if has_stale_recs
+                else frozenset()
+            ),
+        )
+        seen_keys = {
+            (item["href"], item["text"]) for item in health_items
+        }
+        recommendations = health_items + [
+            rec for rec in recommendations
+            if (rec["href"], rec["text"]) not in seen_keys
+        ]
         freshness_ages = {
             contribution.profile_id: describe_age(contribution.observed_at, now)
             for contribution in graph.contributions

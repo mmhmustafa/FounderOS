@@ -39,8 +39,8 @@
   <h2>Plans</h2>
   {% if plans %}
   <div class="table-scroll" role="region" aria-label="Maintenance plans" tabindex="0">
-  <table class="grid">
-    <thead><tr><th>Title</th><th>Window</th><th>Engineer</th><th>CAB</th><th>Changes</th><th>Status</th><th>Plan risk</th><th>Updated</th><th><span class="visually-hidden">Actions</span></th></tr></thead>
+  <table class="grid" data-columns="compass-plans">
+    <thead><tr><th data-col="title" data-col-preset="simple">Title</th><th data-col="window" data-col-preset="simple">Window</th><th data-col="engineer">Engineer</th><th data-col="cab">CAB</th><th data-col="changes">Changes</th><th data-col="status" data-col-preset="simple">Status</th><th data-col="plan-risk">Plan risk</th><th data-col="updated" data-col-preset="expert">Updated</th><th data-col="actions" data-col-preset="simple" data-col-label="Actions"><span class="visually-hidden">Actions</span></th></tr></thead>
     <tbody>
       {% for row in plans %}
       <tr>

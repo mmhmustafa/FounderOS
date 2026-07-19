@@ -91,5 +91,73 @@ class TopologyCalmDefaultsTests(unittest.TestCase):
             self.assertIn("Inter-site links", page)
 
 
+
+
+class HealthAttentionConsistencyTests(unittest.TestCase):
+    """Audit-2 High #2: Home may never contradict canonical health."""
+
+    def test_degraded_dimensions_produce_attention_items(self) -> None:
+        # build_world collects no configurations: evidence coverage is
+        # Degraded — the exact live contradiction (Degraded banner over
+        # "Nothing needs your attention").
+        with tempfile.TemporaryDirectory() as tmp:
+            _, client = build_world(Path(tmp))
+            page = client.get("/?scope=all").get_data(as_text=True)
+            if "status-degraded" in page or "status-critical" in page:
+                self.assertNotIn("Nothing needs your attention", page)
+                section = page.split("Needs your attention")[1].split(
+                    "</section>"
+                )[0]
+                self.assertIn("Evidence coverage", section)
+                self.assertIn('href="/configuration?scope=all"', section)
+                self.assertIn("badge-warning", section)
+
+    def test_attention_mapping_per_state(self) -> None:
+        from founderos_atlas.web.mission import attention_from_health
+
+        health = {"dimensions": [
+            {"key": "policy-compliance", "state": "degraded",
+             "summary": "2 evaluation(s) failed", "numerator": 3,
+             "denominator": 5, "unit": "passed"},
+            {"key": "active-incidents", "state": "critical",
+             "summary": "1 interface down", "numerator": 1,
+             "denominator": None, "unit": "active issues"},
+            {"key": "configuration-drift", "state": "unavailable",
+             "summary": "no comparison yet"},
+            {"key": "reachability", "state": "healthy",
+             "summary": "all good"},
+        ]}
+        items = attention_from_health(health)
+        self.assertEqual(2, len(items))
+        # Critical leads; each item carries severity, evidence, action.
+        self.assertEqual("critical", items[0]["severity"])
+        self.assertIn("Active incidents", items[0]["text"])
+        self.assertEqual("/incidents?scope=all", items[0]["href"])
+        self.assertEqual("warning", items[1]["severity"])
+        self.assertIn("3/5 passed", items[1]["evidence"])
+        self.assertEqual("/policy?scope=all", items[1]["href"])
+
+    def test_unknown_and_unavailable_never_become_tasks(self) -> None:
+        from founderos_atlas.web.mission import attention_from_health
+
+        health = {"dimensions": [
+            {"key": "configuration-drift", "state": "unavailable"},
+            {"key": "active-incidents", "state": "unknown"},
+        ]}
+        self.assertEqual([], attention_from_health(health))
+
+    def test_freshness_skip_rule(self) -> None:
+        from founderos_atlas.web.mission import attention_from_health
+
+        health = {"dimensions": [
+            {"key": "discovery-freshness", "state": "stale",
+             "summary": "older than 24h"},
+        ]}
+        self.assertEqual(1, len(attention_from_health(health)))
+        self.assertEqual([], attention_from_health(
+            health, skip=frozenset({"discovery-freshness"})
+        ))
+
+
 if __name__ == "__main__":
     unittest.main()

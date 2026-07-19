@@ -248,14 +248,19 @@ def create_app(
 
             principal = getattr(_g, "principal", None)
             owner = principal.username if principal else "local-operator"
-            display_level = UserPreferenceStore(
+            preference_store = UserPreferenceStore(
                 app.config["ATLAS_WORKSPACE_ROOT"]
-            ).display_level(owner)
+            )
+            display_level = preference_store.display_level(owner)
+            display_level_explicit = preference_store.has_explicit_level(
+                owner
+            )
             levels = DISPLAY_LEVELS
         except Exception:
             display_level, levels = "simple", (
                 "simple", "detailed", "expert",
             )
+            display_level_explicit = True
         return {
             "nav_groups": __import__("founderos_atlas.web.models", fromlist=["visible_nav_groups"]).visible_nav_groups(app),
             "active": "",
@@ -266,6 +271,7 @@ def create_app(
                 preferences.density if preferences else "comfortable"
             ),
             "display_level": display_level,
+            "display_level_explicit": display_level_explicit,
             "display_levels": levels,
         }
 

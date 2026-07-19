@@ -50,8 +50,8 @@
   <h2>Remembered Devices</h2>
   <form class="form" method="get" action="/configuration"><div class="form-row"><label>Search<input type="search" name="q" value="{{ search }}" placeholder="Device, network, platform"></label><label>Platform<select name="platform"><option value="">All platforms</option>{% for platform in platforms %}<option value="{{ platform }}" {{ 'selected' if platform_filter == platform else '' }}>{{ platform }}</option>{% endfor %}</select></label></div><div class="form-actions"><button class="btn" type="submit">Filter</button><a class="btn" href="/configuration">Clear</a></div></form>
   <p class="muted">{{ device_count }} matching device(s) · page {{ page }} of {{ total_pages }}</p>
-  <table class="grid">
-    <thead><tr><th>Device</th><th>Network</th><th>Platform</th><th>Versions</th><th>Observations</th><th>Last seen</th><th></th></tr></thead>
+  <table class="grid" data-columns="config-devices">
+    <thead><tr><th data-col="device" data-col-preset="simple">Device</th><th data-col="network">Network</th><th data-col="platform" data-col-preset="simple">Platform</th><th data-col="versions">Versions</th><th data-col="observations" data-col-preset="expert">Observations</th><th data-col="last-seen" data-col-preset="simple">Last seen</th><th data-col="actions" data-col-preset="simple" data-col-label="Actions"></th></tr></thead>
     <tbody>
       {% for device in devices %}
       <tr>

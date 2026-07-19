@@ -14,7 +14,7 @@
 
 {% if has_topology %}
 <section class="topology-stage">
-  <iframe class="topology-frame" src="{{ topology_src }}" title="Atlas enterprise topology viewer"></iframe>
+  <iframe class="topology-frame" src="{{ topology_src }}{{ '&' if '?' in topology_src else '?' }}level={{ display_level }}&theme={{ ui_theme }}" title="Atlas enterprise topology viewer"></iframe>
   <p class="muted">One federated graph: cross-profile links appear only where deterministic identity evidence connects them. Connectivity is never invented.</p>
 </section>
 {% endif %}
@@ -207,7 +207,7 @@
 
 {% if has_topology %}
 <section class="topology-stage">
-  <iframe class="topology-frame" src="{{ topology_src }}" title="Atlas topology viewer"></iframe>
+  <iframe class="topology-frame" src="{{ topology_src }}{{ '&' if '?' in topology_src else '?' }}level={{ display_level }}&theme={{ ui_theme }}" title="Atlas topology viewer"></iframe>
 </section>
 {% else %}
 <p class="muted">No topology has been generated yet for this network. <a href="/discovery">Run a discovery</a> to build the interactive topology viewer.</p>

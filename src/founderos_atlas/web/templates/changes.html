@@ -25,6 +25,8 @@
 <section class="card">
   <h2>Compare Two Runs</h2>
   <p class="muted">The change reports compare consecutive runs; this compares ANY archived pair.</p>
+  <details class="disclosure disclosure-filters" {{ 'open' if display_level != 'simple' else '' }}>
+    <summary>Compare runs</summary>
   <form method="get" action="/changes/compare" class="filter-bar">
     <input type="hidden" name="scope" value="{{ active_scope_id }}">
     <label>Earlier run
@@ -45,6 +47,7 @@
     </label>
     <button class="btn btn-sm" type="submit">Compare</button>
   </form>
+  </details>
   {% if comparison %}
   <p class="flash flash-info">Comparing <code>{{ comparison.left }}</code> → <code>{{ comparison.right }}</code>:
     {{ comparison.count }} difference(s). <a href="{{ scoped_url('/changes', active_scope_id) }}">Back to current changes</a></p>
@@ -54,6 +57,8 @@
 <section class="card" id="changes">
   <h2>{{ 'Comparison Differences' if comparison else 'Detected Changes' }}</h2>
 
+  <details class="disclosure disclosure-filters" {{ 'open' if display_level != 'simple' else '' }}>
+    <summary>Compare runs</summary>
   <form method="get" action="{{ '/changes/compare' if comparison else '/changes' }}" class="filter-bar">
     <input type="hidden" name="scope" value="{{ active_scope_id }}">
     {% if comparison %}
@@ -101,6 +106,7 @@
        aria-label="Export the {{ page.total }} filtered changes as CSV">Export CSV</a>
     {% endif %}
   </form>
+  </details>
 
   <p class="muted" role="status" aria-live="polite">
     {{ page.total }} change(s) match — showing {{ page.start }}–{{ page.end }}{% if page.pages > 1 %} (page {{ page.page }} of {{ page.pages }}){% endif %}.
@@ -109,12 +115,12 @@
 
   {% if page.items %}
   <div class="table-scroll table-scroll-wide" role="region" aria-label="Detected changes" tabindex="0">
-    <table class="grid">
+    <table class="grid" data-columns="changes">
       <thead>
         <tr>
-          <th>Severity</th><th>Kind</th><th>Device</th><th>What changed</th>
-          <th>Before → After</th><th>Owner</th>
-          <th><span class="visually-hidden">Actions</span></th>
+          <th data-col="severity" data-col-preset="simple">Severity</th><th data-col="kind">Kind</th><th data-col="device" data-col-preset="simple">Device</th><th data-col="what" data-col-preset="simple">What changed</th>
+          <th data-col="delta">Before → After</th><th data-col="owner">Owner</th>
+          <th data-col="actions" data-col-preset="simple" data-col-label="Actions"><span class="visually-hidden">Actions</span></th>
         </tr>
       </thead>
       <tbody>

@@ -414,7 +414,15 @@ class WebCliCommandTests(unittest.TestCase):
 
         opened: list[str] = []
         stdout = StringIO()
-        with redirect_stdout(stdout):
+        # Hermetic: a temporary ATLAS_HOME so this never touches (or
+        # trips over the instance lock of) the operator's real
+        # workspace, even while their Atlas server is running.
+        import tempfile
+        from unittest.mock import patch as _patch
+
+        with tempfile.TemporaryDirectory() as isolated_home, _patch.dict(
+            "os.environ", {"ATLAS_HOME": isolated_home}
+        ), redirect_stdout(stdout):
             code = main(
                 ["atlas", "web"],
                 atlas_browser_opener=opened.append,
@@ -456,15 +464,24 @@ class OneServerPerPortTests(unittest.TestCase):
     """
 
     def _start(self, *, port=8765, probe=None, runner=None):
+        import tempfile
+        from unittest.mock import patch as _patch
+
         from founderos_runtime.cli.commands import atlas_web_command
 
-        return atlas_web_command(
-            host="127.0.0.1",
-            port=port,
-            port_probe=probe,
-            server_runner=runner or (lambda **kwargs: None),
-            browser_opener=lambda url: None,
-        )
+        # Hermetic: never the operator's real ATLAS_HOME (or its
+        # single-instance lock) — the suite must pass while a normal
+        # Atlas server is running.
+        with tempfile.TemporaryDirectory() as isolated_home, _patch.dict(
+            "os.environ", {"ATLAS_HOME": isolated_home}
+        ):
+            return atlas_web_command(
+                host="127.0.0.1",
+                port=port,
+                port_probe=probe,
+                server_runner=runner or (lambda **kwargs: None),
+                browser_opener=lambda url: None,
+            )
 
     def test_refuses_to_start_when_the_port_is_already_serving(self) -> None:
         from founderos_runtime.cli.commands import CliError
@@ -580,3 +597,46 @@ class SeedRangeIsVisibleWhereTheSeedIsShownTests(unittest.TestCase):
             self.assertIn(response.status_code, (200, 302))
             self.assertEqual("172.20.20.0/24", service.get_profile("labdab").seed_cidr)
             self.assertIn(b"172.20.20.0/24", client.get("/profiles").data)
+
+
+class WorkspaceLockRefusalTests(unittest.TestCase):
+    def test_second_process_on_the_same_workspace_is_refused(self) -> None:
+        """The one-process-per-workspace lock stands: making the CLI
+        tests hermetic must never weaken it. The lock is re-entrant
+        within a process, so the refusal must be proven from a REAL
+        second process."""
+
+        import subprocess
+        import sys
+        import tempfile
+        from pathlib import Path
+
+        from founderos_atlas.workspace.instance import acquire_instance_lock
+
+        probe = "\n".join((
+            "import sys",
+            "from founderos_atlas.workspace.instance import (",
+            "    WorkspaceInUseError, acquire_instance_lock)",
+            "try:",
+            "    acquire_instance_lock(sys.argv[1])",
+            "    print('ACQUIRED')",
+            "except WorkspaceInUseError:",
+            "    print('REFUSED')",
+        ))
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / "workspace"
+            workspace.mkdir(parents=True)
+            lock = acquire_instance_lock(workspace)
+            try:
+                held = subprocess.run(
+                    [sys.executable, "-c", probe, str(workspace)],
+                    capture_output=True, text=True, timeout=60,
+                )
+                self.assertIn("REFUSED", held.stdout, held.stderr)
+            finally:
+                lock.release()
+            released = subprocess.run(
+                [sys.executable, "-c", probe, str(workspace)],
+                capture_output=True, text=True, timeout=60,
+            )
+            self.assertIn("ACQUIRED", released.stdout, released.stderr)

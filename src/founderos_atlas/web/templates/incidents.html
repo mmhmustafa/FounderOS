@@ -45,6 +45,8 @@
 
 <section class="card" id="cases">
   <h2>Cases</h2>
+  <details class="disclosure disclosure-filters" {{ 'open' if display_level != 'simple' else '' }}>
+    <summary>Filters</summary>
   <form method="get" action="/incidents" class="filter-bar">
     <input type="hidden" name="scope" value="{{ active_scope_id }}">
     <label>Status
@@ -62,14 +64,15 @@
     <button class="btn btn-sm btn-primary" type="submit">Apply filters</button>
     <a class="btn btn-sm" href="{{ scoped_url('/incidents', active_scope_id) }}">Clear</a>
   </form>
+  </details>
 
   <p class="muted" role="status" aria-live="polite">{{ cases | length }} case(s) match.</p>
 
   {% if cases %}
   <div class="table-scroll table-scroll-wide" role="region" aria-label="Incident cases" tabindex="0">
-    <table class="grid">
+    <table class="grid" data-columns="incidents">
       <thead>
-        <tr><th>Opened</th><th>Severity</th><th>Status</th><th>Case</th><th>Scope</th><th>Owner</th><th>Confidence</th><th>Evidence age</th><th><span class="visually-hidden">Open</span></th></tr>
+        <tr><th data-col="opened" data-col-preset="simple">Opened</th><th data-col="severity" data-col-preset="simple">Severity</th><th data-col="status" data-col-preset="simple">Status</th><th data-col="case" data-col-preset="simple">Case</th><th data-col="scope">Scope</th><th data-col="owner">Owner</th><th data-col="confidence" data-col-preset="expert">Confidence</th><th data-col="evidence-age">Evidence age</th><th data-col="open" data-col-preset="simple" data-col-label="Open"><span class="visually-hidden">Open</span></th></tr>
       </thead>
       <tbody>
         {% for case in cases %}

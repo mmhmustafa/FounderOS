@@ -10,6 +10,22 @@
 {# 1 — Overall network state. Canonical health from Enterprise Knowledge;
      unknown is stated as unknown with the reason (missing evidence),
      never dressed up as healthy. #}
+{% if display_level == 'expert' and not display_level_explicit %}
+{# The upgrade kept this pre-existing workspace at full Expert detail so
+   nothing disappeared. Either choice below records an explicit
+   preference, which permanently dismisses this note. #}
+<div class="callout" role="status">
+  <p class="callout-text">Pages open at full Expert detail — the upgrade default for this
+  existing workspace, so nothing you relied on disappeared.</p>
+  <form class="inline-form" method="post" action="/preferences/display-level" style="display:inline">{{ csrf_field() }}
+    <input type="hidden" name="next" value="/">
+    <button class="btn btn-sm" name="display_level" value="simple" type="submit">Try calmer Simple pages</button>
+    <button class="btn btn-sm" name="display_level" value="expert" type="submit">Keep Expert and dismiss</button>
+  </form>
+  <p class="muted">Everything stays reachable at every level — Simple only changes what opens first.</p>
+</div>
+{% endif %}
+
 {% if summary.networks %}
 {{ health_ui.banner(health) }}
 {% else %}
@@ -28,7 +44,7 @@
   <ul class="mission-recs">
     {% for rec in visible_recs %}
     <li>
-      <span>{{ rec.text }}</span>
+      <span>{% if rec.severity %}<span class="badge {{ 'badge-danger' if rec.severity == 'critical' else 'badge-warning' }}">{{ rec.severity }}</span> {% endif %}{{ rec.text }}</span>
       <span class="muted">Evidence: {{ rec.evidence }}</span>
       <a class="btn btn-sm" href="{{ rec.href }}">{{ rec.action }}</a>
     </li>
@@ -40,7 +56,7 @@
     <ul class="mission-recs disclosure-body">
       {% for rec in recommendations[3:] %}
       <li>
-        <span>{{ rec.text }}</span>
+        <span>{% if rec.severity %}<span class="badge {{ 'badge-danger' if rec.severity == 'critical' else 'badge-warning' }}">{{ rec.severity }}</span> {% endif %}{{ rec.text }}</span>
         <span class="muted">Evidence: {{ rec.evidence }}</span>
         <a class="btn btn-sm" href="{{ rec.href }}">{{ rec.action }}</a>
       </li>
@@ -92,7 +108,7 @@
     <li>
       <span class="activity-kind">{{ item.kind }}</span>
       <a href="{{ item.href }}">{{ item.text }}</a>
-      <span class="muted">{{ item.when or '' }}</span>
+      <span class="muted">{{ (item.when | timestamp) if item.when else '' }}</span>
     </li>
     {% endfor %}
   </ul>

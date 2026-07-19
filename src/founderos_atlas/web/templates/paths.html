@@ -157,6 +157,8 @@
 {% if past_investigations %}
 <section class="card">
   <h2>Saved investigations</h2>
+  <details class="disclosure disclosure-filters" {{ 'open' if display_level != 'simple' else '' }}>
+    <summary>Compare runs</summary>
   <form method="get" action="/paths/compare" class="filter-bar">
     <input type="hidden" name="scope" value="{{ active_scope_id }}">
     <label>Compare earlier
@@ -167,9 +169,10 @@
     </label>
     <button class="btn btn-sm" type="submit">Compare over time</button>
   </form>
+  </details>
   <div class="table-scroll" role="region" aria-label="Saved investigations" tabindex="0">
-  <table class="grid">
-    <thead><tr><th>When</th><th>Source</th><th>Destination</th><th>Result</th><th>Confidence</th></tr></thead>
+  <table class="grid" data-columns="path-history">
+    <thead><tr><th data-col="when" data-col-preset="simple">When</th><th data-col="source" data-col-preset="simple">Source</th><th data-col="destination" data-col-preset="simple">Destination</th><th data-col="result" data-col-preset="simple">Result</th><th data-col="confidence">Confidence</th></tr></thead>
     <tbody>
       {% for entry in past_investigations %}
       <tr>

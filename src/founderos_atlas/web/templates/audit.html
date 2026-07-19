@@ -13,6 +13,8 @@
 </p>
 
 <section class="card" id="audit-events">
+  <details class="disclosure disclosure-filters" {{ 'open' if display_level != 'simple' else '' }}>
+    <summary>Filters</summary>
   <form method="get" action="/audit" class="filter-bar">
     <label>Category
       <select name="category">
@@ -38,6 +40,7 @@
     <a class="btn btn-sm" href="/audit/export.csv?category={{ category | urlencode }}&actor={{ actor | urlencode }}&subject={{ subject | urlencode }}"
        aria-label="Export the {{ page.total }} filtered audit events as CSV">Export CSV</a>
   </form>
+  </details>
 
   <p class="muted" role="status" aria-live="polite">
     {{ page.total }} event(s) match — showing {{ page.start }}–{{ page.end }}{% if page.pages > 1 %} (page {{ page.page }} of {{ page.pages }}){% endif %}.
@@ -45,9 +48,9 @@
 
   {% if page.items %}
   <div class="table-scroll table-scroll-wide" role="region" aria-label="Audit events" tabindex="0">
-    <table class="grid">
+    <table class="grid" data-columns="audit-events">
       <thead>
-        <tr><th>When</th><th>Actor</th><th>Category</th><th>Operation</th><th>Subject</th><th>Before → After</th><th>Reason</th><th>Correlation</th></tr>
+        <tr><th data-col="when" data-col-preset="simple">When</th><th data-col="actor" data-col-preset="simple">Actor</th><th data-col="category">Category</th><th data-col="operation" data-col-preset="simple">Operation</th><th data-col="subject" data-col-preset="simple">Subject</th><th data-col="delta">Before → After</th><th data-col="reason">Reason</th><th data-col="correlation" data-col-preset="expert">Correlation</th></tr>
       </thead>
       <tbody>
         {% for event in page.items %}

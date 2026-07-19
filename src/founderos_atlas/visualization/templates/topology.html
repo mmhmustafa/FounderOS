@@ -158,6 +158,27 @@
     #node-list ul { list-style: none; margin: 8px 0 0; padding: 0; max-height: 300px; overflow-y: auto; }
     #node-list button { display: block; width: 100%; text-align: left; margin: 2px 0; padding: 6px 8px; border: 0; border-radius: 5px; background: transparent; font-size: 13px; cursor: pointer; }
     #node-list button:hover { background: #e2e8f0; }
+    /* Theme propagation (audit-2 #6): the shell passes ?theme=; System
+       follows prefers-color-scheme. Chrome only — evidence colours in the
+       graph keep their status meaning on either canvas. */
+    body[data-theme="dark"] {
+      --subtle: #a9b6c8;
+      background: #0f172a; color: #e5edf8; color-scheme: dark;
+    }
+    body[data-theme="dark"] header,
+    body[data-theme="dark"] #details,
+    body[data-theme="dark"] #legend,
+    body[data-theme="dark"] #layers-panel,
+    body[data-theme="dark"] #node-list { background: #111c30; color: #e5edf8; border-color: #28364b; }
+    body[data-theme="dark"] #cy { background: #0f172a; }
+    body[data-theme="dark"] input, body[data-theme="dark"] select,
+    body[data-theme="dark"] button { background: #1a2740; color: #e5edf8; border-color: #3a4b63; }
+    body[data-theme="dark"] .layers-reset { background: #1a2740; }
+    body[data-theme="dark"] #legend .divider { background: #28364b; }
+    /* Simple display level: the full legend and edit affordance stay
+       out of the first glance; everything remains reachable. */
+    body[data-level="simple"] #legend { display: none; }
+    body[data-level="simple"] #edit-mode { display: none; }
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; }
     }
@@ -169,9 +190,26 @@
     .layers-body label { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
     .layers-reset { margin-top: 4px; font-size: 12px; padding: 4px 8px; border: 1px solid var(--line, #d6dbe3); border-radius: 6px; background: #f8fafc; cursor: pointer; }
     .layers-reset:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
+    .layers-status { margin: 6px 0 0; font-size: 11px; max-width: 220px; color: #b45309; }
   </style>
 </head>
 <body>
+  <script>
+    // Applied first so the chrome never flashes the wrong theme.
+    (function () {
+      var query = new URLSearchParams(window.location.search);
+      var theme = query.get('theme') || 'system';
+      if (theme === 'system') {
+        theme = window.matchMedia
+          && window.matchMedia('(prefers-color-scheme: dark)').matches
+          ? 'dark' : 'light';
+      }
+      document.body.setAttribute('data-theme', theme);
+      if (query.get('level') === 'simple') {
+        document.body.setAttribute('data-level', 'simple');
+      }
+    })();
+  </script>
   <header>
     <h1>Atlas Topology Viewer</h1>
     <input id="search" type="search" placeholder="Search hostname, IP, vendor, or platform" aria-label="Search topology">
@@ -207,6 +245,7 @@
         <label><input type="checkbox" data-layer="interfaceLabels"> Interface labels</label>
         <label><input type="checkbox" data-layer="evidenceLabels"> Evidence labels</label>
         <button type="button" id="layers-reset" class="layers-reset">Reset to recommended</button>
+        <p id="layers-status" class="layers-status" role="status" aria-live="polite" hidden></p>
       </div>
     </details>
     <button id="edit-mode" type="button" aria-pressed="false" title="Curate persistent site membership" hidden>Edit topology</button>
@@ -1922,16 +1961,61 @@
                  'color': '#64748b' })
         .update();
 
+      // The save status must be HONEST: the panel never claims a layer
+      // choice persisted when the server refused it. Uses the same CSRF
+      // mechanism as every other authenticated call from this viewer
+      // (the readable atlas_csrf cookie set at sign-in) — server-side
+      // enforcement is untouched.
+      var layersStatus = document.getElementById('layers-status');
+      function showLayersStatus(text, tone) {
+        if (!layersStatus) { return; }
+        layersStatus.textContent = text || '';
+        layersStatus.dataset.tone = tone || '';
+        layersStatus.hidden = !text;
+      }
+
       function persist() {
         var state = {};
         boxes.forEach(function (box) { state[box.dataset.layer] = box.checked; });
-        try {
-          fetch('/api/preferences/ui', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ key: PREF_KEY, value: state })
-          }).catch(function () {});
-        } catch (e) { /* persistence is best-effort */ }
+        var csrfMatch = document.cookie.match(/(?:^|; )atlas_csrf=([^;]*)/);
+        var headers = { 'Content-Type': 'application/json' };
+        if (csrfMatch) {
+          headers['X-Atlas-CSRF'] = decodeURIComponent(csrfMatch[1]);
+        }
+        fetch('/api/preferences/ui', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: headers,
+          body: JSON.stringify({ key: PREF_KEY, value: state })
+        }).then(function (response) {
+          if (response.ok) {
+            return response.json().then(function (body) {
+              if (body && body.saved) {
+                showLayersStatus('', '');
+              } else {
+                showLayersStatus(
+                  'Layer choice was not saved — unexpected server reply. '
+                  + 'It applies to this view only.', 'warn');
+              }
+            }, function () {
+              showLayersStatus(
+                'Layer choice was not saved — unreadable server reply. '
+                + 'It applies to this view only.', 'warn');
+            });
+          }
+          var reason = response.status === 401
+            ? 'sign in again to save preferences'
+            : response.status === 403
+              ? 'the session token was refused — reload Atlas and retry'
+              : 'HTTP ' + response.status;
+          showLayersStatus(
+            'Layer choice was not saved (' + reason + '). '
+            + 'It applies to this view only.', 'warn');
+        }).catch(function () {
+          showLayersStatus(
+            'Layer choice was not saved — Atlas could not be reached. '
+            + 'It applies to this view only.', 'warn');
+        });
       }
 
       boxes.forEach(function (box) {
@@ -1949,22 +2033,40 @@
       }
 
       // Restore this user's saved layers over the recommended defaults.
-      try {
-        fetch('/api/preferences/ui?key=' + encodeURIComponent(PREF_KEY))
-          .then(function (r) { return r.ok ? r.json() : null; })
-          .then(function (data) {
-            var saved = data && data.value;
-            if (saved && typeof saved === 'object') {
-              boxes.forEach(function (box) {
-                if (Object.prototype.hasOwnProperty.call(saved, box.dataset.layer)) {
-                  box.checked = !!saved[box.dataset.layer];
-                }
-              });
-            }
-            apply();
-          })
-          .catch(function () { apply(); });
-      } catch (e) { apply(); }
+      fetch('/api/preferences/ui?key=' + encodeURIComponent(PREF_KEY), {
+        credentials: 'same-origin'
+      })
+        .then(function (r) {
+          if (!r.ok) {
+            showLayersStatus(
+              'Saved layers could not be loaded (HTTP ' + r.status
+              + ') — showing the recommended defaults.', 'warn');
+            return null;
+          }
+          return r.json().catch(function () {
+            showLayersStatus(
+              'Saved layers could not be read — showing the recommended '
+              + 'defaults.', 'warn');
+            return null;
+          });
+        })
+        .then(function (data) {
+          var saved = data && data.value;
+          if (saved && typeof saved === 'object') {
+            boxes.forEach(function (box) {
+              if (Object.prototype.hasOwnProperty.call(saved, box.dataset.layer)) {
+                box.checked = !!saved[box.dataset.layer];
+              }
+            });
+          }
+          apply();
+        })
+        .catch(function () {
+          showLayersStatus(
+            'Saved layers could not be loaded — Atlas could not be '
+            + 'reached. Showing the recommended defaults.', 'warn');
+          apply();
+        });
     })();
   </script>
 </body>

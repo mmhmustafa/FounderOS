@@ -99,7 +99,7 @@
       <a class="btn" id="action-dashboard" href="/{% if job %}?scope={{ job.profile_id | urlencode }}{% endif %}">View Dashboard</a>
     </div>
   </div>
-  <details class="log"><summary>Recent events</summary>
+  <details class="log" data-remember="workflow:discovery-events"><summary>Recent events</summary>
     <pre id="job-events">{% if job %}{% for line in job.events %}{{ line }}
 {% endfor %}{% endif %}</pre>
   </details>
@@ -120,7 +120,7 @@
   <div class="status-banner status-critical"><span class="badge">Failed</span><span>{{ result.error }}</span></div>
   {% endif %}
   {% if result.log %}
-  <details class="log"><summary>Pipeline log</summary>
+  <details class="log" data-remember="workflow:discovery-log"><summary>Pipeline log</summary>
     <pre>{% for line in result.log %}{{ line }}
 {% endfor %}</pre>
   </details>

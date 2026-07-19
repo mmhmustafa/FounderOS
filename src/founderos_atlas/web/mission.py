@@ -148,6 +148,82 @@ def build_recommendations(
     return recommendations
 
 
+# Canonical-health → attention mapping (audit-2, High #2). The health
+# assessment is AUTHORITATIVE: every critical/degraded/stale dimension
+# yields an attention item with a severity, its evidence, and a direct
+# destination. Documented product rules for the states that do NOT
+# create items:
+#
+# - ``unknown``/``unavailable``: the absence of a subsystem's report is
+#   a fact for the health panel, not an action an operator can take —
+#   turning "no incident report exists yet" into a task would be noise.
+# - ``discovery-freshness`` is skipped when per-contribution staleness
+#   recommendations already exist (they carry richer per-profile
+#   evidence); the dimension item appears only when they do not.
+ATTENTION_STATES = ("critical", "degraded", "stale")
+
+_DIMENSION_ACTIONS = {
+    "reachability": ("Open Topology", "/topology?scope=all"),
+    "discovery-freshness": ("Run Discovery", "/discovery"),
+    "evidence-coverage": ("Open Configuration", "/configuration?scope=all"),
+    "policy-compliance": ("Review Policy", "/policy?scope=all"),
+    "configuration-drift": ("Review Changes", "/changes?scope=all"),
+    "active-incidents": ("Open Incidents", "/incidents?scope=all"),
+    "topology-identity-confidence": ("Open Topology", "/topology?scope=all"),
+}
+
+_DIMENSION_LABELS = {
+    "reachability": "Reachability",
+    "discovery-freshness": "Discovery freshness",
+    "evidence-coverage": "Evidence coverage",
+    "policy-compliance": "Policy compliance",
+    "configuration-drift": "Configuration drift",
+    "active-incidents": "Active incidents",
+    "topology-identity-confidence": "Topology & identity confidence",
+}
+
+
+def attention_from_health(
+    health: dict | None, *, skip: set[str] | frozenset[str] = frozenset()
+) -> list[dict[str, Any]]:
+    """Attention items derived from the canonical health assessment.
+
+    Home may say "nothing needs your attention" ONLY when this list and
+    the evidence-driven recommendations are both empty — a Degraded
+    banner above an empty attention list was a contradiction.
+    """
+
+    items: list[dict[str, Any]] = []
+    for dimension in (health or {}).get("dimensions") or ():
+        key = str(dimension.get("key") or "")
+        state = str(dimension.get("state") or "")
+        if state not in ATTENTION_STATES or key in skip:
+            continue
+        action, href = _DIMENSION_ACTIONS.get(
+            key, ("Open Home", "/?scope=all")
+        )
+        label = _DIMENSION_LABELS.get(key, key or "Health")
+        numerator = dimension.get("numerator")
+        denominator = dimension.get("denominator")
+        unit = dimension.get("unit") or ""
+        if numerator is not None and denominator is not None:
+            evidence = f"{numerator}/{denominator} {unit}".strip()
+        elif numerator is not None:
+            evidence = f"{numerator} {unit}".strip()
+        else:
+            evidence = f"health dimension state: {state}"
+        items.append({
+            "text": f"{label}: {dimension.get('summary') or state}.",
+            "severity": "critical" if state == "critical" else "warning",
+            "action": action,
+            "href": href,
+            "evidence": evidence,
+        })
+    # Critical dimensions lead.
+    items.sort(key=lambda item: 0 if item["severity"] == "critical" else 1)
+    return items
+
+
 def merge_recent(
     collections: list[list[dict]], *, key: str = "generated_at", limit: int = 6
 ) -> list[dict]:

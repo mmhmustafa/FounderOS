@@ -43,7 +43,7 @@
     <li><span>Completeness</span><span>
       {% if device.completeness_percent is none %}Unknown{% else %}{{ device.completeness_percent }}%{% endif %}
     </span></li>
-    <li><span>Last collected</span><span>{{ device.last_collected_at or '—' }}</span></li>
+    <li><span>Last collected</span><span>{{ (device.last_collected_at | timestamp) if device.last_collected_at else '—' }}</span></li>
   </ul>
 </section>
 
@@ -88,7 +88,7 @@
       <tr>
         <td><strong>{{ r.command }}</strong></td>
         <td><span class="badge badge-{{ r.status_tone }}" title="{{ r.status_meaning }}">{{ r.status_label }}</span></td>
-        <td>{{ r.collected_at }}</td>
+        <td>{{ r.collected_at | timestamp }}</td>
         <td>{{ r.output_size }}</td>
         <td>{{ r.transport or '—' }}</td>
         <td>{{ r.source or '—' }}</td>

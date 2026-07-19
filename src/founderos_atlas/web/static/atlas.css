@@ -865,3 +865,65 @@ body[data-theme="dark"] .level-choice:has(input:checked) { background: #1a2c4f; 
 .settings-group { margin: var(--space-6) 0 var(--space-1); font-size: 1.05rem; padding-bottom: var(--space-1); border-bottom: var(--border-w) solid var(--line); }
 .settings-group:first-of-type { margin-top: var(--space-3); }
 .settings-group-note { margin: 0 0 var(--space-3); max-width: 70ch; }
+
+/* -- Dark theme completion (audit-2 #6) ------------------------------------ */
+/* Components that carried hard-coded light values now follow the dark
+   tokens. Status colours stay status colours; focus and non-color
+   indicators are unchanged. */
+body[data-theme="dark"] .btn {
+  background: #1a2740; color: var(--ink); border-color: var(--line-strong);
+}
+body[data-theme="dark"] .btn:hover { background: #223252; }
+body[data-theme="dark"] .btn:disabled { background: #16203a; color: var(--muted); }
+body[data-theme="dark"] .btn-primary { background: var(--accent); color: #fff; border-color: var(--accent-dark); }
+body[data-theme="dark"] .btn-primary:hover { background: var(--accent-dark); }
+body[data-theme="dark"] .btn-danger { background: var(--red-soft); color: #fca5a5; border-color: #7f1d1d; }
+body[data-theme="dark"] .card,
+body[data-theme="dark"] .search-panel,
+body[data-theme="dark"] .empty-state,
+body[data-theme="dark"] .mission-action { background: var(--panel); border-color: var(--line); color: var(--ink); }
+body[data-theme="dark"] .mission-action:hover { background: #16233b; }
+body[data-theme="dark"] thead th { background: #142037; color: var(--muted); border-color: var(--line); }
+body[data-theme="dark"] tbody tr:hover { background: #16233b; }
+body[data-theme="dark"] .grid td, body[data-theme="dark"] .grid th { border-color: var(--line); }
+body[data-theme="dark"] .tile { background: #142037; border-color: var(--line); }
+body[data-theme="dark"] .chip,
+body[data-theme="dark"] .mission-chips li { background: #1a2740; color: var(--ink); }
+body[data-theme="dark"] .chips { border-color: var(--line); }
+body[data-theme="dark"] .chip-entry { color: var(--ink); }
+body[data-theme="dark"] kbd { background: #1a2740; color: var(--ink); border-color: var(--line-strong); }
+body[data-theme="dark"] .callout { background: var(--panel); border-color: var(--line); }
+body[data-theme="dark"] .disclosure { background: var(--panel); border-color: var(--line); }
+body[data-theme="dark"] .disclosure[open] > summary { border-color: var(--line); }
+body[data-theme="dark"] .flash { background: #142037; color: var(--ink); border-color: var(--line-strong); }
+body[data-theme="dark"] .flash-warning { background: var(--amber-soft); color: #fcd34d; }
+body[data-theme="dark"] .flash-error { background: var(--red-soft); color: #fca5a5; }
+body[data-theme="dark"] .flash-success { background: var(--green-soft); color: #86efac; }
+body[data-theme="dark"] .diff-add, body[data-theme="dark"] .diff-added { background: #12351f; color: #86efac; }
+body[data-theme="dark"] .diff-del, body[data-theme="dark"] .diff-removed { background: #421c22; color: #fca5a5; }
+body[data-theme="dark"] pre { background: #0c1526; color: var(--ink); border-color: var(--line); }
+body[data-theme="dark"] .table-scroll:focus-visible { outline-color: var(--accent); }
+body[data-theme="dark"] .level-choice { border-color: var(--line); }
+body[data-theme="dark"] .search-trigger { background: #1a2740; color: var(--topbar-ink); border-color: var(--line-strong); }
+body[data-theme="dark"] .columns-panel, body[data-theme="dark"] .filter-chip { background: var(--panel); border-color: var(--line); color: var(--ink); }
+
+/* -- Compact density completion (audit-2 #7) ------------------------------- */
+body[data-density="compact"] .grid td, body[data-density="compact"] .grid th { padding: 5px 8px; }
+body[data-density="compact"] .form { gap: 8px; }
+body[data-density="compact"] .form label { gap: 3px; }
+body[data-density="compact"] .subnav a { padding: 4px 10px 4px 34px; }
+body[data-density="compact"] .nav-group-label { padding: 7px 10px; }
+body[data-density="compact"] .mission-recs li, body[data-density="compact"] .activity-stream li, body[data-density="compact"] .mission-list li { padding: 5px 0; }
+body[data-density="compact"] .filters, body[data-density="compact"] .form-actions { gap: 6px; }
+body[data-density="compact"] .tiles { gap: 8px; }
+body[data-density="compact"] .tile { padding: 8px 10px; }
+body[data-density="compact"] .disclosure > summary { padding: 5px 9px; }
+body[data-density="compact"] .disclosure-body { padding: 8px; }
+/* Touch targets never shrink below the accessible minimum on coarse
+   pointers, whatever the density. */
+@media (pointer: coarse) {
+  body[data-density="compact"] .btn,
+  body[data-density="compact"] select,
+  body[data-density="compact"] input[type="checkbox"] + span,
+  body[data-density="compact"] .subnav a { min-height: var(--touch-target); }
+}

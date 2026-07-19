@@ -30,9 +30,9 @@
 
   {% if preview.decisions %}
   <div class="table-scroll table-scroll-wide" role="region" aria-label="Retention decisions" tabindex="0">
-    <table class="grid">
+    <table class="grid" data-columns="retention-preview">
       <thead>
-        <tr><th>Record</th><th>Scope</th><th>Started</th><th>Size</th><th>Decision</th><th>Reason</th></tr>
+        <tr><th data-col="record" data-col-preset="simple">Record</th><th data-col="scope">Scope</th><th data-col="started" data-col-preset="simple">Started</th><th data-col="size">Size</th><th data-col="decision" data-col-preset="simple">Decision</th><th data-col="reason">Reason</th></tr>
       </thead>
       <tbody>
         {% for d in preview.decisions %}

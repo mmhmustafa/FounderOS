@@ -28,9 +28,9 @@
   <h2>Accounts</h2>
   {% if accounts %}
   <div class="table-scroll table-scroll-wide" role="region" aria-label="User accounts" tabindex="0">
-    <table class="grid">
+    <table class="grid" data-columns="users">
       <thead>
-        <tr><th>Username</th><th>Display name</th><th>Roles</th><th>Status</th><th>Sessions</th><th>Updated</th><th><span class="visually-hidden">Actions</span></th></tr>
+        <tr><th data-col="username" data-col-preset="simple">Username</th><th data-col="display-name">Display name</th><th data-col="roles" data-col-preset="simple">Roles</th><th data-col="status" data-col-preset="simple">Status</th><th data-col="sessions" data-col-preset="expert">Sessions</th><th data-col="updated">Updated</th><th data-col="actions" data-col-preset="simple" data-col-label="Actions"><span class="visually-hidden">Actions</span></th></tr>
       </thead>
       <tbody>
         {% for account in accounts %}

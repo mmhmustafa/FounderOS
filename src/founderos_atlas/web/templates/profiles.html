@@ -44,9 +44,9 @@
 {% endif %}
 
 {% if profiles %}
-<table class="grid">
+<table class="grid" data-columns="profiles">
   <thead>
-    <tr><th>Name</th><th>Owner / Tags</th><th>Boundary / Credentials</th><th>Seed</th><th>Last Discovery</th><th>Status</th><th></th></tr>
+    <tr><th data-col="name" data-col-preset="simple">Name</th><th data-col="owner-tags">Owner / Tags</th><th data-col="boundary">Boundary / Credentials</th><th data-col="seed" data-col-preset="expert">Seed</th><th data-col="last-discovery" data-col-preset="simple">Last Discovery</th><th data-col="status" data-col-preset="simple">Status</th><th data-col="actions" data-col-preset="simple" data-col-label="Actions"></th></tr>
   </thead>
   <tbody>
     {% for p in profiles %}

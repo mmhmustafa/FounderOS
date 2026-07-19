@@ -803,8 +803,9 @@
 })();
 
 // -- Table column customization (PR: calmer tables) -------------------------
-// A table marked <table data-columns="name"> with <th data-col="x"> and
-// matching <td data-col="x"> cells gains a "Columns" control: Simple /
+// A table marked <table data-columns="name"> with <th data-col="x"> headers
+// gains a "Columns" control (body cells hide by column position, so only
+// the THEAD needs markers; rows using colspans are left intact): Simple /
 // Detailed / Expert presets, per-column toggles, and Reset. Choices
 // persist per user and table through the UI-preference API (never
 // localStorage). Progressive enhancement — without JS every column shows,
@@ -819,7 +820,7 @@
     return th.dataset.colPreset || "detailed";
   }
 
-  Array.prototype.forEach.call(tables, function (table) {
+  Array.prototype.forEach.call(tables, function (table, tableIndex) {
     var name = table.dataset.columns;
     var prefKey = "table:" + name;
     var headers = Array.prototype.slice.call(
@@ -828,10 +829,30 @@
     if (!headers.length) { return; }
     var columns = headers.map(function (th) { return th.dataset.col; });
 
+    var allHead = Array.prototype.slice.call(
+      table.querySelectorAll("thead th")
+    );
+    var indexOf = {};
+    headers.forEach(function (th) {
+      indexOf[th.dataset.col] = allHead.indexOf(th);
+    });
+
     function setVisible(hidden) {
+      var rows = Array.prototype.slice.call(
+        table.querySelectorAll("tbody tr")
+      );
       columns.forEach(function (col) {
         var off = hidden.indexOf(col) !== -1;
-        table.querySelectorAll('[data-col="' + col + '"]').forEach(
+        var index = indexOf[col];
+        if (allHead[index]) { allHead[index].hidden = off; }
+        rows.forEach(function (row) {
+          // Rows with colspans (detail/empty rows) keep their layout.
+          if (row.children.length !== allHead.length) { return; }
+          var cell = row.children[index];
+          if (cell) { cell.hidden = off; }
+        });
+        // Cells explicitly marked keep working too (evidence table).
+        table.querySelectorAll('td[data-col="' + col + '"]').forEach(
           function (cell) { cell.hidden = off; }
         );
         var box = panel.querySelector('input[value="' + col + '"]');
@@ -847,23 +868,40 @@
       return hidden;
     }
 
+    var saveNote = document.createElement("p");
+    saveNote.className = "muted table-columns-note";
+    saveNote.setAttribute("role", "status");
+    saveNote.hidden = true;
+
     function persist() {
-      try {
-        fetch("/api/preferences/ui", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ key: prefKey, value: { hidden: currentHidden() } })
-        }).catch(function () {});
-      } catch (e) { /* best-effort */ }
+      // The installCsrf fetch wrapper adds X-Atlas-CSRF for us.
+      fetch("/api/preferences/ui", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: prefKey, value: { hidden: currentHidden() } })
+      }).then(function (response) {
+        saveNote.hidden = response.ok;
+        if (!response.ok) {
+          saveNote.textContent = "Column choice was not saved (HTTP "
+            + response.status + ") — it applies to this page only.";
+        }
+      }).catch(function () {
+        saveNote.hidden = false;
+        saveNote.textContent = "Column choice was not saved — Atlas could "
+          + "not be reached. It applies to this page only.";
+      });
     }
 
-    function applyPreset(level) {
+    function applyPreset(level, save) {
       var order = { simple: 0, detailed: 1, expert: 2 };
       var hidden = headers.filter(function (th) {
         return order[presetOf(th)] > order[level];
       }).map(function (th) { return th.dataset.col; });
       setVisible(hidden);
-      persist();
+      // Initial page-load presets are views, not choices: only a user
+      // action (preset button, checkbox, reset) writes a preference.
+      if (save !== false) { persist(); }
     }
 
     // Build the control.
@@ -887,9 +925,12 @@
       presets.appendChild(b);
     });
     panel.appendChild(presets);
+    panel.appendChild(saveNote);
 
     headers.forEach(function (th) {
-      var id = "col-" + name + "-" + th.dataset.col;
+      // tableIndex keeps ids unique when one page repeats a table
+      // (credentials renders one table per credential set).
+      var id = "col-" + name + "-" + tableIndex + "-" + th.dataset.col;
       var label = document.createElement("label");
       var box = document.createElement("input");
       box.type = "checkbox";
@@ -900,9 +941,10 @@
         setVisible(currentHidden()); persist();
       });
       label.appendChild(box);
-      label.appendChild(
-        document.createTextNode(" " + (th.textContent || th.dataset.col).trim())
-      );
+      var colLabel = th.dataset.colLabel
+        || (th.textContent || "").trim()
+        || th.dataset.col;
+      label.appendChild(document.createTextNode(" " + colLabel));
       panel.appendChild(label);
     });
 
@@ -927,13 +969,13 @@
         .then(function (data) {
           var saved = data && data.value && data.value.hidden;
           if (Array.isArray(saved)) { setVisible(saved); }
-          else { applyPreset(document.body.dataset.displayLevel || "detailed"); }
+          else { applyPreset(document.body.dataset.displayLevel || "detailed", false); }
         })
         .catch(function () {
-          applyPreset(document.body.dataset.displayLevel || "detailed");
+          applyPreset(document.body.dataset.displayLevel || "detailed", false);
         });
     } catch (e) {
-      applyPreset(document.body.dataset.displayLevel || "detailed");
+      applyPreset(document.body.dataset.displayLevel || "detailed", false);
     }
   });
 })();

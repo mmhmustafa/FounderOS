@@ -69,11 +69,11 @@
 
 {% if records %}
 <div class="table-scroll" role="region" aria-label="Discovery history" tabindex="0">
-<table class="grid">
+<table class="grid" data-columns="discoveries">
   <thead>
     <tr>
-      {% if show_profile %}<th>Network</th>{% endif %}
-      <th>Started</th><th>Devices</th><th>Relationships</th><th>Status</th><th>Duration</th><th>Config</th><th>Record</th><th><span class="visually-hidden">Actions</span></th>
+      {% if show_profile %}<th data-col="network" data-col-preset="simple">Network</th>{% endif %}
+      <th data-col="started" data-col-preset="simple">Started</th><th data-col="devices" data-col-preset="simple">Devices</th><th data-col="relationships">Relationships</th><th data-col="status" data-col-preset="simple">Status</th><th data-col="duration">Duration</th><th data-col="config">Config</th><th data-col="record" data-col-preset="expert">Record</th><th data-col="actions" data-col-preset="simple" data-col-label="Actions"><span class="visually-hidden">Actions</span></th>
     </tr>
   </thead>
   <tbody>
