@@ -173,7 +173,10 @@
     body[data-theme="dark"] #cy { background: #0f172a; }
     body[data-theme="dark"] input, body[data-theme="dark"] select,
     body[data-theme="dark"] button { background: #1a2740; color: #e5edf8; border-color: #3a4b63; }
+    body[data-theme="dark"] .layers-menu > summary { background: #1a2740; color: #e5edf8; border-color: #3a4b63; }
+    body[data-theme="dark"] .layers-body { background: #111c30; color: #e5edf8; border-color: #28364b; }
     body[data-theme="dark"] .layers-reset { background: #1a2740; }
+    body[data-theme="dark"] .layers-status { color: #fbbf24; }
     body[data-theme="dark"] #legend .divider { background: #28364b; }
     /* Simple display level: the full legend and edit affordance stay
        out of the first glance; everything remains reachable. */
@@ -183,10 +186,13 @@
       *, *::before, *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; }
     }
     .layers-menu { position: relative; }
-    .layers-menu > summary { cursor: pointer; padding: 5px 10px; border: 1px solid var(--line, #d6dbe3); border-radius: 6px; background: #fff; font-size: 13px; list-style: none; }
+    /* The header is dark with white text; these sit on light surfaces,
+       so they MUST declare their own ink or the labels inherit white
+       and vanish on the white panel. */
+    .layers-menu > summary { cursor: pointer; padding: 5px 10px; border: 1px solid var(--line, #d6dbe3); border-radius: 6px; background: #fff; color: #0f172a; font-size: 13px; list-style: none; }
     .layers-menu > summary::-webkit-details-marker { display: none; }
     .layers-menu > summary:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
-    .layers-body { position: absolute; top: calc(100% + 4px); left: 0; z-index: 20; background: #fff; border: 1px solid var(--line, #d6dbe3); border-radius: 8px; padding: 10px; min-width: 200px; box-shadow: 0 6px 20px rgba(15,23,42,.15); display: grid; gap: 6px; }
+    .layers-body { position: absolute; top: calc(100% + 4px); left: 0; z-index: 20; background: #fff; color: #0f172a; border: 1px solid var(--line, #d6dbe3); border-radius: 8px; padding: 10px; min-width: 200px; box-shadow: 0 6px 20px rgba(15,23,42,.15); display: grid; gap: 6px; }
     .layers-body label { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
     .layers-reset { margin-top: 4px; font-size: 12px; padding: 4px 8px; border: 1px solid var(--line, #d6dbe3); border-radius: 6px; background: #f8fafc; cursor: pointer; }
     .layers-reset:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }

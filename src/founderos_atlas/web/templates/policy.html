@@ -71,6 +71,34 @@
 <section class="card" id="results">
   <h2>Policy Results</h2>
 
+  {% if assignment_context %}
+  <div class="callout assignment-banner" role="status">
+    <p class="callout-text"><strong>Assignment received</strong></p>
+    <p>
+      {{ assignment_context.matching }} policy result(s)
+      {% if assignment_context.assigned_by %}assigned by
+      <strong>{{ assignment_context.assigned_by }}</strong>{% endif %}
+      {% if assignment_context.assigned_at %}on
+      {{ assignment_context.assigned_at | timestamp }}{% endif %}.
+    </p>
+    {% if assignment_context.missing %}
+    <p class="muted">
+      {{ assignment_context.missing }} of the originally assigned
+      {{ assignment_context.original }} result(s) no longer carry this
+      assignment — they were reassigned, cleared, or are no longer
+      visible in this scope. The audit log holds the full history.
+    </p>
+    {% elif assignment_context.matching == 0 %}
+    <p class="muted">
+      No result currently carries this assignment — every result in the
+      batch was reassigned, cleared, or is no longer visible in this
+      scope. The audit log holds the full history.
+    </p>
+    {% endif %}
+    <p><a class="btn btn-sm" href="{{ assignment_context.clear_href }}">Clear assignment filter</a></p>
+  </div>
+  {% endif %}
+
   <details class="disclosure disclosure-filters" {{ 'open' if display_level != 'simple' else '' }}>
     <summary>Filters</summary>
   <form method="get" action="/policy" class="filter-bar">
@@ -136,12 +164,38 @@
         {% endfor %}
       </select>
     </label>
+    <label>Owner
+      <input name="owner" value="{{ filters.owner }}" placeholder="exact owner">
+    </label>
+    <label class="checkbox">
+      <input type="checkbox" name="mine" value="1" {{ 'checked' if filters.assigned_to_me }}>
+      Assigned to me
+    </label>
+    {% if display_level == 'expert' or filters.assignment %}
+    <label>Assignment batch
+      <input name="assignment" value="{{ filters.assignment }}" placeholder="bulk:… correlation id">
+    </label>
+    {% endif %}
     <button class="btn btn-sm btn-primary" type="submit">Apply filters</button>
     <a class="btn btn-sm" href="{{ scoped_url('/policy', active_scope_id) }}">Clear</a>
     <a class="btn btn-sm" href="/policy/export.csv?{{ (filter_args | urlencode) }}&scope={{ active_scope_id }}"
        aria-label="Export the {{ page.total }} filtered results as CSV">Export CSV</a>
   </form>
   </details>
+
+  {% set chip_fields = [('owner', 'owner', filters.owner), ('mine', 'assigned to me', 'me' if filters.assigned_to_me else ''), ('assignment', 'assignment batch', filters.assignment)] %}
+  {% if filters.owner or filters.assigned_to_me or filters.assignment %}
+  <div class="filter-chips" role="group" aria-label="Active assignment filters">
+    {% for field, label, value in chip_fields %}
+    {% if value %}
+    {% set keep = {} %}
+    {% for key, arg in filter_args.items() %}{% if key != field %}{% set _ = keep.update({key: arg}) %}{% endif %}{% endfor %}
+    <a class="filter-chip" href="{{ scoped_url('/policy', active_scope_id, **keep) }}#results"
+       aria-label="Remove filter {{ label }}: {{ value }}">{{ label }}: {{ value }} <span aria-hidden="true">×</span></a>
+    {% endif %}
+    {% endfor %}
+  </div>
+  {% endif %}
 
   <p class="muted" role="status" aria-live="polite">
     {{ page.total }} result(s) match{% if page.total != overall.total %} of {{ overall.total }} total{% endif %} —
@@ -180,10 +234,14 @@
         </thead>
         <tbody>
           {% for e in page.items %}
-          <tr id="result-{{ e.policy.policy_id }}-{{ e.hostname }}">
+          <tr id="result-{{ e.policy.policy_id }}-{{ e.hostname }}"
+              {% if filters.assignment and e.assignment_correlation == filters.assignment %}class="row-assigned"{% endif %}>
             <td><input type="checkbox" name="subjects" value="{{ e.subject }}"
                        aria-label="Select {{ e.policy.name }} on {{ e.hostname }}"></td>
-            <td><span class="badge hop-badge status-chip-{{ e.effective_status }}">{{ status_labels[e.effective_status] }}</span></td>
+            <td><span class="badge hop-badge status-chip-{{ e.effective_status }}">{{ status_labels[e.effective_status] }}</span>
+              {% if filters.assignment and e.assignment_correlation == filters.assignment %}
+              <span class="hop-badge badge-muted" title="Part of the assignment batch you opened">assigned</span>
+              {% endif %}</td>
             <td>{{ e.policy.name }}</td>
             <td>{{ e.hostname }}</td>
             <td>{{ e.site }}</td>
@@ -225,7 +283,12 @@
 
   {% else %}
   <p class="muted">
-    {% if overall.total %}
+    {% if filters.assignment %}
+    No result currently carries this assignment batch — the results were
+    reassigned, their assignment was cleared, or they are no longer
+    visible in this scope. The audit log holds what happened.
+    <a href="{{ scoped_url('/policy', active_scope_id) }}">Clear the assignment filter</a>.
+    {% elif overall.total %}
     No result matches these filters. <a href="{{ scoped_url('/policy', active_scope_id) }}">Clear the filters</a> to see all {{ overall.total }}.
     {% else %}
     Nothing to evaluate in this scope yet. Run a discovery with configuration

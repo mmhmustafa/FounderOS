@@ -151,6 +151,53 @@ class ConnectionTestTests(unittest.TestCase):
         )
         return service, provider
 
+    def test_production_default_factory_accepts_the_built_config(self) -> None:
+        """The web route falls back to SSHDeviceTransport as the factory,
+        and SSHDeviceTransport type-checks for DeviceCredentials — the
+        old ad-hoc config object made EVERY production connection test
+        return transport-failed before a packet was sent. This pins the
+        wire-up: the object test_connection builds must initialise the
+        real transport (network stubbed out at the netmiko seam)."""
+
+        from founderos_atlas.credentials.connection_test import (
+            OUTCOME_IDENTIFIED,
+            test_connection,
+        )
+        from founderos_atlas.transport import SSHDeviceTransport
+        from founderos_atlas.workspace.credentials import (
+            InMemoryCredentialProvider,
+        )
+
+        provider = InMemoryCredentialProvider()
+        provider.save("ref", "secret-123456")
+
+        class FakeNetmikoSession:
+            def send_command(self, command, **kwargs):
+                return "AtlasOS 1.0 device-core"
+
+            def send_command_timing(self, command, **kwargs):
+                return ""
+
+            def disconnect(self):
+                pass
+
+        seen = {}
+
+        def fake_netmiko(**kwargs):
+            seen.update(kwargs)
+            return FakeNetmikoSession()
+
+        result = test_connection(
+            target="10.0.0.1", credential_ref="ref", provider=provider,
+            username="atlas",
+            transport_factory=lambda config: SSHDeviceTransport(
+                config, connection_factory=fake_netmiko,
+            ),
+        )
+        self.assertEqual(OUTCOME_IDENTIFIED, result.outcome)
+        self.assertEqual("10.0.0.1", seen.get("host"))
+        self.assertEqual("atlas", seen.get("username"))
+
     def test_outcome_ladder_maps_each_failure_layer(self) -> None:
         from founderos_atlas.credentials.connection_test import (
             OUTCOME_AUTH_FAILED,

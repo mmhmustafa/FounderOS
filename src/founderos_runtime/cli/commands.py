@@ -422,7 +422,15 @@ def atlas_discover_command(
             if (username and password)
             else None
         )
-        build_transport = transport_factory or SSHDeviceTransport
+        profile_timeout = (
+            getattr(inputs, "connect_timeout_seconds", None)
+            if profile is not None else None
+        )
+        if transport_factory is None and profile_timeout is not None:
+            def build_transport(credentials, _t=float(profile_timeout)):
+                return SSHDeviceTransport(credentials, connect_timeout=_t)
+        else:
+            build_transport = transport_factory or SSHDeviceTransport
 
         def host_transport(next_host: str) -> DeviceTransport:
             # Only ever the traversal factory when there is no profile, and a
@@ -479,9 +487,18 @@ def atlas_discover_command(
         # through the multihop worker pool and gates every candidate behind
         # a fast TCP reachability probe, so dead addresses never pay an SSH
         # timeout. Sizing is bounded and deterministic; both are injectable.
+        from founderos_atlas.discovery.entry import suggested_concurrency
+
         candidate_count = 1 + len(active_seeds or ())
+        profile_concurrency = (
+            getattr(inputs, "concurrency", None) if profile is not None
+            else None
+        )
         resolved_workers = (
-            workers if workers is not None else min(32, max(4, candidate_count))
+            workers if workers is not None
+            else profile_concurrency
+            if profile_concurrency is not None
+            else suggested_concurrency(candidate_count)
         )
         report, graph, snapshot = run_multihop_discovery(
             traversal_factory,

@@ -269,20 +269,51 @@ def parse_device_csv(text: str) -> tuple[tuple[DiscoveryCandidate, ...], tuple[s
 # -- the resolved plan -----------------------------------------------------------
 
 
+# The transport's own connect timeout: the honest default for the wizard.
+DEFAULT_CONNECT_TIMEOUT_SECONDS = 5
+MAX_CONCURRENCY = 32
+MAX_CONNECT_TIMEOUT_SECONDS = 60
+
+
+def suggested_concurrency(candidate_count: int) -> int:
+    """The worker-pool size the engine picks on its own: bounded and
+    deterministic, scaled to the candidate list. One definition — the
+    CLI, the GUI runner, and the wizard preview all quote this."""
+
+    return min(MAX_CONCURRENCY, max(4, int(candidate_count or 1)))
+
+
 @dataclass(frozen=True)
 class DiscoveryPlan:
-    """A resolved, deterministic discovery request — any mode, one shape."""
+    """A resolved, deterministic discovery request — any mode, one shape.
+
+    ``concurrency`` and ``timeout_seconds`` are ``None`` when the operator
+    left them on auto: the system suggests values (worker pool sized to
+    the candidate list, the transport's own connect timeout) and the
+    ``effective_*`` properties expose what will actually run."""
 
     mode: str
     candidates: tuple[DiscoveryCandidate, ...]
     policy: str = POLICY_BALANCED
     max_depth: int = 1
     max_devices: int = 64
-    timeout_seconds: int = 15
-    concurrency: int = 1
+    timeout_seconds: int | None = None
+    concurrency: int | None = None
     exclusions: tuple[str, ...] = ()
     warnings: tuple[str, ...] = ()
     attributes: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def effective_concurrency(self) -> int:
+        if self.concurrency is not None:
+            return self.concurrency
+        return suggested_concurrency(len(self.candidates))
+
+    @property
+    def effective_timeout_seconds(self) -> int:
+        if self.timeout_seconds is not None:
+            return self.timeout_seconds
+        return DEFAULT_CONNECT_TIMEOUT_SECONDS
 
     @property
     def seed_addresses(self) -> tuple[str, ...]:
@@ -311,6 +342,10 @@ class DiscoveryPlan:
             "max_devices": self.max_devices,
             "timeout_seconds": self.timeout_seconds,
             "concurrency": self.concurrency,
+            "effective_timeout_seconds": self.effective_timeout_seconds,
+            "effective_concurrency": self.effective_concurrency,
+            "concurrency_suggested": self.concurrency is None,
+            "timeout_suggested": self.timeout_seconds is None,
             "collect_configuration": self.collect_configuration,
             "exclusions": list(self.exclusions),
             "warnings": list(self.warnings),
@@ -427,12 +462,26 @@ def resolve_plan(
     policy: str = POLICY_BALANCED,
     max_depth: int = 1,
     max_devices: int = 64,
-    timeout_seconds: int = 15,
-    concurrency: int = 1,
+    timeout_seconds: int | None = None,
+    concurrency: int | None = None,
     exclusions: tuple[str, ...] = (),
     allow_large_scan: bool = False,
 ) -> DiscoveryPlan:
     """Resolve any entry method into one deterministic ``DiscoveryPlan``."""
+    if concurrency is not None and not (
+        1 <= int(concurrency) <= MAX_CONCURRENCY
+    ):
+        raise DiscoveryPlanError(
+            f"Concurrent sessions must be between 1 and {MAX_CONCURRENCY}, "
+            "or left on auto."
+        )
+    if timeout_seconds is not None and not (
+        1 <= int(timeout_seconds) <= MAX_CONNECT_TIMEOUT_SECONDS
+    ):
+        raise DiscoveryPlanError(
+            "Timeout seconds must be between 1 and "
+            f"{MAX_CONNECT_TIMEOUT_SECONDS}, or left on auto."
+        )
 
     if mode not in DISCOVERY_MODES:
         raise DiscoveryPlanError(f"unknown discovery mode: {mode!r}")

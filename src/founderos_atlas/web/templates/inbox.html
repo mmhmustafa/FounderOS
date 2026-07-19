@@ -28,7 +28,13 @@
           <td><span class="hop-badge badge-muted">{{ item.kind }}</span></td>
           <td>
             <strong>{{ item.title }}</strong>
-            {% if item.detail %}<div class="muted">{{ item.detail }}</div>{% endif %}
+            {# Progressive disclosure: Simple keeps the identifying title
+               and the action; Detailed adds severity/scope/assigner;
+               Expert adds the correlation id for audit cross-reference. #}
+            {% if item.detail and display_level != 'simple' %}<div class="muted">{{ item.detail }}</div>{% endif %}
+            {% if display_level == 'expert' and item.correlation_id %}
+            <div class="muted"><code>{{ item.correlation_id }}</code></div>
+            {% endif %}
           </td>
           <td>{{ item.status }}</td>
           <td class="row-actions">

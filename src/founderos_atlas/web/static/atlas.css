@@ -14,6 +14,9 @@
   --panel: #ffffff;
   --ink: #172033;
   --muted: #5b6472;            /* 5.6:1 on --panel: AA for normal text */
+  --surface: #ffffff;
+  --surface-2: #eef1f5;
+  --danger: #c0392b;
   --line: #dbe2ea;
   --line-strong: #c7d2df;
   --brand: #111827;
@@ -85,6 +88,7 @@ body[data-density="compact"] { --control-height: 32px; --control-height-sm: 27px
 body[data-density="compact"] .card { padding: 12px; margin-bottom: 10px; }
 body[data-theme="dark"] {
   --bg: #0f172a; --panel: #111c30; --ink: #e5edf8; --muted: #a9b6c8;
+  --surface: #142037; --surface-2: #24334c;
   --line: #28364b; --line-strong: #3a4b63; --accent-soft: #172554;
   --green-soft: #123524; --amber-soft: #3d2a0b; --red-soft: #421c22;
   color-scheme: dark;
@@ -94,13 +98,6 @@ body[data-theme="dark"] textarea, body[data-theme="dark"] .action-menu-list {
   background: #142037; color: var(--ink); border-color: var(--line-strong);
 }
 body[data-theme="dark"] code { background: #1d2a40; }
-@media (prefers-color-scheme: dark) {
-  body[data-theme="system"] {
-    --bg: #0f172a; --panel: #111c30; --ink: #e5edf8; --muted: #a9b6c8;
-    --line: #28364b; --line-strong: #3a4b63; --accent-soft: #172554;
-    color-scheme: dark;
-  }
-}
 button, input, select, textarea { font: inherit; }
 a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
@@ -681,7 +678,7 @@ textarea:focus-visible, summary:focus-visible, [tabindex]:focus-visible {
 /* -- Identity & inbox (production security) -------------------------------- */
 .user-chip { display: flex; align-items: center; gap: 10px; margin-left: 8px; }
 .user-chip .user-name {
-  font-size: 0.85rem; color: var(--text-muted, #667);
+  font-size: 0.85rem; color: var(--muted);
   max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .inbox-link { position: relative; display: inline-flex; padding: 6px; border-radius: 8px; }
@@ -711,6 +708,14 @@ textarea:focus-visible, summary:focus-visible, [tabindex]:focus-visible {
 .picker-list li[role="option"]:hover,
 .picker-list li[aria-selected="true"] { background: var(--surface-2, #eef1f5); }
 .picker-note { padding: 6px 8px; font-size: .8rem; }
+
+/* -- Assignment context (Inbox actionability) ------------------------------ */
+/* Token-only colors: correct in light, dark, and the System mirror with
+   no theme-specific overrides. The row marker pairs the accent inset
+   with a text badge, so it never relies on color alone. */
+.assignment-banner { background: var(--panel); border: 1px solid var(--line-strong); border-left: 6px solid var(--accent); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 14px; }
+.assignment-banner p { margin: 4px 0; }
+.grid tr.row-assigned td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
 
 /* -- Lifecycle surfaces ----------------------------------------------------- */
 .case-header { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
@@ -888,7 +893,25 @@ body[data-theme="dark"] tbody tr:hover { background: #16233b; }
 body[data-theme="dark"] .grid td, body[data-theme="dark"] .grid th { border-color: var(--line); }
 body[data-theme="dark"] .tile { background: #142037; border-color: var(--line); }
 body[data-theme="dark"] .chip,
-body[data-theme="dark"] .mission-chips li { background: #1a2740; color: var(--ink); }
+body[data-theme="dark"] .mission-chips a { background: #1a2740; color: var(--accent); }
+/* Hard-coded light chip/track surfaces (found by sweeping every
+   background in the #e../#f.. range without a dark counterpart) —
+   each pairs a light background with --muted/--ink text, which flips
+   light in dark mode and vanishes. */
+body[data-theme="dark"] .activity-kind,
+body[data-theme="dark"] .badge-muted,
+body[data-theme="dark"] .badge-info,
+body[data-theme="dark"] .status-chip-not-applicable,
+body[data-theme="dark"] .health-state-unavailable { background: #24334c; color: var(--muted); }
+body[data-theme="dark"] .progress { background: #24334c; }
+body[data-theme="dark"] .search-result-title mark { background: #7c5e0b; color: #fef3c7; }
+body[data-theme="dark"] .config-view .line-masked { background: #3b3117; }
+body[data-theme="dark"] .btn-web-insecure { background: #3b2410; color: #fdba74; border-color: #7c3f14; }
+body[data-theme="dark"] .btn-web-insecure:hover { background: #4a2d13; }
+body[data-theme="dark"] .heat-missing-evidence:not(.heat-zero) { background: #312a52; color: #c4b5fd; }
+/* The frame behind the topology iframe: no white flash while the dark
+   viewer document loads. */
+body[data-theme="dark"] .topology-frame { background: #0f172a; }
 body[data-theme="dark"] .chips { border-color: var(--line); }
 body[data-theme="dark"] .chip-entry { color: var(--ink); }
 body[data-theme="dark"] kbd { background: #1a2740; color: var(--ink); border-color: var(--line-strong); }
@@ -899,6 +922,16 @@ body[data-theme="dark"] .flash { background: #142037; color: var(--ink); border-
 body[data-theme="dark"] .flash-warning { background: var(--amber-soft); color: #fcd34d; }
 body[data-theme="dark"] .flash-error { background: var(--red-soft); color: #fca5a5; }
 body[data-theme="dark"] .flash-success { background: var(--green-soft); color: #86efac; }
+/* Hard-coded dark text colors on themed surfaces (text analog of the
+   light-background sweep): readable slate/green/red in light mode,
+   near-invisible on the dark panel. */
+body[data-theme="dark"] .card ul { color: var(--ink); }
+body[data-theme="dark"] .form label { color: var(--muted); }
+body[data-theme="dark"] .diff-pair ins { color: #86efac; }
+body[data-theme="dark"] .diff-pair del { color: #fca5a5; }
+body[data-theme="dark"] .heat-pass:not(.heat-zero) { color: #86efac; }
+body[data-theme="dark"] .heat-fail:not(.heat-zero) { color: #fca5a5; }
+body[data-theme="dark"] .heat-excepted:not(.heat-zero) { color: #67e8f9; }
 body[data-theme="dark"] .diff-add, body[data-theme="dark"] .diff-added { background: #12351f; color: #86efac; }
 body[data-theme="dark"] .diff-del, body[data-theme="dark"] .diff-removed { background: #421c22; color: #fca5a5; }
 body[data-theme="dark"] pre { background: #0c1526; color: var(--ink); border-color: var(--line); }
@@ -926,4 +959,95 @@ body[data-density="compact"] .disclosure-body { padding: 8px; }
   body[data-density="compact"] select,
   body[data-density="compact"] input[type="checkbox"] + span,
   body[data-density="compact"] .subnav a { min-height: var(--touch-target); }
+}
+
+/* -- System theme = dark OS (GENERATED MIRROR) ------------------------
+   data-theme="system" resolves by media query, so every dark rule
+   above must exist here too or System users on a dark OS get dark
+   tokens with light component chrome. Kept in sync by
+   tests/test_theme_contrast.py (rule-count parity). */
+@media (prefers-color-scheme: dark) {
+body[data-theme="system"] {
+  --bg: #0f172a; --panel: #111c30; --ink: #e5edf8; --muted: #a9b6c8;
+  --surface: #142037; --surface-2: #24334c;
+  --line: #28364b; --line-strong: #3a4b63; --accent-soft: #172554;
+  --green-soft: #123524; --amber-soft: #3d2a0b; --red-soft: #421c22;
+  color-scheme: dark;
+}
+body[data-theme="system"] input, body[data-theme="system"] select,
+body[data-theme="system"] textarea, body[data-theme="system"] .action-menu-list {
+  background: #142037; color: var(--ink); border-color: var(--line-strong);
+}
+body[data-theme="system"] code { background: #1d2a40; }
+body[data-theme="system"] { --bg-inset: #16233b; }
+body[data-theme="system"] .level-choice:has(input:checked) { background: #1a2c4f; }
+
+/* -- Dark theme completion (audit-2 #6) ------------------------------------ */
+/* Components that carried hard-coded light values now follow the dark
+   tokens. Status colours stay status colours; focus and non-color
+   indicators are unchanged. */
+body[data-theme="system"] .btn {
+  background: #1a2740; color: var(--ink); border-color: var(--line-strong);
+}
+body[data-theme="system"] .btn:hover { background: #223252; }
+body[data-theme="system"] .btn:disabled { background: #16203a; color: var(--muted); }
+body[data-theme="system"] .btn-primary { background: var(--accent); color: #fff; border-color: var(--accent-dark); }
+body[data-theme="system"] .btn-primary:hover { background: var(--accent-dark); }
+body[data-theme="system"] .btn-danger { background: var(--red-soft); color: #fca5a5; border-color: #7f1d1d; }
+body[data-theme="system"] .card,
+body[data-theme="system"] .search-panel,
+body[data-theme="system"] .empty-state,
+body[data-theme="system"] .mission-action { background: var(--panel); border-color: var(--line); color: var(--ink); }
+body[data-theme="system"] .mission-action:hover { background: #16233b; }
+body[data-theme="system"] thead th { background: #142037; color: var(--muted); border-color: var(--line); }
+body[data-theme="system"] tbody tr:hover { background: #16233b; }
+body[data-theme="system"] .grid td, body[data-theme="system"] .grid th { border-color: var(--line); }
+body[data-theme="system"] .tile { background: #142037; border-color: var(--line); }
+body[data-theme="system"] .chip,
+body[data-theme="system"] .mission-chips a { background: #1a2740; color: var(--accent); }
+/* Hard-coded light chip/track surfaces (found by sweeping every
+   background in the #e../#f.. range without a dark counterpart) —
+   each pairs a light background with --muted/--ink text, which flips
+   light in dark mode and vanishes. */
+body[data-theme="system"] .activity-kind,
+body[data-theme="system"] .badge-muted,
+body[data-theme="system"] .badge-info,
+body[data-theme="system"] .status-chip-not-applicable,
+body[data-theme="system"] .health-state-unavailable { background: #24334c; color: var(--muted); }
+body[data-theme="system"] .progress { background: #24334c; }
+body[data-theme="system"] .search-result-title mark { background: #7c5e0b; color: #fef3c7; }
+body[data-theme="system"] .config-view .line-masked { background: #3b3117; }
+body[data-theme="system"] .btn-web-insecure { background: #3b2410; color: #fdba74; border-color: #7c3f14; }
+body[data-theme="system"] .btn-web-insecure:hover { background: #4a2d13; }
+body[data-theme="system"] .heat-missing-evidence:not(.heat-zero) { background: #312a52; color: #c4b5fd; }
+/* The frame behind the topology iframe: no white flash while the dark
+   viewer document loads. */
+body[data-theme="system"] .topology-frame { background: #0f172a; }
+body[data-theme="system"] .chips { border-color: var(--line); }
+body[data-theme="system"] .chip-entry { color: var(--ink); }
+body[data-theme="system"] kbd { background: #1a2740; color: var(--ink); border-color: var(--line-strong); }
+body[data-theme="system"] .callout { background: var(--panel); border-color: var(--line); }
+body[data-theme="system"] .disclosure { background: var(--panel); border-color: var(--line); }
+body[data-theme="system"] .disclosure[open] > summary { border-color: var(--line); }
+body[data-theme="system"] .flash { background: #142037; color: var(--ink); border-color: var(--line-strong); }
+body[data-theme="system"] .flash-warning { background: var(--amber-soft); color: #fcd34d; }
+body[data-theme="system"] .flash-error { background: var(--red-soft); color: #fca5a5; }
+body[data-theme="system"] .flash-success { background: var(--green-soft); color: #86efac; }
+/* Hard-coded dark text colors on themed surfaces (text analog of the
+   light-background sweep): readable slate/green/red in light mode,
+   near-invisible on the dark panel. */
+body[data-theme="system"] .card ul { color: var(--ink); }
+body[data-theme="system"] .form label { color: var(--muted); }
+body[data-theme="system"] .diff-pair ins { color: #86efac; }
+body[data-theme="system"] .diff-pair del { color: #fca5a5; }
+body[data-theme="system"] .heat-pass:not(.heat-zero) { color: #86efac; }
+body[data-theme="system"] .heat-fail:not(.heat-zero) { color: #fca5a5; }
+body[data-theme="system"] .heat-excepted:not(.heat-zero) { color: #67e8f9; }
+body[data-theme="system"] .diff-add, body[data-theme="system"] .diff-added { background: #12351f; color: #86efac; }
+body[data-theme="system"] .diff-del, body[data-theme="system"] .diff-removed { background: #421c22; color: #fca5a5; }
+body[data-theme="system"] pre { background: #0c1526; color: var(--ink); border-color: var(--line); }
+body[data-theme="system"] .table-scroll:focus-visible { outline-color: var(--accent); }
+body[data-theme="system"] .level-choice { border-color: var(--line); }
+body[data-theme="system"] .search-trigger { background: #1a2740; color: var(--topbar-ink); border-color: var(--line-strong); }
+body[data-theme="system"] .columns-panel, body[data-theme="system"] .filter-chip { background: var(--panel); border-color: var(--line); color: var(--ink); }
 }

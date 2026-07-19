@@ -190,24 +190,31 @@ def register_lifecycle_routes(app, h) -> None:
                 flash("Incident acknowledged.", "success")
             elif action == "assign":
                 owner = str(request.form.get("owner") or "")
+                # Re-assigning to the current owner is audited but is not
+                # a new event for the recipient — no duplicate unread
+                # notification for an identical repeated assignment.
+                previous_owner = getattr(repo.get(case_id), "owner", "")
                 repo.assign(case_id, owner=owner, actor=actor,
                             expected_revision=expected)
-                try:
-                    from founderos_atlas.notifications import (
-                        KIND_INCIDENT, NotificationStore,
-                    )
+                if previous_owner != owner.strip():
+                    try:
+                        from founderos_atlas.notifications import (
+                            KIND_INCIDENT, NotificationStore,
+                        )
 
-                    case = repo.get(case_id)
-                    NotificationStore(h.cfg("ATLAS_WORKSPACE_ROOT")).notify(
-                        kind=KIND_INCIDENT,
-                        title=f"Incident assigned to you: {case.title}",
-                        detail=f"Assigned by {actor}.",
-                        href=f"/incidents/case/{case_id}",
-                        audience=owner.strip(),
-                        correlation_id=_correlation(),
-                    )
-                except OSError:
-                    pass
+                        case = repo.get(case_id)
+                        NotificationStore(
+                            h.cfg("ATLAS_WORKSPACE_ROOT")
+                        ).notify(
+                            kind=KIND_INCIDENT,
+                            title=f"Incident assigned to you: {case.title}",
+                            detail=f"Assigned by {actor}.",
+                            href=f"/incidents/case/{case_id}",
+                            audience=owner.strip(),
+                            correlation_id=_correlation(),
+                        )
+                    except OSError:
+                        pass
                 flash(f"Incident assigned to {owner}.", "success")
             elif action == "annotate":
                 repo.annotate(case_id, text=str(request.form.get("text") or ""),

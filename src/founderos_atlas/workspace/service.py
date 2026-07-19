@@ -29,6 +29,11 @@ from .repository import ProfileRepository
 Clock = Callable[[], datetime]
 
 
+# update_profile treats None as "keep existing"; the tuning fields need a
+# way to SET auto (None) explicitly, so they use this sentinel instead.
+_UNSET = object()
+
+
 @dataclass(frozen=True)
 class ResolvedDiscoveryInputs:
     """Everything the discovery pipeline needs, resolved from a profile."""
@@ -41,6 +46,9 @@ class ResolvedDiscoveryInputs:
     max_devices: int
     collect_configuration: bool
     profile_id: str = ""
+    # Discovery tuning; None = the engine's own suggestion.
+    concurrency: int | None = None
+    connect_timeout_seconds: int | None = None
     # PR-033 entry-point semantics (defaults preserve legacy behavior).
     seeds: tuple[str, ...] = ()
     boundary: object | None = None  # BoundaryPolicy when configured
@@ -121,6 +129,8 @@ class ProfileService:
         domain_hint: str | None = None,
         owner: str | None = None,
         tags: tuple[str, ...] = (),
+        concurrency: int | None = None,
+        connect_timeout_seconds: int | None = None,
     ) -> DiscoveryProfile:
         if not isinstance(name, str) or not name.strip():
             raise InvalidProfileError("A profile name is required.")
@@ -154,6 +164,8 @@ class ProfileService:
             site=site,
             max_depth=max_depth,
             max_devices=max_devices,
+            concurrency=concurrency,
+            connect_timeout_seconds=connect_timeout_seconds,
             collect_configuration=collect_configuration,
             created_at=now,
             updated_at=now,
@@ -209,6 +221,8 @@ class ProfileService:
         collection_schedule_hours: int | None = None,
         owner: str | None = None,
         tags: tuple[str, ...] | None = None,
+        concurrency: "int | None | object" = _UNSET,
+        connect_timeout_seconds: "int | None | object" = _UNSET,
     ) -> DiscoveryProfile:
         """Update a profile in place; ``new_name`` renames it.
 
@@ -235,6 +249,14 @@ class ProfileService:
             site=None if clear_site else (site if site is not None else existing.site),
             max_depth=max_depth if max_depth is not None else existing.max_depth,
             max_devices=max_devices if max_devices is not None else existing.max_devices,
+            concurrency=(
+                existing.concurrency if concurrency is _UNSET else concurrency
+            ),
+            connect_timeout_seconds=(
+                existing.connect_timeout_seconds
+                if connect_timeout_seconds is _UNSET
+                else connect_timeout_seconds
+            ),
             collect_configuration=(
                 collect_configuration
                 if collect_configuration is not None
@@ -389,6 +411,8 @@ class ProfileService:
             max_depth=profile.max_depth,
             max_devices=profile.max_devices,
             collect_configuration=profile.collect_configuration,
+            concurrency=profile.concurrency,
+            connect_timeout_seconds=profile.connect_timeout_seconds,
             profile_id=profile.profile_id,
             seeds=profile.seeds,
             boundary=profile.boundary,

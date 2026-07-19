@@ -1598,6 +1598,13 @@ def register_routes(app) -> None:
             value = form.get(name, "").strip()
             return int(value) if value.isdigit() and int(value) > 0 else default
 
+        def optional_limit(name):
+            """Blank means auto — the system suggests; typed values are
+            bounded by resolve_plan's own validation."""
+
+            value = form.get(name, "").strip()
+            return int(value) if value.isdigit() else None
+
         try:
             plan = resolve_plan(
                 mode,
@@ -1608,8 +1615,8 @@ def register_routes(app) -> None:
                 policy=policy,
                 max_depth=limit("max_depth", 1),
                 max_devices=limit("max_devices", 64),
-                timeout_seconds=limit("timeout_seconds", 15),
-                concurrency=limit("concurrency", 1),
+                timeout_seconds=optional_limit("timeout_seconds"),
+                concurrency=optional_limit("concurrency"),
                 exclusions=exclusions,
                 allow_large_scan=form.get("allow_large_scan") == "yes",
             )
@@ -1735,8 +1742,8 @@ def register_routes(app) -> None:
         estimate = None
         if plan:
             estimate = max(1, round(
-                len(plan.candidates) * int(request.form.get("timeout_seconds") or 15)
-                / max(1, int(request.form.get("concurrency") or 1)) / 60
+                len(plan.candidates) * plan.effective_timeout_seconds
+                / max(1, plan.effective_concurrency) / 60
             ))
         return render_template(
             "discovery_wizard.html",
@@ -1796,6 +1803,8 @@ def register_routes(app) -> None:
                     collect_configuration=plan.collect_configuration,
                     credential_sets=credential_sets,
                     description=f"{plan.mode} · {plan.policy} policy",
+                    concurrency=plan.concurrency,
+                    connect_timeout_seconds=plan.timeout_seconds,
                 )
             else:
                 service.add_profile(
@@ -1810,6 +1819,8 @@ def register_routes(app) -> None:
                     collect_configuration=plan.collect_configuration,
                     credential_sets=credential_sets,
                     description=f"{plan.mode} · {plan.policy} policy",
+                    concurrency=plan.concurrency,
+                    connect_timeout_seconds=plan.timeout_seconds,
                 )
         except AtlasWorkspaceError as error:
             flash(str(error), "error")
@@ -2567,11 +2578,10 @@ def register_routes(app) -> None:
         now = now_iso()
         exception_repo = PolicyExceptionRepository(workspace)
         active_subjects = exception_repo.active_subjects(now)
+        assignments = AnnotationStore(workspace).all("policy-assignment")
         owners = {
             subject: str(fields.get("owner") or "")
-            for subject, fields in AnnotationStore(workspace).all(
-                "policy-assignment"
-            ).items()
+            for subject, fields in assignments.items()
         }
         sites, platforms = _device_maps()
         rows = annotate_evaluations(
@@ -2581,8 +2591,19 @@ def register_routes(app) -> None:
             sites_by_device=sites,
             platforms_by_device=platforms,
             owners_by_subject=owners,
+            assignments_by_subject=assignments,
         )
         return rows, report_dict, exception_repo
+
+    def _resolve_identity_filters(filters):
+        """"Assigned to me" resolves from the authenticated principal on
+        the server; a client-supplied owner param never impersonates it."""
+
+        if filters.assigned_to_me:
+            from dataclasses import replace as _replace
+
+            return _replace(filters, owner=current_actor())
+        return filters
 
     @app.route("/policy")
     def policy_page():
@@ -2596,6 +2617,7 @@ def register_routes(app) -> None:
         reasoning body renders on each result's own page.
         """
 
+        from founderos_atlas.audit import AnnotationStore
         from founderos_atlas.policy import list_packs
         from founderos_atlas.policy.explorer import (
             EFFECTIVE_STATUSES,
@@ -2618,8 +2640,48 @@ def register_routes(app) -> None:
             scopes, scope_id, context["active_scope_label"]
         )
         filters = ResultFilter.from_args(request.args)
-        filtered = sort_rows(filter_rows(rows, filters))
+        effective_filters = _resolve_identity_filters(filters)
+        filtered = sort_rows(filter_rows(rows, effective_filters))
         page = paginate(filtered, filters.page, filters.per_page)
+
+        # Assignment-batch context (audit-3 Inbox actionability): resolve
+        # the batch from the audited annotations so the banner can say who
+        # assigned, when, and — honestly — whether any of the originally
+        # assigned results no longer carry this assignment. The filter
+        # itself only narrows rows the caller is already authorized to
+        # see, so a guessed correlation id reveals nothing new.
+        assignment_context = None
+        if filters.assignment:
+            in_batch = [
+                row for row in rows
+                if str(row.get("assignment_correlation") or "")
+                == filters.assignment
+            ]
+            original = max(
+                (
+                    int((AnnotationStore(cfg("ATLAS_WORKSPACE_ROOT")).get(
+                        "policy-assignment", str(row.get("subject") or "")
+                    ) or {}).get("batch_size") or 0)
+                    for row in in_batch
+                ),
+                default=0,
+            )
+            newest = max(
+                (str(row.get("assigned_at") or "") for row in in_batch),
+                default="",
+            )
+            assignment_context = {
+                "matching": len(in_batch),
+                "visible": len(filtered),
+                "original": original,
+                "assigned_by": next(
+                    (str(row.get("assigned_by") or "")
+                     for row in in_batch), "",
+                ),
+                "assigned_at": newest,
+                "missing": max(0, original - len(in_batch)),
+                "clear_href": scoped_url("/policy", scope_id),
+            }
         groups = (
             group_rows(filtered, filters.group_by)
             if filters.group_by else []
@@ -2679,6 +2741,8 @@ def register_routes(app) -> None:
             report=report_dict,
             filters=filters,
             filter_args=filters.to_args(),
+            assignment_context=assignment_context,
+            current_username=current_actor(),
             page=page,
             groups=groups,
             summary=summarize(filtered),
@@ -2765,7 +2829,7 @@ def register_routes(app) -> None:
         rows, _report, _repo = _policy_rows(
             scopes, scope_id, context["active_scope_label"]
         )
-        filters = ResultFilter.from_args(request.args)
+        filters = _resolve_identity_filters(ResultFilter.from_args(request.args))
         exported = export_rows(sort_rows(filter_rows(rows, filters)))
         buffer = io.StringIO()
         writer = csv.DictWriter(
@@ -2854,10 +2918,37 @@ def register_routes(app) -> None:
             request.form.get("next"), scoped_url("/policy")
         ))
 
+    def _scope_from_next(next_value) -> str:
+        """The scope the operator was looking at, read from the posted
+        return URL (a POST has no ?scope=). Unknown values fall back to
+        the Enterprise view — never to whatever the session remembers."""
+
+        from urllib.parse import parse_qs, urlsplit
+
+        try:
+            candidates = parse_qs(
+                urlsplit(str(next_value or "")).query
+            ).get("scope") or []
+        except ValueError:
+            candidates = []
+        requested = str(candidates[0]).strip() if candidates else ""
+        if requested and (
+            requested == GLOBAL_SCOPE_ID or requested in known_scopes()
+        ):
+            return requested
+        return GLOBAL_SCOPE_ID
+
     @app.route("/policy/assign", methods=["POST"])
     def policy_assign():
         """Bulk ownership: the selected results get an owner, audited under
-        one correlation id."""
+        one correlation id.
+
+        The notification must let the recipient act without detective
+        work: a single assignment names the policy, device, verdict and
+        severity and links to the exact verdict page; a batch links to a
+        server-side ?assignment=<correlation> filter resolved from the
+        audited annotations — never an unbounded subject list in a URL,
+        never browser-local state."""
 
         from uuid import uuid4
 
@@ -2873,30 +2964,98 @@ def register_routes(app) -> None:
             return redirect(safe_redirect_target(
                 request.form.get("next"), scoped_url("/policy")
             ))
+        scope_id = _scope_from_next(request.form.get("next"))
+        scopes = known_scopes()
+        scope_label = (
+            GLOBAL_SCOPE_LABEL if scope_id == GLOBAL_SCOPE_ID
+            else scopes[scope_id].label
+        )
+        rows, _report, _repo = _policy_rows(scopes, scope_id, scope_label)
+        by_subject = {str(row.get("subject") or ""): row for row in rows}
+
         store = AnnotationStore(cfg("ATLAS_WORKSPACE_ROOT"))
         correlation = f"bulk:{uuid4().hex}"
+        already_owned = all(
+            str((store.get("policy-assignment", subject) or {}).get("owner")
+                or "") == owner
+            for subject in subjects
+        )
         for subject in subjects:
+            # The correlation and batch size live IN the audited
+            # annotation, so the batch is resolvable server-side after a
+            # restart without a second copy of the assignment data.
             store.set(
                 actor=current_actor(),
                 kind="policy-assignment", subject=subject,
-                fields={"owner": owner}, correlation_id=correlation,
+                fields={
+                    "owner": owner,
+                    "correlation": correlation,
+                    "batch_size": len(subjects),
+                },
+                correlation_id=correlation,
                 occurred_at=now_iso(),
             )
-        try:
-            from founderos_atlas.notifications import (
-                KIND_ASSIGNMENT, NotificationStore,
-            )
 
-            NotificationStore(cfg("ATLAS_WORKSPACE_ROOT")).notify(
-                kind=KIND_ASSIGNMENT,
-                title=f"{len(subjects)} policy result(s) assigned to you",
-                detail=f"Assigned by {current_actor()}.",
-                href=safe_redirect_target(request.form.get("next"), "/policy"),
-                audience=owner,
-                correlation_id=correlation,
+        def _describe(subject: str) -> str:
+            row = by_subject.get(subject)
+            if row is None:
+                return subject.removeprefix("policy-result:")[:120]
+            policy = row.get("policy") or {}
+            name = str(policy.get("name") or policy.get("policy_id"))[:60]
+            return f"{name} on {str(row.get('hostname') or 'unknown')[:60]}"
+
+        if len(subjects) == 1:
+            row = by_subject.get(subjects[0])
+            policy = (row or {}).get("policy") or {}
+            title = f"Policy assigned: {_describe(subjects[0])}"
+            if row is not None:
+                status = str(row.get("effective_status") or "unknown")
+                severity = str(policy.get("severity") or "unknown")
+                detail = (
+                    f"{status.replace('-', ' ').capitalize()} · "
+                    f"{severity.capitalize()} severity · {scope_label} · "
+                    f"Assigned by {current_actor()}."
+                )
+                href = url_for(
+                    "policy_result_page",
+                    policy_id=str(policy.get("policy_id") or ""),
+                    hostname=str(row.get("hostname") or ""),
+                    scope=scope_id,
+                )
+            else:
+                # The subject no longer evaluates in this scope; the batch
+                # filter still resolves whatever remains authoritative.
+                detail = f"{scope_label} · Assigned by {current_actor()}."
+                href = scoped_url("/policy", scope_id, assignment=correlation)
+        else:
+            preview = "; ".join(
+                _describe(subject) for subject in subjects[:3]
             )
-        except OSError:
-            pass
+            remaining = len(subjects) - 3
+            if remaining > 0:
+                preview += f"; and {remaining} more"
+            title = f"{len(subjects)} policy results assigned to you"
+            detail = f"{preview}. {scope_label} · Assigned by {current_actor()}."
+            href = scoped_url("/policy", scope_id, assignment=correlation)
+
+        if not already_owned:
+            # A repeated identical assignment is audited but is not a new
+            # event for the recipient — no duplicate unread notification.
+            try:
+                from founderos_atlas.notifications import (
+                    KIND_ASSIGNMENT, NotificationStore,
+                )
+
+                NotificationStore(cfg("ATLAS_WORKSPACE_ROOT")).notify(
+                    kind=KIND_ASSIGNMENT,
+                    title=title,
+                    detail=detail,
+                    href=href,
+                    audience=owner,
+                    correlation_id=correlation,
+                )
+            except OSError:
+                pass
         flash(
             f"{len(subjects)} result(s) assigned to {owner} "
             "(audited under one correlation id).",
@@ -4201,13 +4360,57 @@ def register_routes(app) -> None:
                     KIND_ASSIGNMENT, NotificationStore,
                 )
 
-                NotificationStore(cfg("ATLAS_WORKSPACE_ROOT")).notify(
-                    kind=KIND_ASSIGNMENT,
-                    title="A change was assigned to you",
-                    detail=f"Assigned by {current_actor()}.",
-                    href=safe_redirect_target(request.form.get("next"), "/changes"),
-                    audience=owner,
+                # Identify the change so the recipient never lands on the
+                # generic page wondering which row was meant: resolve the
+                # row server-side and link to it, device-filtered with the
+                # row's own anchor.
+                scope_id = _scope_from_next(request.form.get("next"))
+                change_row = next(
+                    (
+                        row
+                        for row in _change_rows_for(known_scopes(), scope_id)
+                        if str(row.get("subject") or "") == subject
+                    ),
+                    None,
                 )
+                previous_owner = str(
+                    (store.get("change-assignment", subject) or {}).get(
+                        "owner"
+                    ) or ""
+                )
+                if change_row is not None:
+                    device = str(change_row.get("device") or "unknown")
+                    what = str(
+                        change_row.get("description")
+                        or change_row.get("category") or "change"
+                    )[:80]
+                    title = f"Change assigned: {what} on {device}"
+                    severity = str(change_row.get("severity") or "unknown")
+                    detail = (
+                        f"{severity.capitalize()} severity · "
+                        f"{str(change_row.get('network') or 'Enterprise')} · "
+                        f"Assigned by {current_actor()}."
+                    )
+                    href = (
+                        scoped_url("/changes", scope_id, device=device)
+                        + f"#{subject}"
+                    )
+                else:
+                    title = "A change was assigned to you"
+                    detail = f"Assigned by {current_actor()}."
+                    href = safe_redirect_target(
+                        request.form.get("next"), "/changes"
+                    )
+                if previous_owner != owner:
+                    # Same owner re-assigned: audited, but not a new event
+                    # for the recipient — no duplicate unread notification.
+                    NotificationStore(cfg("ATLAS_WORKSPACE_ROOT")).notify(
+                        kind=KIND_ASSIGNMENT,
+                        title=title,
+                        detail=detail,
+                        href=href,
+                        audience=owner,
+                    )
                 store.set(actor=current_actor(), kind="change-assignment", subject=subject,
                           fields={"owner": owner}, reason=reason,
                           occurred_at=now_iso())
@@ -6404,7 +6607,20 @@ def make_pipeline_runner(app):
         from founderos_atlas.workspace import profile_scope
 
         injected_factory = app.config["ATLAS_TRANSPORT_FACTORY"]
-        base_factory = injected_factory or SSHDeviceTransport
+        # The profile's connect timeout reaches the real transport here;
+        # None keeps the transport's own default. An injected (test/fake)
+        # factory keeps its plain (credentials) contract.
+        profile_timeout = getattr(
+            app.config["ATLAS_PROFILE_SERVICE"].get_profile(profile_name),
+            "connect_timeout_seconds", None,
+        )
+        if injected_factory is not None:
+            base_factory = injected_factory
+        elif profile_timeout is not None:
+            def base_factory(credentials, _t=float(profile_timeout)):
+                return SSHDeviceTransport(credentials, connect_timeout=_t)
+        else:
+            base_factory = SSHDeviceTransport
 
         def tracking_factory(credentials):
             on_connect(credentials.host)

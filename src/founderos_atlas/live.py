@@ -370,8 +370,13 @@ def run_discovery_plan(
     # parallel, reachability-gated production path as seed discovery —
     # the worker pool is sized to the candidate list exactly like
     # ``atlas_discover_command`` sizes it. No legacy sequential path.
+    from founderos_atlas.discovery.entry import suggested_concurrency
+
     resolved_workers = (
-        workers if workers is not None else min(32, max(4, len(addresses)))
+        workers if workers is not None
+        else plan.effective_concurrency
+        if plan.concurrency is not None
+        else suggested_concurrency(len(addresses))
     )
     report, graph, snapshot = run_multihop_discovery(
         transport_factory,

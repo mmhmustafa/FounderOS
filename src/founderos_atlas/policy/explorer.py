@@ -102,6 +102,12 @@ class ResultFilter:
     platform: str = ""
     freshness: str = ""              # "", "fresh", "stale"
     group_by: str = ""               # "", policy, device, site, severity
+    owner: str = ""                  # explicit owner filter
+    assigned_to_me: bool = False     # "mine=1" — resolved server-side to
+                                     # the authenticated principal; the
+                                     # URL carries only the flag, never a
+                                     # client-supplied identity
+    assignment: str = ""             # assignment-batch correlation id
     page: int = 1
     per_page: int = DEFAULT_PER_PAGE
 
@@ -124,6 +130,9 @@ class ResultFilter:
             platform=str(args.get("platform", "") or "").strip(),
             freshness=str(args.get("freshness", "") or "").strip(),
             group_by=str(args.get("group", "") or "").strip(),
+            owner=str(args.get("owner", "") or "").strip(),
+            assigned_to_me=str(args.get("mine", "") or "") == "1",
+            assignment=str(args.get("assignment", "") or "").strip(),
             page=_int("page", 1, 100000),
             per_page=_int("per_page", DEFAULT_PER_PAGE, MAX_PER_PAGE),
         )
@@ -134,7 +143,9 @@ class ResultFilter:
             "severity": self.severity, "policy": self.policy_id,
             "site": self.site, "device": self.device,
             "platform": self.platform, "freshness": self.freshness,
-            "group": self.group_by,
+            "group": self.group_by, "owner": self.owner,
+            "mine": "1" if self.assigned_to_me else "",
+            "assignment": self.assignment,
         }
         return {key: value for key, value in pairs.items() if value}
 
@@ -147,14 +158,21 @@ def annotate_evaluations(
     sites_by_device: Mapping[str, str] | None = None,
     platforms_by_device: Mapping[str, str] | None = None,
     owners_by_subject: Mapping[str, str] | None = None,
+    assignments_by_subject: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
-    """Each evaluation extended with its investigation fields."""
+    """Each evaluation extended with its investigation fields.
+
+    ``assignments_by_subject`` carries the authoritative assignment
+    annotation per subject (owner, batch correlation, assigner, stamp)
+    so batch membership filters straight off the audited records.
+    """
 
     sites = {k.casefold(): v for k, v in (sites_by_device or {}).items()}
     platforms = {
         k.casefold(): v for k, v in (platforms_by_device or {}).items()
     }
     owners = dict(owners_by_subject or {})
+    assignments = dict(assignments_by_subject or {})
     rows: list[dict[str, Any]] = []
     for evaluation in evaluations:
         row = dict(evaluation)
@@ -171,6 +189,12 @@ def annotate_evaluations(
         row["platform"] = platforms.get(hostname.casefold(), "unknown")
         row["evidence_fresh"] = fresh
         row["owner"] = owners.get(subject, "")
+        assignment = assignments.get(subject) or {}
+        row["assignment_correlation"] = str(
+            assignment.get("correlation") or ""
+        )
+        row["assigned_by"] = str(assignment.get("updated_by") or "")
+        row["assigned_at"] = str(assignment.get("updated_at") or "")
         rows.append(row)
     return rows
 
@@ -206,6 +230,15 @@ def filter_rows(
         if filters.freshness == "fresh" and row.get("evidence_fresh") is not True:
             continue
         if filters.freshness == "stale" and row.get("evidence_fresh") is not False:
+            continue
+        if filters.owner and (
+            str(row.get("owner") or "").casefold()
+            != filters.owner.casefold()
+        ):
+            continue
+        if filters.assignment and (
+            str(row.get("assignment_correlation") or "") != filters.assignment
+        ):
             continue
         if needle:
             haystack = " ".join((

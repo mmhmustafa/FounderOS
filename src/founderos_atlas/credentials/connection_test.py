@@ -135,34 +135,46 @@ def test_connection(
             tested_at=tested_at,
         )
 
-    config = type("ConnTestConfig", (), {})()
-    config.host = str(target).strip()
-    config.username = str(username or "").strip() or "atlas"
-    config.password = password
+    # The sanctioned secret carrier every transport accepts —
+    # SSHDeviceTransport type-checks for it, so an ad-hoc object here
+    # made every production connection test fail with transport-failed
+    # before a packet was sent. Frozen dataclass; repr hides the secret.
+    from founderos_atlas.transport import DeviceCredentials
+
+    try:
+        config = DeviceCredentials(
+            host=str(target).strip(),
+            username=str(username or "").strip() or "atlas",
+            password=password,
+        )
+    except ValueError as error:
+        password = None
+        return ConnectionTestResult(
+            outcome=OUTCOME_TRANSPORT_FAILED,
+            reachable=False, provider_readable=True, authenticated=False,
+            detail=f"Invalid connection parameters: {error}",
+            tested_at=tested_at,
+        )
+    finally:
+        password = None
 
     try:
         transport = transport_factory(config)
     except TransportDependencyError as error:
-        password = None
-        config.password = None
         return ConnectionTestResult(
             outcome=OUTCOME_TRANSPORT_FAILED,
             reachable=False, provider_readable=True, authenticated=False,
             detail=f"Transport unavailable: {error}",
             tested_at=tested_at,
         )
-    except Exception:
-        password = None
-        config.password = None
+    except Exception as error:
         return ConnectionTestResult(
             outcome=OUTCOME_TRANSPORT_FAILED,
             reachable=False, provider_readable=True, authenticated=False,
-            detail="The transport could not be initialised for the target.",
+            detail="The transport could not be initialised for the target "
+                   f"({type(error).__name__}).",
             tested_at=tested_at,
         )
-    finally:
-        password = None
-        config.password = None
 
     try:
         transport.connect()

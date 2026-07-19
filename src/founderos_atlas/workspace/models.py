@@ -62,6 +62,11 @@ class DiscoveryProfile:
     max_depth: int = 1
     max_devices: int = 10
     collect_configuration: bool = False
+    # Discovery tuning (None = auto: the engine suggests both — worker
+    # pool sized to the candidate list, the transport's own 5s connect
+    # timeout). Explicit values are operator overrides, bounded below.
+    concurrency: int | None = None
+    connect_timeout_seconds: int | None = None
     created_at: str | None = None
     updated_at: str | None = None
     last_discovery: str | None = None
@@ -130,6 +135,23 @@ class DiscoveryProfile:
             raise InvalidProfileError("max_depth must be between 0 and 4096")
         if self.max_devices < 1 or self.max_devices > _MAX_LIMIT:
             raise InvalidProfileError("max_devices must be between 1 and 4096")
+        if self.concurrency is not None and (
+            not isinstance(self.concurrency, int)
+            or isinstance(self.concurrency, bool)
+            or not 1 <= self.concurrency <= 32
+        ):
+            raise InvalidProfileError(
+                "concurrency must be between 1 and 32, or None for auto"
+            )
+        if self.connect_timeout_seconds is not None and (
+            not isinstance(self.connect_timeout_seconds, int)
+            or isinstance(self.connect_timeout_seconds, bool)
+            or not 1 <= self.connect_timeout_seconds <= 60
+        ):
+            raise InvalidProfileError(
+                "connect_timeout_seconds must be between 1 and 60, "
+                "or None for auto"
+            )
         if not isinstance(self.collect_configuration, bool):
             raise InvalidProfileError("collect_configuration must be a boolean")
         if not isinstance(self.archived, bool):
@@ -211,6 +233,8 @@ class DiscoveryProfile:
             "max_depth": self.max_depth,
             "max_devices": self.max_devices,
             "collect_configuration": self.collect_configuration,
+            "concurrency": self.concurrency,
+            "connect_timeout_seconds": self.connect_timeout_seconds,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
             "last_discovery": self.last_discovery,
@@ -243,6 +267,8 @@ class DiscoveryProfile:
                 max_depth=value.get("max_depth", 1),
                 max_devices=value.get("max_devices", 10),
                 collect_configuration=bool(value.get("collect_configuration", False)),
+                concurrency=value.get("concurrency"),
+                connect_timeout_seconds=value.get("connect_timeout_seconds"),
                 created_at=value.get("created_at"),
                 updated_at=value.get("updated_at"),
                 last_discovery=value.get("last_discovery"),
