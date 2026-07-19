@@ -151,9 +151,15 @@ table (completeness is a failing test).
 - **Live device execution**: Atlas deliberately does not push
 configuration; Compass execution is checkpoint-tracked by design (the
 console provides interactive access under its own audit).
-- **L4 policy evaluation** (ACL/firewall for protocol/port intent)
-  requires ACL parsing evidence the collectors do not yet gather; the
-  UI records intent and says exactly this.
+- **L4 policy evaluation** (ACL/firewall for protocol/port intent):
+  IOS access-list rules and their interface bindings are now parsed
+  from captured running configurations and evaluated per hop against
+  the declared intent, with three-valued honesty (match / no-match /
+  cannot-decide) and config-line citations. Hops without captured
+  configuration, unparsed ACLs, and rules whose addresses or
+  qualifiers declared intent cannot settle are reported, never
+  guessed. Zone-based firewall policy (FortiOS/PAN-OS evidence) is
+  not yet joined to the path walk.
 
 ## Release-trust hardening
 

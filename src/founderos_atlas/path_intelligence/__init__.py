@@ -14,6 +14,7 @@ evidence is stated, and confidence is banded and capped below 100%.
 
 from .engine import investigate_path
 from .models import (
+    FAILURE_ACL_DENY,
     HOP_FAILED,
     HOP_PASS,
     HOP_UNKNOWN,
@@ -21,6 +22,12 @@ from .models import (
     HopResult,
     InvestigationStep,
     PathInvestigationResult,
+)
+from .policy import (
+    AclBinding,
+    AclRule,
+    DevicePolicy,
+    parse_device_policy,
 )
 from .service import (
     investigate_path_for_scope,
@@ -30,6 +37,10 @@ from .service import (
 )
 
 __all__ = [
+    "AclBinding",
+    "AclRule",
+    "DevicePolicy",
+    "FAILURE_ACL_DENY",
     "HOP_FAILED",
     "HOP_PASS",
     "HOP_UNKNOWN",
@@ -38,6 +49,7 @@ __all__ = [
     "InvestigationStep",
     "PathInvestigationResult",
     "investigate_path",
+    "parse_device_policy",
     "investigate_path_for_scope",
     "load_investigation_history",
     "render_investigation_json",

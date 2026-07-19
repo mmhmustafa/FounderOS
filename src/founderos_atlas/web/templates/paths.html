@@ -60,9 +60,11 @@
         </label>
         <label>Port <input name="port" inputmode="numeric" placeholder="443"></label>
       </div>
-      <p class="muted">Recorded with the investigation. Atlas evaluates topology
-      and device state deterministically; ACL/firewall policy for this intent is
-      not evaluated and is reported under what Atlas cannot see.</p>
+      <p class="muted">Recorded with the investigation. Where a hop's running
+      configuration has been captured, Atlas evaluates its bound ACL rules
+      against this intent (first match wins, implicit deny included) and cites
+      the exact config line; hops without captured configuration are reported
+      under what Atlas cannot see, never guessed.</p>
     </details>
     <div class="form-actions">
       <button class="btn btn-primary" type="submit">Investigate Path</button>

@@ -2520,12 +2520,29 @@
           } else if (report.status && report.status !== 'connected') {
             showStatus(report.failure_summary || ('Result: ' + report.status), 'warn');
           } else {
-            var caveat = report.intent && report.intent.protocol
-              ? ' (topology and state verdict — '
-                + report.intent.protocol.toUpperCase()
-                + (report.intent.port ? '/' + report.intent.port : '')
-                + ' policy is not evaluated yet)'
-              : '';
+            // The policy caveat comes from the engine's own accounting
+            // (basis.policy), never a static string: say exactly how many
+            // hops had their ACLs evaluated against the declared packet.
+            var caveat = '';
+            if (report.intent && report.intent.protocol) {
+              var label = report.intent.protocol.toUpperCase()
+                + (report.intent.port ? '/' + report.intent.port : '');
+              var policy = (report.basis || {}).policy;
+              var evaluated = policy ? policy.hops_evaluated || 0 : 0;
+              var unevaluated = policy ? (policy.hops_unevaluated || []) : [];
+              if (evaluated && !unevaluated.length) {
+                caveat = ' (' + label + ' checked against every hop’s '
+                  + 'captured ACLs — no bound rule denies it)';
+              } else if (evaluated) {
+                caveat = ' (' + label + ' checked against captured ACLs at '
+                  + evaluated + ' hop(s); no captured policy for '
+                  + unevaluated.join(', ') + ')';
+              } else {
+                caveat = ' (topology and state verdict — ' + label
+                  + ' policy is not evaluated yet: no captured '
+                  + 'configurations on this path)';
+              }
+            }
             showStatus('Connected: ' + hops.length + ' hop(s)' + caveat
               + (state.notes || ''), 'ok');
           }

@@ -4783,12 +4783,43 @@ def register_routes(app) -> None:
             **context,
         )
 
+    def _intent_note(stored):
+        """The honesty note that rides with a declared intent — it says
+        exactly how much ACL evidence the verdict rests on, from the
+        engine's own policy accounting (packet trace Phase 2)."""
+
+        policy = (stored.get("basis") or {}).get("policy") or {}
+        evaluated = int(policy.get("hops_evaluated") or 0)
+        unevaluated = policy.get("hops_unevaluated") or []
+        if evaluated and not unevaluated:
+            return (
+                "Declared intent, recorded with the investigation. ACL "
+                "rules from the captured configurations were evaluated "
+                f"against this packet at every hop ({evaluated}); "
+                "qualifiers Atlas cannot decide from declared intent are "
+                "reported per hop, never guessed."
+            )
+        if evaluated:
+            return (
+                "Declared intent, recorded with the investigation. ACL "
+                f"rules were evaluated at {evaluated} hop(s); "
+                f"{len(unevaluated)} hop(s) have no captured "
+                "configuration and their policy is NOT evaluated — "
+                "listed under what Atlas cannot see."
+            )
+        return (
+            "Declared intent, recorded with the investigation. "
+            "Atlas evaluated topology and device state; ACL and "
+            "firewall policy for this protocol/port were NOT "
+            "evaluated and are listed under what Atlas cannot see."
+        )
+
     def _run_path_trace(source, destination, intent, case_id=""):
         """Run one deterministic path investigation for the active scope
         and return the stored report dict (with declared intent attached)
         or an error string. Shared by the Paths form and the topology
         viewer's packet-trace API — one engine, one record, one honesty
-        note about what policy evidence Atlas cannot yet evaluate."""
+        note about how much policy evidence the verdict rests on."""
 
         from founderos_atlas.path_intelligence import (
             investigate_path_for_scope,
@@ -4815,6 +4846,13 @@ def register_routes(app) -> None:
                 captured_config_devices=enterprise_captured_configs(
                     output_dir(), profiles, graph
                 ),
+                intent=intent or None,
+                policy_roots=tuple(
+                    profile_scope(
+                        output_dir(), profile.profile_id, profile.name
+                    ).output_dir
+                    for profile in profiles
+                ),
             )
             report_dir = enterprise_dir
         else:
@@ -4826,6 +4864,7 @@ def register_routes(app) -> None:
                 history_root=scope.history_root,
                 generated_at=generated_at,
                 profile_id=scope.scope_id,
+                intent=intent or None,
             )
             report_dir = scope.output_dir
         report_path = report_dir / "path_investigation_report.json"
@@ -4834,12 +4873,7 @@ def register_routes(app) -> None:
             return None, "The investigation produced no readable report."
         if intent:
             stored["intent"] = intent
-            stored["intent_note"] = (
-                "Declared intent, recorded with the investigation. "
-                "Atlas evaluated topology and device state; ACL and "
-                "firewall policy for this protocol/port were NOT "
-                "evaluated and are listed under what Atlas cannot see."
-            )
+            stored["intent_note"] = _intent_note(stored)
         if case_id:
             stored["case_id"] = case_id
             from founderos_atlas.incidents.records import (

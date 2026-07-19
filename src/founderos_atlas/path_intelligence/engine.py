@@ -24,7 +24,12 @@ from __future__ import annotations
 from collections import deque
 from hashlib import sha256
 
+from .policy import (
+    DevicePolicy,
+    evaluate_bindings,
+)
 from .models import (
+    FAILURE_ACL_DENY,
     FAILURE_ADMIN_SHUTDOWN,
     FAILURE_AMBIGUOUS_TOPOLOGY,
     FAILURE_DEVICE_UNREACHABLE,
@@ -65,6 +70,8 @@ def investigate_path(
     fresh: bool = True,
     failed_hosts: tuple[str, ...] = (),
     captured_config_devices: tuple[str, ...] = (),
+    intent: dict | None = None,
+    device_policies: dict[str, DevicePolicy] | None = None,
 ) -> PathInvestigationResult:
     """Investigate device-to-device connectivity from discovered evidence.
 
@@ -72,6 +79,11 @@ def investigate_path(
     (management-plane evidence). ``captured_config_devices`` are devices
     whose running configuration Atlas has captured — cited so a failed
     hop can point the engineer at reviewable configuration evidence.
+
+    ``intent`` is the declared packet (protocol/port, optionally a
+    source address). When present alongside ``device_policies`` (parsed
+    ACL evidence keyed by casefolded hostname), each hop's bound ACLs
+    are evaluated against it — Phase 2 of the packet trace.
     """
 
     builder = _Investigation(
@@ -85,6 +97,12 @@ def investigate_path(
         captured_configs=frozenset(
             str(name).casefold() for name in captured_config_devices
         ),
+        intent={
+            key: str(value)
+            for key, value in (intent or {}).items()
+            if value not in (None, "")
+        },
+        device_policies=dict(device_policies or {}),
     )
     return builder.run()
 
@@ -104,6 +122,8 @@ class _Investigation:
         fresh: bool,
         failed_hosts: frozenset[str],
         captured_configs: frozenset[str],
+        intent: dict | None = None,
+        device_policies: dict[str, DevicePolicy] | None = None,
     ) -> None:
         self.source = source
         self.destination = destination
@@ -113,6 +133,11 @@ class _Investigation:
         self.fresh = fresh
         self.failed_hosts = failed_hosts
         self.captured_configs = captured_configs
+        self.intent = intent or {}
+        self.device_policies = device_policies or {}
+        # Per-walk policy accounting for the honesty summary in basis.
+        self.policy_hops_evaluated = 0
+        self.policy_hops_unevaluated: list[str] = []
         self.steps: list[InvestigationStep] = []
         self.unknowns: list[str] = []
         self.evidence_refs: list[str] = []
@@ -443,12 +468,31 @@ class _Investigation:
                 "Run a fresh discovery to complete the missing evidence noted "
                 "on the warning hops."
             )
-        recommendations.append(
-            "No known deterministic fault on this path. If communication "
-            "still fails, the cause lies in evidence Atlas does not collect "
-            "yet (routing, ACLs, host configuration) — collect that evidence "
-            "next rather than re-checking these hops."
-        )
+        if self.policy_hops_evaluated and not self.policy_hops_unevaluated:
+            recommendations.append(
+                "No known deterministic fault on this path, and every "
+                "hop's captured configuration was checked against the "
+                "declared packet — no bound ACL denies it. If "
+                "communication still fails, the cause lies in evidence "
+                "Atlas does not collect yet (routing tables, NAT, host "
+                "configuration) — collect that evidence next rather than "
+                "re-checking these hops."
+            )
+        elif self.policy_hops_evaluated:
+            recommendations.append(
+                "No known deterministic fault on this path. ACL policy "
+                f"was evaluated at {self.policy_hops_evaluated} hop(s); "
+                "hops without captured configuration are listed under "
+                "what Atlas cannot see. If communication still fails, "
+                "start with those unevaluated hops."
+            )
+        else:
+            recommendations.append(
+                "No known deterministic fault on this path. If communication "
+                "still fails, the cause lies in evidence Atlas does not collect "
+                "yet (routing, ACLs, host configuration) — collect that evidence "
+                "next rather than re-checking these hops."
+            )
         return self._finish(
             status=summary_status,
             path=tuple(names),
@@ -591,6 +635,21 @@ class _Investigation:
             # Down and admin-down already returned above; what remains is
             # missing or indeterminate evidence.
             link_state = "unknown"
+
+        # Declared-intent policy evaluation (packet trace Phase 2): the
+        # link is passing traffic — would this packet be allowed across?
+        policy_failure = self._policy_check(
+            hop_number=hop_number,
+            key=key,
+            ingress=ingress,
+            egress=egress,
+            link_state=link_state,
+            evidence=evidence,
+            missing=missing,
+        )
+        if policy_failure is not None:
+            return policy_failure
+
         if missing:
             self.unknowns.extend(missing)
             return HopResult(
@@ -604,8 +663,8 @@ class _Investigation:
                 confidence=self._clamp(CONFIDENCE_PARTIAL_EVIDENCE),
                 explanation=(
                     f"{name} was reached and validated, but part of its "
-                    "interface evidence is missing — the hop cannot be fully "
-                    "confirmed."
+                    "evidence is missing or undecidable — the hop cannot "
+                    "be fully confirmed (see missing evidence)."
                 ),
                 evidence=tuple(evidence),
                 missing_evidence=tuple(missing),
@@ -636,6 +695,142 @@ class _Investigation:
             evidence=tuple(evidence),
             failure_type=None,
         )
+
+    def _policy_check(
+        self,
+        *,
+        hop_number: int,
+        key: str,
+        ingress: str | None,
+        egress: str | None,
+        link_state: str,
+        evidence: list[str],
+        missing: list[str],
+    ) -> HopResult | None:
+        """Evaluate this hop's bound ACLs against the declared intent.
+
+        Returns a FAILED HopResult on a definite deny (explicit rule or
+        the implicit deny of a fully-parsed ACL). Everything softer —
+        no captured config, unparsed rules, rules whose applicability
+        the declared intent cannot settle — lands in ``missing`` /
+        ``unknowns``: the hop is honestly a warning, never a guess.
+        """
+
+        if not self.intent.get("protocol") and not self.intent.get("port"):
+            return None
+        name = self._display_name(key)
+        described = self._describe_intent()
+        policy = self.device_policies.get(name.casefold())
+        if policy is None:
+            if name not in self.policy_hops_unevaluated:
+                self.policy_hops_unevaluated.append(name)
+            self.unknowns.append(
+                f"No captured configuration for {name} — ACL/firewall "
+                f"policy for {described} is not evaluated at this hop."
+            )
+            return None
+        self.policy_hops_evaluated += 1
+        checkpoints = tuple(
+            (interface, direction)
+            for interface, direction in ((ingress, "in"), (egress, "out"))
+            if interface
+        )
+        verdicts = evaluate_bindings(policy, self.intent, checkpoints)
+        if not verdicts:
+            evidence.append(
+                f"captured configuration for {name} ({policy.source_path}) "
+                "binds no ACL on the traversed interface(s) — no configured "
+                "filter applies at this hop"
+            )
+            return None
+        for verdict in verdicts:
+            binding = verdict.binding
+            where = f"{name} {binding.interface} ({binding.direction})"
+            if verdict.kind == "deny":
+                rule = verdict.rule
+                assert rule is not None
+                return HopResult(
+                    hop_number=hop_number,
+                    device=name,
+                    ingress_interface=ingress,
+                    egress_interface=egress,
+                    link_state=link_state,
+                    management_state=self._management_state(key)[0],
+                    status=HOP_FAILED,
+                    confidence=self._clamp(CONFIDENCE_DIRECT_EVIDENCE),
+                    explanation=(
+                        f"ACL {binding.acl} on {where} denies {described}: "
+                        f"`{rule.raw}` — the packet is dropped at this hop."
+                    ),
+                    evidence=(
+                        *evidence,
+                        rule.cite(policy.source_path),
+                        f"binding: ip access-group {binding.acl} "
+                        f"{binding.direction} on {name} {binding.interface} "
+                        f"({policy.source_path}:{binding.line_number})",
+                    ),
+                    failure_type=FAILURE_ACL_DENY,
+                )
+            if verdict.kind == "implicit-deny":
+                rules = policy.rules.get(binding.acl, ())
+                return HopResult(
+                    hop_number=hop_number,
+                    device=name,
+                    ingress_interface=ingress,
+                    egress_interface=egress,
+                    link_state=link_state,
+                    management_state=self._management_state(key)[0],
+                    status=HOP_FAILED,
+                    confidence=self._clamp(CONFIDENCE_DIRECT_EVIDENCE),
+                    explanation=(
+                        f"No rule in ACL {binding.acl} on {where} permits "
+                        f"{described} — the access-list's implicit deny "
+                        "drops the packet at this hop."
+                    ),
+                    evidence=(
+                        *evidence,
+                        f"ACL {binding.acl} ({policy.source_path}): "
+                        f"{len(rules)} rule(s), none matching the declared "
+                        "packet; IOS access-lists end in an implicit deny",
+                        f"binding: ip access-group {binding.acl} "
+                        f"{binding.direction} on {name} {binding.interface} "
+                        f"({policy.source_path}:{binding.line_number})",
+                    ),
+                    failure_type=FAILURE_ACL_DENY,
+                )
+            if verdict.kind == "unparsed":
+                missing.append(
+                    f"ACL {binding.acl} is bound on {where} but its rules "
+                    "could not be parsed — policy is present and NOT "
+                    f"evaluated; review {policy.source_path}."
+                )
+                continue
+            if verdict.kind == "indeterminate":
+                rule = verdict.rule
+                assert rule is not None
+                missing.append(
+                    f"ACL {binding.acl} on {where}: rule `{rule.raw}` "
+                    f"({policy.source_path}:{rule.line_number}) may apply "
+                    f"to {described}, but declared intent alone cannot "
+                    "decide it — verify its addresses/qualifiers manually."
+                )
+                continue
+            # permit
+            rule = verdict.rule
+            assert rule is not None
+            evidence.append(
+                f"ACL {binding.acl} on {where} permits {described}: "
+                f"{rule.cite(policy.source_path)}"
+            )
+        return None
+
+    def _describe_intent(self) -> str:
+        protocol = self.intent.get("protocol", "").upper() or "IP"
+        port = self.intent.get("port", "")
+        label = f"{protocol}/{port}" if port else protocol
+        source = self.intent.get("source_address", "")
+        suffix = f" from {source}" if source else ""
+        return f"the declared {label} packet{suffix}"
 
     def _interface_failure(
         self,
@@ -841,6 +1036,16 @@ class _Investigation:
                     "intact; the most recent discovery could not reach it.",
                     "Check credentials and reachability for the device, then "
                     "run a fresh discovery.",
+                )
+            )
+        elif failure.failure_type == FAILURE_ACL_DENY:
+            recommendations.extend(
+                (
+                    f"The configured access-list on {device} denies the "
+                    "declared packet — if this traffic should be allowed, "
+                    "update the cited ACL rule through your change process.",
+                    "If the configuration has changed since capture, re-run "
+                    "discovery with configuration capture and trace again.",
                 )
             )
         else:
@@ -1121,6 +1326,12 @@ class _Investigation:
             else None,
             "fresh": self.fresh,
         }
+        if self.intent:
+            basis["policy"] = {
+                "intent": dict(self.intent),
+                "hops_evaluated": self.policy_hops_evaluated,
+                "hops_unevaluated": list(self.policy_hops_unevaluated),
+            }
         if extra_basis:
             basis.update(extra_basis)
         # De-duplicate while preserving order.

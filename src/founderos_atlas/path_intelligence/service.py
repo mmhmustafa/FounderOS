@@ -21,6 +21,7 @@ from founderos_atlas.history import HistoryRepository
 
 from .engine import investigate_path
 from .models import PathInvestigationResult
+from .policy import load_device_policies
 
 
 STALE_AFTER_HOURS = 24
@@ -48,6 +49,8 @@ def investigate_path_for_scope(
     fresh: bool | None = None,
     failed_hosts: tuple[str, ...] | None = None,
     captured_config_devices: tuple[str, ...] | None = None,
+    intent: dict | None = None,
+    policy_roots: tuple[Path, ...] | None = None,
 ) -> PathInvestigationResult:
     """Investigate one source→destination pair using scope evidence on disk.
 
@@ -56,6 +59,12 @@ def investigate_path_for_scope(
     (the enterprise federation layer, PR-037A, derives them from every
     contributing profile); when omitted they are derived from the scope's
     own artifacts exactly as before.
+
+    ``intent`` (declared protocol/port, optionally a source address)
+    turns on per-hop ACL evaluation against the captured configurations
+    (packet trace Phase 2). ``policy_roots`` are the directories whose
+    ``configs/`` hold those captures — defaulting to this scope's own
+    ``output_dir``; the enterprise layer passes every profile's scope.
     """
 
     out = Path(output_dir)
@@ -74,6 +83,18 @@ def investigate_path_for_scope(
         if captured_config_devices is not None
         else _captured_config_devices(out, snapshot)
     )
+    device_policies = None
+    if intent and (intent.get("protocol") or intent.get("port")):
+        hostnames = tuple(
+            str(device.get("hostname"))
+            for device in ((snapshot or {}).get("devices") or ())
+            if isinstance(device, dict) and device.get("hostname")
+        )
+        device_policies = load_device_policies(
+            tuple(Path(root) for root in (policy_roots or ())) or (out,),
+            hostnames,
+            safe_name=safe_artifact_name,
+        )
     result = investigate_path(
         source,
         destination,
@@ -83,6 +104,8 @@ def investigate_path_for_scope(
         fresh=fresh,
         failed_hosts=failed_hosts,
         captured_config_devices=captured,
+        intent=intent,
+        device_policies=device_policies,
     )
     _persist(out, result)
     return result
