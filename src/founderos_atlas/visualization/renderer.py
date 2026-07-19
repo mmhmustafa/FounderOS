@@ -874,7 +874,15 @@ class TopologyRenderer:
             for item in data.get("bgp_memberships") or ():
                 local_as = str(item.get("local_as") or "").strip()
                 if local_as:
-                    key = (str(item.get("vrf") or "default"), local_as)
+                    # Snapshots recorded before the VRF-parse fix carry a
+                    # phantom "default)" VRF; punctuation is not identity,
+                    # so normalize here too — old evidence renders one
+                    # domain, not a duplicate empty box.
+                    vrf = (
+                        str(item.get("vrf") or "default").strip(") ")
+                        or "default"
+                    )
+                    key = (vrf, local_as)
                     bgp_members.setdefault(key, set()).add(node_id)
 
         ospf_edge_ids = {

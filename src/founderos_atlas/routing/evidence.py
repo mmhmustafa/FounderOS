@@ -19,7 +19,11 @@ _LOCAL_AS = re.compile(
 _ROUTER_ID = re.compile(
     r"(?i)(?:BGP\s+)?router\s+identifier\s*[:=]?\s*(\d+\.\d+\.\d+\.\d+)"
 )
-_VRF = re.compile(r"(?i)\bVRF\s+([^,\s]+)")
+# Device output often parenthesizes the VRF — "(VRF default)" — and a
+# greedy character class swallowed the closing paren, minting a phantom
+# "default)" VRF whose BGP domains rendered as DUPLICATE boxes beside
+# the real ones. Trailing punctuation is not identity.
+_VRF = re.compile(r"(?i)\bVRF\s+([^,\s)]+)")
 _AF = re.compile(r"(?i)address\s+family\s+([^\r\n,]+)")
 
 

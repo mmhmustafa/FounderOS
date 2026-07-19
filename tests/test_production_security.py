@@ -392,7 +392,11 @@ class SecurityHeaderTests(unittest.TestCase):
             response = client.get("/devices/definitely%2Fnot%2Freal")
             self.assertLess(response.status_code, 500)
             missing = client.get("/no-such-page")
-            self.assertEqual(403, missing.status_code)  # unmapped => denied
+            # A path matching NO route is honestly a 404 for a signed-in
+            # operator (telling them "not permitted" sent them hunting
+            # for an RBAC problem that did not exist); registered-but-
+            # unmapped endpoints stay denied by default.
+            self.assertEqual(404, missing.status_code)
             body = missing.data.decode("utf-8")
             self.assertNotIn("Traceback", body)
             self.assertNotIn("site-packages", body)

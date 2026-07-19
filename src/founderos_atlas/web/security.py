@@ -294,6 +294,14 @@ def register_security(app, *, auth_mode: str | None = None) -> None:
             return _deny(403, decision.failure)
         elif decision.principal is None:
             return _deny(401, "Sign in to continue.")
+        elif request.endpoint is None:
+            # No route matched at all: that is a 404, not a permission
+            # gap — telling a signed-in operator "not permitted" for a
+            # dead link sends them hunting for an RBAC problem that does
+            # not exist. Anonymous callers were already told to sign in
+            # above, so route existence stays unprobeable without
+            # credentials. Fall through to Flask's own not-found page.
+            return None
         elif permission is None:
             _audit_denial(
                 "deny-unmapped",

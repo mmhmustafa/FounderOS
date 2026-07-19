@@ -66,6 +66,34 @@ class HiddenPreferenceTests(unittest.TestCase):
             )
 
 
+class DeadLinkHonestyTests(unittest.TestCase):
+    """The bug's second half: the dead /device/ link showed a signed-in
+    operator "Not permitted" (authorization's default-deny caught the
+    unmatched path) instead of "not found" — a misdiagnosis generator."""
+
+    def test_unknown_path_is_a_404_for_a_signed_in_operator(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            _, client = build_world(Path(tmp), discover=False)
+            response = client.get("/device/no-such-route")
+            self.assertEqual(404, response.status_code)
+
+    def test_unknown_path_still_requires_sign_in_first(self) -> None:
+        from tests.test_production_security import production_world
+
+        with production_world() as (app, _workdir):
+            anonymous = app.test_client()
+            response = anonymous.get("/device/no-such-route")
+            # Route existence is not probeable without credentials.
+            self.assertIn(response.status_code, (302, 401))
+
+    def test_real_unmapped_endpoints_stay_denied(self) -> None:
+        from founderos_atlas.web.authz_map import permission_for_endpoint
+
+        # The default-deny for REGISTERED endpoints missing from the
+        # table is untouched — only the no-route case became a 404.
+        self.assertIsNone(permission_for_endpoint("no_such_endpoint"))
+
+
 class ViewerContractTests(unittest.TestCase):
     """Source-level contract of the generated viewer."""
 
@@ -101,6 +129,23 @@ class ViewerContractTests(unittest.TestCase):
 
     def test_hidden_list_is_bounded(self) -> None:
         self.assertIn("MAX_HIDDEN = 200", self.viewer)
+
+    def test_device_details_links_hit_a_real_route(self) -> None:
+        # The viewer linked "/device/<id>" — a route that does not exist
+        # (the page is "/devices/<id>") — and the unmatched path fell
+        # into authorization's default-deny: every operator saw "Not
+        # permitted" instead of the device page.
+        self.assertNotIn('href="/device/${id}"', self.viewer)
+        self.assertNotIn("`/device/${id}`", self.viewer)
+        self.assertIn('href="/devices/${id}"', self.viewer)
+        self.assertIn("`/devices/${id}`", self.viewer)
+
+    def test_protocol_views_pack_disconnected_components(self) -> None:
+        # OSPF/BGP force layouts scattered disconnected domain groups
+        # across a mostly-empty canvas; the shelf packer shapes them to
+        # the screen so the fit zoom keeps devices readable.
+        self.assertIn("function packDisconnectedComponents", self.viewer)
+        self.assertIn("packDisconnectedComponents();", self.viewer)
 
 
 if __name__ == "__main__":

@@ -859,7 +859,7 @@
       return `
       <div class="node-actions">
         <span id="access-actions" data-device="${escapeHtml(data.id)}" data-hostname="${escapeHtml(data.hostname || data.label || '')}"></span>
-        <a class="node-action" target="_top" href="/device/${id}">Device Details</a>
+        <a class="node-action" target="_top" href="/devices/${id}">Device Details</a>
         <a class="node-action" target="_top" href="/configuration/${id}">Configuration History</a>
         <a class="node-action" target="_top" href="/paths?device=${name}">Investigate</a>
         <a class="node-action" target="_top" href="/predict?device=${name}">Predict Change</a>
@@ -1143,7 +1143,7 @@
           disabled: true, reason: (web && web.reason) || 'no verified web service'
         });
       }
-      items += contextItem('Device Details', `/device/${id}`);
+      items += contextItem('Device Details', `/devices/${id}`);
       items += contextItem('Configuration History', `/configuration/${id}`);
       items += `<button type="button" class="menu-item" data-action="hide" data-node-id="${escapeHtml(data.id)}" title="Hides it from YOUR view only — evidence, statistics, and other operators are unaffected">Hide from my view</button>`;
 
@@ -1455,7 +1455,6 @@
         memberIds.add(edge.data.source);
         memberIds.add(edge.data.target);
       }
-      const parents = (view.groups || []).map(group => ({data: {...group}}));
       const nodes = topologyElements.nodes
         .filter(node => memberIds.has(node.data.id))
         .map(node => {
@@ -1470,6 +1469,15 @@
             classes: domains.length > 1 ? 'protocol-boundary' : '',
           };
         });
+      // A domain box with no nested member is pure noise: a device in
+      // two domains nests in its first (cross-membership shows through
+      // the boundary styling), so the second would paint empty.
+      const nested = new Set(
+        nodes.map(node => node.data.parent).filter(Boolean)
+      );
+      const parents = (view.groups || [])
+        .filter(group => nested.has(group.id))
+        .map(group => ({data: {...group}}));
       return [...parents, ...nodes, ...edges.map(edge => ({data: {...edge.data}}))];
     }
 
@@ -1522,6 +1530,46 @@
       return els;
     }
 
+    // A force layout scatters DISCONNECTED domain groups across a huge
+    // canvas (one lonely stub per single-router area), so fitting the
+    // result shrinks every icon to specks around empty space. Shelf-pack
+    // the components into a screen-shaped block instead: the fit zoom
+    // rises and the same devices get the pixels the whitespace wasted.
+    function packDisconnectedComponents() {
+      const components = cy.elements().components();
+      if (components.length < 2) { return; }
+      const GAP = 70;
+      const wrap = document.getElementById('cy').getBoundingClientRect();
+      const aspect = Math.max(
+        1, (wrap.width || 1200) / Math.max(1, wrap.height || 700)
+      );
+      const boxes = components.map(component => ({
+        component, bb: component.boundingBox()
+      }));
+      const totalArea = boxes.reduce(
+        (sum, item) => sum + (item.bb.w + GAP) * (item.bb.h + GAP), 0
+      );
+      const targetWidth = Math.sqrt(totalArea * aspect);
+      boxes.sort((a, b) => b.bb.h - a.bb.h);
+      let x = 0, y = 0, rowHeight = 0;
+      cy.batch(() => {
+        boxes.forEach(item => {
+          const w = item.bb.w + GAP, h = item.bb.h + GAP;
+          if (x > 0 && x + w > targetWidth) {
+            x = 0; y += rowHeight; rowHeight = 0;
+          }
+          const dx = x - item.bb.x1, dy = y - item.bb.y1;
+          item.component.nodes()
+            .filter(node => !node.isParent())
+            .positions(node => ({
+              x: node.position('x') + dx,
+              y: node.position('y') + dy
+            }));
+          x += w; rowHeight = Math.max(rowHeight, h);
+        });
+      });
+    }
+
     function rebuildView() {
       const mode = (viewSelect && viewSelect.value) || 'full';
       const full = mode === 'full';
@@ -1537,6 +1585,7 @@
           nodeOverlap: 35, gravity: 0.18, componentSpacing: 170,
         };
         cy.one('layoutstop', () => requestAnimationFrame(() => {
+          packDisconnectedComponents();
           applyReadableViewport(false);
           finishRebuild(mode);
         }));
@@ -2135,6 +2184,17 @@
       function applyHidden() {
         ids.forEach(function (id) {
           cy.getElementById(id).style('display', 'none');
+        });
+        // A box whose members are ALL hidden is an empty rectangle —
+        // collapse it (layer toggles repaint and re-run this).
+        cy.nodes(':parent').forEach(function (parent) {
+          var children = parent.children();
+          var anyVisible = children.some(function (child) {
+            return child.style('display') !== 'none';
+          });
+          if (children.length && !anyVisible) {
+            parent.style('display', 'none');
+          }
         });
       }
       window.__atlasHiddenApply = applyHidden;
