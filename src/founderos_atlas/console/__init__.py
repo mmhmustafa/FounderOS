@@ -54,6 +54,12 @@ from .models import (
     SESSION_CONNECTING,
     SESSION_FAILED,
 )
+from .probe import (
+    ProbeHop,
+    parse_traceroute,
+    run_probe_command,
+    traceroute_command,
+)
 from .resolve import find_target, resolve_target, resolve_targets
 from .security import (
     ConsoleAccessDenied,
@@ -115,6 +121,7 @@ __all__ = [
     "INELIGIBLE_EVIDENCE",
     "LOCAL_OPERATOR",
     "Operator",
+    "ProbeHop",
     "SESSION_CLOSED",
     "SESSION_CONNECTED",
     "SESSION_CONNECTING",
@@ -122,8 +129,11 @@ __all__ = [
     "fingerprint_sha256",
     "find_target",
     "origin_allowed",
+    "parse_traceroute",
     "probe_host_key",
     "require_operator",
     "resolve_target",
     "resolve_targets",
+    "run_probe_command",
+    "traceroute_command",
 ]

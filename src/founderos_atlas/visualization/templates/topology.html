@@ -125,6 +125,8 @@
     #trace-panel .trace-actions { display: flex; gap: 6px; margin-top: 8px; }
     #trace-panel button { font: inherit; font-size: 12px; padding: 4px 10px; border: 1px solid #d6dbe3; border-radius: 6px; background: #f8fafc; color: #0f172a; cursor: pointer; }
     #trace-panel button.trace-primary { background: #2563eb; border-color: #2563eb; color: #fff; }
+    /* The active probe is visually distinct: amber = "this touches the network". */
+    #trace-panel button.trace-probe { border-color: #d97706; color: #b45309; }
     #trace-status { margin: 6px 0 0; font-size: 12px; max-width: 300px; }
     #trace-status[data-tone="failed"] { color: #b91c1c; font-weight: 600; }
     #trace-status[data-tone="warn"] { color: #b45309; }
@@ -134,6 +136,7 @@
     body[data-theme="dark"] #trace-panel select, body[data-theme="dark"] #trace-panel input { background: #1a2740; color: #e5edf8; border-color: #3a4b63; }
     body[data-theme="dark"] #trace-panel button { background: #1a2740; color: #e5edf8; border-color: #3a4b63; }
     body[data-theme="dark"] #trace-panel button.trace-primary { background: #2563eb; border-color: #2563eb; color: #fff; }
+    body[data-theme="dark"] #trace-panel button.trace-probe { border-color: #d97706; color: #fcd34d; }
     body[data-theme="dark"] #trace-status[data-tone="failed"] { color: #fca5a5; }
     body[data-theme="dark"] #trace-status[data-tone="warn"] { color: #fcd34d; }
     body[data-theme="dark"] #trace-status[data-tone="ok"] { color: #86efac; }
@@ -306,6 +309,8 @@
         <div class="trace-actions">
           <button type="button" class="trace-primary" id="trace-run">Trace</button>
           <button type="button" id="trace-replay" hidden>Replay</button>
+          <button type="button" id="trace-live" class="trace-probe" hidden
+            title="Active probe: runs a real traceroute from the source device — sends live packets">Validate live</button>
           <button type="button" id="trace-clear">Clear</button>
         </div>
         <p id="trace-status" role="status" aria-live="polite" hidden></p>
@@ -2355,6 +2360,7 @@
       var portInput = document.getElementById('trace-port');
       var runButton = document.getElementById('trace-run');
       var replayButton = document.getElementById('trace-replay');
+      var liveButton = document.getElementById('trace-live');
       var clearButton = document.getElementById('trace-clear');
       var statusEl = document.getElementById('trace-status');
       var state = { source: '', destination: '', report: null, running: false };
@@ -2382,6 +2388,12 @@
                  'background-color': '#2563eb', 'border-width': 2,
                  'border-color': '#fff', label: '', 'z-index': 40,
                  events: 'no' })
+        .selector('edge.trace-actual')
+        .style({ 'line-color': '#7c3aed', 'target-arrow-color': '#7c3aed',
+                 'line-style': 'dashed', width: 5, 'z-index': 35 })
+        .selector('node.trace-actual-hop')
+        .style({ 'border-width': 4, 'border-color': '#7c3aed',
+                 'border-style': 'double' })
         .update();
 
       function showStatus(text, tone) {
@@ -2422,12 +2434,13 @@
       function clearTrace(keepReport) {
         cy.elements().removeClass(
           'trace-pass trace-warn trace-unknown trace-hop '
-          + 'trace-warn-hop trace-failed'
+          + 'trace-warn-hop trace-failed trace-actual trace-actual-hop'
         );
         cy.getElementById('__trace_dot').remove();
         if (!keepReport) {
           state.report = null;
           replayButton.hidden = true;
+          liveButton.hidden = true;
         }
       }
 
@@ -2512,6 +2525,7 @@
         function finish() {
           state.running = false;
           replayButton.hidden = false;
+          liveButton.hidden = false;
           var failed = hops.filter(function (hop) { return hop.status === 'failed'; });
           if (failed.length) {
             var f = failed[0];
@@ -2634,6 +2648,61 @@
 
       replayButton.addEventListener('click', function () {
         if (state.report && !state.running) { animateReport(state.report); }
+      });
+
+      // Overlay the observed path (source, then every hop the probe
+      // could name) on top of the prediction. Unresolved and silent
+      // hops draw nothing — absence of proof is not proof.
+      function overlayLiveResult(body) {
+        var sequence = [state.source];
+        (body.hops || []).forEach(function (hop) {
+          if (hop.device) { sequence.push(hop.device); }
+        });
+        for (var i = 1; i < sequence.length; i++) {
+          var from = nodeFor(sequence[i - 1]);
+          var to = nodeFor(sequence[i]);
+          if (to) { to.addClass('trace-actual-hop'); }
+          if (from && to) {
+            var edge = segmentEdge(from, to);
+            if (edge) { edge.addClass('trace-actual'); }
+          }
+        }
+        var tone = body.verdict === 'confirmed' ? 'ok'
+          : body.verdict === 'diverged' ? 'failed' : 'warn';
+        showStatus('Live probe (' + body.command + '): '
+          + body.verdict + ' — ' + body.verdict_detail, tone);
+      }
+
+      liveButton.addEventListener('click', function () {
+        if (!state.report || state.running) { return; }
+        showStatus('ACTIVE PROBE: running a real traceroute from '
+          + state.source + ' — this sends live packets…', 'warn');
+        var csrfMatch = document.cookie.match(/(?:^|; )atlas_csrf=([^;]*)/);
+        var headers = { 'Content-Type': 'application/json' };
+        if (csrfMatch) {
+          headers['X-Atlas-CSRF'] = decodeURIComponent(csrfMatch[1]);
+        }
+        fetch('/api/paths/validate-live', {
+          method: 'POST', credentials: 'same-origin', headers: headers,
+          body: JSON.stringify({
+            source: state.source, destination: state.destination,
+          }),
+        }).then(function (response) {
+          return response.json().then(function (body) {
+            if (!response.ok) {
+              showStatus(response.status === 403
+                ? 'Validate live needs console permission — the probe '
+                  + 'runs a real command on the device.'
+                : (body.error || ('Live validation failed (HTTP '
+                  + response.status + ').')), 'failed');
+              return;
+            }
+            overlayLiveResult(body);
+          });
+        }).catch(function () {
+          showStatus('Live validation failed — Atlas could not be '
+            + 'reached.', 'failed');
+        });
       });
 
       clearButton.addEventListener('click', function () {

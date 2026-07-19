@@ -4956,6 +4956,233 @@ def register_routes(app) -> None:
             return {"error": error}, 409
         return stored
 
+    def _probe_verdict(actual, expected, predicted_path, dst):
+        """Three-valued agreement between observed and predicted path.
+
+        Positional by design: traceroute hop N is the Nth device after
+        the source on a linear path. Silent hops and addresses Atlas
+        cannot name prove nothing either way — they can make the
+        verdict inconclusive, never confirmed."""
+
+        destination_names = {dst.hostname.casefold()}
+        for entry in actual:
+            if not entry["address"] or not entry["device"]:
+                continue
+            position = entry["index"] - 1
+            name = entry["device"].casefold()
+            if position < len(expected) and name == expected[position]:
+                continue
+            if position < len(expected):
+                return "diverged", (
+                    f"Hop {entry['index']} answered from "
+                    f"{entry['address']} ({entry['device']}), but the "
+                    f"prediction expected {predicted_path[position + 1]}."
+                )
+            return "diverged", (
+                f"Hop {entry['index']} answered from {entry['address']} "
+                f"({entry['device']}) beyond the predicted destination."
+            )
+        reached = any(
+            (entry["device"] or "").casefold() in destination_names
+            or entry["address"] == dst.management_ip
+            for entry in actual
+        )
+        silent = [e["index"] for e in actual if not e["address"]]
+        unresolved = [
+            e["address"] for e in actual if e["address"] and not e["device"]
+        ]
+        if reached and not silent and not unresolved:
+            return "confirmed", (
+                "Every replying hop matches the predicted path and the "
+                f"probe reached {dst.hostname}."
+            )
+        parts = []
+        if not reached:
+            parts.append(f"the probe never observed {dst.hostname} answering")
+        if silent:
+            parts.append(
+                "hop(s) " + ", ".join(str(i) for i in silent)
+                + " did not reply"
+            )
+        if unresolved:
+            parts.append(
+                "replies from " + ", ".join(unresolved)
+                + " match no known device"
+            )
+        return "inconclusive", (
+            "No divergence observed, but "
+            + "; ".join(parts)
+            + " — the live path is not fully verified."
+        )
+
+    @app.route("/api/paths/validate-live", methods=["POST"])
+    def api_paths_validate_live():
+        """Live validation of a recorded trace (packet trace Phase 3).
+
+        Runs ONE real traceroute from the source device — an ACTIVE
+        probe that sends packets, executed only on the operator's
+        explicit request, gated as console.use, host-key-verified, and
+        audited like a console connection. The result overlays the
+        observed path on the engine's prediction; addresses Atlas
+        cannot name and hops that stayed silent are reported as
+        exactly that, never guessed into agreement.
+        """
+
+        from uuid import uuid4
+
+        from founderos_atlas.console import (
+            ConsoleSessionError,
+            parse_traceroute,
+            run_probe_command,
+            traceroute_command,
+        )
+
+        body = request.get_json(silent=True) or {}
+        source = str(body.get("source") or "").strip()
+        destination = str(body.get("destination") or "").strip()
+        if not source or not destination:
+            return {"error": "source and destination are required"}, 400
+
+        scopes = known_scopes()
+        scope_id = active_scope_id(scopes)
+        report_dir = (
+            enterprise_scope_dir(output_dir())
+            if scope_id == GLOBAL_SCOPE_ID
+            else scopes[scope_id].output_dir
+        )
+        # The probe validates a recorded prediction; it never invents one.
+        predicted = load_json(report_dir / "path_investigation_report.json")
+        predicted = predicted if isinstance(predicted, dict) else {}
+        if (
+            str(predicted.get("source") or "").casefold() != source.casefold()
+            or str(predicted.get("destination") or "").casefold()
+            != destination.casefold()
+        ):
+            return {
+                "error": "Run a trace for this source and destination "
+                "first — the live probe validates a recorded prediction."
+            }, 409
+
+        def _target_for(name):
+            wanted = name.casefold()
+            for target in console_targets(scopes, scope_id):
+                if wanted in (
+                    target.hostname.casefold(),
+                    target.device_id.casefold(),
+                ):
+                    return target
+            return None
+
+        src = _target_for(source)
+        if src is None:
+            return {
+                "error": f"No canonical device '{source}' in this scope."
+            }, 404
+        dst = _target_for(destination)
+        if dst is None or not dst.management_ip:
+            return {
+                "error": f"{destination} has no verified management "
+                "address to probe toward."
+            }, 409
+        if not src.eligible or not src.management_ip:
+            return {"error": f"{source}: {src.reason}"}, 409
+        if not src.credential_ref:
+            return {
+                "error": f"{source} has no stored credential to log in "
+                "with."
+            }, 409
+        try:
+            username, password = console_credential_for(
+                scopes, scope_id, src.credential_ref
+            )
+        except KeyError:
+            return {"error": "The stored credential reference is unknown."}, 409
+
+        command = traceroute_command(dst.management_ip)
+        probe_id = f"probe-{uuid4().hex[:12]}"
+
+        def _record(result, detail):
+            console_audit().record(
+                "live-probe",
+                session_id=probe_id,
+                operator=current_actor(),
+                device_id=src.device_id,
+                hostname=src.hostname,
+                management_ip=src.management_ip,
+                port=src.port,
+                credential_ref=src.credential_ref,
+                result=result,
+                detail=detail,
+            )
+
+        try:
+            output = run_probe_command(
+                host=src.management_ip,
+                port=src.port,
+                username=username,
+                password=password,
+                command=command,
+                host_key_store=console_host_key_store(),
+                client_factory=app.config.get("ATLAS_PROBE_CLIENT_FACTORY"),
+            )
+        except ConsoleSessionError as error:
+            _record("failed", str(error))
+            return {"error": str(error)}, 502
+        _record("ok", command)
+
+        # Name each replying address from snapshot evidence only.
+        snapshot = load_json(report_dir / "topology_snapshot.json") or {}
+        ip_map = {}
+        for device in snapshot.get("devices") or ():
+            if not isinstance(device, dict):
+                continue
+            hostname = str(device.get("hostname") or "")
+            addresses = [device.get("management_ip")]
+            addresses.extend(
+                item.get("ip_address")
+                for item in device.get("interfaces") or ()
+                if isinstance(item, dict)
+            )
+            for value in addresses:
+                if not value or not hostname:
+                    continue
+                address = str(value).split("/")[0].strip()
+                if address:
+                    ip_map.setdefault(address, hostname)
+
+        hops = parse_traceroute(output)
+        actual = [
+            {
+                **hop.to_dict(),
+                "device": ip_map.get(hop.address) if hop.address else None,
+            }
+            for hop in hops
+        ]
+
+        predicted_path = [str(item) for item in predicted.get("path") or ()]
+        expected = [name.casefold() for name in predicted_path[1:]]
+        verdict, detail = _probe_verdict(
+            actual, expected, predicted_path, dst
+        )
+
+        return {
+            "probe": "active",
+            "probe_note": (
+                f"Live traceroute sent real packets from {src.hostname} "
+                f"toward {dst.hostname} ({dst.management_ip}) at the "
+                "operator's request."
+            ),
+            "command": command,
+            "source": src.hostname,
+            "destination": dst.hostname,
+            "destination_address": dst.management_ip,
+            "predicted_path": predicted_path,
+            "hops": actual,
+            "verdict": verdict,
+            "verdict_detail": detail,
+            "output": output,
+        }
+
     # -- Compass (PR-039: deterministic change planning) -----------------------
 
     def compass_repository():
