@@ -70,5 +70,5 @@
 
 {% if draft_id %}<form method="post" action="/discovery/wizard/drafts/{{ draft_id|urlencode }}/cancel">{{ csrf_field() }}<button class="btn btn-danger" type="submit">Cancel and remove draft</button></form>{% endif %}
 
-<script src="{{ url_for('static', filename='atlas-wizard.js') }}" defer></script>
+<script src="{{ asset_url('atlas-wizard.js') }}" defer></script>
 {% endblock %}

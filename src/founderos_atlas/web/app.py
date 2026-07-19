@@ -168,6 +168,34 @@ def create_app(
 
     app.add_template_filter(_timestamp_filter, "timestamp")
 
+    # Content-versioned static URLs. Browsers heuristically cache static
+    # files without revalidating, so an upgraded server can keep serving
+    # pages whose JavaScript is yesterday's from the browser cache — a
+    # button "fixed in the code" stays broken on the operator's screen.
+    # Hashing the file content into the query string makes every asset
+    # URL change exactly when the asset does; caches then help instead
+    # of lying. Hashes are memoized per process (files ship read-only).
+    from hashlib import sha256 as _sha256
+
+    _asset_versions: dict[str, str] = {}
+
+    def _asset_url(filename: str) -> str:
+        from flask import url_for as _url_for
+
+        version = _asset_versions.get(filename)
+        if version is None:
+            try:
+                digest = _sha256(
+                    (package_root / "static" / filename).read_bytes()
+                )
+                version = digest.hexdigest()[:12]
+            except OSError:
+                version = "0"
+            _asset_versions[filename] = version
+        return _url_for("static", filename=filename, v=version)
+
+    app.add_template_global(_asset_url, "asset_url")
+
     if job_manager is None:
         # In-process background executor for GUI discoveries. Job history
         # persists under the output dir so interrupted runs are marked

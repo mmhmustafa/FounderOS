@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Atlas — {% block title %}Enterprise Network Intelligence{% endblock %}</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='atlas.css') }}">
+  <link rel="stylesheet" href="{{ asset_url('atlas.css') }}">
   <meta name="atlas-csrf" content="{{ csrf_token() }}">
   {% block head %}{% endblock %}
 </head>
@@ -142,7 +142,7 @@
     </div>
   </div>
 
-  <script src="{{ url_for('static', filename='atlas.js') }}"></script>
-  <script src="{{ url_for('static', filename='atlas-device-actions.js') }}"></script>
+  <script src="{{ asset_url('atlas.js') }}"></script>
+  <script src="{{ asset_url('atlas-device-actions.js') }}"></script>
 </body>
 </html>

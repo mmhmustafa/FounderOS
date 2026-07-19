@@ -110,6 +110,11 @@
     #context-menu .menu-item-disabled { color: #94a3b8; cursor: not-allowed; }
     #context-menu .menu-item-disabled:hover { background: transparent; }
     #context-menu .menu-item-insecure { color: #b45309; }
+    #context-menu button.menu-item { width: 100%; text-align: left; border: 0; background: transparent; font: inherit; color: #0f172a; cursor: pointer; }
+    #context-menu button.menu-item:hover { background: #eff6ff; }
+    #hidden-note { color: #0f172a; }
+    body[data-theme="dark"] #context-menu button.menu-item { color: #e5edf8; }
+    body[data-theme="dark"] #hidden-note { color: #e5edf8; }
     /* PR-050A: the way back down. Chips for every open site. */
     #open-sites { position: absolute; top: 12px; left: 14px; z-index: 6;
       display: flex; gap: 8px; flex-wrap: wrap; }
@@ -251,6 +256,10 @@
         <label><input type="checkbox" data-layer="interfaceLabels"> Interface labels</label>
         <label><input type="checkbox" data-layer="evidenceLabels"> Evidence labels</label>
         <button type="button" id="layers-reset" class="layers-reset">Reset to recommended</button>
+        <p id="hidden-note" class="layers-status" hidden>
+          <span id="hidden-count"></span> device(s) hidden by you.
+          <button type="button" id="hidden-show-all" class="layers-reset">Show them again</button>
+        </p>
         <p id="layers-status" class="layers-status" role="status" aria-live="polite" hidden></p>
       </div>
     </details>
@@ -1091,13 +1100,24 @@
     cy.on('cxttap', 'node', async event => {
       if (!servedByAtlas) { return; }
       const data = event.target.data();
-      if (data.kind === 'observed' || data.kind === 'site') { return; }
+      if (data.kind === 'site') { return; }
       const id = encodeURIComponent(data.id);
       const pos = event.renderedPosition ||
                   (event.originalEvent && { x: event.originalEvent.offsetX, y: event.originalEvent.offsetY }) ||
                   { x: 20, y: 20 };
 
       let items = `<div class="menu-head">${escapeHtml(data.label || data.id)}</div>`;
+      if (data.kind === 'observed') {
+        // An unresolved peer has no device routes — its honest menu is
+        // hide (this view only) or the layers toggle for the whole class.
+        items += `<button type="button" class="menu-item" data-action="hide" data-node-id="${escapeHtml(data.id)}" title="Hides it from YOUR view only — evidence, statistics, and other operators are unaffected">Hide from my view</button>`;
+        contextMenu.innerHTML = items;
+        contextMenu.style.display = 'block';
+        const wrapObserved = document.getElementById('cy').getBoundingClientRect();
+        contextMenu.style.left = `${Math.max(8, Math.min(pos.x, wrapObserved.width - contextMenu.offsetWidth - 8))}px`;
+        contextMenu.style.top = `${Math.max(8, Math.min(pos.y, wrapObserved.height - contextMenu.offsetHeight - 8))}px`;
+        return;
+      }
       const actions = await fetchActions(data.id, data.hostname || data.label);
       const ssh = actions && actions.ssh;
       if (ssh && ssh.eligible) {
@@ -1125,6 +1145,7 @@
       }
       items += contextItem('Device Details', `/device/${id}`);
       items += contextItem('Configuration History', `/configuration/${id}`);
+      items += `<button type="button" class="menu-item" data-action="hide" data-node-id="${escapeHtml(data.id)}" title="Hides it from YOUR view only — evidence, statistics, and other operators are unaffected">Hide from my view</button>`;
 
       contextMenu.innerHTML = items;
       contextMenu.style.display = 'block';
@@ -1135,6 +1156,14 @@
       const y = Math.min(pos.y, wrap.height - menuH - 8);
       contextMenu.style.left = `${Math.max(8, x)}px`;
       contextMenu.style.top = `${Math.max(8, y)}px`;
+    });
+
+    contextMenu.addEventListener('click', event => {
+      const button = event.target.closest('[data-action="hide"]');
+      if (button && window.atlasHideNode) {
+        window.atlasHideNode(button.dataset.nodeId);
+        hideContextMenu();
+      }
     });
 
     // The browser's own context menu would cover ours on the canvas.
@@ -1955,7 +1984,11 @@
           edge.toggleClass('layer-iface-labels', !!(iface && iface.checked));
           edge.toggleClass('layer-evidence-labels', !!(evid && evid.checked));
         });
+        // A layer toggle repaints its whole category; the operator's
+        // per-node hidden set must win again afterwards.
+        if (window.__atlasHiddenApply) { window.__atlasHiddenApply(); }
       }
+      window.__atlasLayersApply = apply;
 
       cy.style()
         .selector('edge.layer-iface-labels')
@@ -2073,6 +2106,128 @@
             + 'reached. Showing the recommended defaults.', 'warn');
           apply();
         });
+    })();
+
+    // -- Per-user hidden devices --------------------------------------------
+    // "Remove from MY view": a per-user display preference, persisted
+    // through the same UI-preference API as the layer choices. NEVER
+    // touches evidence, statistics, exports, or anyone else's view —
+    // the summary line says honestly how many nodes the operator hid,
+    // and one click shows them all again.
+    (function () {
+      if (typeof cy === 'undefined') { return; }
+      var PREF_KEY = 'topology:hidden';
+      var MAX_HIDDEN = 200;
+      var ids = [];
+      var note = document.getElementById('hidden-note');
+      var countEl = document.getElementById('hidden-count');
+      var showAll = document.getElementById('hidden-show-all');
+      var summary = document.getElementById('summary');
+      var status = document.getElementById('layers-status');
+
+      function showStatus(text) {
+        if (!status) { return; }
+        status.textContent = text || '';
+        status.dataset.tone = text ? 'warn' : '';
+        status.hidden = !text;
+      }
+
+      function applyHidden() {
+        ids.forEach(function (id) {
+          cy.getElementById(id).style('display', 'none');
+        });
+      }
+      window.__atlasHiddenApply = applyHidden;
+
+      function syncChrome() {
+        var present = ids.filter(function (id) {
+          return cy.getElementById(id).length > 0;
+        });
+        if (note) {
+          note.hidden = present.length === 0;
+          if (countEl) { countEl.textContent = String(present.length); }
+        }
+        if (summary) {
+          // The app rewrites the summary on view changes; derive the
+          // base from whatever is current instead of a stale snapshot.
+          var base = summary.textContent.replace(
+            / · \d+ hidden by you$/, ''
+          );
+          summary.textContent = present.length
+            ? base + ' · ' + present.length + ' hidden by you'
+            : base;
+        }
+      }
+
+      // View switches and site drill-downs rebuild graph elements; a
+      // hidden node re-added by that rebuild must stay hidden.
+      var reassertTimer = null;
+      cy.on('add', function () {
+        if (reassertTimer) { clearTimeout(reassertTimer); }
+        reassertTimer = setTimeout(function () {
+          applyHidden();
+          syncChrome();
+        }, 80);
+      });
+
+      function persist() {
+        var csrfMatch = document.cookie.match(/(?:^|; )atlas_csrf=([^;]*)/);
+        var headers = { 'Content-Type': 'application/json' };
+        if (csrfMatch) {
+          headers['X-Atlas-CSRF'] = decodeURIComponent(csrfMatch[1]);
+        }
+        fetch('/api/preferences/ui', {
+          method: 'POST', credentials: 'same-origin', headers: headers,
+          body: JSON.stringify({ key: PREF_KEY, value: { ids: ids } })
+        }).then(function (response) {
+          if (response.ok) { showStatus(''); return; }
+          showStatus('Hidden-device choice was not saved (HTTP '
+            + response.status + ') — it applies to this view only.');
+        }).catch(function () {
+          showStatus('Hidden-device choice was not saved — Atlas could '
+            + 'not be reached. It applies to this view only.');
+        });
+      }
+
+      window.atlasHideNode = function (id) {
+        if (!id || ids.indexOf(id) !== -1) { return; }
+        if (ids.length >= MAX_HIDDEN) {
+          showStatus('Hidden-device list is full (' + MAX_HIDDEN
+            + ') — show some again before hiding more.');
+          return;
+        }
+        ids.push(id);
+        applyHidden();
+        syncChrome();
+        persist();
+      };
+
+      if (showAll) {
+        showAll.addEventListener('click', function () {
+          ids = [];
+          // Repaint every category from the layer state, which no
+          // longer has a hidden set to re-assert.
+          if (window.__atlasLayersApply) { window.__atlasLayersApply(); }
+          syncChrome();
+          persist();
+        });
+      }
+
+      fetch('/api/preferences/ui?key=' + encodeURIComponent(PREF_KEY), {
+        credentials: 'same-origin'
+      })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (data) {
+          var saved = data && data.value && data.value.ids;
+          if (Array.isArray(saved)) {
+            ids = saved.filter(function (id) {
+              return typeof id === 'string' && id;
+            }).slice(0, MAX_HIDDEN);
+          }
+          applyHidden();
+          syncChrome();
+        })
+        .catch(function () { /* fresh view; nothing hidden */ });
     })();
   </script>
 </body>

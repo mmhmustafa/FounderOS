@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}SSH Console — {{ target.hostname }}{% endblock %}
 {% block head %}
-<link rel="stylesheet" href="{{ url_for('static', filename='vendor/xterm.css') }}">
+<link rel="stylesheet" href="{{ asset_url('vendor/xterm.css') }}">
 {% endblock %}
 {% block content %}
 <div class="page-head">
@@ -80,9 +80,9 @@
   type is not filtered and not recorded; Atlas records only that a session happened.
 </p>
 
-<script src="{{ url_for('static', filename='vendor/xterm.js') }}"></script>
-<script src="{{ url_for('static', filename='vendor/xterm-addon-fit.js') }}"></script>
-<script src="{{ url_for('static', filename='atlas-console.js') }}"></script>
+<script src="{{ asset_url('vendor/xterm.js') }}"></script>
+<script src="{{ asset_url('vendor/xterm-addon-fit.js') }}"></script>
+<script src="{{ asset_url('atlas-console.js') }}"></script>
 <script type="application/json" id="atlas-console-config">{{ {
   "deviceId": target.device_id,
   "hostname": target.hostname,
@@ -90,6 +90,6 @@
   "port": target.port,
   "credentialRef": target.credential_ref,
 } | tojson }}</script>
-<script src="{{ url_for('static', filename='atlas.js') }}"></script>
+<script src="{{ asset_url('atlas.js') }}"></script>
 {% endif %}
 {% endblock %}

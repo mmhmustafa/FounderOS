@@ -8,6 +8,12 @@
    ========================================================================== */
 
 /* -- 1. Design tokens ------------------------------------------------------ */
+/* Hidden means gone, everywhere. Any author `display` (like .btn's
+   inline-flex) silently defeats the user-agent's `[hidden]` rule — the
+   wizard's Continue button stayed painted on the last step exactly this
+   way. One global guard instead of a per-selector whack-a-mole. */
+[hidden] { display: none !important; }
+
 :root {
   /* Color */
   --bg: #f3f6fb;
