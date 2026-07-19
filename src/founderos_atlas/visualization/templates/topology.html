@@ -161,6 +161,14 @@
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; }
     }
+    .layers-menu { position: relative; }
+    .layers-menu > summary { cursor: pointer; padding: 5px 10px; border: 1px solid var(--line, #d6dbe3); border-radius: 6px; background: #fff; font-size: 13px; list-style: none; }
+    .layers-menu > summary::-webkit-details-marker { display: none; }
+    .layers-menu > summary:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
+    .layers-body { position: absolute; top: calc(100% + 4px); left: 0; z-index: 20; background: #fff; border: 1px solid var(--line, #d6dbe3); border-radius: 8px; padding: 10px; min-width: 200px; box-shadow: 0 6px 20px rgba(15,23,42,.15); display: grid; gap: 6px; }
+    .layers-body label { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
+    .layers-reset { margin-top: 4px; font-size: 12px; padding: 4px 8px; border: 1px solid var(--line, #d6dbe3); border-radius: 6px; background: #f8fafc; cursor: pointer; }
+    .layers-reset:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
   </style>
 </head>
 <body>
@@ -186,6 +194,21 @@
       </select>
     </label>
     <button id="fit" type="button" title="Reset at a scale where labels remain readable">Reset view</button>
+    <details id="layers-panel" class="layers-menu">
+      <summary aria-label="Choose which topology layers to show">Layers</summary>
+      <div class="layers-body" role="group" aria-label="Topology layers">
+        <label><input type="checkbox" data-layer="sites" checked> Sites</label>
+        <label><input type="checkbox" data-layer="verified" checked> Verified links</label>
+        <label><input type="checkbox" data-layer="observed" checked> Observed links</label>
+        <label><input type="checkbox" data-layer="devices" checked> Devices</label>
+        <label><input type="checkbox" data-layer="ospf" checked> OSPF</label>
+        <label><input type="checkbox" data-layer="bgp" checked> BGP</label>
+        <label><input type="checkbox" data-layer="unresolved"> Unresolved identities</label>
+        <label><input type="checkbox" data-layer="interfaceLabels"> Interface labels</label>
+        <label><input type="checkbox" data-layer="evidenceLabels"> Evidence labels</label>
+        <button type="button" id="layers-reset" class="layers-reset">Reset to recommended</button>
+      </div>
+    </details>
     <button id="edit-mode" type="button" aria-pressed="false" title="Curate persistent site membership" hidden>Edit topology</button>
     <button id="details-toggle" type="button" aria-controls="details" aria-expanded="true">Details</button>
     <span class="summary" id="summary"></span>
@@ -1838,6 +1861,111 @@
       detailedLabelsShown = null;
       syncSemanticZoom();
     });
+
+    // -- Layers control -----------------------------------------------------
+    // Show/hide element categories so the operator controls what the map
+    // says at a glance. NEVER changes evidence — only what is drawn. The
+    // default state (the HTML `checked` attributes) IS the recommended
+    // configuration: sites/verified/observed/devices/ospf/bgp on;
+    // unresolved peers and interface/evidence labels off. Choices persist
+    // per user through the app's UI-preference API (same origin); a bad
+    // fetch never breaks the map.
+    (function () {
+      var panel = document.getElementById('layers-panel');
+      if (!panel || typeof cy === 'undefined') { return; }
+      var PREF_KEY = 'topology:layers';
+      var boxes = Array.prototype.slice.call(
+        panel.querySelectorAll('input[data-layer]')
+      );
+      var RECOMMENDED = {};
+      boxes.forEach(function (box) {
+        RECOMMENDED[box.dataset.layer] = box.defaultChecked;
+      });
+      // Each structural layer owns a disjoint set of elements, so hiding
+      // is unambiguous — no element is governed by two toggles.
+      var SELECTORS = {
+        sites: 'node[kind = "site"]',
+        devices: 'node[kind != "site"][kind != "protocol-domain"][kind != "observed"]',
+        unresolved: 'node[kind = "observed"], edge[relationship = "observed"]',
+        verified: 'edge[relationship = "physical"], edge[relationship = "verified-routed"]',
+        observed: 'edge[relationship = "routing-adjacency"]',
+        ospf: 'edge[relationship = "routing-adjacency"]',
+        bgp: 'edge[relationship = "protocol-peer"], edge[relationship = "bgp"]'
+      };
+
+      function apply() {
+        boxes.forEach(function (box) {
+          var layer = box.dataset.layer;
+          if (SELECTORS[layer]) {
+            var eles = cy.elements(SELECTORS[layer]);
+            if (box.checked) { eles.style('display', 'element'); }
+            else { eles.style('display', 'none'); }
+          }
+        });
+        // Label layers act on edge labels (canvas text), toggled through a
+        // class the stylesheet below understands.
+        var iface = panel.querySelector('[data-layer="interfaceLabels"]');
+        var evid = panel.querySelector('[data-layer="evidenceLabels"]');
+        cy.edges().forEach(function (edge) {
+          edge.toggleClass('layer-iface-labels', !!(iface && iface.checked));
+          edge.toggleClass('layer-evidence-labels', !!(evid && evid.checked));
+        });
+      }
+
+      cy.style()
+        .selector('edge.layer-iface-labels')
+        .style({ 'source-label': 'data(localInterface)',
+                 'target-label': 'data(remoteInterface)',
+                 'font-size': 8, 'color': '#64748b' })
+        .selector('edge.layer-evidence-labels')
+        .style({ 'label': 'data(evidenceLabel)', 'font-size': 8,
+                 'color': '#64748b' })
+        .update();
+
+      function persist() {
+        var state = {};
+        boxes.forEach(function (box) { state[box.dataset.layer] = box.checked; });
+        try {
+          fetch('/api/preferences/ui', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ key: PREF_KEY, value: state })
+          }).catch(function () {});
+        } catch (e) { /* persistence is best-effort */ }
+      }
+
+      boxes.forEach(function (box) {
+        box.addEventListener('change', function () { apply(); persist(); });
+      });
+      var reset = document.getElementById('layers-reset');
+      if (reset) {
+        reset.addEventListener('click', function () {
+          boxes.forEach(function (box) {
+            box.checked = RECOMMENDED[box.dataset.layer];
+          });
+          apply();
+          persist();
+        });
+      }
+
+      // Restore this user's saved layers over the recommended defaults.
+      try {
+        fetch('/api/preferences/ui?key=' + encodeURIComponent(PREF_KEY))
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (data) {
+            var saved = data && data.value;
+            if (saved && typeof saved === 'object') {
+              boxes.forEach(function (box) {
+                if (Object.prototype.hasOwnProperty.call(saved, box.dataset.layer)) {
+                  box.checked = !!saved[box.dataset.layer];
+                }
+              });
+            }
+            apply();
+          })
+          .catch(function () { apply(); });
+      } catch (e) { apply(); }
+    })();
   </script>
 </body>
 </html>

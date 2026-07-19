@@ -411,6 +411,32 @@ class ExplorerPageTests(unittest.TestCase):
             ):
                 self.assertIn(label, body, f"{label} missing from the summary")
 
+    def test_device_table_carries_column_customization_markers(self) -> None:
+        """PR-062: the device table opts into per-user column control;
+        exports stay server-side and independent of visible columns."""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = self._client(Path(tmp))
+            body = client.get("/evidence?session=s1").get_data(as_text=True)
+            self.assertIn('data-columns="evidence-devices"', body)
+            for col in ("device", "platform", "commands", "configuration"):
+                self.assertIn(f'data-col="{col}"', body)
+            # Column presets tag the lightest level a column belongs to.
+            self.assertIn('data-col-preset="simple"', body)
+            self.assertIn('data-col-preset="expert"', body)
+
+    def test_active_filters_render_removable_chips(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            client = self._client(Path(tmp))
+            body = client.get(
+                "/evidence?session=s1&platform=FRRouting"
+            ).get_data(as_text=True)
+            self.assertIn("filter-chip", body)
+            self.assertIn("platform: FRRouting", body)
+            self.assertIn("Clear all", body)
+            # The chip drops ONLY its own filter and keeps the session.
+            self.assertIn("/evidence?session=s1", body)
+
     def test_storage_internals_survive_but_only_under_system_details(self) -> None:
         """Part 12: kept for administrators, not deleted -- and not in the way."""
 

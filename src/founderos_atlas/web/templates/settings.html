@@ -3,6 +3,9 @@
 {% block content %}
 <div class="page-head"><div><h1>Settings</h1><p class="muted">Workspace preferences are persistent and secret-free.</p></div><a class="btn" href="#system-information">System information</a></div>
 
+<h2 class="settings-group">Personal preferences</h2>
+<p class="muted settings-group-note">Yours alone — how much detail and which display you see. These change nothing another operator sees.</p>
+
 <section class="card">
   <h2>Display and retention</h2>
   <form class="form" method="post" action="/settings">{{ csrf_field() }}
@@ -47,6 +50,9 @@
     <div class="form-actions"><button class="btn btn-primary" type="submit">Save display level</button></div>
   </form>
 </section>
+
+<h2 class="settings-group">Data, backup &amp; system</h2>
+<p class="muted settings-group-note">Workspace-wide operations. Backup, restore, retention and reset are administrator actions and are audited.</p>
 
 <section class="card">
   <h2>Backup, restore, and diagnostics</h2>

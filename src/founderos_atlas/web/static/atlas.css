@@ -844,3 +844,24 @@ body[data-theme="dark"] .level-choice:has(input:checked) { background: #1a2c4f; 
 }
 .subnav a { display: flex; align-items: center; gap: 6px; }
 .subnav a .nav-count { margin-left: auto; }
+
+/* -- Table column customization + filter chips (PR: calmer tables) --------- */
+.table-columns { display: inline-block; margin-bottom: var(--space-2); }
+.table-columns > summary { cursor: pointer; list-style: none; padding: 4px 10px; border: var(--border-w) solid var(--line); border-radius: var(--radius-sm); font-size: 0.85rem; }
+.table-columns > summary::-webkit-details-marker { display: none; }
+.table-columns > summary:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.table-columns-body { margin-top: 4px; border: var(--border-w) solid var(--line); border-radius: var(--radius-sm); padding: var(--space-3); display: grid; gap: 6px; background: var(--panel); max-width: 260px; }
+.table-columns-body label { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; }
+.table-columns-presets { display: flex; gap: 4px; margin-bottom: var(--space-2); }
+.table-columns-presets button, .table-columns-reset { font-size: 0.78rem; padding: 3px 8px; border: var(--border-w) solid var(--line); border-radius: var(--radius-sm); background: var(--bg-inset); cursor: pointer; }
+.table-columns-presets button:focus-visible, .table-columns-reset:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+
+.filter-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: var(--space-2) 0; }
+.filter-chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border: var(--border-w) solid var(--line-strong); border-radius: var(--radius-pill); font-size: 0.82rem; text-decoration: none; color: var(--ink); background: var(--panel); }
+.filter-chip:hover, .filter-chip:focus-visible { border-color: var(--accent); background: var(--accent-soft); }
+.filter-chip:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+
+/* -- Settings section grouping (PR: guided workflows) ---------------------- */
+.settings-group { margin: var(--space-6) 0 var(--space-1); font-size: 1.05rem; padding-bottom: var(--space-1); border-bottom: var(--border-w) solid var(--line); }
+.settings-group:first-of-type { margin-top: var(--space-3); }
+.settings-group-note { margin: 0 0 var(--space-3); max-width: 70ch; }

@@ -61,7 +61,7 @@
     <input type="checkbox" name="collect_configuration" {{ 'checked' if profile and profile.collect_configuration else '' }}>
     Collect running configuration
   </label>
-  <details {{ 'open' if profile and (profile.seeds_text or profile.include_cidrs_text or profile.exclude_cidrs_text or profile.deny_hostnames_text or profile.credential_sets_text or profile.site_hint or profile.domain_hint) else '' }}>
+  <details data-remember="workflow:profile-advanced" {{ 'open' if profile and (profile.seeds_text or profile.include_cidrs_text or profile.exclude_cidrs_text or profile.deny_hostnames_text or profile.credential_sets_text or profile.site_hint or profile.domain_hint) else '' }}>
     <summary class="muted">Enterprise discovery options (seeds, boundaries, credentials, sites)</summary>
     <label>Description (optional)
       <input name="description" value="{{ profile.description if profile else '' }}" placeholder="Primary campus entry point">

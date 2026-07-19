@@ -5100,6 +5100,47 @@ def register_routes(app) -> None:
         }
         return render_template("settings.html", **context, **base_context("settings"))
 
+    @app.route("/api/preferences/ui")
+    def api_ui_preference_get():
+        """Read ONE of the current user's namespaced UI preferences
+        (topology layers, table columns, workflow advanced-state)."""
+
+        from founderos_atlas.workspace.user_preferences import (
+            UserPreferenceStore,
+        )
+
+        key = str(request.args.get("key") or "").strip()
+        store = UserPreferenceStore(cfg("ATLAS_WORKSPACE_ROOT"))
+        if not any(
+            key.startswith(prefix) for prefix in store.ALLOWED_UI_PREFIXES
+        ):
+            return jsonify(error="unknown preference namespace"), 400
+        return jsonify(key=key, value=store.ui_value(current_actor(), key))
+
+    @app.route("/api/preferences/ui", methods=["POST"])
+    def api_ui_preference_set():
+        """Write ONE namespaced UI preference for the CURRENT user.
+
+        Personal presentation state only: namespaces are allowlisted and
+        values size-capped in the store; nothing security-relevant can
+        ride this channel, and it never touches another user's record.
+        """
+
+        from founderos_atlas.workspace.user_preferences import (
+            UserPreferenceStore,
+        )
+
+        payload = request.get_json(silent=True) or {}
+        try:
+            UserPreferenceStore(cfg("ATLAS_WORKSPACE_ROOT")).set_ui_value(
+                current_actor(),
+                str(payload.get("key") or ""),
+                payload.get("value"),
+            )
+        except ValueError as error:
+            return jsonify(error=str(error)), 400
+        return jsonify(saved=True)
+
     @app.route("/preferences/display-level", methods=["POST"])
     def preferences_display_level():
         """Set the CURRENT user's display level (simple/detailed/expert).

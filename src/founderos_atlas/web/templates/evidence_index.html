@@ -116,9 +116,26 @@
     </div>
     <div class="form-actions">
       <button class="btn" type="submit">Filter</button>
-      {% if filtered %}<a class="btn" href="/evidence?session={{ session.session_id | urlencode }}">Reset</a>{% endif %}
+      {% if filtered %}<a class="btn" href="/evidence?session={{ session.session_id | urlencode }}">Clear all</a>{% endif %}
     </div>
   </form>
+
+  {# Active filters as removable chips — each link drops ONE filter and
+     keeps the rest, so URLs stay shareable and it works without JS. #}
+  {% if filtered %}
+  {% set base = "/evidence?session=" ~ (session.session_id | urlencode) %}
+  <div class="filter-chips" role="group" aria-label="Active filters">
+    <span class="muted">{{ visible_count }} of {{ record_count }} record(s) · Enterprise</span>
+    {% for field, value in [('q', filters.q), ('platform', filters.platform), ('command', filters.command), ('status', filters.status)] %}
+    {% if value %}
+    {% set keep = [] %}
+    {% for f, v in [('q', filters.q), ('platform', filters.platform), ('command', filters.command), ('status', filters.status)] if f != field and v %}{% set _ = keep.append(f ~ '=' ~ (v | urlencode)) %}{% endfor %}
+    <a class="filter-chip" href="{{ base }}{% if keep %}&{{ keep | join('&') }}{% endif %}"
+       aria-label="Remove filter {{ field }}: {{ value }}">{{ field }}: {{ value }} <span aria-hidden="true">×</span></a>
+    {% endif %}
+    {% endfor %}
+  </div>
+  {% endif %}
 
   <section class="saved-filters" aria-label="Saved evidence filters">
     <h3>Saved filters</h3>
@@ -162,17 +179,23 @@
 
   {% if devices %}
   <form method="post" action="/evidence/bulk-export">{{ csrf_field() }}<input type="hidden" name="session" value="{{ session.session_id }}"><div class="form-actions"><button class="btn" type="submit">Export selected (masked)</button></div>
-  <table class="grid">
+  <table class="grid" data-columns="evidence-devices">
     <thead>
-      <tr><th><span class="visually-hidden">Select</span></th><th>Device</th><th>Platform</th><th>Commands</th><th>Empty</th>
-          <th>Configuration</th><th>Last collected</th><th></th></tr>
+      <tr><th data-col="select" data-col-preset="simple"><span class="visually-hidden">Select</span></th>
+          <th data-col="device" data-col-preset="simple">Device</th>
+          <th data-col="platform" data-col-preset="detailed">Platform</th>
+          <th data-col="commands" data-col-preset="detailed">Commands</th>
+          <th data-col="empty" data-col-preset="expert">Empty</th>
+          <th data-col="configuration" data-col-preset="simple">Configuration</th>
+          <th data-col="last" data-col-preset="detailed">Last collected</th>
+          <th data-col="actions" data-col-preset="simple"></th></tr>
     </thead>
     <tbody>
       {% for d in devices %}
       {% set target = device_target(device_id=d.device_id) %}
       <tr>
-        <td><input type="checkbox" name="device_ids" value="{{ d.device_id }}" aria-label="Select {{ d.hostname }} for masked export"></td>
-        <td>
+        <td data-col="select"><input type="checkbox" name="device_ids" value="{{ d.device_id }}" aria-label="Select {{ d.hostname }} for masked export"></td>
+        <td data-col="device">
           <strong>{{ d.hostname }}</strong>
           {% if target and target.management_ip %}<span class="muted">{{ target.management_ip }}</span>{% endif %}
           {# Part 9: the same universal action every other device surface uses.
@@ -180,13 +203,13 @@
           {% if target %}<div>{{ device_actions(target, compact=True, show_label=False,
                                                 web=web_access(device_id=d.device_id)) }}</div>{% endif %}
         </td>
-        <td>{{ d.platform or '—' }}</td>
-        <td>{{ d.commands_collected }} / {{ d.commands_attempted }}</td>
-        <td>{{ d.empty_responses or '—' }}</td>
-        <td>{% if d.has_configuration %}<span class="badge">Collected</span>
+        <td data-col="platform">{{ d.platform or '—' }}</td>
+        <td data-col="commands">{{ d.commands_collected }} / {{ d.commands_attempted }}</td>
+        <td data-col="empty">{{ d.empty_responses or '—' }}</td>
+        <td data-col="configuration">{% if d.has_configuration %}<span class="badge">Collected</span>
             {% else %}<span class="muted">Not collected</span>{% endif %}</td>
-        <td>{{ d.last_collected_at or '—' }}</td>
-        <td class="row-actions">
+        <td data-col="last">{{ d.last_collected_at or '—' }}</td>
+        <td data-col="actions" class="row-actions">
           <a class="btn btn-sm" href="/evidence/device/{{ d.device_id | urlencode }}?session={{ session.session_id | urlencode }}">Evidence</a>
         </td>
       </tr>

@@ -801,3 +801,193 @@
     }
   }, true);
 })();
+
+// -- Table column customization (PR: calmer tables) -------------------------
+// A table marked <table data-columns="name"> with <th data-col="x"> and
+// matching <td data-col="x"> cells gains a "Columns" control: Simple /
+// Detailed / Expert presets, per-column toggles, and Reset. Choices
+// persist per user and table through the UI-preference API (never
+// localStorage). Progressive enhancement — without JS every column shows,
+// and EXPORTS are server-side and independent of what is visible.
+(function () {
+  "use strict";
+  var tables = document.querySelectorAll("table[data-columns]");
+  if (!tables.length) { return; }
+
+  function presetOf(th) {
+    // A column belongs to the lightest preset that includes it.
+    return th.dataset.colPreset || "detailed";
+  }
+
+  Array.prototype.forEach.call(tables, function (table) {
+    var name = table.dataset.columns;
+    var prefKey = "table:" + name;
+    var headers = Array.prototype.slice.call(
+      table.querySelectorAll("thead th[data-col]")
+    );
+    if (!headers.length) { return; }
+    var columns = headers.map(function (th) { return th.dataset.col; });
+
+    function setVisible(hidden) {
+      columns.forEach(function (col) {
+        var off = hidden.indexOf(col) !== -1;
+        table.querySelectorAll('[data-col="' + col + '"]').forEach(
+          function (cell) { cell.hidden = off; }
+        );
+        var box = panel.querySelector('input[value="' + col + '"]');
+        if (box) { box.checked = !off; }
+      });
+    }
+
+    function currentHidden() {
+      var hidden = [];
+      panel.querySelectorAll("input[type=checkbox]").forEach(function (box) {
+        if (!box.checked) { hidden.push(box.value); }
+      });
+      return hidden;
+    }
+
+    function persist() {
+      try {
+        fetch("/api/preferences/ui", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ key: prefKey, value: { hidden: currentHidden() } })
+        }).catch(function () {});
+      } catch (e) { /* best-effort */ }
+    }
+
+    function applyPreset(level) {
+      var order = { simple: 0, detailed: 1, expert: 2 };
+      var hidden = headers.filter(function (th) {
+        return order[presetOf(th)] > order[level];
+      }).map(function (th) { return th.dataset.col; });
+      setVisible(hidden);
+      persist();
+    }
+
+    // Build the control.
+    var wrap = document.createElement("details");
+    wrap.className = "table-columns";
+    var summary = document.createElement("summary");
+    summary.textContent = "Columns";
+    summary.setAttribute("aria-label", "Choose which columns to show");
+    var panel = document.createElement("div");
+    panel.className = "table-columns-body";
+    panel.setAttribute("role", "group");
+    panel.setAttribute("aria-label", "Column visibility for " + name);
+
+    var presets = document.createElement("div");
+    presets.className = "table-columns-presets";
+    ["simple", "detailed", "expert"].forEach(function (level) {
+      var b = document.createElement("button");
+      b.type = "button";
+      b.textContent = level.charAt(0).toUpperCase() + level.slice(1);
+      b.addEventListener("click", function () { applyPreset(level); });
+      presets.appendChild(b);
+    });
+    panel.appendChild(presets);
+
+    headers.forEach(function (th) {
+      var id = "col-" + name + "-" + th.dataset.col;
+      var label = document.createElement("label");
+      var box = document.createElement("input");
+      box.type = "checkbox";
+      box.value = th.dataset.col;
+      box.id = id;
+      box.checked = true;
+      box.addEventListener("change", function () {
+        setVisible(currentHidden()); persist();
+      });
+      label.appendChild(box);
+      label.appendChild(
+        document.createTextNode(" " + (th.textContent || th.dataset.col).trim())
+      );
+      panel.appendChild(label);
+    });
+
+    var reset = document.createElement("button");
+    reset.type = "button";
+    reset.className = "table-columns-reset";
+    reset.textContent = "Reset to recommended";
+    reset.addEventListener("click", function () {
+      applyPreset(document.body.dataset.displayLevel || "detailed");
+    });
+    panel.appendChild(reset);
+
+    wrap.appendChild(summary);
+    wrap.appendChild(panel);
+    // Place the control just before the table.
+    table.parentNode.insertBefore(wrap, table);
+
+    // Restore saved hidden set, else apply the display-level preset.
+    try {
+      fetch("/api/preferences/ui?key=" + encodeURIComponent(prefKey))
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (data) {
+          var saved = data && data.value && data.value.hidden;
+          if (Array.isArray(saved)) { setVisible(saved); }
+          else { applyPreset(document.body.dataset.displayLevel || "detailed"); }
+        })
+        .catch(function () {
+          applyPreset(document.body.dataset.displayLevel || "detailed");
+        });
+    } catch (e) {
+      applyPreset(document.body.dataset.displayLevel || "detailed");
+    }
+  });
+})();
+
+// -- Guided forms: never hide a validation error (PR: guided workflows) -----
+// If a form fails to submit because a required/invalid field sits inside a
+// collapsed <details> (an "Advanced" section), open that section and focus
+// the field. A blocked submit must never look like nothing happened.
+(function () {
+  "use strict";
+  document.addEventListener("invalid", function (event) {
+    var field = event.target;
+    if (!field || typeof field.closest !== "function") { return; }
+    var section = field.closest("details:not([open])");
+    while (section) {
+      section.open = true;
+      section = section.parentElement
+        ? section.parentElement.closest("details:not([open])")
+        : null;
+    }
+    // Let the browser show its own message on the now-visible field.
+    if (typeof field.focus === "function") {
+      try { field.focus({ preventScroll: false }); } catch (e) { field.focus(); }
+    }
+  }, true);
+})();
+
+// -- Remember "Advanced" open state per user (PR: guided workflows) ----------
+// A <details data-remember="workflow:key"> restores its open/closed state
+// from the UI-preference API and saves changes — so an experienced user who
+// keeps Advanced open finds it open next time. Best-effort; a failed fetch
+// simply leaves the server-rendered default.
+(function () {
+  "use strict";
+  var remembered = document.querySelectorAll("details[data-remember]");
+  if (!remembered.length) { return; }
+  Array.prototype.forEach.call(remembered, function (section) {
+    var key = section.dataset.remember;
+    if (key.indexOf("workflow:") !== 0) { return; }
+    try {
+      fetch("/api/preferences/ui?key=" + encodeURIComponent(key))
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (data) {
+          if (data && typeof data.value === "boolean") { section.open = data.value; }
+        }).catch(function () {});
+    } catch (e) { /* keep default */ }
+    section.addEventListener("toggle", function () {
+      try {
+        fetch("/api/preferences/ui", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ key: key, value: section.open })
+        }).catch(function () {});
+      } catch (e) { /* best-effort */ }
+    });
+  });
+})();

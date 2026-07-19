@@ -124,6 +124,46 @@ class UserPreferenceStore:
             self._write(users)
         return cleaned
 
+    # -- generic namespaced UI preferences ------------------------------------
+
+    #: Key prefixes a client may write through the UI-preference API.
+    #: Anything else is refused — this store must never become a dumping
+    #: ground, and security-sensitive state never rides through it.
+    ALLOWED_UI_PREFIXES = ("topology:", "table:", "workflow:")
+    MAX_UI_VALUE_BYTES = 4096
+
+    def ui_value(self, owner: str, key: str, default: Any = None) -> Any:
+        record = self._read().get(str(owner or "").casefold()) or {}
+        values = record.get("ui")
+        if not isinstance(values, Mapping):
+            return default
+        return values.get(str(key), default)
+
+    def set_ui_value(self, owner: str, key: str, value: Any) -> None:
+        cleaned_key = str(key or "").strip()
+        if not any(
+            cleaned_key.startswith(prefix)
+            for prefix in self.ALLOWED_UI_PREFIXES
+        ):
+            raise ValueError(
+                "UI preference keys must start with one of: "
+                + ", ".join(self.ALLOWED_UI_PREFIXES)
+            )
+        encoded = json.dumps(value)
+        if len(encoded.encode("utf-8")) > self.MAX_UI_VALUE_BYTES:
+            raise ValueError("UI preference value is too large.")
+        owner_key = str(owner or "").strip().casefold()
+        if not owner_key:
+            raise ValueError("An owner is required for a UI preference.")
+        with self._lock:
+            users = self._read()
+            record = users.get(owner_key) or {}
+            values = dict(record.get("ui") or {})
+            values[cleaned_key] = value
+            record["ui"] = values
+            users[owner_key] = record
+            self._write(users)
+
     def _write(self, users: Mapping[str, Mapping[str, Any]]) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         temporary = self.path.with_name(
