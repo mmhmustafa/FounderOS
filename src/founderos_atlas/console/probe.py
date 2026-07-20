@@ -245,16 +245,24 @@ def run_probe_command(
     password: str,
     command: str,
     host_key_store,
-    allow_new_host_key: bool = True,
+    allow_new_host_key: bool = False,
     connect_timeout: float = 10.0,
     command_timeout: float = PROBE_TIMEOUT_SECONDS,
     client_factory: Callable[[], Any] | None = None,
+    stop_when: Callable[[str], bool] | None = None,
 ) -> str:
     """Run one command over SSH and return its output text.
 
     Same client, same host-key policy, same secret hygiene as
     ``ConsoleSession`` — the password is used for ``connect`` and
     dropped; it never lands on an object or in an error.
+
+    ``allow_new_host_key`` defaults to False for the same reason the
+    console's does: this connection sends a stored credential, and a
+    host Atlas has never verified might not be the device it means.
+    Trust-on-first-use would hand the password to whoever answered.
+    The caller is expected to route the operator to the console, where
+    a fingerprint can be compared and accepted deliberately.
     """
 
     from founderos_atlas.ssh_security import disabled_ssh_algorithms
@@ -284,7 +292,9 @@ def run_probe_command(
     finally:
         password = ""
     try:
-        output, timed_out = _execute(client, command, command_timeout)
+        output, ended = _execute(
+            client, command, command_timeout, stop_when
+        )
     except Exception:  # noqa: BLE001 - operator-safe, no trace
         _safe_close(client)
         raise ConsoleTimeoutError(
@@ -292,18 +302,28 @@ def run_probe_command(
         ) from None
     _safe_close(client)
     text = output.decode("utf-8", "replace")
-    if timed_out:
+    if ended == "timeout":
         text += (
             f"\n[atlas] The probe was still running after "
             f"{int(command_timeout)}s and was cut short — the hops above "
             "are what the device reported in that window.\n"
         )
+    elif ended == "silent":
+        text += (
+            f"\n[atlas] Stopped after {SILENT_HOP_LIMIT} consecutive hops "
+            "went unanswered — a device is dropping the probes, and "
+            "waiting out the remaining hops would add delay, not "
+            "evidence. The hops above are what answered.\n"
+        )
     return text
 
 
 def _execute(
-    client: Any, command: str, timeout: float
-) -> tuple[bytes, bool]:
+    client: Any,
+    command: str,
+    timeout: float,
+    stop_when: Callable[[str], bool] | None = None,
+) -> tuple[bytes, str]:
     """Run the command and read its output as ONE ordered stream.
 
     Device tools split their output across stdout and stderr — busybox
@@ -331,16 +351,20 @@ def _execute(
                 errors = b""
             if errors.strip():
                 output += b"\n[stderr] " + errors.strip() + b"\n"
-        return output, timed_out
+        return output, ("timeout" if timed_out else "complete")
 
     channel = transport.open_session()
     channel.settimeout(timeout)
     channel.set_combine_stderr(True)
     channel.exec_command(command)
-    return _drain(channel, timeout)
+    return _drain(channel, timeout, stop_when)
 
 
-def _drain(channel: Any, timeout: float) -> tuple[bytes, bool]:
+def _drain(
+    channel: Any,
+    timeout: float,
+    stop_when: Callable[[str], bool] | None = None,
+) -> tuple[bytes, str]:
     deadline = monotonic() + timeout
     chunks: list[bytes] = []
     while monotonic() < deadline:
@@ -352,12 +376,18 @@ def _drain(channel: Any, timeout: float) -> tuple[bytes, bool]:
             if not data:
                 break
             chunks.append(data)
+            if stop_when is not None:
+                try:
+                    if stop_when(b"".join(chunks).decode("utf-8", "replace")):
+                        return b"".join(chunks), "silent"
+                except Exception:  # noqa: BLE001 - a bad predicate
+                    stop_when = None      # never let it end the read
             continue
         if channel.exit_status_ready():
             break
         sleep(0.05)
     else:
-        return b"".join(chunks), True
+        return b"".join(chunks), "timeout"
     while channel.recv_ready():
         try:
             data = channel.recv(65536)
@@ -366,7 +396,7 @@ def _drain(channel: Any, timeout: float) -> tuple[bytes, bool]:
         if not data:
             break
         chunks.append(data)
-    return b"".join(chunks), False
+    return b"".join(chunks), "complete"
 
 
 def _read_bounded(stream: Any, timeout: float) -> tuple[bytes, bool]:
@@ -410,6 +440,27 @@ def _read_bounded(stream: Any, timeout: float) -> tuple[bytes, bool]:
             break
         chunks.append(data)
     return b"".join(chunks), False
+
+
+SILENT_HOP_LIMIT = 3
+
+
+def silent_tail(text: str, limit: int = SILENT_HOP_LIMIT) -> bool:
+    """True once the last ``limit`` completed hops all went unanswered.
+
+    A traceroute that has met a device dropping its probes will not
+    recover: it waits out every remaining hop, one timeout at a time,
+    for minutes. The hops already collected are the evidence; the
+    silence that follows adds nothing but delay, so the probe stops
+    and says where it stopped.
+    """
+
+    lines = text.splitlines()
+    # The last line may still be mid-write; judge only completed ones.
+    hops = [line for line in lines[:-1] if _HOP_LINE.match(line)]
+    if len(hops) < limit:
+        return False
+    return all(not _IP_TOKEN.search(line) for line in hops[-limit:])
 
 
 def parse_traceroute(text: str) -> tuple[ProbeHop, ...]:

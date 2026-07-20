@@ -5081,6 +5081,8 @@ def register_routes(app) -> None:
         from uuid import uuid4
 
         from founderos_atlas.console import (
+            ConsoleHostKeyBlocked,
+            ConsoleHostKeyUnknown,
             ConsoleSessionError,
             ProbeUnsupported,
             dataplane_address,
@@ -5090,6 +5092,7 @@ def register_routes(app) -> None:
             probe_hint,
             run_probe_command,
             service_command,
+            silent_tail,
             traceroute_command,
         )
 
@@ -5204,7 +5207,41 @@ def register_routes(app) -> None:
                 command=command,
                 host_key_store=console_host_key_store(),
                 client_factory=app.config.get("ATLAS_PROBE_CLIENT_FACTORY"),
+                stop_when=silent_tail,
             )
+        except (ConsoleHostKeyBlocked, ConsoleHostKeyUnknown) as error:
+            # The probe authenticates with a stored password, so it will
+            # not send it to a host whose identity Atlas cannot vouch
+            # for. Accepting a fingerprint is a security decision and
+            # belongs where it can be made properly — the device's
+            # console, which shows both fingerprints and requires an
+            # explicit act — not behind a convenience button in a
+            # troubleshooting panel, where it would be clicked through.
+            _record("blocked", str(error))
+            changed = isinstance(error, ConsoleHostKeyBlocked)
+            return {
+                "error": str(error),
+                "host_key_problem": "changed" if changed else "unknown",
+                "device_id": src.device_id,
+                "console_url": url_for(
+                    "console_page", device_id=src.device_id
+                ),
+                "guidance": (
+                    (
+                        f"{src.hostname} presented a different SSH host key "
+                        "than the one Atlas trusted. A rebuilt or replaced "
+                        "device does this, and so does an interception — "
+                        "Atlas cannot tell them apart, so it stopped."
+                        if changed else
+                        f"Atlas has never accepted an SSH host key for "
+                        f"{src.hostname}, so it will not send a stored "
+                        "credential to it yet."
+                    )
+                    + " Open this device's console to compare the "
+                    "fingerprints and accept the key if it is expected, "
+                    "then run Validate live again."
+                ),
+            }, 409
         except ConsoleSessionError as error:
             _record("failed", str(error))
             return {"error": str(error)}, 502

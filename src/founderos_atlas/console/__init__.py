@@ -70,6 +70,7 @@ from .probe import (
     probe_hint,
     run_probe_command,
     service_command,
+    silent_tail,
     traceroute_command,
 )
 from .resolve import find_target, resolve_target, resolve_targets
@@ -159,5 +160,6 @@ __all__ = [
     "resolve_targets",
     "run_probe_command",
     "service_command",
+    "silent_tail",
     "traceroute_command",
 ]

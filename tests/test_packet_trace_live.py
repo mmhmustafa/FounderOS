@@ -455,6 +455,66 @@ class ValidateLiveApiTests(unittest.TestCase):
             self.assertIn("no traceroute hops", body["verdict_detail"])
 
 
+class HostKeyRefusalTests(unittest.TestCase):
+    """The probe sends a stored credential, so it will not talk to a
+    host whose identity Atlas cannot vouch for — and a refusal must
+    leave the operator somewhere to go."""
+
+    def _world(self, tmp: Path, error):
+        _, client = build_world(tmp)
+
+        def factory():
+            raise error
+
+        client.application.config["ATLAS_PROBE_CLIENT_FACTORY"] = factory
+        return client
+
+    def _verdict(self):
+        from founderos_atlas.console.models import HostKeyVerdict
+
+        return HostKeyVerdict(
+            status="changed",
+            host="10.0.0.1",
+            key_type="ssh-ed25519",
+            fingerprint="SHA256:yVvJY1xlYvZnew",
+            known_fingerprint="SHA256:xweYfcwq3mqold",
+        )
+
+    def test_a_changed_key_stops_the_probe_and_points_at_the_console(self):
+        from founderos_atlas.console import ConsoleHostKeyBlocked
+
+        verdict = self._verdict()
+        with tempfile.TemporaryDirectory() as tmp:
+            client = self._world(Path(tmp), ConsoleHostKeyBlocked(verdict))
+            client.post(
+                "/api/paths/trace",
+                json={"source": "A1", "destination": "A2"},
+            )
+            response = client.post(
+                "/api/paths/validate-live",
+                json={"source": "A1", "destination": "A2"},
+            )
+            self.assertEqual(409, response.status_code)
+            body = response.get_json()
+            self.assertEqual("changed", body["host_key_problem"])
+            self.assertIn("console", body["console_url"])
+            self.assertIn("interception", body["guidance"])
+            self.assertIn("fingerprints", body["guidance"])
+
+    def test_trust_on_first_use_is_not_the_probe_default(self) -> None:
+        """Auto-accepting an unknown key would hand the stored password
+        to whoever answered that address."""
+
+        import inspect
+
+        from founderos_atlas.console.probe import run_probe_command
+
+        signature = inspect.signature(run_probe_command)
+        self.assertIs(
+            False, signature.parameters["allow_new_host_key"].default
+        )
+
+
 class ProbePermissionTests(unittest.TestCase):
     def test_probe_is_console_tier_not_investigate_tier(self) -> None:
         from tests.test_production_security import production_world, sign_in
@@ -505,6 +565,14 @@ class ViewerLiveContractTests(unittest.TestCase):
         # Two questions, two sentences — neither masks the other.
         self.assertIn("Service check: ", self.viewer)
         self.assertIn("body.service", self.viewer)
+
+    def test_a_refused_host_key_offers_review_not_a_trust_button(self) -> None:
+        self.assertIn("host_key_problem", self.viewer)
+        self.assertIn("console_url", self.viewer)
+        # Accepting a key is a deliberate act made where both
+        # fingerprints are on screen — never a shortcut here.
+        self.assertNotIn("trust anyway", self.viewer.lower())
+        self.assertNotIn("accept key", self.viewer.lower())
 
 
 if __name__ == "__main__":

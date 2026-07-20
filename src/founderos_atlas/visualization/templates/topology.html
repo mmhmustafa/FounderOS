@@ -131,6 +131,8 @@
     #trace-status[data-tone="failed"] { color: #b91c1c; font-weight: 600; }
     #trace-status[data-tone="warn"] { color: #b45309; }
     #trace-status[data-tone="ok"] { color: #166534; }
+    .trace-hostkey-link { display: inline-block; margin-top: 4px; color: #2563eb; font-weight: 600; }
+    body[data-theme="dark"] .trace-hostkey-link { color: #93c5fd; }
     #trace-live-detail { margin-top: 6px; font-size: 12px; }
     #trace-live-detail pre { max-height: 140px; overflow: auto; background: #f8fafc; border: 1px solid #d6dbe3; border-radius: 5px; padding: 6px 8px; margin: 4px 0 0; white-space: pre-wrap; }
     body[data-theme="dark"] #trace-live-detail pre { background: #1a2740; border-color: #3a4b63; }
@@ -2722,6 +2724,21 @@
         }).then(function (response) {
           return response.json().then(function (body) {
             if (!response.ok) {
+              if (body.host_key_problem) {
+                // A refused host key is not a dead end, but the way
+                // out is a deliberate decision made where both
+                // fingerprints are on screen — never a button here.
+                showStatus(body.guidance || body.error, 'failed');
+                if (body.console_url) {
+                  var link = document.createElement('a');
+                  link.href = body.console_url;
+                  link.textContent = 'Review this device’s host key →';
+                  link.className = 'trace-hostkey-link';
+                  statusEl.appendChild(document.createElement('br'));
+                  statusEl.appendChild(link);
+                }
+                return;
+              }
               showStatus(response.status === 403
                 ? 'Validate live needs console permission — the probe '
                   + 'runs a real command on the device.'

@@ -170,8 +170,13 @@ gated `console.use`, and audited like a console connection.
   cannot-decide) and config-line citations. Hops without captured
   configuration, unparsed ACLs, and rules whose addresses or
   qualifiers declared intent cannot settle are reported, never
-  guessed. Zone-based firewall policy (FortiOS/PAN-OS evidence) is
-  not yet joined to the path walk.
+  guessed. An enforced **firewall chain** captured by discovery is now
+  evaluated at its hop too, with the same three-valued honesty: first
+  terminal match wins, `LOG` is not a verdict, a reply-only
+  (`ESTABLISHED`/`RELATED`) rule cannot admit the first packet of a
+  flow, and an unmatched packet meets the chain's default policy.
+  Zone-based vendor policy (FortiOS/PAN-OS `SecurityPolicy` evidence)
+  is not yet joined to the walk.
 
 ## Release-trust hardening
 

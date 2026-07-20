@@ -27,6 +27,7 @@ RESULT_UNKNOWN = "unknown"
 
 # Deterministic failure vocabulary — never invented protocol failures.
 FAILURE_ACL_DENY = "acl-deny"
+FAILURE_FIREWALL_DENY = "firewall-deny"
 FAILURE_INTERFACE_DOWN = "interface-down"
 FAILURE_ADMIN_SHUTDOWN = "administrative-shutdown"
 FAILURE_MISSING_EDGE = "missing-topology-edge"

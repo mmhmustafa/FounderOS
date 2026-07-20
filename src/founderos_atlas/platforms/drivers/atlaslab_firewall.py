@@ -75,16 +75,48 @@ _INTERFACE = re.compile(
 _IPV4_CIDR = re.compile(r"\b(?P<ip>\d{1,3}(?:\.\d{1,3}){3})/(?P<prefix>\d{1,2})\b")
 
 # `Chain FORWARD (policy DROP 32 packets, 2688 bytes)`
+# iptables abbreviates counters once they grow: `318K`, `2.5M`, `1G`.
+# Demanding \d+ here silently dropped whichever rules were BUSIEST -
+# the ones carrying real traffic - out of the parsed evidence, leaving
+# a policy that looked more restrictive than the one being enforced.
+_COUNT = r"\d+(?:\.\d+)?[KMGTP]?"
+_SCALE = {"K": 10**3, "M": 10**6, "G": 10**9, "T": 10**12, "P": 10**15}
+
 _CHAIN = re.compile(
     r"^Chain\s+(?P<chain>\S+)\s+\(policy\s+(?P<policy>\S+)"
-    r"(?:\s+(?P<packets>\d+)\s+packets,\s+(?P<bytes>\d+)\s+bytes)?\)"
+    r"(?:\s+(?P<packets>" + _COUNT + r")\s+packets,\s+"
+    r"(?P<bytes>" + _COUNT + r")\s+bytes)?\)"
 )
 # `2      206 31300 ACCEPT     all  --  eth2   eth1    0.0.0.0/0   0.0.0.0/0`
 _RULE = re.compile(
-    r"^\s*(?P<num>\d+)\s+(?P<pkts>\d+)\s+(?P<bytes>\d+)\s+(?P<target>\S+)\s+"
+    r"^\s*(?P<num>\d+)\s+(?P<pkts>" + _COUNT + r")\s+"
+    r"(?P<bytes>" + _COUNT + r")\s+(?P<target>\S+)\s+"
     r"(?P<proto>\S+)\s+\S+\s+(?P<in>\S+)\s+(?P<out>\S+)\s+"
     r"(?P<source>\S+)\s+(?P<destination>\S+)\s*(?P<extra>.*)$"
 )
+
+
+def _counter(value: str | None) -> int:
+    """An iptables counter as a number, abbreviations expanded.
+
+    Reported as observed, never judged: an approximate count is what
+    the device offered, and rounding it back out is not an inference
+    about the traffic, only about the notation.
+    """
+
+    text = (value or "").strip()
+    if not text:
+        return 0
+    scale = _SCALE.get(text[-1].upper())
+    if scale is None:
+        try:
+            return int(text)
+        except ValueError:
+            return 0
+    try:
+        return int(float(text[:-1]) * scale)
+    except ValueError:
+        return 0
 
 
 class AtlasLabFirewallAdapter(DiscoveryAdapter):
@@ -309,8 +341,8 @@ def parse_firewall_rules(text: str) -> dict[str, object] | None:
             "out_interface": _iface_or_any(rule.group("out")),
             "source": rule.group("source"),
             "destination": rule.group("destination"),
-            "packets": int(rule.group("pkts")),
-            "bytes": int(rule.group("bytes")),
+            "packets": _counter(rule.group("pkts")),
+            "bytes": _counter(rule.group("bytes")),
             "detail": extra or None,
         })
 
@@ -322,8 +354,8 @@ def parse_firewall_rules(text: str) -> dict[str, object] | None:
     return {
         "chain": chain.group("chain"),
         "default_policy": chain.group("policy"),
-        "default_policy_packets": int(chain.group("packets") or 0),
-        "default_policy_bytes": int(chain.group("bytes") or 0),
+        "default_policy_packets": _counter(chain.group("packets")),
+        "default_policy_bytes": _counter(chain.group("bytes")),
         "rule_count": len(rules),
         "rules_by_target": targets,
         "rules": tuple(

@@ -24,12 +24,18 @@ from __future__ import annotations
 from collections import deque
 from hashlib import sha256
 
+from .firewall import (
+    evaluate_firewall,
+    firewall_from_metadata,
+)
 from .policy import (
     DevicePolicy,
+    INDETERMINATE,
     evaluate_bindings,
 )
 from .models import (
     FAILURE_ACL_DENY,
+    FAILURE_FIREWALL_DENY,
     FAILURE_ADMIN_SHUTDOWN,
     FAILURE_AMBIGUOUS_TOPOLOGY,
     FAILURE_DEVICE_UNREACHABLE,
@@ -138,6 +144,8 @@ class _Investigation:
         # Per-walk policy accounting for the honesty summary in basis.
         self.policy_hops_evaluated = 0
         self.policy_hops_unevaluated: list[str] = []
+        self.destination_addresses: tuple[str, ...] = ()
+        self.source_addresses: tuple[str, ...] = ()
         self.steps: list[InvestigationStep] = []
         self.unknowns: list[str] = []
         self.evidence_refs: list[str] = []
@@ -163,6 +171,10 @@ class _Investigation:
 
         source_key = self._resolve_device(self.source)
         destination_key = self._resolve_device(self.destination)
+        # Firewall rules name addresses, not hostnames: the endpoints'
+        # own addresses are what a chain rule is matched against.
+        self.destination_addresses = self._device_addresses(destination_key)
+        self.source_addresses = self._device_addresses(source_key)
         problem = self._check_endpoints(source_key, destination_key)
         if problem is not None:
             return problem
@@ -720,6 +732,23 @@ class _Investigation:
             return None
         name = self._display_name(key)
         described = self._describe_intent()
+
+        # A firewall states its policy in the chain it enforces, not in
+        # an access-list — and on a path that crosses a perimeter, that
+        # chain IS the answer. Evaluated first for that reason.
+        blocked = self._firewall_check(
+            hop_number=hop_number,
+            key=key,
+            ingress=ingress,
+            egress=egress,
+            link_state=link_state,
+            evidence=evidence,
+            missing=missing,
+            described=described,
+        )
+        if blocked is not None:
+            return blocked
+
         policy = self.device_policies.get(name.casefold())
         if policy is None:
             if name not in self.policy_hops_unevaluated:
@@ -823,6 +852,93 @@ class _Investigation:
                 f"{rule.cite(policy.source_path)}"
             )
         return None
+
+    def _firewall_check(
+        self,
+        *,
+        hop_number: int,
+        key: str,
+        ingress: str | None,
+        egress: str | None,
+        link_state: str,
+        evidence: list[str],
+        missing: list[str],
+        described: str,
+    ) -> HopResult | None:
+        """Evaluate this hop's enforced firewall chain, if it has one."""
+
+        device = self.devices.get(key)
+        policy = firewall_from_metadata((device or {}).get("metadata"))
+        if policy is None:
+            return None
+        name = self._display_name(key)
+        self.policy_hops_evaluated += 1
+        verdict = evaluate_firewall(
+            policy,
+            self.intent,
+            ingress=ingress,
+            egress=egress,
+            destination_addresses=self.destination_addresses,
+            source_addresses=self.source_addresses,
+        )
+        citation = (
+            f"enforced firewall chain on {name}: {verdict.reason} "
+            f"(observed by discovery)"
+        )
+        if verdict.kind in ("deny", "default-deny"):
+            explanation = (
+                f"{name} drops {described}: {verdict.reason}."
+                if verdict.kind == "deny"
+                else f"{name} drops {described} — {verdict.reason}."
+            )
+            return HopResult(
+                hop_number=hop_number,
+                device=name,
+                ingress_interface=ingress,
+                egress_interface=egress,
+                link_state=link_state,
+                management_state=self._management_state(key)[0],
+                status=HOP_FAILED,
+                confidence=self._clamp(CONFIDENCE_DIRECT_EVIDENCE),
+                explanation=explanation,
+                evidence=(*evidence, citation),
+                failure_type=FAILURE_FIREWALL_DENY,
+            )
+        if verdict.kind == INDETERMINATE:
+            missing.append(
+                f"{name}: {verdict.reason} — verify this rule by hand."
+            )
+            return None
+        evidence.append(citation)
+        return None
+
+    def _device_addresses(self, key: str | None) -> tuple[str, ...]:
+        """Every address the snapshot records for a device.
+
+        Firewall rules are written against addresses; a hostname means
+        nothing to a chain. Interface addresses and the management
+        address are all Atlas has, and all it uses.
+        """
+
+        if key is None:
+            return ()
+        device = self.devices.get(key)
+        if not isinstance(device, dict):
+            return ()
+        found: list[str] = []
+        candidates = [device.get("management_ip")]
+        candidates.extend(
+            item.get("ip_address")
+            for item in device.get("interfaces") or ()
+            if isinstance(item, dict)
+        )
+        for value in candidates:
+            if not value:
+                continue
+            address = str(value).split("/")[0].strip()
+            if address and address not in found:
+                found.append(address)
+        return tuple(found)
 
     def _describe_intent(self) -> str:
         protocol = self.intent.get("protocol", "").upper() or "IP"
@@ -1036,6 +1152,16 @@ class _Investigation:
                     "intact; the most recent discovery could not reach it.",
                     "Check credentials and reachability for the device, then "
                     "run a fresh discovery.",
+                )
+            )
+        elif failure.failure_type == FAILURE_FIREWALL_DENY:
+            recommendations.extend(
+                (
+                    f"The firewall chain enforced on {device} drops the "
+                    "declared packet — if this traffic should be allowed, "
+                    "add the rule through your change process.",
+                    "The chain was read from the running device; if it "
+                    "has changed since, re-run discovery and trace again.",
                 )
             )
         elif failure.failure_type == FAILURE_ACL_DENY:
