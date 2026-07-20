@@ -922,6 +922,7 @@ class TopologyRenderer:
         for group in ospf_groups:
             vrf = str(group.get("vrf") or "default")
             states: set[str] = set()
+            all_states: list[str] = []
             abrs: list[str] = []
             dual_speakers: list[str] = []
             for node_id in group["members"]:
@@ -931,6 +932,7 @@ class TopologyRenderer:
                         state = str(adjacency.get("state") or "").strip()
                         if state:
                             states.add(state)
+                        all_states.append(state)
                 areas = {
                     str(item.get("area_id"))
                     for item in data.get("ospf_memberships") or ()
@@ -946,6 +948,21 @@ class TopologyRenderer:
                     # an ASBR *candidate*; redistribution is not observed.
                     dual_speakers.append(label)
             group["states"] = sorted(states)
+            simple = [_ospf_state_of(state) for state in all_states]
+            group["adjacency_count"] = len(all_states)
+            group["adjacencies_full"] = sum(
+                1 for state in simple if state == _OSPF_FULL
+            )
+            # Named separately because it is NOT a fault: DROther pairs
+            # rest here by design, and lumping it in with "not full"
+            # would report a healthy segment as degraded.
+            group["adjacencies_two_way"] = sum(
+                1 for state in simple if state in _OSPF_BY_DESIGN
+            )
+            group["adjacencies_forming"] = sum(
+                1 for state in simple if state in _OSPF_FORMING
+            )
+            group["health"] = _ospf_health(all_states)
             group["roles"] = (
                 [f"ABR: {name}" for name in sorted(abrs)]
                 + [f"ASBR candidate (also BGP): {name}"
@@ -1005,16 +1022,19 @@ class TopologyRenderer:
         ownership = dict(
             (self._snapshot.metadata or {}).get("address_ownership") or {}
         )
+        def _peer_of(*candidates) -> str | None:
+            for candidate in candidates:
+                claim = ownership.get(str(candidate or "").strip())
+                if claim:
+                    return str(dict(claim).get("device_id") or "") or None
+            return None
+
         pair_states: dict[tuple[str, str], list[str]] = {}
         pair_prefixes: dict[tuple[str, str], int] = {}
+        ospf_pair_states: dict[tuple[str, str], list[str]] = {}
         for node_id, data in nodes.items():
             for session in data.get("bgp_sessions") or ():
-                claim = ownership.get(
-                    str(session.get("peer_address") or "").strip()
-                )
-                if not claim:
-                    continue
-                peer_id = str(dict(claim).get("device_id") or "")
+                peer_id = _peer_of(session.get("peer_address"))
                 if not peer_id or peer_id == node_id:
                     continue
                 key = tuple(sorted((node_id, peer_id)))
@@ -1024,18 +1044,37 @@ class TopologyRenderer:
                 accepted = session.get("accepted_prefixes")
                 if isinstance(accepted, int):
                     pair_prefixes[key] = pair_prefixes.get(key, 0) + accepted
+            for adjacency in data.get("ospf_adjacencies") or ():
+                # The adjacency address is the neighbour's interface; the
+                # router id identifies it when the address is not owned.
+                peer_id = _peer_of(
+                    adjacency.get("adjacency_address"),
+                    adjacency.get("neighbor_router_id"),
+                )
+                if not peer_id or peer_id == node_id:
+                    continue
+                key = tuple(sorted((node_id, peer_id)))
+                ospf_pair_states.setdefault(key, []).append(
+                    str(adjacency.get("state") or "")
+                )
         for item in elements["edges"]:
             data = item["data"]
-            if data["id"] not in bgp_edge_ids:
-                continue
             key = tuple(sorted((str(data["source"]), str(data["target"]))))
-            observed = pair_states.get(key)
-            if observed is None:
-                continue
-            data["bgp_health"] = _session_health(observed)
-            data["bgp_sessions_observed"] = len(observed)
-            if key in pair_prefixes:
-                data["bgp_prefixes_received"] = pair_prefixes[key]
+            if data["id"] in bgp_edge_ids:
+                observed = pair_states.get(key)
+                if observed is not None:
+                    data["bgp_health"] = _session_health(observed)
+                    data["bgp_sessions_observed"] = len(observed)
+                    if key in pair_prefixes:
+                        data["bgp_prefixes_received"] = pair_prefixes[key]
+            if data["id"] in ospf_edge_ids:
+                observed = ospf_pair_states.get(key)
+                if observed is not None:
+                    data["ospf_health"] = _ospf_health(observed)
+                    data["ospf_adjacencies_observed"] = len(observed)
+                    data["ospf_states"] = sorted(
+                        {state for state in observed if state}
+                    )
 
         return {
             "ospf": {
@@ -1044,6 +1083,23 @@ class TopologyRenderer:
                 "edge_ids": sorted(ospf_edge_ids),
                 "covered_devices": len(ospf_assignment),
                 "total_devices": len(nodes),
+                "adjacencies": sum(
+                    int(group.get("adjacency_count") or 0)
+                    for group in ospf_groups
+                ),
+                "adjacencies_full": sum(
+                    int(group.get("adjacencies_full") or 0)
+                    for group in ospf_groups
+                ),
+                "adjacencies_two_way": sum(
+                    int(group.get("adjacencies_two_way") or 0)
+                    for group in ospf_groups
+                ),
+                "health": _ospf_health(
+                    state
+                    for group in ospf_groups
+                    for state in (group.get("states") or ())
+                ),
             },
             "bgp": {
                 "groups": bgp_groups,
@@ -1281,6 +1337,51 @@ def _session_health(states: Iterable[str]) -> str:
     # a state Atlas recognises, say unknown rather than asserting down.
     recognised = {"active", "idle", "connect", "opensent", "openconfirm"}
     return HEALTH_DOWN if any(s in recognised for s in known) else HEALTH_UNKNOWN
+
+
+# OSPF neighbour states, by what they mean for an operator. The state
+# is reported as "State/Role" (Full/DR, 2-Way/DROther), so only the part
+# before the slash is the state.
+_OSPF_FULL = "full"
+# 2-Way between two DROther routers on a multi-access segment is the
+# DESIGNED resting state — they adjacency only with the DR and BDR.
+# Calling it a fault would mark a correctly built broadcast segment
+# degraded, which is the fastest way to make a health signal ignored.
+_OSPF_BY_DESIGN = {"2-way"}
+_OSPF_FORMING = {"init", "attempt", "exstart", "exchange", "loading"}
+_OSPF_DOWN = {"down"}
+
+
+def _ospf_state_of(value: str) -> str:
+    return str(value or "").split("/")[0].strip().casefold()
+
+
+def _ospf_health(states: Iterable[str]) -> str:
+    """A verdict over observed OSPF neighbour states.
+
+    Same four outcomes as BGP so the two views read alike, with OSPF's
+    own definition of "up": Full, plus the 2-Way that DROther pairs are
+    supposed to sit in. A state Atlas cannot place is never counted
+    healthy.
+    """
+
+    known = [_ospf_state_of(state) for state in states]
+    known = [state for state in known if state]
+    if not known:
+        return HEALTH_UNKNOWN
+    up = [
+        state for state in known
+        if state == _OSPF_FULL or state in _OSPF_BY_DESIGN
+    ]
+    if len(up) == len(known):
+        return HEALTH_ESTABLISHED
+    if up:
+        return HEALTH_DEGRADED
+    recognised = _OSPF_FORMING | _OSPF_DOWN
+    return (
+        HEALTH_DOWN if any(state in recognised for state in known)
+        else HEALTH_UNKNOWN
+    )
 
 
 def _protocol_groups(

@@ -24,6 +24,7 @@ from founderos_atlas.correlation.models import (
 from founderos_atlas.routing.evidence import bgp_sessions_from_summary
 from founderos_atlas.visualization.renderer import (
     _edge_is_protocol,
+    _ospf_health,
     _protocol_groups,
     _session_health,
 )
@@ -321,6 +322,134 @@ class SessionHealthTests(unittest.TestCase):
         view, _ = bgp_view({"edge-a": "active", "edge-b": "active"})
         # Nothing reported a count, which is not the same as zero.
         self.assertIsNone(view["groups"][0]["prefixes_received"])
+
+
+def ospf_estate(states):
+    """Two routers adjacent over OSPF, with the given neighbour states."""
+
+    from founderos_atlas.correlation.metadata import correlation_metadata
+    from founderos_atlas.topology.snapshot import content_address
+
+    def device(host, dev_id, own, peer):
+        return {
+            "device_id": dev_id, "hostname": host,
+            "management_ip": own, "vendor": "frrouting",
+            "platform": "FRRouting", "os_name": "FRRouting",
+            "os_version": "8.4", "serial_number": None,
+            "interfaces": [{"name": "eth1", "ip_address": own,
+                            "status": "up", "protocol_status": "up",
+                            "description": "", "metadata": {}}],
+            "metadata": {"routing_evidence": {
+                "schema_version": "1.0.0", "bgp_sessions": [],
+                "ospf_adjacencies": [{
+                    "neighbor_router_id": peer, "adjacency_address": peer,
+                    "local_interface": "eth1",
+                    "state": states.get(host, "Full/DR"),
+                    "process_id": None, "area_id": "0.0.0.0",
+                    "vrf": "default", "address_family": "ipv4",
+                    "source_command": "show ip ospf neighbor",
+                    "observed_at": None, "evidence_state": "observed",
+                }],
+            }},
+        }
+
+    devices = [
+        device("rtr-a", "d1", "10.0.0.1", "10.0.0.2"),
+        device("rtr-b", "d2", "10.0.0.2", "10.0.0.1"),
+    ]
+    edges = [{
+        "local_device_id": "d1", "local_interface": "eth1",
+        "remote_hostname": "10.0.0.2", "remote_interface": None,
+        "remote_management_ip": None, "protocol": "ospf",
+        "metadata": {"observation": "routing-adjacency",
+                     "adjacency_address": "10.0.0.2",
+                     "source_command": "show ip ospf neighbor"},
+    }]
+    metadata = {"schema_version": "1.0.0", "deterministic": True,
+                **correlation_metadata(devices, edges)}
+    created_at = "2026-07-20T12:00:00+00:00"
+    return {
+        "snapshot_id": content_address(
+            created_at=created_at, devices=tuple(devices),
+            edges=tuple(edges), warnings=(), metadata=metadata,
+        ),
+        "created_at": created_at, "devices": devices, "edges": edges,
+        "warnings": [], "metadata": metadata,
+    }
+
+
+def ospf_view(states):
+    from founderos_atlas.topology import TopologySnapshot
+    from founderos_atlas.visualization.renderer import TopologyRenderer
+
+    snapshot = TopologySnapshot.from_dict(ospf_estate(states))
+    renderer = TopologyRenderer(snapshot)
+    elements = renderer.elements()
+    return renderer.routing_view(elements)["ospf"], elements
+
+
+class OspfHealthTests(unittest.TestCase):
+    def test_full_is_up(self) -> None:
+        self.assertEqual(
+            "established", _ospf_health(["Full/DR", "Full/DROther"])
+        )
+
+    def test_two_way_between_drothers_is_not_a_fault(self) -> None:
+        """DROther routers on a multi-access segment rest in 2-Way by
+        design — they adjacency only with the DR and BDR. Treating that
+        as broken would mark a correctly built segment degraded, which
+        is the fastest way to make a health signal ignored."""
+
+        self.assertEqual("established", _ospf_health(["2-Way/DROther"]))
+        self.assertEqual(
+            "established", _ospf_health(["Full/DR", "2-Way/DROther"])
+        )
+
+    def test_a_forming_adjacency_is_not_up(self) -> None:
+        self.assertEqual(
+            "degraded", _ospf_health(["Full/DR", "ExStart/DR"])
+        )
+        self.assertEqual("down", _ospf_health(["ExStart/DR", "Init/DR"]))
+        self.assertEqual("down", _ospf_health(["Down/DR"]))
+
+    def test_an_unreadable_state_is_never_healthy(self) -> None:
+        self.assertEqual("unknown", _ospf_health(["banana/DR"]))
+        self.assertEqual("unknown", _ospf_health([]))
+        self.assertEqual(
+            "degraded", _ospf_health(["Full/DR", "banana/DR"])
+        )
+
+    def test_the_role_after_the_slash_is_not_the_state(self) -> None:
+        # "Full/DROther" is Full. Reading the whole string, or the part
+        # after the slash, would call it something else entirely.
+        self.assertEqual("established", _ospf_health(["Full/DROther"]))
+
+    def test_a_healthy_area_reports_established(self) -> None:
+        view, _ = ospf_view({})
+        self.assertEqual("established", view["health"])
+        self.assertEqual(2, view["adjacencies"])
+        self.assertEqual(2, view["adjacencies_full"])
+        for group in view["groups"]:
+            self.assertEqual("established", group["health"])
+            self.assertEqual(0, group["adjacencies_forming"])
+
+    def test_two_way_is_counted_apart_from_full(self) -> None:
+        view, _ = ospf_view({"rtr-a": "2-Way/DROther"})
+        self.assertEqual("established", view["health"])
+        self.assertEqual(1, view["adjacencies_full"])
+        self.assertEqual(1, view["adjacencies_two_way"])
+
+    def test_a_stuck_adjacency_shows_on_the_link(self) -> None:
+        view, elements = ospf_view({"rtr-a": "ExStart/DR"})
+        self.assertEqual("degraded", view["health"])
+        self.assertEqual(1, view["groups"][0]["adjacencies_forming"])
+        links = [
+            item["data"] for item in elements["edges"]
+            if "ospf_health" in item["data"]
+        ]
+        self.assertTrue(links, "no link carried adjacency health")
+        self.assertEqual("degraded", links[0]["ospf_health"])
+        self.assertEqual(2, links[0]["ospf_adjacencies_observed"])
 
 
 class DomainLabelTests(unittest.TestCase):

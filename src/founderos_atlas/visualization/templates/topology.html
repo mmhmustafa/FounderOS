@@ -407,6 +407,18 @@
             text += ' · session state unreadable';
           }
         }
+        if (viewMode === 'ospf' && view.adjacencies) {
+          const up = view.adjacencies_full + view.adjacencies_two_way;
+          text += ` · ${view.adjacencies_full}/${view.adjacencies} adjacencies full`;
+          // 2-Way is where DROther pairs are supposed to sit, so it is
+          // named as expected rather than counted against the estate.
+          if (view.adjacencies_two_way) {
+            text += ` · ${view.adjacencies_two_way} 2-Way (expected between DROthers)`;
+          }
+          if (view.adjacencies - up > 0) {
+            text += ` · ${view.adjacencies - up} not adjacent`;
+          }
+        }
         el.textContent = text;
       } else { el.textContent = fullSummaryText; }
     };
@@ -623,6 +635,13 @@
         { selector: 'edge[bgp_health = "down"]', style: {
           'line-color': '#dc2626', 'line-style': 'dashed',
           'width': 2.6, 'opacity': 1 }},
+        { selector: 'edge[ospf_health = "established"]', style: {
+          'line-color': '#16a34a', 'width': 2.2, 'opacity': 1 }},
+        { selector: 'edge[ospf_health = "degraded"]', style: {
+          'line-color': '#d97706', 'width': 2.6, 'opacity': 1 }},
+        { selector: 'edge[ospf_health = "down"]', style: {
+          'line-color': '#dc2626', 'line-style': 'dashed',
+          'width': 2.6, 'opacity': 1 }},
         { selector: 'edge[relationship = "inferred"]', style: { 'line-style': 'dotted', 'line-color': GRAPH_THEME.adjacency, 'width': 1.1, 'opacity': 0.5 }},
         { selector: 'edge[relationship = "unknown"]', style: { 'line-style': 'dotted', 'line-color': GRAPH_THEME.adjacency, 'width': 1.1, 'opacity': 0.5 }},
 
@@ -763,12 +782,17 @@
     }
     // Health in the operator's words. "unknown" is deliberately not
     // softened into something reassuring: not knowing is its own state.
-    const healthLabel = health => ({
-      established: 'All sessions established',
-      degraded: 'Degraded — some sessions not established',
-      down: 'Down — no session established',
-      unknown: 'Unknown — no readable session state',
-    }[health] || 'Unknown — no readable session state');
+    const healthLabel = (health, protocol) => {
+      const unit = protocol === 'ospf' ? 'adjacency' : 'session';
+      return ({
+        established: protocol === 'ospf'
+          ? 'All adjacencies at their expected state'
+          : 'All sessions established',
+        degraded: `Degraded — some ${unit === 'adjacency' ? 'adjacencies' : 'sessions'} not up`,
+        down: `Down — no ${unit} up`,
+        unknown: `Unknown — no readable ${unit} state`,
+      }[health] || `Unknown — no readable ${unit} state`);
+    };
 
     const nodeDetails = data => {
       if (data.kind === 'protocol-domain') {
@@ -778,13 +802,20 @@
       <div class="field"><strong>Control-plane domain</strong>${name}</div>
       <div class="field"><strong>Devices represented</strong>${escapeHtml(data.count || 0)}</div>
       ${data.area_id ? `<div class="field"><strong>Area</strong>${escapeHtml(data.area_id)}</div>` : ''}
+      ${data.adjacency_count ? `
+      <div class="field"><strong>Adjacencies</strong>${escapeHtml(data.adjacencies_full || 0)} of ${escapeHtml(data.adjacency_count)} full${
+        data.adjacencies_two_way
+          ? ` · ${escapeHtml(data.adjacencies_two_way)} 2-Way (expected between DROthers)` : ''}${
+        data.adjacencies_forming
+          ? ` · ${escapeHtml(data.adjacencies_forming)} still forming` : ''}</div>
+      <div class="field"><strong>Health</strong>${escapeHtml(healthLabel(data.health, 'ospf'))}</div>` : ''}
       ${data.local_as ? `<div class="field"><strong>Local AS</strong>${escapeHtml(data.local_as)}</div>` : ''}
       <div class="field"><strong>VRF</strong>${escapeHtml(data.vrf || 'default')}</div>
       ${data.session_count ? `
       <div class="field"><strong>Sessions</strong>${escapeHtml(data.sessions_established || 0)} of ${escapeHtml(data.session_count)} established${
         (data.session_kinds && data.session_kinds.length)
           ? ' · ' + escapeHtml(data.session_kinds.join(', ')) : ''}</div>
-      <div class="field"><strong>Health</strong>${escapeHtml(healthLabel(data.health))}</div>` : ''}
+      <div class="field"><strong>Health</strong>${escapeHtml(healthLabel(data.health, 'bgp'))}</div>` : ''}
       ${(typeof data.prefixes_received === 'number')
         ? `<div class="field"><strong>Prefixes received</strong>${escapeHtml(data.prefixes_received)}</div>` : ''}
       ${(data.states && data.states.length)
