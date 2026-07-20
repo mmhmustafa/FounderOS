@@ -1025,6 +1025,42 @@ class ConsoleGuiTests(unittest.TestCase):
         self.assertIn("Press Ctrl+C", actions_js)
         self.assertIn("copyViaTextarea", actions_js)
 
+    def test_terminal_cannot_paint_over_the_page(self) -> None:
+        """Found in the live GUI: xterm sizes its canvases from its own
+        measurement, and a fit() that ran before layout settled made it
+        render taller than its container — the terminal painted over the
+        paragraph and the sidebar beside it."""
+
+        static = Path(__file__).resolve().parents[1] / "src/founderos_atlas/web/static"
+        css = (static / "atlas.css").read_text(encoding="utf-8")
+        block = css.split(".console-terminal {", 1)[1].split("}", 1)[0]
+        self.assertIn("overflow: hidden", block)
+        # A magic pixel height cannot fit every screen.
+        self.assertIn("vh", block)
+
+    def test_the_terminal_is_fitted_after_layout_not_during_it(self) -> None:
+        static = Path(__file__).resolve().parents[1] / "src/founderos_atlas/web/static"
+        console_js = (static / "atlas-console.js").read_text(encoding="utf-8")
+        self.assertIn("requestAnimationFrame", console_js)
+        self.assertIn("ResizeObserver", console_js)
+        # The synchronous fit at open() time was the bug.
+        self.assertNotIn("term.open(el('terminal'));\n    if (fit) { fit.fit(); }", console_js)
+
+    def test_a_device_that_is_not_the_expected_one_is_called_out(self) -> None:
+        """A management address has a shelf life. When a lab or a DHCP
+        estate reassigns one, the recorded address points at a stranger
+        — and an engineer must learn that before they type, not after."""
+
+        static = Path(__file__).resolve().parents[1] / "src/founderos_atlas/web/static"
+        console_js = (static / "atlas-console.js").read_text(encoding="utf-8")
+        self.assertIn("checkIdentity", console_js)
+        self.assertIn("not the device Atlas expected", console_js)
+        self.assertIn("calls itself", console_js)
+        self.assertIn("re-run discovery", console_js)
+        # The check must reset per session, or a reconnect to a
+        # different box would inherit the previous verdict.
+        self.assertIn("identityChecked = false", console_js)
+
     def test_sessions_endpoint_lists_nothing_before_any_session(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             response = self._client(Path(tmp)).get("/console/sessions")

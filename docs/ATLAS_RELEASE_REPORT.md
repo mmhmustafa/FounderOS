@@ -150,7 +150,19 @@ table (completeness is a failing test).
   that requires an external dependency.
 - **Live device execution**: Atlas deliberately does not push
 configuration; Compass execution is checkpoint-tracked by design (the
-console provides interactive access under its own audit).
+console provides interactive access under its own audit). The packet
+trace's "Validate live" is the one command Atlas runs on an
+operator's explicit request — a traceroute, and a TCP connect when
+the trace declared a port — built from a validated address and port,
+gated `console.use`, and audited like a console connection.
+- **Probes are CLI-bound, per platform**: a device's SSH session is
+  usually its CLI, not a shell (FRR answers in vtysh exactly as a
+  Cisco answers in IOS), so each probe is only the command that CLI
+  accepts. Where a routing CLI cannot open a socket, the service
+  check reports `unsupported` rather than probing from another
+  vantage point and presenting it as the same evidence. A probe that
+  outlives its deadline returns the hops it did observe, marked cut
+  short, instead of discarding them.
 - **L4 policy evaluation** (ACL/firewall for protocol/port intent):
   IOS access-list rules and their interface bindings are now parsed
   from captured running configurations and evaluated per hop against

@@ -141,9 +141,51 @@
     });
   }
 
+  /* Does the device answering agree that it is the device Atlas meant?
+     A management address is evidence with a shelf life: labs and DHCP
+     estates reassign them, and a stale one points at a stranger. The
+     device announces its own name in its prompt, so the disagreement
+     is visible in the first bytes - and an engineer typing on the
+     wrong router must be told before they type. Only prompts are read;
+     nothing here is recorded. */
+  var identityChecked = false;
+  var identityBuffer = '';
+  var PROMPT = /(^|[\r\n])\s*([A-Za-z][A-Za-z0-9._-]{1,62})\s*[#>]\s*$/;
+
+  function checkIdentity(chunk) {
+    if (identityChecked || !config.hostname) { return; }
+    identityBuffer += chunk;
+    if (identityBuffer.length > 4096) {
+      identityBuffer = identityBuffer.slice(-4096);
+    }
+    var match = PROMPT.exec(identityBuffer.replace(/\x1b\[[0-9;]*[A-Za-z]/g, ''));
+    if (!match) { return; }
+    identityChecked = true;
+    var seen = match[2];
+    var expected = String(config.hostname);
+    /* Compare the bare names: a prompt may carry a domain suffix, and
+       case is not identity. */
+    var bare = function (name) {
+      return String(name).split('.')[0].toLowerCase();
+    };
+    if (bare(seen) === bare(expected)) { return; }
+    showAlert(
+      'This is not the device Atlas expected',
+      'Atlas opened this session to ' + expected + ' at '
+      + config.managementIp + ', but the device answering calls itself "'
+      + seen + '". The recorded management address is most likely stale — '
+      + 'addresses get reassigned, and the topology snapshot still holds '
+      + 'the old one. Disconnect before you run anything here, then '
+      + 're-run discovery so Atlas relearns which address belongs to '
+      + 'which device.',
+      [{ label: 'Disconnect', onClick: disconnect }]
+    );
+  }
+
   function handleMessage(payload) {
     if (payload.type === 'output') {
       term.write(payload.data);
+      checkIdentity(payload.data);
       return;
     }
     if (payload.type === 'status') {
@@ -187,6 +229,21 @@
     socket.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
   }
 
+  /* Fit on the next frame, never synchronously: a fit() that runs before
+     the browser has laid the element out measures the wrong box, and
+     xterm then renders a canvas taller than its container. Coalesced so
+     a burst of resize events costs one measurement. */
+  var fitPending = false;
+  function scheduleFit() {
+    if (!fit || fitPending) { return; }
+    fitPending = true;
+    global.requestAnimationFrame(function () {
+      fitPending = false;
+      try { fit.fit(); } catch (error) { return; }
+      sendResize();
+    });
+  }
+
   function connect() {
     /* Never stack sessions. Reconnecting (or a double click that beat the
        disabled button) must not leave the previous SSH session holding a VTY
@@ -197,6 +254,10 @@
       teardown();
     }
     hideAlert();
+    /* A fresh session gets a fresh verdict: the address may point
+       somewhere else than it did last time. */
+    identityChecked = false;
+    identityBuffer = '';
     setState('Connecting', 'running');
     term.clear();
     requestToken().then(function (data) {
@@ -251,7 +312,7 @@
       term.loadAddon(fit);
     } catch (error) { fit = null; }
     term.open(el('terminal'));
-    if (fit) { fit.fit(); }
+    scheduleFit();
 
     term.onData(function (data) {
       if (socket && socket.readyState === 1) {
@@ -259,10 +320,19 @@
       }
     });
 
-    global.addEventListener('resize', function () {
-      if (fit) { fit.fit(); }
-      sendResize();
-    });
+    global.addEventListener('resize', scheduleFit);
+
+    /* The terminal's box changes for reasons no resize event reports:
+       the sidebar collapsing, the alert card above it appearing, fonts
+       arriving late. Watching the element itself catches all of them,
+       and catches the first layout pass too - fitting before the box
+       has its real size is what makes xterm render more rows than the
+       container holds. */
+    if (global.ResizeObserver) {
+      try {
+        new global.ResizeObserver(scheduleFit).observe(el('terminal'));
+      } catch (error) { /* fitting still happens on resize */ }
+    }
 
     /* A closed tab must not leave an SSH session holding a VTY line. The
        server also reaps it when the socket drops; this just makes it prompt. */

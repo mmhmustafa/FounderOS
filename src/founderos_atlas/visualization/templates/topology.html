@@ -131,6 +131,9 @@
     #trace-status[data-tone="failed"] { color: #b91c1c; font-weight: 600; }
     #trace-status[data-tone="warn"] { color: #b45309; }
     #trace-status[data-tone="ok"] { color: #166534; }
+    #trace-live-detail { margin-top: 6px; font-size: 12px; }
+    #trace-live-detail pre { max-height: 140px; overflow: auto; background: #f8fafc; border: 1px solid #d6dbe3; border-radius: 5px; padding: 6px 8px; margin: 4px 0 0; white-space: pre-wrap; }
+    body[data-theme="dark"] #trace-live-detail pre { background: #1a2740; border-color: #3a4b63; }
     body[data-theme="dark"] #trace-panel { background: #111c30; color: #e5edf8; border-color: #28364b; }
     body[data-theme="dark"] #trace-panel .trace-row label { color: #a9b6c8; }
     body[data-theme="dark"] #trace-panel select, body[data-theme="dark"] #trace-panel input { background: #1a2740; color: #e5edf8; border-color: #3a4b63; }
@@ -314,6 +317,10 @@
           <button type="button" id="trace-clear">Clear</button>
         </div>
         <p id="trace-status" role="status" aria-live="polite" hidden></p>
+        <details id="trace-live-detail" hidden>
+          <summary>Probe output</summary>
+          <pre id="trace-live-output"></pre>
+        </details>
       </div>
       <div id="open-sites" aria-label="Open sites"></div>
       <div id="viewport-hint" role="status" aria-live="polite" hidden></div>
@@ -2441,6 +2448,8 @@
           state.report = null;
           replayButton.hidden = true;
           liveButton.hidden = true;
+          liveDetail.hidden = true;
+          liveOutput.textContent = '';
         }
       }
 
@@ -2650,10 +2659,17 @@
         if (state.report && !state.running) { animateReport(state.report); }
       });
 
+      var liveDetail = document.getElementById('trace-live-detail');
+      var liveOutput = document.getElementById('trace-live-output');
+
       // Overlay the observed path (source, then every hop the probe
       // could name) on top of the prediction. Unresolved and silent
       // hops draw nothing — absence of proof is not proof.
       function overlayLiveResult(body) {
+        liveOutput.textContent = '$ ' + body.command + '\n'
+          + (body.output && body.output.trim()
+            ? body.output : '(the device returned no output)');
+        liveDetail.hidden = false;
         var sequence = [state.source];
         (body.hops || []).forEach(function (hop) {
           if (hop.device) { sequence.push(hop.device); }
@@ -2669,8 +2685,24 @@
         }
         var tone = body.verdict === 'confirmed' ? 'ok'
           : body.verdict === 'diverged' ? 'failed' : 'warn';
-        showStatus('Live probe (' + body.command + '): '
-          + body.verdict + ' — ' + body.verdict_detail, tone);
+        var text = 'Live probe (' + body.command + '): '
+          + body.verdict + ' — ' + body.verdict_detail;
+        // The port question is separate from the path question, and
+        // gets its own sentence so neither answer masks the other.
+        var svc = body.service;
+        if (svc) {
+          text += '  Service check: ' + svc.state + ' — ' + svc.detail;
+          if (svc.hint) { text += ' ' + svc.hint; }
+          if (svc.state === 'refused' || svc.state === 'no-answer') {
+            tone = 'warn';
+          }
+          if (svc.command) {
+            liveOutput.textContent += '\n$ ' + svc.command + '\n'
+              + (svc.output && svc.output.trim()
+                ? svc.output : '(the device returned no output)');
+          }
+        }
+        showStatus(text, tone);
       }
 
       liveButton.addEventListener('click', function () {

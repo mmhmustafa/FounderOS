@@ -4956,35 +4956,79 @@ def register_routes(app) -> None:
             return {"error": error}, 409
         return stored
 
-    def _probe_verdict(actual, expected, predicted_path, dst):
+    def _service_detail(state, port, hostname, evidence):
+        """Say what the connect attempt proved — and what it did not.
+
+        The distinction that matters to an engineer: a refusal proves
+        the network delivered and the host answered, so a still-broken
+        application is not a routing problem.
+        """
+
+        if state == "open":
+            return (
+                f"{hostname} accepted a TCP connection on port {port} — "
+                "the path delivers and the service is listening."
+            )
+        if state == "refused":
+            return (
+                f"{hostname} actively refused port {port}. The network "
+                "delivered the packet and the host answered, so this is "
+                "the service, not the path — nothing is listening there."
+            )
+        if state == "no-answer":
+            return (
+                f"Nothing answered on port {port}. Atlas cannot tell a "
+                "silent drop from a filter or a dead service apart from "
+                "this evidence alone."
+            )
+        return (
+            f"The connect attempt to port {port} gave no verdict Atlas "
+            f"can read: {evidence}"
+        )
+
+    def _probe_verdict(actual, expected, predicted_path, dst, target_address):
         """Three-valued agreement between observed and predicted path.
 
-        Positional by design: traceroute hop N is the Nth device after
-        the source on a linear path. Silent hops and addresses Atlas
-        cannot name prove nothing either way — they can make the
-        verdict inconclusive, never confirmed."""
+        Matched as a SUBSEQUENCE, not position by position: only
+        devices that decrement TTL answer a traceroute, so an L2
+        switch (or a transparent firewall) on the predicted path is
+        invisible to the probe and its absence is not disagreement.
+        What would be disagreement is a device answering that the
+        prediction never routed through, or predicted devices
+        answering out of order. Silent hops and addresses Atlas cannot
+        name prove nothing either way — they can make the verdict
+        inconclusive, never confirmed."""
 
         destination_names = {dst.hostname.casefold()}
+        skipped: list[str] = []
+        position = -1
         for entry in actual:
             if not entry["address"] or not entry["device"]:
                 continue
-            position = entry["index"] - 1
             name = entry["device"].casefold()
-            if position < len(expected) and name == expected[position]:
-                continue
-            if position < len(expected):
+            try:
+                found = expected.index(name, position + 1)
+            except ValueError:
+                if name in expected:
+                    return "diverged", (
+                        f"Hop {entry['index']} answered from "
+                        f"{entry['address']} ({entry['device']}), which "
+                        "the prediction routes through earlier — the "
+                        "live path visits it out of order."
+                    )
                 return "diverged", (
                     f"Hop {entry['index']} answered from "
-                    f"{entry['address']} ({entry['device']}), but the "
-                    f"prediction expected {predicted_path[position + 1]}."
+                    f"{entry['address']} ({entry['device']}), a device "
+                    "the predicted path never routes through."
                 )
-            return "diverged", (
-                f"Hop {entry['index']} answered from {entry['address']} "
-                f"({entry['device']}) beyond the predicted destination."
-            )
+            # Predicted devices between the last match and this one did
+            # not answer: normal for anything that does not decrement
+            # TTL, and worth naming rather than silently accepting.
+            skipped.extend(predicted_path[i + 1] for i in range(position + 1, found))
+            position = found
         reached = any(
             (entry["device"] or "").casefold() in destination_names
-            or entry["address"] == dst.management_ip
+            or entry["address"] in (target_address, dst.management_ip)
             for entry in actual
         )
         silent = [e["index"] for e in actual if not e["address"]]
@@ -4992,9 +5036,15 @@ def register_routes(app) -> None:
             e["address"] for e in actual if e["address"] and not e["device"]
         ]
         if reached and not silent and not unresolved:
+            note = (
+                " " + ", ".join(sorted(set(skipped)))
+                + " did not answer (devices that do not decrement TTL, "
+                "such as L2 switches, never appear in a traceroute)."
+                if skipped else ""
+            )
             return "confirmed", (
                 "Every replying hop matches the predicted path and the "
-                f"probe reached {dst.hostname}."
+                f"probe reached {dst.hostname}.{note}"
             )
         parts = []
         if not reached:
@@ -5032,8 +5082,14 @@ def register_routes(app) -> None:
 
         from founderos_atlas.console import (
             ConsoleSessionError,
+            ProbeUnsupported,
+            dataplane_address,
+            parse_service_result,
             parse_traceroute,
+            platform_family,
+            probe_hint,
             run_probe_command,
+            service_command,
             traceroute_command,
         )
 
@@ -5098,7 +5154,31 @@ def register_routes(app) -> None:
         except KeyError:
             return {"error": "The stored credential reference is unknown."}, 409
 
-        command = traceroute_command(dst.management_ip)
+        # Probe the forwarding plane the prediction is about. A
+        # management address may be out-of-band (this is common — and
+        # deliberate in many estates): tracerouting toward it would
+        # validate the wrong network, or nothing at all.
+        snapshot = load_json(report_dir / "topology_snapshot.json") or {}
+        dataplane = dataplane_address(
+            snapshot.get("devices"), dst.hostname, dst.management_ip
+        )
+        if dataplane is not None:
+            target_address, target_interface = dataplane
+            target_note = (
+                f"its dataplane address {target_address} "
+                f"({target_interface}) — the management address is not "
+                "the plane the prediction is about"
+            )
+        else:
+            target_address = dst.management_ip
+            target_note = (
+                f"its management address {target_address} — the snapshot "
+                "records no other address for it, so this validates the "
+                "management path"
+            )
+
+        family = platform_family(src.vendor, src.platform)
+        command = traceroute_command(target_address, family=family)
         probe_id = f"probe-{uuid4().hex[:12]}"
 
         def _record(result, detail):
@@ -5130,8 +5210,65 @@ def register_routes(app) -> None:
             return {"error": str(error)}, 502
         _record("ok", command)
 
+        # The service check (Phase 3 extension): the path can deliver a
+        # packet and the destination still refuse it. Those are
+        # different facts and the trace answers only the first, so when
+        # the recorded prediction declared a port, ask the second
+        # question too — with a real TCP connect from the same device.
+        declared_port = str(
+            (predicted.get("intent") or {}).get("port") or ""
+        ).strip()
+        service = None
+        if declared_port.isdigit():
+            try:
+                check = service_command(
+                    target_address, declared_port, family=family
+                )
+            except ProbeUnsupported as unsupported:
+                service = {
+                    "state": "unsupported",
+                    "command": None,
+                    "detail": str(unsupported),
+                    "output": "",
+                }
+            else:
+                try:
+                    service_output = run_probe_command(
+                        host=src.management_ip,
+                        port=src.port,
+                        username=username,
+                        password=password,
+                        command=check,
+                        host_key_store=console_host_key_store(),
+                        command_timeout=20.0,
+                        client_factory=app.config.get(
+                            "ATLAS_PROBE_CLIENT_FACTORY"
+                        ),
+                    )
+                except ConsoleSessionError as error:
+                    _record("failed", f"{check}: {error}")
+                    service = {
+                        "state": "unknown",
+                        "command": check,
+                        "detail": str(error),
+                        "output": "",
+                    }
+                else:
+                    _record("ok", check)
+                    state, evidence = parse_service_result(service_output)
+                    service = {
+                        "state": state,
+                        "command": check,
+                        "detail": _service_detail(
+                            state, declared_port, dst.hostname, evidence
+                        ),
+                        "output": service_output,
+                    }
+                    hint = probe_hint(service_output)
+                    if hint:
+                        service["hint"] = hint
+
         # Name each replying address from snapshot evidence only.
-        snapshot = load_json(report_dir / "topology_snapshot.json") or {}
         ip_map = {}
         for device in snapshot.get("devices") or ():
             if not isinstance(device, dict):
@@ -5161,25 +5298,35 @@ def register_routes(app) -> None:
 
         predicted_path = [str(item) for item in predicted.get("path") or ()]
         expected = [name.casefold() for name in predicted_path[1:]]
-        verdict, detail = _probe_verdict(
-            actual, expected, predicted_path, dst
-        )
+        if not actual:
+            verdict = "inconclusive"
+            hint = probe_hint(output)
+            detail = (
+                f"{src.hostname} returned no traceroute hops"
+                + (f" — {hint}" if hint else
+                   " — see the probe output for what the device said.")
+            )
+        else:
+            verdict, detail = _probe_verdict(
+                actual, expected, predicted_path, dst, target_address
+            )
 
         return {
             "probe": "active",
             "probe_note": (
                 f"Live traceroute sent real packets from {src.hostname} "
-                f"toward {dst.hostname} ({dst.management_ip}) at the "
-                "operator's request."
+                f"toward {dst.hostname}, probing {target_note}. Run at "
+                "the operator's request."
             ),
             "command": command,
             "source": src.hostname,
             "destination": dst.hostname,
-            "destination_address": dst.management_ip,
+            "destination_address": target_address,
             "predicted_path": predicted_path,
             "hops": actual,
             "verdict": verdict,
             "verdict_detail": detail,
+            "service": service,
             "output": output,
         }
 
