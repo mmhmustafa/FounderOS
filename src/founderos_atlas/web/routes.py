@@ -4956,6 +4956,26 @@ def register_routes(app) -> None:
             return {"error": error}, 409
         return stored
 
+    def _reachability_detail(state, hostname, probe_protocol):
+        """What the protocol-correct probe settled, and what it did not."""
+
+        if state == "reachable":
+            return (
+                f"{hostname} answered an ICMP probe, so the path carries "
+                f"traffic to it — the traceroute's {probe_protocol.upper()} "
+                "probes were filtered somewhere along the way, which is "
+                "about those probes, not about your traffic."
+            )
+        if state == "unreachable":
+            return (
+                f"{hostname} did not answer an ICMP probe either, so the "
+                "silence is not only about the traceroute's "
+                f"{probe_protocol.upper()} probes."
+            )
+        return (
+            f"The ICMP probe to {hostname} gave no verdict Atlas can read."
+        )
+
     def _service_detail(state, port, hostname, evidence):
         """Say what the connect attempt proved — and what it did not.
 
@@ -5084,16 +5104,22 @@ def register_routes(app) -> None:
             ConsoleHostKeyBlocked,
             ConsoleHostKeyUnknown,
             ConsoleSessionError,
+            PING_SETTLED_NOTE,
             ProbeUnsupported,
+            SILENT_HOP_NOTE,
             dataplane_address,
+            parse_ping,
             parse_service_result,
             parse_traceroute,
+            ping_command,
+            ping_settled,
             platform_family,
             probe_hint,
             run_probe_command,
             service_command,
             silent_tail,
             traceroute_command,
+            traceroute_protocol,
         )
 
         body = request.get_json(silent=True) or {}
@@ -5208,6 +5234,7 @@ def register_routes(app) -> None:
                 host_key_store=console_host_key_store(),
                 client_factory=app.config.get("ATLAS_PROBE_CLIENT_FACTORY"),
                 stop_when=silent_tail,
+                stop_note=SILENT_HOP_NOTE,
             )
         except (ConsoleHostKeyBlocked, ConsoleHostKeyUnknown) as error:
             # The probe authenticates with a stored password, so it will
@@ -5333,6 +5360,54 @@ def register_routes(app) -> None:
             for hop in hops
         ]
 
+        # traceroute puts UDP on the wire whatever the operator
+        # declared, and a routing CLI gives no way to change that. When
+        # the probe did not reach the destination, that silence may be
+        # about UDP and not about the declared traffic at all — so ask
+        # the question again in a protocol Atlas can actually send.
+        # Without this, a firewall permitting ICMP but dropping UDP
+        # makes a healthy path read as broken.
+        probe_protocol = traceroute_protocol(family)
+        named = {(entry["device"] or "").casefold() for entry in actual}
+        addresses = {entry["address"] for entry in actual if entry["address"]}
+        arrived = (
+            dst.hostname.casefold() in named
+            or target_address in addresses
+        )
+        reachability = None
+        if not arrived:
+            check = ping_command(target_address, family=family)
+            try:
+                ping_output = run_probe_command(
+                    host=src.management_ip,
+                    port=src.port,
+                    username=username,
+                    password=password,
+                    command=check,
+                    host_key_store=console_host_key_store(),
+                    command_timeout=15.0,
+                    client_factory=app.config.get(
+                        "ATLAS_PROBE_CLIENT_FACTORY"
+                    ),
+                    stop_when=ping_settled,
+                    stop_note=PING_SETTLED_NOTE,
+                )
+            except ConsoleSessionError as error:
+                _record("failed", f"{check}: {error}")
+            else:
+                _record("ok", check)
+                state, evidence = parse_ping(ping_output)
+                reachability = {
+                    "state": state,
+                    "protocol": "icmp",
+                    "command": check,
+                    "evidence": evidence,
+                    "output": ping_output,
+                    "detail": _reachability_detail(
+                        state, dst.hostname, probe_protocol
+                    ),
+                }
+
         predicted_path = [str(item) for item in predicted.get("path") or ()]
         expected = [name.casefold() for name in predicted_path[1:]]
         if not actual:
@@ -5346,6 +5421,21 @@ def register_routes(app) -> None:
         else:
             verdict, detail = _probe_verdict(
                 actual, expected, predicted_path, dst, target_address
+            )
+        # A protocol-correct probe that DID arrive settles the silence
+        # the traceroute left: the path delivers, and what stopped is
+        # the probe's own UDP. Saying "not verified" here would send an
+        # engineer after an outage that is not happening.
+        if (
+            reachability
+            and reachability["state"] == "reachable"
+            and verdict != "diverged"
+        ):
+            detail = (
+                f"The {probe_protocol.upper()} probes traceroute sends "
+                f"were filtered before reaching {dst.hostname}, but an "
+                f"ICMP probe reached it — the path does carry traffic "
+                "to that host. " + detail
             )
 
         return {
@@ -5363,6 +5453,8 @@ def register_routes(app) -> None:
             "hops": actual,
             "verdict": verdict,
             "verdict_detail": detail,
+            "probe_protocol": probe_protocol,
+            "reachability": reachability,
             "service": service,
             "output": output,
         }

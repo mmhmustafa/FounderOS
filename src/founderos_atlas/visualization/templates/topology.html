@@ -2689,6 +2689,21 @@
           : body.verdict === 'diverged' ? 'failed' : 'warn';
         var text = 'Live probe (' + body.command + '): '
           + body.verdict + ' — ' + body.verdict_detail;
+        // The reachability answer is in the operator's own protocol,
+        // unlike the traceroute — so it gets said plainly.
+        var reach = body.reachability;
+        if (reach) {
+          text += '  ICMP reachability: ' + reach.state + ' — '
+            + reach.detail;
+          if (reach.command) {
+            liveOutput.textContent += '\n$ ' + reach.command + '\n'
+              + (reach.output && reach.output.trim()
+                ? reach.output : '(the device returned no output)');
+          }
+          if (reach.state === 'reachable' && tone !== 'failed') {
+            tone = 'ok';
+          }
+        }
         // The port question is separate from the path question, and
         // gets its own sentence so neither answer masks the other.
         var svc = body.service;

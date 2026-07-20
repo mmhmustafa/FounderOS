@@ -16,7 +16,10 @@ import unittest
 
 from founderos_atlas.console import (
     ProbeUnsupported,
+    parse_ping,
     parse_service_result,
+    ping_command,
+    ping_settled,
     parse_traceroute,
     platform_family,
     probe_hint,
@@ -67,6 +70,11 @@ class FakeSSHClient:
         # the double answers each in its own words.
         if command.startswith("traceroute"):
             body = self._holder["output"]
+        elif command.startswith(("ping", "bash timeout 8 ping")):
+            body = self._holder.get(
+                "ping_output", "3 packets transmitted, 0 received, "
+                "100% packet loss"
+            )
         else:
             body = self._holder.get(
                 "service_output", "nc: connect to host port: Connection refused"
@@ -190,6 +198,51 @@ class PlatformAwareCommandTests(unittest.TestCase):
             service_command("10.0.0.2", "443; reload", family="linux")
         with self.assertRaises(ValueError):
             service_command("10.0.0.2", 99999, family="linux")
+
+
+class PingProbeTests(unittest.TestCase):
+    def test_ping_is_available_on_every_cli_including_routing_ones(self):
+        # vtysh rejects every traceroute option but accepts bare ping —
+        # which makes this the only ICMP-correct probe on FRR.
+        self.assertEqual("ping 10.0.0.2", ping_command("10.0.0.2", family="frr"))
+        self.assertIn("-c 3", ping_command("10.0.0.2", family="linux"))
+        self.assertIn("count 3", ping_command("10.0.0.2", family="junos"))
+        self.assertEqual(
+            "ping 10.0.0.2", ping_command("10.0.0.2", family="cisco")
+        )
+        with self.assertRaises(ValueError):
+            ping_command("10.0.0.2; reload", family="frr")
+
+    def test_replies_and_loss_are_read_apart(self) -> None:
+        reachable, _ = parse_ping(
+            "64 bytes from 10.0.0.2: seq=1 ttl=58 time=0.2 ms"
+        )
+        self.assertEqual("reachable", reachable)
+        lost, _ = parse_ping(
+            "3 packets transmitted, 0 received, 100% packet loss"
+        )
+        self.assertEqual("unreachable", lost)
+        # "0% packet loss" is a substring of "100% packet loss" — the
+        # order of these checks is load-bearing.
+        partial, _ = parse_ping(
+            "3 packets transmitted, 2 received, 33% packet loss"
+        )
+        self.assertEqual("reachable", partial)
+        ios, _ = parse_ping("Success rate is 100 percent (5/5)\n!!!!!")
+        self.assertEqual("reachable", ios)
+        unknown, evidence = parse_ping("")
+        self.assertEqual("unknown", unknown)
+        self.assertIn("no output", evidence)
+
+    def test_a_bare_ping_is_stopped_once_it_has_answered(self) -> None:
+        """vtysh's ping runs until stopped; two replies is enough."""
+
+        self.assertFalse(ping_settled("PING 10.0.0.2 (10.0.0.2): 56 bytes\n"))
+        self.assertTrue(ping_settled(
+            "64 bytes from 10.0.0.2: seq=1 ttl=58\n"
+            "64 bytes from 10.0.0.2: seq=2 ttl=58\n"
+        ))
+        self.assertTrue(ping_settled("2 packets transmitted, 0% packet loss"))
 
 
 class ServiceResultTests(unittest.TestCase):
@@ -453,6 +506,108 @@ class ValidateLiveApiTests(unittest.TestCase):
             ).get_json()
             self.assertEqual("inconclusive", body["verdict"])
             self.assertIn("no traceroute hops", body["verdict_detail"])
+
+
+class ProtocolMismatchTests(unittest.TestCase):
+    """traceroute sends UDP whatever the operator declared.
+
+    Observed in the lab: a firewall permitting ICMP to a host but not
+    UDP made the traceroute die three hops short, and Atlas reported
+    the destination as never answering — while ICMP reached it
+    perfectly. That is a false negative, and it sends an engineer after
+    an outage that is not happening.
+    """
+
+    def _world(self, tmp: Path):
+        _, client = build_world(tmp)
+        holder: dict = {"output": IOS_TRACEROUTE, "commands": []}
+        shared = FakeSSHClient(holder)
+        client.application.config["ATLAS_PROBE_CLIENT_FACTORY"] = (
+            lambda: shared
+        )
+        return client, holder
+
+    def _trace_then_probe(self, client, holder, traceroute, ping):
+        client.post(
+            "/api/paths/trace",
+            json={"source": "A1", "destination": "A2", "protocol": "icmp"},
+        )
+        holder["output"] = traceroute
+        holder["ping_output"] = ping
+        return client.post(
+            "/api/paths/validate-live",
+            json={"source": "A1", "destination": "A2"},
+        ).get_json()
+
+    # The shape the lab produced: the probes are filtered before the
+    # destination, so nothing on the far side ever answers.
+    FILTERED = (
+        "traceroute to 10.0.0.2, 30 hops max\n"
+        " 1  *  *  *\n"
+        " 2  *  *  *\n"
+    )
+
+    def test_icmp_reaching_overrides_a_udp_filtered_silence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            client, holder = self._world(Path(tmp))
+            body = self._trace_then_probe(
+                client, holder, self.FILTERED,
+                "64 bytes from 10.0.0.2: seq=1 ttl=58 time=0.2 ms\n"
+                "2 packets transmitted, 2 packets received, 0% packet loss\n",
+            )
+            self.assertEqual("udp", body["probe_protocol"])
+            self.assertEqual("reachable", body["reachability"]["state"])
+            # The verdict must not read as an outage.
+            self.assertIn("does carry traffic", body["verdict_detail"])
+            self.assertIn(
+                "filtered", body["reachability"]["detail"]
+            )
+            # Two questions were asked: the path, then reachability.
+            self.assertTrue(
+                any(c.startswith("ping") for c in holder["commands"])
+            )
+
+    def test_silence_in_both_protocols_stays_honest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            client, holder = self._world(Path(tmp))
+            body = self._trace_then_probe(
+                client, holder, self.FILTERED,
+                "3 packets transmitted, 0 received, 100% packet loss\n",
+            )
+            self.assertEqual("unreachable", body["reachability"]["state"])
+            self.assertNotIn("does carry traffic", body["verdict_detail"])
+            self.assertIn("not only about", body["reachability"]["detail"])
+
+    def test_a_real_divergence_is_never_masked_by_reachability(self) -> None:
+        """Reaching by ICMP does not excuse the packet visiting a
+        device the prediction never routes through."""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client, holder = self._world(Path(tmp))
+            body = self._trace_then_probe(
+                client, holder,
+                "traceroute to 10.0.0.2, 30 hops max\n"
+                " 1  10.0.9.9  0.4 ms  0.3 ms  0.3 ms\n"
+                " 2  *  *  *\n",
+                "64 bytes from 10.0.0.2: seq=1 ttl=58 time=0.2 ms\n"
+                "2 packets transmitted, 2 packets received, 0% packet loss\n",
+            )
+            self.assertEqual("diverged", body["verdict"])
+            self.assertNotIn("does carry traffic", body["verdict_detail"])
+
+    def test_a_trace_that_arrives_asks_no_second_question(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            client, holder = self._world(Path(tmp))
+            body = self._trace_then_probe(
+                client, holder,
+                "traceroute to 10.0.0.2, 30 hops max\n"
+                "  1 10.0.0.2 1 msec 1 msec 1 msec\n",
+                "unused",
+            )
+            self.assertIsNone(body["reachability"])
+            self.assertFalse(
+                any(c.startswith("ping") for c in holder["commands"])
+            )
 
 
 class HostKeyRefusalTests(unittest.TestCase):

@@ -14,7 +14,12 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from founderos_atlas.console.probe import SILENT_HOP_LIMIT, silent_tail
+from founderos_atlas.console.probe import (
+    PING_SETTLED_NOTE,
+    SILENT_HOP_LIMIT,
+    SILENT_HOP_NOTE,
+    silent_tail,
+)
 from founderos_atlas.path_intelligence import investigate_path
 from founderos_atlas.path_intelligence.firewall import (
     evaluate_firewall,
@@ -252,6 +257,16 @@ class SilentTailTests(unittest.TestCase):
     def test_a_short_trace_is_never_cut_short(self) -> None:
         self.assertFalse(silent_tail("traceroute to x\n 1  *  *  *\n"))
         self.assertFalse(silent_tail(""))
+
+    def test_why_a_probe_stopped_is_the_callers_knowledge(self) -> None:
+        """The same early-stop serves a traceroute meeting a black hole
+        and a ping that has already answered. Found live: a successful
+        ping was annotated 'a device is dropping the probes' — the
+        opposite of what had happened."""
+
+        self.assertIn("dropping the probes", SILENT_HOP_NOTE)
+        self.assertIn("settle the question", PING_SETTLED_NOTE)
+        self.assertNotIn("dropping", PING_SETTLED_NOTE)
 
 
 if __name__ == "__main__":

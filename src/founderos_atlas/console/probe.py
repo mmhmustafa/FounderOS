@@ -59,6 +59,11 @@ SERVICE_REFUSED = "refused"
 SERVICE_NO_ANSWER = "no-answer"
 SERVICE_UNKNOWN = "unknown"
 
+# What a protocol-correct reachability probe proved.
+PING_REACHABLE = "reachable"
+PING_UNREACHABLE = "unreachable"
+PING_UNKNOWN = "unknown"
+
 # The one command shape this probe will ever send. IOS, IOS-XE, NX-OS,
 # EOS, Junos, FRR and Linux all accept ``traceroute <address>``.
 _ADDRESS_ONLY = re.compile(r"^[0-9a-fA-F:.]+$")
@@ -146,6 +151,84 @@ def traceroute_command(
     # Cisco IOS/NX-OS and FRR's vtysh take the bare form only; anything
     # else they reject outright as an unknown command.
     return f"traceroute {address}"
+
+
+def traceroute_protocol(family: str = FAMILY_UNKNOWN) -> str:
+    """What protocol this platform's traceroute actually puts on the wire.
+
+    It is almost never the one the operator declared. traceroute sends
+    UDP to high ports by default on every platform here, and a routing
+    CLI takes the bare command with no way to change that. A firewall
+    permitting the declared protocol but not UDP therefore makes a
+    healthy path look broken — so what was really sent is recorded and
+    reported, never quietly conflated with the declared intent.
+    """
+
+    return "udp"
+
+
+def ping_command(
+    destination_address: str, *, family: str = FAMILY_UNKNOWN
+) -> str:
+    """A protocol-correct ICMP reachability probe.
+
+    Every CLI here has ``ping``, including the routing CLIs that reject
+    every traceroute option — which makes this the one probe that can
+    answer an ICMP question honestly on those platforms. Bounded where
+    the CLI accepts a count; where it does not, the read deadline and
+    the settled-check bound it instead of pinging forever.
+    """
+
+    address = _validated(destination_address)
+    if family in (FAMILY_LINUX, FAMILY_FRR):
+        # busybox/iputils accept these; vtysh does NOT, so FRR falls
+        # through to the bare form below.
+        if family == FAMILY_LINUX:
+            return f"ping -c 3 -W 2 {address}"
+        return f"ping {address}"
+    if family == FAMILY_EOS:
+        return f"bash timeout 8 ping -c 3 -W 2 {address}"
+    if family == FAMILY_JUNOS:
+        return f"ping {address} count 3"
+    # IOS/NX-OS send a fixed small count and stop on their own.
+    return f"ping {address}"
+
+
+def ping_settled(text: str) -> bool:
+    """Enough of a ping has come back to answer the question.
+
+    A bare ``ping`` on a routing CLI runs until it is stopped. Two
+    replies, or a summary line, is all the evidence needed.
+    """
+
+    lowered = text.casefold()
+    if "packet loss" in lowered or "success rate" in lowered:
+        return True
+    replies = len(re.findall(r"bytes from", lowered))
+    return replies >= 2 or bool(re.search(r"!{3,}", text))
+
+
+def parse_ping(text: str) -> tuple[str, str]:
+    """What the reachability probe proved, and the line proving it."""
+
+    lowered = text.casefold()
+    for line in text.splitlines():
+        folded = line.casefold()
+        if "100% packet loss" in folded or "100.0% packet loss" in folded:
+            return PING_UNREACHABLE, line.strip()
+        if "success rate is 0 percent" in folded:
+            return PING_UNREACHABLE, line.strip()
+    for line in text.splitlines():
+        folded = line.casefold()
+        if "bytes from" in folded or re.search(r"!{3,}", line):
+            return PING_REACHABLE, line.strip()
+        if "packet loss" in folded and "100%" not in folded:
+            return PING_REACHABLE, line.strip()
+    if "unreachable" in lowered or "timed out" in lowered:
+        return PING_UNREACHABLE, text.strip().splitlines()[-1][:200]
+    if not text.strip():
+        return PING_UNKNOWN, "the device returned no output"
+    return PING_UNKNOWN, text.strip().splitlines()[-1][:200]
 
 
 def service_command(
@@ -250,6 +333,7 @@ def run_probe_command(
     command_timeout: float = PROBE_TIMEOUT_SECONDS,
     client_factory: Callable[[], Any] | None = None,
     stop_when: Callable[[str], bool] | None = None,
+    stop_note: str | None = None,
 ) -> str:
     """Run one command over SSH and return its output text.
 
@@ -308,12 +392,11 @@ def run_probe_command(
             f"{int(command_timeout)}s and was cut short — the hops above "
             "are what the device reported in that window.\n"
         )
-    elif ended == "silent":
+    elif ended == "early":
         text += (
-            f"\n[atlas] Stopped after {SILENT_HOP_LIMIT} consecutive hops "
-            "went unanswered — a device is dropping the probes, and "
-            "waiting out the remaining hops would add delay, not "
-            "evidence. The hops above are what answered.\n"
+            "\n[atlas] "
+            + (stop_note or "The probe was stopped early.")
+            + "\n"
         )
     return text
 
@@ -379,7 +462,7 @@ def _drain(
             if stop_when is not None:
                 try:
                     if stop_when(b"".join(chunks).decode("utf-8", "replace")):
-                        return b"".join(chunks), "silent"
+                        return b"".join(chunks), "early"
                 except Exception:  # noqa: BLE001 - a bad predicate
                     stop_when = None      # never let it end the read
             continue
@@ -443,6 +526,22 @@ def _read_bounded(stream: Any, timeout: float) -> tuple[bytes, bool]:
 
 
 SILENT_HOP_LIMIT = 3
+
+# Why a probe was stopped early is the caller's knowledge, not this
+# module's: the same early-stop machinery serves a traceroute meeting a
+# black hole and a ping that has already answered, and those mean
+# opposite things. Saying "a device is dropping the probes" over a
+# successful ping would be worse than saying nothing.
+SILENT_HOP_NOTE = (
+    f"Stopped after {SILENT_HOP_LIMIT} consecutive hops went unanswered "
+    "— a device is dropping the probes, and waiting out the remaining "
+    "hops would add delay, not evidence. The hops above are what "
+    "answered."
+)
+PING_SETTLED_NOTE = (
+    "Stopped once the device had answered — the replies above settle "
+    "the question, and a bare ping would otherwise run until stopped."
+)
 
 
 def silent_tail(text: str, limit: int = SILENT_HOP_LIMIT) -> bool:
