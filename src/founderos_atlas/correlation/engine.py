@@ -191,6 +191,7 @@ class EvidenceCorrelationEngine:
                     str(edge["remote_interface"])
                     if edge.get("remote_interface") else None
                 ),
+                protocol=protocol,
             ))
             if how == "ownership" and address is not None:
                 claim = ownership.owner_of(address)
@@ -211,6 +212,7 @@ class EvidenceCorrelationEngine:
                     platform_family=family_by_id.get(local_id),
                     local_interface=local_interface,
                     remote_interface=claim.interface if claim else None,
+                    protocol=protocol,
                 ))
             elif how == "hostname":
                 add(pair, RelationshipEvidence(
@@ -224,6 +226,7 @@ class EvidenceCorrelationEngine:
                     source_command=str(source) if source else None,
                     platform_family=family_by_id.get(local_id),
                     local_interface=local_interface,
+                    protocol=protocol,
                 ))
 
         # -- 2. matching point-to-point subnets --------------------------------

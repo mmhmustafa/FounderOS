@@ -463,6 +463,21 @@ class TopologyRenderer:
                     str(fused.get("relationship_type")), "unknown"
                 ),
                 "fused_type": str(fused.get("relationship_type")),
+                # Which protocols' observations support this link. The
+                # fused TYPE names only the strongest evidence, so a BGP
+                # session on a link that is also verified-routed is
+                # invisible in the type — and the per-protocol views ask
+                # exactly that question. Falls back to the evidence's own
+                # protocols for snapshots written before the field
+                # existed.
+                "protocols": sorted({
+                    str(value).casefold()
+                    for value in (
+                        fused.get("contributing_protocols")
+                        or [item.get("protocol") for item in evidence]
+                    )
+                    if value
+                }),
                 "confidence": int(fused.get("confidence") or 0),
                 "evidence": [
                     {
@@ -1156,6 +1171,14 @@ def _edge_is_protocol(data: Mapping, protocol: str) -> bool:
         str(data.get("fused_type") or "").casefold(),
         str(data.get("link_tag") or "").casefold(),
     }
+    # A fused link reports its STRONGEST evidence as its type, so a BGP
+    # peering that also had routed evidence typed as "verified-routed"
+    # and matched nothing here — the AS view drew zero links over a
+    # fully-meshed estate. The contributing protocols answer the
+    # question the view is actually asking.
+    values |= {
+        str(item).casefold() for item in (data.get("protocols") or ())
+    }
     if protocol == "ospf":
         return bool(values & {"ospf", "ospf-neighbor"})
     return bool(values & {"bgp", "bgp-peer"})
@@ -1173,6 +1196,14 @@ def _protocol_groups(
         item["data"] for item in elements["edges"]
         if item["data"]["id"] in relevant_edges
     ]
+    # Name the VRF only when naming it says something. On the common
+    # single-VRF estate every label read "BGP default · AS 65010", where
+    # "default" is the same word on every domain and pushes the number
+    # that actually identifies the domain to the end. It earns its place
+    # when there is more than one VRF, or when the one in use is a
+    # deliberate non-default.
+    group_vrfs = {str(key[0]) for key in members if key}
+    name_the_vrf = len(group_vrfs) > 1 or group_vrfs not in ((), {"default"})
     groups: list[dict[str, Any]] = []
     assignment: dict[str, list[str]] = {}
     for key in sorted(members, key=lambda value: tuple(map(str, value))):
@@ -1200,13 +1231,19 @@ def _protocol_groups(
         for index, component in enumerate(components, start=1):
             if protocol == "ospf":
                 vrf, process, area = key
-                base_label = f"OSPF {vrf} · Area {area}"
+                base_label = (
+                    f"OSPF {vrf} · Area {area}" if name_the_vrf
+                    else f"OSPF Area {area}"
+                )
                 attributes = {
                     "vrf": vrf, "process_id": process, "area_id": area,
                 }
             else:
                 vrf, local_as = key
-                base_label = f"BGP {vrf} · AS {local_as}"
+                base_label = (
+                    f"BGP {vrf} · AS {local_as}" if name_the_vrf
+                    else f"BGP AS {local_as}"
+                )
                 attributes = {"vrf": vrf, "local_as": local_as}
             suffix = f" · domain {index}" if len(components) > 1 else ""
             digest = sha256(

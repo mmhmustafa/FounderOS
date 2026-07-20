@@ -179,6 +179,13 @@ class RelationshipEvidence:
     platform_family: str | None = None
     local_interface: str | None = None
     remote_interface: str | None = None
+    # Which protocol's observation this evidence came from. Fusion
+    # reports the STRONGEST evidence as the relationship's type, which
+    # is right for "what is this link" — but it discards which
+    # protocols were involved, and the OSPF/BGP views ask exactly that.
+    # A BGP peering that also has routed evidence fused to
+    # "verified-routed" and vanished from the BGP view entirely.
+    protocol: str | None = None
 
     def __post_init__(self) -> None:
         if self.priority not in EVIDENCE_KINDS:
@@ -199,6 +206,7 @@ class RelationshipEvidence:
             "platform_family": self.platform_family,
             "local_interface": self.local_interface,
             "remote_interface": self.remote_interface,
+            "protocol": self.protocol,
         }
 
 
@@ -269,6 +277,17 @@ class CorrelatedRelationship:
             sorted({e.platform_family for e in self.evidence if e.platform_family})
         )
 
+    @property
+    def contributing_protocols(self) -> tuple[str, ...]:
+        """Every protocol whose observation supports this relationship.
+
+        Distinct from ``relationship_type``, which names the STRONGEST
+        evidence. A link can be verified-routed AND carry a BGP session;
+        the per-protocol views need the second fact, which the type
+        alone throws away."""
+
+        return tuple(sorted({e.protocol for e in self.evidence if e.protocol}))
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "left_device_id": self.left_device_id,
@@ -283,6 +302,7 @@ class CorrelatedRelationship:
             "contributing_devices": list(self.contributing_devices),
             "contributing_commands": list(self.contributing_commands),
             "contributing_drivers": list(self.contributing_drivers),
+            "contributing_protocols": list(self.contributing_protocols),
             "conflicts": list(self.conflicts),
         }
 
