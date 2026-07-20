@@ -216,6 +216,8 @@ ENDPOINT_PERMISSIONS: dict[str, str] = {
     "settings_diagnostics": SYSTEM_ADMIN,
     "settings_retention": SYSTEM_ADMIN,
     "settings_retention_execute": SYSTEM_ADMIN,
+    "settings_storage": SYSTEM_ADMIN,
+    "settings_storage_reclaim": SYSTEM_ADMIN,
     "system_update": SYSTEM_ADMIN,
     "settings_backup": SYSTEM_ADMIN,
     "settings_restore": SYSTEM_ADMIN,

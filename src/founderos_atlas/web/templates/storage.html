@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}Storage — Unclaimed Folders{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Storage — Unclaimed Folders</h1></div>
+<p class="muted">
+  Deleting a discovery profile removes the profile, but keeps the files
+  it collected — its snapshots, captured configurations and run history.
+  Nothing reads those files afterwards, so they do not affect what Atlas
+  shows you; they simply accumulate. This page is where you can see them
+  and take the space back.
+  <strong>Reclaiming moves a folder aside, it never deletes it</strong> —
+  each sweep goes into a dated archive folder you can move things back
+  out of.
+</p>
+
+<section class="card">
+  <h2>What is here</h2>
+  <div class="tiles">
+    <div class="tile"><strong>Unclaimed folders</strong><span>{{ summary.count }}</span></div>
+    <div class="tile"><strong>Space they use</strong><span class="tile-text">{{ summary.total_mb }} MB</span></div>
+    <div class="tile"><strong>Saved profiles</strong><span>{{ profile_count }}</span></div>
+  </div>
+  {% if summary.count %}
+  <p class="muted">
+    A folder is listed only when <em>no saved profile claims it</em>.
+    Archived profiles still claim theirs, so nothing you have merely
+    archived can appear here.
+  </p>
+  {% endif %}
+</section>
+
+{% if summary.count %}
+<section class="card">
+  <h2>Unclaimed folders</h2>
+  <form method="post" action="/settings/storage/reclaim">
+    <div class="table-scroll" role="region" aria-label="Unclaimed folders" tabindex="0">
+      <table class="grid">
+        <thead>
+          <tr>
+            <th scope="col"><span class="visually-hidden">Select</span></th>
+            <th scope="col">Folder</th>
+            <th scope="col">Size</th>
+            <th scope="col">Files</th>
+            <th scope="col">Last written</th>
+            <th scope="col">Still holds</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for scope in summary.scopes %}
+          <tr>
+            <td>
+              <input type="checkbox" name="scope_id" value="{{ scope.scope_id }}"
+                     id="scope-{{ loop.index }}"
+                     aria-label="Reclaim {{ scope.scope_id }}">
+            </td>
+            <td><label for="scope-{{ loop.index }}"><code>{{ scope.scope_id }}</code></label></td>
+            <td>{{ scope.size_mb }} MB</td>
+            <td>{{ scope.file_count }}</td>
+            <td>{{ scope.last_modified or '—' }}</td>
+            <td class="muted">{{ scope.holds | join(', ') if scope.holds else '—' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="muted">
+      Selected folders are moved into a dated archive beside your
+      profiles. Nothing is deleted, and a manifest records exactly what
+      moved.
+    </p>
+    <div class="form-actions">
+      <button class="btn btn-primary" type="submit">Move selected folders aside</button>
+    </div>
+  </form>
+</section>
+{% else %}
+<section class="card">
+  <h2>Nothing to reclaim</h2>
+  <p class="muted">Every artifact folder belongs to a saved profile.</p>
+</section>
+{% endif %}
+
+{% if archives %}
+<section class="card">
+  <h2>Previously moved aside</h2>
+  <p class="muted">
+    These folders were set aside, not deleted. To restore one, move its
+    directory back up one level, out of the archive folder.
+  </p>
+  <div class="table-scroll" role="region" aria-label="Previous sweeps" tabindex="0">
+    <table class="grid">
+      <thead>
+        <tr><th scope="col">Archive</th><th scope="col">When</th><th scope="col">By</th><th scope="col">Folders</th><th scope="col">Size</th></tr>
+      </thead>
+      <tbody>
+        {% for archive in archives %}
+        <tr>
+          <td><code>{{ archive.name }}</code></td>
+          <td>{{ archive.archived_at or '—' }}</td>
+          <td>{{ archive.actor or '—' }}</td>
+          <td>{{ archive.moved_count }}</td>
+          <td>{{ archive.size_mb }} MB</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+{% endblock %}

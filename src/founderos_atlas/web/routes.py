@@ -6395,6 +6395,82 @@ def register_routes(app) -> None:
         )
         return redirect(url_for("settings_retention"))
 
+    def _orphan_scope_view():
+        """Unclaimed artifact directories, and the sweeps already done.
+
+        Archived profiles are included when asking what is claimed: an
+        archived profile is still a profile, and offering to move its
+        artifacts would be offering to lose live data.
+        """
+
+        from founderos_atlas.workspace.orphan_scopes import (
+            find_orphan_scopes,
+            list_orphan_archives,
+            orphan_summary,
+        )
+
+        profiles = profile_service().list_profiles(include_archived=True)
+        orphans = find_orphan_scopes(output_dir(), profiles)
+        return (
+            orphan_summary(orphans),
+            list_orphan_archives(output_dir()),
+            len(profiles),
+        )
+
+    @app.route("/settings/storage")
+    def settings_storage():
+        summary, archives, profile_count = _orphan_scope_view()
+        return render_template(
+            "storage.html",
+            summary=summary,
+            archives=[dict(item) for item in archives],
+            profile_count=profile_count,
+            **base_context("settings"),
+        )
+
+    @app.route("/settings/storage/reclaim", methods=["POST"])
+    def settings_storage_reclaim():
+        from founderos_atlas.workspace.orphan_scopes import (
+            archive_orphan_scopes,
+        )
+
+        chosen = [item for item in request.form.getlist("scope_id") if item]
+        if not chosen:
+            flash("Select at least one folder — nothing was moved.", "error")
+            return redirect(url_for("settings_storage"))
+        profiles = profile_service().list_profiles(include_archived=True)
+        _administration_audit("orphan-scopes-reclaim-start", after={
+            "requested": chosen,
+        })
+        manifest = archive_orphan_scopes(
+            output_dir(), chosen,
+            actor=current_actor(), profiles=profiles,
+        )
+        _administration_audit("orphan-scopes-reclaim-complete", after={
+            "moved_count": manifest["moved_count"],
+            "moved_bytes": manifest["moved_bytes"],
+            "skipped": len(manifest["skipped"]),
+            "errors": len(manifest["errors"]),
+            "archive_dir": manifest["archive_dir"],
+        })
+        if manifest["errors"]:
+            flash(
+                f"{manifest['moved_count']} folder(s) moved; "
+                f"{len(manifest['errors'])} could not be moved. "
+                "Nothing was deleted.",
+                "error",
+            )
+        else:
+            megabytes = round(manifest["moved_bytes"] / (1024 * 1024), 1)
+            flash(
+                f"{manifest['moved_count']} folder(s) moved aside "
+                f"({megabytes} MB reclaimed). They were MOVED, not "
+                "deleted — you can find them under "
+                f"{manifest['archive_dir']} and move any of them back.",
+                "success",
+            )
+        return redirect(url_for("settings_storage"))
+
     @app.route("/settings/backup")
     def settings_backup():
         from flask import Response
