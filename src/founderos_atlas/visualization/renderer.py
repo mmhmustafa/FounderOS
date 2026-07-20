@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from hashlib import sha256
 import json
 from pathlib import Path
@@ -955,6 +955,9 @@ class TopologyRenderer:
             vrf = str(group.get("vrf") or "default")
             local_as = str(group.get("local_as") or "")
             states = set()
+            all_states: list[str] = []
+            prefixes = 0
+            prefixes_seen = False
             ebgp = ibgp = unknown_kind = 0
             for node_id in group["members"]:
                 data = nodes.get(node_id) or {}
@@ -964,6 +967,11 @@ class TopologyRenderer:
                     state = str(session.get("state") or "").strip()
                     if state:
                         states.add(state)
+                    all_states.append(state)
+                    accepted = session.get("accepted_prefixes")
+                    if isinstance(accepted, int):
+                        prefixes += accepted
+                        prefixes_seen = True
                     remote = str(session.get("remote_as") or "").strip()
                     if not remote or not local_as:
                         unknown_kind += 1
@@ -972,6 +980,15 @@ class TopologyRenderer:
                     else:
                         ebgp += 1
             group["states"] = sorted(states)
+            group["session_count"] = len(all_states)
+            group["sessions_established"] = sum(
+                1 for state in all_states
+                if state.strip().casefold() == HEALTH_ESTABLISHED
+            )
+            group["health"] = _session_health(all_states)
+            # Reported only when a device actually gave a number: zero
+            # prefixes and "not told" are different facts.
+            group["prefixes_received"] = prefixes if prefixes_seen else None
             kinds = []
             if ebgp:
                 kinds.append(f"{ebgp} eBGP")
@@ -980,6 +997,45 @@ class TopologyRenderer:
             if unknown_kind:
                 kinds.append(f"{unknown_kind} unknown kind")
             group["session_kinds"] = kinds
+
+        # Per-LINK health, so a failing peering does not draw identically
+        # to a healthy one. A session names its peer by address; the
+        # enterprise ownership index says which device owns it, which is
+        # the same join the path engine and the live probe already make.
+        ownership = dict(
+            (self._snapshot.metadata or {}).get("address_ownership") or {}
+        )
+        pair_states: dict[tuple[str, str], list[str]] = {}
+        pair_prefixes: dict[tuple[str, str], int] = {}
+        for node_id, data in nodes.items():
+            for session in data.get("bgp_sessions") or ():
+                claim = ownership.get(
+                    str(session.get("peer_address") or "").strip()
+                )
+                if not claim:
+                    continue
+                peer_id = str(dict(claim).get("device_id") or "")
+                if not peer_id or peer_id == node_id:
+                    continue
+                key = tuple(sorted((node_id, peer_id)))
+                pair_states.setdefault(key, []).append(
+                    str(session.get("state") or "")
+                )
+                accepted = session.get("accepted_prefixes")
+                if isinstance(accepted, int):
+                    pair_prefixes[key] = pair_prefixes.get(key, 0) + accepted
+        for item in elements["edges"]:
+            data = item["data"]
+            if data["id"] not in bgp_edge_ids:
+                continue
+            key = tuple(sorted((str(data["source"]), str(data["target"]))))
+            observed = pair_states.get(key)
+            if observed is None:
+                continue
+            data["bgp_health"] = _session_health(observed)
+            data["bgp_sessions_observed"] = len(observed)
+            if key in pair_prefixes:
+                data["bgp_prefixes_received"] = pair_prefixes[key]
 
         return {
             "ospf": {
@@ -995,6 +1051,19 @@ class TopologyRenderer:
                 "edge_ids": sorted(bgp_edge_ids),
                 "covered_devices": len(bgp_assignment),
                 "total_devices": len(nodes),
+                "sessions": sum(
+                    int(group.get("session_count") or 0)
+                    for group in bgp_groups
+                ),
+                "sessions_established": sum(
+                    int(group.get("sessions_established") or 0)
+                    for group in bgp_groups
+                ),
+                "health": _session_health(
+                    state
+                    for group in bgp_groups
+                    for state in (group.get("states") or ())
+                ),
             },
         }
 
@@ -1182,6 +1251,36 @@ def _edge_is_protocol(data: Mapping, protocol: str) -> bool:
     if protocol == "ospf":
         return bool(values & {"ospf", "ospf-neighbor"})
     return bool(values & {"bgp", "bgp-peer"})
+
+
+HEALTH_ESTABLISHED = "established"
+HEALTH_DEGRADED = "degraded"
+HEALTH_DOWN = "down"
+HEALTH_UNKNOWN = "unknown"
+
+
+def _session_health(states: Iterable[str]) -> str:
+    """A verdict over a set of observed session states.
+
+    Four outcomes, because three of them are different kinds of bad and
+    an operator needs to tell them apart: every session up, some up
+    (a partial failure, which a single "down" would hide), none up, and
+    no readable state at all. An unreadable state is never counted as
+    healthy — that is how a parser fault becomes a green diagram.
+    """
+
+    known = [str(state).strip().casefold() for state in states if str(state).strip()]
+    if not known:
+        return HEALTH_UNKNOWN
+    up = [state for state in known if state == HEALTH_ESTABLISHED]
+    if len(up) == len(known):
+        return HEALTH_ESTABLISHED
+    if up:
+        return HEALTH_DEGRADED
+    # Every state was read, and none of them is established. If none is
+    # a state Atlas recognises, say unknown rather than asserting down.
+    recognised = {"active", "idle", "connect", "opensent", "openconfirm"}
+    return HEALTH_DOWN if any(s in recognised for s in known) else HEALTH_UNKNOWN
 
 
 def _protocol_groups(

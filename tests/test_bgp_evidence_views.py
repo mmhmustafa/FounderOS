@@ -25,6 +25,7 @@ from founderos_atlas.routing.evidence import bgp_sessions_from_summary
 from founderos_atlas.visualization.renderer import (
     _edge_is_protocol,
     _protocol_groups,
+    _session_health,
 )
 
 
@@ -185,6 +186,141 @@ class ProtocolViewSelectionTests(unittest.TestCase):
         data = {"protocol": "bgp", "fused_type": "verified-routed",
                 "link_tag": "routed"}
         self.assertTrue(_edge_is_protocol(data, "bgp"))
+
+
+def bgp_estate(states, *, prefixes=9):
+    """Two edge routers peering, with the given session states.
+
+    ``states`` maps hostname -> state, so a test can put one end down
+    and see what the view says about it.
+    """
+
+    from founderos_atlas.correlation.metadata import correlation_metadata
+    from founderos_atlas.topology.snapshot import content_address
+
+    def device(host, dev_id, own, peer, local_as, remote_as):
+        state = states.get(host, "established")
+        return {
+            "device_id": dev_id, "hostname": host,
+            "management_ip": own, "vendor": "frrouting",
+            "platform": "FRRouting", "os_name": "FRRouting",
+            "os_version": "8.4", "serial_number": None,
+            "interfaces": [{"name": "eth4", "ip_address": own,
+                            "status": "up", "protocol_status": "up",
+                            "description": "", "metadata": {}}],
+            "metadata": {"routing_evidence": {
+                "schema_version": "1.0.0", "ospf_adjacencies": [],
+                "bgp_sessions": [{
+                    "peer_address": peer, "remote_as": remote_as,
+                    "local_as": local_as, "state": state,
+                    "vrf": "default", "address_family": "ipv4-unicast",
+                    "router_id": own,
+                    "accepted_prefixes": (
+                        prefixes if state == "established" else None
+                    ),
+                    "source_command": "show bgp summary",
+                    "observed_at": None, "evidence_state": "observed",
+                }],
+            }},
+        }
+
+    devices = [
+        device("edge-a", "d1", "10.0.0.1", "10.0.0.2", "65010", "65020"),
+        device("edge-b", "d2", "10.0.0.2", "10.0.0.1", "65020", "65010"),
+    ]
+    edges = [{
+        "local_device_id": "d1", "local_interface": "bgp",
+        "remote_hostname": "10.0.0.2", "remote_interface": None,
+        "remote_management_ip": None, "protocol": "bgp",
+        "metadata": {"observation": "protocol-peer",
+                     "peer_address": "10.0.0.2",
+                     "source_command": "show bgp summary"},
+    }]
+    metadata = {"schema_version": "1.0.0", "deterministic": True,
+                **correlation_metadata(devices, edges)}
+    created_at = "2026-07-20T12:00:00+00:00"
+    return {
+        "snapshot_id": content_address(
+            created_at=created_at, devices=tuple(devices),
+            edges=tuple(edges), warnings=(), metadata=metadata,
+        ),
+        "created_at": created_at, "devices": devices, "edges": edges,
+        "warnings": [], "metadata": metadata,
+    }
+
+
+def bgp_view(states, **kwargs):
+    from founderos_atlas.topology import TopologySnapshot
+    from founderos_atlas.visualization.renderer import TopologyRenderer
+
+    snapshot = TopologySnapshot.from_dict(bgp_estate(states, **kwargs))
+    renderer = TopologyRenderer(snapshot)
+    elements = renderer.elements()
+    return renderer.routing_view(elements)["bgp"], elements
+
+
+class SessionHealthTests(unittest.TestCase):
+    """"Wired" and "working" are different questions. The diagram
+    answered only the first."""
+
+    def test_the_verdicts(self) -> None:
+        self.assertEqual("established", _session_health(["established"] * 3))
+        self.assertEqual(
+            "degraded", _session_health(["established", "active"])
+        )
+        self.assertEqual("down", _session_health(["active", "idle"]))
+        self.assertEqual("unknown", _session_health([]))
+        self.assertEqual("unknown", _session_health(["", "  "]))
+
+    def test_an_unreadable_state_is_never_healthy(self) -> None:
+        """The parser fault that started this recorded every state as a
+        neighbour description. A verdict that treats what it cannot read
+        as fine turns that into a green diagram."""
+
+        self.assertEqual("unknown", _session_health(["ebgp-mumbai-edge"]))
+        self.assertEqual(
+            "degraded", _session_health(["established", "ebgp-mumbai-edge"])
+        )
+
+    def test_a_healthy_estate_reports_established(self) -> None:
+        view, _ = bgp_view({})
+        self.assertEqual("established", view["health"])
+        self.assertEqual(2, view["sessions"])
+        self.assertEqual(2, view["sessions_established"])
+        for group in view["groups"]:
+            self.assertEqual("established", group["health"])
+            self.assertEqual(9, group["prefixes_received"])
+            self.assertEqual(["1 eBGP"], group["session_kinds"])
+
+    def test_a_failure_shows_and_localises(self) -> None:
+        view, _ = bgp_view({"edge-a": "active"})
+        self.assertEqual("degraded", view["health"])
+        self.assertEqual(1, view["sessions_established"])
+        by_label = {g["label"]: g for g in view["groups"]}
+        self.assertEqual("down", by_label["BGP AS 65010"]["health"])
+        self.assertEqual(
+            "established", by_label["BGP AS 65020"]["health"]
+        )
+
+    def test_the_link_itself_carries_the_health(self) -> None:
+        """So a failing peering cannot draw identically to a healthy
+        one."""
+
+        _view, elements = bgp_view({"edge-a": "active"})
+        bgp_edges = [
+            item["data"] for item in elements["edges"]
+            if "bgp_health" in item["data"]
+        ]
+        self.assertTrue(bgp_edges, "no edge carried session health")
+        self.assertEqual("degraded", bgp_edges[0]["bgp_health"])
+        self.assertEqual(2, bgp_edges[0]["bgp_sessions_observed"])
+
+    def test_prefix_counts_distinguish_zero_from_not_told(self) -> None:
+        view, _ = bgp_view({}, prefixes=0)
+        self.assertEqual(0, view["groups"][0]["prefixes_received"])
+        view, _ = bgp_view({"edge-a": "active", "edge-b": "active"})
+        # Nothing reported a count, which is not the same as zero.
+        self.assertIsNone(view["groups"][0]["prefixes_received"])
 
 
 class DomainLabelTests(unittest.TestCase):

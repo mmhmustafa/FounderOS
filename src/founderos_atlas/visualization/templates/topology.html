@@ -393,9 +393,21 @@
           fullSummaryText;
       } else if ((viewMode === 'ospf' || viewMode === 'bgp') && routingView[viewMode]) {
         const view = routingView[viewMode];
-        el.textContent = `${view.groups.length} ${viewMode.toUpperCase()} domains · ` +
+        let text = `${view.groups.length} ${viewMode.toUpperCase()} domains · ` +
           `${view.covered_devices}/${view.total_devices} devices with evidence · ` +
           `${view.edge_ids.length} observed links`;
+        // Session health belongs in the headline: "wired" and "working"
+        // are different questions, and the diagram alone answers only
+        // the first.
+        if (viewMode === 'bgp' && view.sessions) {
+          const down = view.sessions - view.sessions_established;
+          text += ` · ${view.sessions_established}/${view.sessions} sessions established`;
+          if (down > 0) { text += ` · ${down} not established`; }
+          if (view.health === 'unknown') {
+            text += ' · session state unreadable';
+          }
+        }
+        el.textContent = text;
       } else { el.textContent = fullSummaryText; }
     };
 
@@ -600,6 +612,17 @@
         { selector: 'edge[relationship = "routing-adjacency"]', style: { 'line-style': 'dashed', 'line-color': GRAPH_THEME.adjacency, 'width': 1.25, 'opacity': 0.62 }},
         { selector: 'edge[relationship = "protocol-peer"]', style: { 'line-style': 'dotted', 'line-color': GRAPH_THEME.peer, 'width': 1.25, 'opacity': 0.55 }},
         { selector: 'edge[relationship = "layer-3"]', style: { 'line-style': 'dashed', 'line-color': GRAPH_THEME.layer3, 'width': 1.25 }},
+        // A BGP link that is not established must not draw like one
+        // that is. Only applied where a state was actually read —
+        // silence stays styled as whatever the relationship was, never
+        // painted healthy or broken on no evidence.
+        { selector: 'edge[bgp_health = "established"]', style: {
+          'line-color': '#16a34a', 'width': 2.2, 'opacity': 1 }},
+        { selector: 'edge[bgp_health = "degraded"]', style: {
+          'line-color': '#d97706', 'width': 2.6, 'opacity': 1 }},
+        { selector: 'edge[bgp_health = "down"]', style: {
+          'line-color': '#dc2626', 'line-style': 'dashed',
+          'width': 2.6, 'opacity': 1 }},
         { selector: 'edge[relationship = "inferred"]', style: { 'line-style': 'dotted', 'line-color': GRAPH_THEME.adjacency, 'width': 1.1, 'opacity': 0.5 }},
         { selector: 'edge[relationship = "unknown"]', style: { 'line-style': 'dotted', 'line-color': GRAPH_THEME.adjacency, 'width': 1.1, 'opacity': 0.5 }},
 
@@ -738,6 +761,15 @@
         }
       });
     }
+    // Health in the operator's words. "unknown" is deliberately not
+    // softened into something reassuring: not knowing is its own state.
+    const healthLabel = health => ({
+      established: 'All sessions established',
+      degraded: 'Degraded — some sessions not established',
+      down: 'Down — no session established',
+      unknown: 'Unknown — no readable session state',
+    }[health] || 'Unknown — no readable session state');
+
     const nodeDetails = data => {
       if (data.kind === 'protocol-domain') {
         const name = data.protocol === 'ospf' ? 'OSPF area' : 'BGP autonomous system';
@@ -748,6 +780,15 @@
       ${data.area_id ? `<div class="field"><strong>Area</strong>${escapeHtml(data.area_id)}</div>` : ''}
       ${data.local_as ? `<div class="field"><strong>Local AS</strong>${escapeHtml(data.local_as)}</div>` : ''}
       <div class="field"><strong>VRF</strong>${escapeHtml(data.vrf || 'default')}</div>
+      ${data.session_count ? `
+      <div class="field"><strong>Sessions</strong>${escapeHtml(data.sessions_established || 0)} of ${escapeHtml(data.session_count)} established${
+        (data.session_kinds && data.session_kinds.length)
+          ? ' · ' + escapeHtml(data.session_kinds.join(', ')) : ''}</div>
+      <div class="field"><strong>Health</strong>${escapeHtml(healthLabel(data.health))}</div>` : ''}
+      ${(typeof data.prefixes_received === 'number')
+        ? `<div class="field"><strong>Prefixes received</strong>${escapeHtml(data.prefixes_received)}</div>` : ''}
+      ${(data.states && data.states.length)
+        ? `<div class="field"><strong>Observed states</strong>${escapeHtml(data.states.join(', '))}</div>` : ''}
       <p style="font-size:13px;color:#475569">This boundary is derived from normalized configured and operational evidence. Disconnected reuse of the same identifier is kept as a separate domain.</p>`;
       }
       if (data.kind === 'site') {
