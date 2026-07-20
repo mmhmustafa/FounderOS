@@ -500,6 +500,16 @@ class HostKeyRefusalTests(unittest.TestCase):
             self.assertIn("console", body["console_url"])
             self.assertIn("interception", body["guidance"])
             self.assertIn("fingerprints", body["guidance"])
+            # The way out must actually lead somewhere: a device id the
+            # console cannot resolve would strand the operator again.
+            landing = client.get(body["console_url"])
+            self.assertEqual(200, landing.status_code)
+            page = landing.data.lower()
+            # It is the right device's console, and it carries the
+            # fingerprint comparison the guidance promises.
+            self.assertIn(b"ssh console", page)
+            self.assertIn(b"atlas trusted", page)
+            self.assertIn(b"device presented", page)
 
     def test_trust_on_first_use_is_not_the_probe_default(self) -> None:
         """Auto-accepting an unknown key would hand the stored password
@@ -573,6 +583,14 @@ class ViewerLiveContractTests(unittest.TestCase):
         # fingerprints are on screen — never a shortcut here.
         self.assertNotIn("trust anyway", self.viewer.lower())
         self.assertNotIn("accept key", self.viewer.lower())
+
+    def test_the_host_key_link_escapes_the_viewer_frame(self) -> None:
+        """The viewer is framed and Atlas refuses to be framed, so a
+        link without _top lands on a blank pane. Found in the live GUI:
+        clicking through showed an empty page."""
+
+        block = self.viewer.split("body.console_url", 1)[1][:700]
+        self.assertIn("link.target = '_top'", block)
 
 
 if __name__ == "__main__":
