@@ -5111,15 +5111,14 @@ def register_routes(app) -> None:
             parse_ping,
             parse_service_result,
             parse_traceroute,
-            ping_command,
+            path_probe,
             ping_settled,
             platform_family,
             probe_hint,
+            reachability_probe,
             run_probe_command,
-            service_command,
+            service_probe,
             silent_tail,
-            traceroute_command,
-            traceroute_protocol,
         )
 
         body = request.get_json(silent=True) or {}
@@ -5207,7 +5206,16 @@ def register_routes(app) -> None:
             )
 
         family = platform_family(src.vendor, src.platform)
-        command = traceroute_command(target_address, family=family)
+        # The declared protocol rides into the path probe: where the
+        # CLI can be told, the probe sends what the operator asked
+        # about instead of traceroute's UDP default.
+        declared = predicted.get("intent") or {}
+        probe = path_probe(
+            target_address,
+            family=family,
+            protocol=str(declared.get("protocol") or "") or None,
+        )
+        command = probe.command
         probe_id = f"probe-{uuid4().hex[:12]}"
 
         def _record(result, detail):
@@ -5285,9 +5293,10 @@ def register_routes(app) -> None:
         service = None
         if declared_port.isdigit():
             try:
-                check = service_command(
+                service_check = service_probe(
                     target_address, declared_port, family=family
                 )
+                check = service_check.command
             except ProbeUnsupported as unsupported:
                 service = {
                     "state": "unsupported",
@@ -5367,7 +5376,7 @@ def register_routes(app) -> None:
         # the question again in a protocol Atlas can actually send.
         # Without this, a firewall permitting ICMP but dropping UDP
         # makes a healthy path read as broken.
-        probe_protocol = traceroute_protocol(family)
+        probe_protocol = probe.protocol
         named = {(entry["device"] or "").casefold() for entry in actual}
         addresses = {entry["address"] for entry in actual if entry["address"]}
         arrived = (
@@ -5375,8 +5384,12 @@ def register_routes(app) -> None:
             or target_address in addresses
         )
         reachability = None
-        if not arrived:
-            check = ping_command(target_address, family=family)
+        # Only worth asking when the path probe used something OTHER
+        # than ICMP: if it already sent ICMP, a ping would repeat the
+        # question it just answered.
+        if not arrived and probe_protocol != "icmp":
+            reach = reachability_probe(target_address, family=family)
+            check = reach.command
             try:
                 ping_output = run_probe_command(
                     host=src.management_ip,
@@ -5399,7 +5412,7 @@ def register_routes(app) -> None:
                 state, evidence = parse_ping(ping_output)
                 reachability = {
                     "state": state,
-                    "protocol": "icmp",
+                    "protocol": reach.protocol,
                     "command": check,
                     "evidence": evidence,
                     "output": ping_output,

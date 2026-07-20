@@ -32,6 +32,7 @@ from .session import (
 PROBE_TIMEOUT_SECONDS = 45.0
 
 PROBE_PATH = "path"
+PROBE_REACHABILITY = "reachability"
 PROBE_SERVICE = "service"
 
 # Platform families. A network device's SSH session is usually its CLI,
@@ -70,6 +71,63 @@ _ADDRESS_ONLY = re.compile(r"^[0-9a-fA-F:.]+$")
 
 _HOP_LINE = re.compile(r"^\s*(\d+)\s+(.*)$")
 _IP_TOKEN = re.compile(r"(\d{1,3}(?:\.\d{1,3}){3})")
+
+
+@dataclass(frozen=True)
+class Probe:
+    """A command, and what it actually puts on the wire.
+
+    These two facts are one decision and must never drift apart. They
+    used to live in separate functions — the command built per family,
+    the protocol returned by a helper that answered "udp" for
+    everything — which was true only for as long as no platform gained
+    a way to send anything else. The first ``-I`` added to a command
+    would have made that helper quietly lie, and a caller comparing
+    declared intent against it would have reported a false match.
+    Returning them together makes that class of bug unrepresentable;
+    ``test_every_probe_reports_the_protocol_it_sends`` enforces it.
+    """
+
+    command: str
+    protocol: str          # udp | icmp | tcp
+    kind: str              # path | reachability | service
+    port: int | None = None
+
+
+# Flags that change what a probe puts on the wire, and the command
+# names whose protocol is implied. Used to audit a Probe against its
+# own command — see the drift guard in the tests.
+_PROTOCOL_FLAGS = (
+    (re.compile(r"(?:^|\s)-I(?:\s|$)"), "icmp"),
+    (re.compile(r"(?:^|\s)--icmp(?:\s|$)"), "icmp"),
+    (re.compile(r"(?:^|\s)-T(?:\s|$)"), "tcp"),
+    (re.compile(r"(?:^|\s)--tcp(?:\s|$)"), "tcp"),
+    (re.compile(r"(?:^|\s)-U(?:\s|$)"), "udp"),
+)
+_PROTOCOL_BY_TOOL = (
+    (re.compile(r"(?:^|\s)ping(?:\s|$)"), "icmp"),
+    (re.compile(r"(?:^|\s)nc(?:\s|$)"), "tcp"),
+    (re.compile(r"(?:^|\s)telnet(?:\s|$)"), "tcp"),
+    (re.compile(r"(?:^|\s)traceroute(?:\s|$)"), "udp"),
+)
+
+
+def protocol_of_command(command: str) -> str:
+    """What a command will actually put on the wire, read from itself.
+
+    Derived from the command rather than declared beside it, so it can
+    be used to audit a ``Probe`` against its own text: any future flag
+    that changes the protocol must change this answer too.
+    """
+
+    text = str(command or "")
+    for pattern, protocol in _PROTOCOL_FLAGS:
+        if pattern.search(text):
+            return protocol
+    for pattern, protocol in _PROTOCOL_BY_TOOL:
+        if pattern.search(text):
+            return protocol
+    return "unknown"
 
 
 class ProbeUnsupported(RuntimeError):
@@ -129,45 +187,87 @@ def _validated_port(port: Any) -> int:
     return number
 
 
-def traceroute_command(
-    destination_address: str, *, family: str = FAMILY_UNKNOWN
-) -> str:
-    """The path probe for this platform's CLI.
+def path_probe(
+    destination_address: str,
+    *,
+    family: str = FAMILY_UNKNOWN,
+    protocol: str | None = None,
+) -> Probe:
+    """The path probe for this platform's CLI, and what it really sends.
 
-    Where the CLI accepts options, they bound the probe: a network
-    device's default traceroute walks 30 hops with several probes
-    each, which can outlive any sensible request. Where the CLI takes
-    the bare form only (IOS, vtysh), the server-side deadline is the
-    bound and partial output is still read.
+    Where the CLI accepts options they do two jobs: bound the probe (a
+    device's default traceroute walks 30 hops with several probes each,
+    which can outlive any sensible request) and, where possible, put
+    the operator's OWN protocol on the wire. Where the CLI takes the
+    bare form only — IOS, and vtysh, which rejects every option as an
+    unknown command — the probe is UDP whatever was declared, and says
+    so rather than letting the caller assume otherwise.
+
+    ``protocol`` is the declared intent. Honouring it is best-effort by
+    design: only a shell-backed CLI can be told, and only for ICMP.
+    TCP path probes are deliberately not attempted — busybox
+    traceroute has no ``-T``, and inventing syntax a device may reject
+    would trade a wrong answer for a broken one. ``service_probe``
+    answers TCP questions properly.
     """
 
     address = _validated(destination_address)
+    wanted = (protocol or "").casefold()
+
     if family == FAMILY_LINUX:
-        return f"traceroute -n -w 2 -q 1 -m 15 {address}"
+        if wanted == "icmp":
+            return Probe(
+                command=f"traceroute -I -n -w 2 -q 1 -m 15 {address}",
+                protocol="icmp",
+                kind=PROBE_PATH,
+            )
+        return Probe(
+            command=f"traceroute -n -w 2 -q 1 -m 15 {address}",
+            protocol="udp",
+            kind=PROBE_PATH,
+        )
     if family == FAMILY_EOS:
-        return f"bash timeout 30 traceroute -n -w 2 -q 1 -m 15 {address}"
+        if wanted == "icmp":
+            return Probe(
+                command=(
+                    f"bash timeout 30 traceroute -I -n -w 2 -q 1 -m 15 "
+                    f"{address}"
+                ),
+                protocol="icmp",
+                kind=PROBE_PATH,
+            )
+        return Probe(
+            command=(
+                f"bash timeout 30 traceroute -n -w 2 -q 1 -m 15 {address}"
+            ),
+            protocol="udp",
+            kind=PROBE_PATH,
+        )
     if family == FAMILY_JUNOS:
-        return f"traceroute {address} wait 2 ttl 15"
-    # Cisco IOS/NX-OS and FRR's vtysh take the bare form only; anything
-    # else they reject outright as an unknown command.
-    return f"traceroute {address}"
+        return Probe(
+            command=f"traceroute {address} wait 2 ttl 15",
+            protocol="udp",
+            kind=PROBE_PATH,
+        )
+    # Cisco IOS/NX-OS and FRR's vtysh take the bare form only.
+    return Probe(
+        command=f"traceroute {address}", protocol="udp", kind=PROBE_PATH
+    )
 
 
-def traceroute_protocol(family: str = FAMILY_UNKNOWN) -> str:
-    """What protocol this platform's traceroute actually puts on the wire.
+def reachability_probe(
+    destination_address: str, *, family: str = FAMILY_UNKNOWN
+) -> Probe:
+    """A protocol-correct ICMP reachability probe."""
 
-    It is almost never the one the operator declared. traceroute sends
-    UDP to high ports by default on every platform here, and a routing
-    CLI takes the bare command with no way to change that. A firewall
-    permitting the declared protocol but not UDP therefore makes a
-    healthy path look broken — so what was really sent is recorded and
-    reported, never quietly conflated with the declared intent.
-    """
-
-    return "udp"
+    return Probe(
+        command=_ping_command(destination_address, family=family),
+        protocol="icmp",
+        kind=PROBE_REACHABILITY,
+    )
 
 
-def ping_command(
+def _ping_command(
     destination_address: str, *, family: str = FAMILY_UNKNOWN
 ) -> str:
     """A protocol-correct ICMP reachability probe.
@@ -231,9 +331,9 @@ def parse_ping(text: str) -> tuple[str, str]:
     return PING_UNKNOWN, text.strip().splitlines()[-1][:200]
 
 
-def service_command(
+def service_probe(
     destination_address: str, port: Any, *, family: str = FAMILY_UNKNOWN
-) -> str:
+) -> Probe:
     """A TCP connect probe for this platform's CLI.
 
     Raises ``ProbeUnsupported`` where the CLI has no way to open a TCP
@@ -245,17 +345,21 @@ def service_command(
     address = _validated(destination_address)
     number = _validated_port(port)
     if family == FAMILY_LINUX:
-        return f"nc -z -w 5 -v {address} {number}"
-    if family == FAMILY_EOS:
-        return f"bash timeout 8 nc -z -w 5 -v {address} {number}"
-    if family == FAMILY_JUNOS:
-        return f"telnet {address} port {number} inactivity-timeout 5"
-    if family == FAMILY_CISCO:
-        return f"telnet {address} {number} /timeout 5"
-    raise ProbeUnsupported(
-        "This platform's CLI offers no TCP connection test, so Atlas "
-        "cannot check the port from this device. Its routing CLI can "
-        "trace the path, but not open a socket."
+        command = f"nc -z -w 5 -v {address} {number}"
+    elif family == FAMILY_EOS:
+        command = f"bash timeout 8 nc -z -w 5 -v {address} {number}"
+    elif family == FAMILY_JUNOS:
+        command = f"telnet {address} port {number} inactivity-timeout 5"
+    elif family == FAMILY_CISCO:
+        command = f"telnet {address} {number} /timeout 5"
+    else:
+        raise ProbeUnsupported(
+            "This platform's CLI offers no TCP connection test, so Atlas "
+            "cannot check the port from this device. Its routing CLI can "
+            "trace the path, but not open a socket."
+        )
+    return Probe(
+        command=command, protocol="tcp", kind=PROBE_SERVICE, port=number
     )
 
 

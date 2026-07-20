@@ -18,13 +18,14 @@ from founderos_atlas.console import (
     ProbeUnsupported,
     parse_ping,
     parse_service_result,
-    ping_command,
-    ping_settled,
     parse_traceroute,
+    path_probe,
+    ping_settled,
     platform_family,
     probe_hint,
-    service_command,
-    traceroute_command,
+    protocol_of_command,
+    reachability_probe,
+    service_probe,
 )
 from founderos_atlas.console.probe import dataplane_address, run_probe_command
 
@@ -115,11 +116,13 @@ class TracerouteParserTests(unittest.TestCase):
         self.assertEqual((1, "10.0.1.1"), (hops[0].index, hops[0].address))
 
     def test_probe_command_is_address_only_never_free_text(self) -> None:
-        self.assertEqual("traceroute 10.0.0.2", traceroute_command("10.0.0.2"))
+        self.assertEqual(
+            "traceroute 10.0.0.2", path_probe("10.0.0.2").command
+        )
         with self.assertRaises(ValueError):
-            traceroute_command("10.0.0.2; reload")
+            path_probe("10.0.0.2; reload")
         with self.assertRaises(ValueError):
-            traceroute_command("evil-hostname")
+            path_probe("evil-hostname")
 
 
 class RunProbeCommandTests(unittest.TestCase):
@@ -163,55 +166,127 @@ class PlatformAwareCommandTests(unittest.TestCase):
     def test_path_probe_is_bounded_where_the_cli_allows_options(self) -> None:
         # A shell can bound the walk; a routing CLI takes the bare form
         # only and would reject flags as an unknown command.
-        self.assertIn("-m 15", traceroute_command("10.0.0.2", family="linux"))
+        self.assertIn("-m 15", path_probe("10.0.0.2", family="linux").command)
         self.assertEqual(
             "traceroute 10.0.0.2",
-            traceroute_command("10.0.0.2", family="frr"),
+            path_probe("10.0.0.2", family="frr").command,
         )
         self.assertEqual(
             "traceroute 10.0.0.2",
-            traceroute_command("10.0.0.2", family="cisco"),
+            path_probe("10.0.0.2", family="cisco").command,
         )
-        self.assertIn("ttl 15", traceroute_command("10.0.0.2", family="junos"))
+        self.assertIn(
+            "ttl 15", path_probe("10.0.0.2", family="junos").command
+        )
+
+    def test_the_declared_protocol_is_sent_where_the_cli_allows_it(self):
+        """The reason the protocol travels WITH the command: a shell can
+        be told to send ICMP, a routing CLI cannot, and the caller must
+        be able to tell which happened."""
+
+        icmp = path_probe("10.0.0.2", family="linux", protocol="icmp")
+        self.assertIn("-I", icmp.command)
+        self.assertEqual("icmp", icmp.protocol)
+        # vtysh rejects every option, so the declared protocol cannot be
+        # honoured — and the probe reports UDP rather than pretending.
+        frr = path_probe("10.0.0.2", family="frr", protocol="icmp")
+        self.assertEqual("traceroute 10.0.0.2", frr.command)
+        self.assertEqual("udp", frr.protocol)
+        # TCP path probes are deliberately not attempted anywhere.
+        tcp = path_probe("10.0.0.2", family="linux", protocol="tcp")
+        self.assertEqual("udp", tcp.protocol)
 
     def test_service_probe_per_platform_and_honest_refusal(self) -> None:
         self.assertEqual(
             "nc -z -w 5 -v 10.0.0.2 443",
-            service_command("10.0.0.2", 443, family="linux"),
+            service_probe("10.0.0.2", 443, family="linux").command,
         )
         self.assertIn(
             "telnet 10.0.0.2 443",
-            service_command("10.0.0.2", 443, family="cisco"),
+            service_probe("10.0.0.2", 443, family="cisco").command,
         )
         self.assertIn(
-            "port 443", service_command("10.0.0.2", 443, family="junos")
+            "port 443",
+            service_probe("10.0.0.2", 443, family="junos").command,
         )
         # FRR's vtysh is a routing CLI: it cannot open a socket, and
         # Atlas says so rather than probing from somewhere else.
         with self.assertRaises(ProbeUnsupported):
-            service_command("10.0.0.2", 443, family="frr")
+            service_probe("10.0.0.2", 443, family="frr")
 
     def test_commands_are_built_from_validated_values_only(self) -> None:
         with self.assertRaises(ValueError):
-            service_command("10.0.0.2; reload", 443, family="linux")
+            service_probe("10.0.0.2; reload", 443, family="linux")
         with self.assertRaises(ValueError):
-            service_command("10.0.0.2", "443; reload", family="linux")
+            service_probe("10.0.0.2", "443; reload", family="linux")
         with self.assertRaises(ValueError):
-            service_command("10.0.0.2", 99999, family="linux")
+            service_probe("10.0.0.2", 99999, family="linux")
+
+    def test_every_probe_reports_the_protocol_it_sends(self) -> None:
+        """The drift guard.
+
+        A probe's declared protocol is audited against its own command
+        text, for every family and every kind. The failure this
+        prevents: someone adds -I to a family's traceroute for a good
+        reason and does not touch the protocol beside it, so Atlas
+        keeps reporting "udp" while sending ICMP — and the verdict
+        logic, which compares declared intent against that value,
+        silently draws the wrong conclusion. A hardcoded protocol
+        cannot be caught by review; this catches it.
+        """
+
+        families = ("cisco", "junos", "eos", "frr", "linux", "unknown")
+        for family in families:
+            for protocol in (None, "icmp", "tcp", "udp"):
+                probe = path_probe(
+                    "10.0.0.2", family=family, protocol=protocol
+                )
+                self.assertEqual(
+                    protocol_of_command(probe.command),
+                    probe.protocol,
+                    f"path probe on {family} (declared {protocol}) says "
+                    f"{probe.protocol} but its command sends "
+                    f"{protocol_of_command(probe.command)}: "
+                    f"{probe.command}",
+                )
+            reach = reachability_probe("10.0.0.2", family=family)
+            self.assertEqual(
+                protocol_of_command(reach.command), reach.protocol, family
+            )
+            try:
+                service = service_probe("10.0.0.2", 443, family=family)
+            except ProbeUnsupported:
+                continue
+            self.assertEqual(
+                protocol_of_command(service.command),
+                service.protocol,
+                family,
+            )
 
 
 class PingProbeTests(unittest.TestCase):
     def test_ping_is_available_on_every_cli_including_routing_ones(self):
         # vtysh rejects every traceroute option but accepts bare ping —
         # which makes this the only ICMP-correct probe on FRR.
-        self.assertEqual("ping 10.0.0.2", ping_command("10.0.0.2", family="frr"))
-        self.assertIn("-c 3", ping_command("10.0.0.2", family="linux"))
-        self.assertIn("count 3", ping_command("10.0.0.2", family="junos"))
         self.assertEqual(
-            "ping 10.0.0.2", ping_command("10.0.0.2", family="cisco")
+            "ping 10.0.0.2",
+            reachability_probe("10.0.0.2", family="frr").command,
+        )
+        self.assertIn(
+            "-c 3", reachability_probe("10.0.0.2", family="linux").command
+        )
+        self.assertIn(
+            "count 3", reachability_probe("10.0.0.2", family="junos").command
+        )
+        self.assertEqual(
+            "ping 10.0.0.2",
+            reachability_probe("10.0.0.2", family="cisco").command,
+        )
+        self.assertEqual(
+            "icmp", reachability_probe("10.0.0.2", family="frr").protocol
         )
         with self.assertRaises(ValueError):
-            ping_command("10.0.0.2; reload", family="frr")
+            reachability_probe("10.0.0.2; reload", family="frr")
 
     def test_replies_and_loss_are_read_apart(self) -> None:
         reachable, _ = parse_ping(
