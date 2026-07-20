@@ -34,10 +34,12 @@
   <h2>Unclaimed folders</h2>
   <form method="post" action="/settings/storage/reclaim">
     <div class="table-scroll" role="region" aria-label="Unclaimed folders" tabindex="0">
-      <table class="grid">
+      <table class="grid" data-row-select="scope_id">
         <thead>
           <tr>
-            <th scope="col"><span class="visually-hidden">Select</span></th>
+            <th scope="col">
+              <input type="checkbox" data-select-all aria-label="Select all folders">
+            </th>
             <th scope="col">Folder</th>
             <th scope="col">Size</th>
             <th scope="col">Files</th>
@@ -70,6 +72,7 @@
     </p>
     <div class="form-actions">
       <button class="btn btn-primary" type="submit">Move selected folders aside</button>
+      <span class="muted selection-count" data-selection-count aria-live="polite"></span>
     </div>
   </form>
 </section>

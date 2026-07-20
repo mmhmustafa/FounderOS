@@ -77,9 +77,9 @@
   <form method="post" action="/incidents/bulk">{{ csrf_field() }}
     <input type="hidden" name="next" value="{{ request.full_path }}">
   <div class="table-scroll table-scroll-wide" role="region" aria-label="Incident cases" tabindex="0">
-    <table class="grid" data-columns="incidents">
+    <table class="grid" data-columns="incidents" data-row-select="case_ids">
       <thead>
-        <tr><th data-col="select" data-col-preset="simple" data-col-label="Select"><span class="visually-hidden">Select</span></th><th data-col="opened" data-col-preset="simple">Opened</th><th data-col="severity" data-col-preset="simple">Severity</th><th data-col="status" data-col-preset="simple">Status</th><th data-col="case" data-col-preset="simple">Case</th><th data-col="scope">Scope</th><th data-col="owner">Owner</th><th data-col="confidence" data-col-preset="expert">Confidence</th><th data-col="evidence-age">Evidence age</th><th data-col="open" data-col-preset="simple" data-col-label="Open"><span class="visually-hidden">Open</span></th></tr>
+        <tr><th data-col="select" data-col-preset="simple" data-col-label="Select"><input type="checkbox" data-select-all aria-label="Select all cases"></th><th data-col="opened" data-col-preset="simple">Opened</th><th data-col="severity" data-col-preset="simple">Severity</th><th data-col="status" data-col-preset="simple">Status</th><th data-col="case" data-col-preset="simple">Case</th><th data-col="scope">Scope</th><th data-col="owner">Owner</th><th data-col="confidence" data-col-preset="expert">Confidence</th><th data-col="evidence-age">Evidence age</th><th data-col="open" data-col-preset="simple" data-col-label="Open"><span class="visually-hidden">Open</span></th></tr>
       </thead>
       <tbody>
         {% for case in cases %}

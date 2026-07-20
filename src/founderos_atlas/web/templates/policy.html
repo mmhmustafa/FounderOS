@@ -223,10 +223,10 @@
   <form method="post" action="/policy/assign">{{ csrf_field() }}
     <input type="hidden" name="next" value="{{ request.full_path }}">
     <div class="table-scroll table-scroll-wide" role="region" aria-label="Policy results" tabindex="0">
-      <table class="grid" data-columns="policy-results">
+      <table class="grid" data-columns="policy-results" data-row-select="subjects">
         <thead>
           <tr>
-            <th data-col="select" data-col-preset="simple" data-col-label="Select"><span class="visually-hidden">Select</span></th>
+            <th data-col="select" data-col-preset="simple" data-col-label="Select"><input type="checkbox" data-select-all aria-label="Select all results"></th>
             <th data-col="status" data-col-preset="simple">Status</th><th data-col="policy" data-col-preset="simple">Policy</th><th data-col="device" data-col-preset="simple">Device</th><th data-col="site">Site</th>
             <th data-col="severity" data-col-preset="simple">Severity</th><th data-col="evidence">Evidence</th><th data-col="owner">Owner</th>
             <th data-col="actions" data-col-preset="simple" data-col-label="Actions"><span class="visually-hidden">Actions</span></th>

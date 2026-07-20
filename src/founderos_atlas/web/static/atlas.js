@@ -1033,3 +1033,110 @@
     });
   });
 })();
+
+// -- Row selection ------------------------------------------------------------
+// Every table where rows are picked for a bulk action behaves the same
+// way: a select-all in the header, and a click anywhere in the row
+// toggling that row. Written once here rather than per template, so a
+// new bulk-action table inherits the behaviour (and the accessibility
+// work) by adding one attribute: data-row-select="<checkbox name>".
+//
+// Deliberately its own top-level block: the section above returns early
+// on any page without a <details data-remember>, and code appended
+// after that return is simply never reached. Selection must not depend
+// on an unrelated feature being present.
+//
+// Without JavaScript the individual checkboxes still submit normally —
+// this only removes the pixel-hunting, it is never load-bearing.
+(function rowSelection() {
+  "use strict";
+  (function () {
+    function boxesOf(table) {
+      var name = table.getAttribute("data-row-select");
+      return Array.prototype.slice.call(
+        table.querySelectorAll(
+          'tbody input[type="checkbox"][name="' + name + '"]'
+        )
+      );
+    }
+
+    function syncHeader(table, master) {
+      var boxes = boxesOf(table);
+      var checked = boxes.filter(function (box) { return box.checked; }).length;
+      master.checked = boxes.length > 0 && checked === boxes.length;
+      // Partial selection is neither on nor off, and saying so is what
+      // stops "select all" from looking like it failed.
+      master.indeterminate = checked > 0 && checked < boxes.length;
+      // The count usually sits with the submit button, outside the
+      // table — look across the form, not just the table.
+      var scope = table.closest("form") || document;
+      var count = scope.querySelector("[data-selection-count]");
+      if (count) {
+        count.textContent = checked
+          ? checked + " of " + boxes.length + " selected"
+          : "";
+      }
+      boxes.forEach(function (box) {
+        var row = box.closest("tr");
+        if (row) { row.classList.toggle("row-selected", box.checked); }
+      });
+    }
+
+    function setChecked(box, value) {
+      if (box.checked === value) { return; }
+      box.checked = value;
+      // Anything listening for a real user change must still hear it.
+      box.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+
+    document.querySelectorAll("table[data-row-select]").forEach(function (table) {
+      var master = table.querySelector("[data-select-all]");
+      // Setting a box fires a bubbling change, which re-enters the sync
+      // below; that recomputed the header mid-loop and flipped
+      // master.checked to false after the FIRST box, so "select all"
+      // selected exactly one row and cleared the rest. The wanted value
+      // is therefore read once, and the sync stands down while a bulk
+      // set is in flight.
+      var bulkSetting = false;
+      if (master) {
+        master.addEventListener("change", function () {
+          var wanted = master.checked;
+          bulkSetting = true;
+          boxesOf(table).forEach(function (box) { setChecked(box, wanted); });
+          bulkSetting = false;
+          syncHeader(table, master);
+        });
+      }
+
+      table.addEventListener("change", function (event) {
+        if (bulkSetting) { return; }
+        var target = event.target;
+        if (target && target.matches('input[type="checkbox"]') && master) {
+          syncHeader(table, master);
+        }
+      });
+
+      table.addEventListener("click", function (event) {
+        var row = event.target.closest("tbody tr");
+        if (!row || !table.contains(row)) { return; }
+        var box = row.querySelector(
+          'input[type="checkbox"][name="' +
+          table.getAttribute("data-row-select") + '"]'
+        );
+        if (!box || box.disabled) { return; }
+        // A click on something with its own job — a link, a button, the
+        // checkbox, a label bound to it — belongs to that thing.
+        if (event.target.closest("a, button, input, select, textarea, label")) {
+          return;
+        }
+        // Selecting text is not clicking a row.
+        var selection = window.getSelection && window.getSelection();
+        if (selection && String(selection).length > 0) { return; }
+        setChecked(box, !box.checked);
+        if (master) { syncHeader(table, master); }
+      });
+
+      if (master) { syncHeader(table, master); }
+    });
+  })();
+})();
