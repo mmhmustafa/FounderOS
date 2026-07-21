@@ -82,6 +82,7 @@
     <ul class="kv">
       <li><span>Network</span><span id="summary-network">{{ job.profile_name if job else '' }}</span></li>
       <li><span>Devices discovered</span><span id="summary-devices">{{ job.summary.devices if job and job.summary else '' }}</span></li>
+      <li><span>Addresses swept</span><span id="summary-sweep">{% if job and job.summary and job.summary.addresses_scanned %}{{ job.summary.addresses_scanned }} swept · {{ job.summary.devices }} answered{% if job.summary.addresses_without_device %} · {{ job.summary.addresses_without_device }} silent (no device answered){% endif %}{% if job.summary.auth_failed_devices %} · {{ job.summary.auth_failed_devices }} refused credentials{% endif %}{% else %}—{% endif %}</span></li>
       <li><span>Relationships</span><span id="summary-relationships">{{ job.summary.relationships if job and job.summary else '' }}</span></li>
       <li><span>Configurations collected</span><span id="summary-configs">{{ job.summary.configurations_collected if job and job.summary else '' }}</span></li>
       <li><span>Platforms</span><span id="summary-platforms">{{ job.summary.platforms if job and job.summary and job.summary.platforms else '—' }}</span></li>

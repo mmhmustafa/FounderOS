@@ -175,11 +175,31 @@
     show("job-failure", Boolean(job.error));
     if (job.error) setText("job-failure", job.error);
     var done = job.status === "completed";
+    function sweepSummary(summary) {
+      var swept = summary.addresses_scanned;
+      if (swept == null) { return "—"; }   // older runs recorded no sweep
+      var parts = [swept + " swept", summary.devices + " answered"];
+      if (summary.addresses_without_device) {
+        parts.push(
+          summary.addresses_without_device + " silent (no device answered)"
+        );
+      }
+      if (summary.auth_failed_devices) {
+        parts.push(summary.auth_failed_devices + " refused credentials");
+      }
+      return parts.join(" · ");
+    }
     show("job-summary", done && Boolean(job.summary));
     if (done && job.summary) {
       setText("job-summary-title", job.message);
       setText("summary-network", job.profile_name);
       setText("summary-devices", job.summary.devices);
+      // Twelve devices out of a swept /24 reads as a failure until the
+      // denominator is on screen. The run already separates a silent
+      // address (no device there — coverage, not a fault) from a device
+      // that refused credentials, so say both rather than leaving the
+      // operator to wonder why a sweep "only contacted 12".
+      setText("summary-sweep", sweepSummary(job.summary));
       setText("summary-relationships", job.summary.relationships);
       setText("summary-configs", job.summary.configurations_collected);
       setText("summary-platforms", job.summary.platforms || "—");
