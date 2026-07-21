@@ -284,6 +284,7 @@
         <label><input type="checkbox" data-layer="devices" checked> Devices</label>
         <label><input type="checkbox" data-layer="ospf" checked> OSPF</label>
         <label><input type="checkbox" data-layer="bgp" checked> BGP</label>
+        <label><input type="checkbox" data-layer="protocolRegions" checked> Protocol regions</label>
         <label><input type="checkbox" data-layer="unresolved"> Unresolved identities</label>
         <label><input type="checkbox" data-layer="interfaceLabels"> Interface labels</label>
         <label><input type="checkbox" data-layer="evidenceLabels"> Evidence labels</label>
@@ -2290,6 +2291,156 @@
             + 'reached. Showing the recommended defaults.', 'warn');
           apply();
         });
+    })();
+
+    // -- Protocol regions ----------------------------------------------------
+    // On the whole-estate view, a soft tint behind the devices that share
+    // an OSPF area or a BGP AS, so the control-plane boundaries are
+    // readable without leaving the diagram. Drawn ONLY in the full view:
+    // the OSPF and BGP views already draw those domains as boxes, and the
+    // site view has its own.
+    //
+    // Deliberately NOT a convex hull. A hull around scattered members
+    // swallows whatever happens to sit between them, so a device that is
+    // not in the area would appear to be inside it — the map would be
+    // asserting a membership the evidence does not support, which is the
+    // one thing this viewer must never do. Instead each region is the
+    // union of a disc per member and a capsule along each member-to-member
+    // link: the shape follows the actual membership and can never enclose
+    // a non-member. Isolated members (a router that is its own AS) get
+    // their own disc, which is why a domain can legitimately appear as
+    // several separate islands.
+    (function protocolRegions() {
+      if (typeof cy === 'undefined' || typeof routingView === 'undefined') {
+        return;
+      }
+      var container = cy.container();
+      var panel = document.getElementById('layers-panel');
+      if (!container) { return; }
+
+      var canvas = document.createElement('canvas');
+      canvas.setAttribute('aria-hidden', 'true');
+      canvas.style.position = 'absolute';
+      canvas.style.left = '0';
+      canvas.style.top = '0';
+      canvas.style.pointerEvents = 'none';
+      // Beneath every Cytoscape canvas, whatever indices it chose.
+      var zIndexes = Array.prototype.slice
+        .call(container.querySelectorAll('canvas'))
+        .map(function (node) {
+          return parseInt(window.getComputedStyle(node).zIndex, 10) || 0;
+        });
+      canvas.style.zIndex = String(
+        Math.min.apply(null, zIndexes.concat([0])) - 1
+      );
+      container.insertBefore(canvas, container.firstChild);
+
+      var PALETTE = { ospf: '#2563eb', bgp: '#7c3aed' };
+
+      function regionsEnabled() {
+        var box = panel && panel.querySelector('[data-layer="protocolRegions"]');
+        return !box || box.checked;
+      }
+
+      function visibleMembers(group) {
+        var found = [];
+        (group.members || []).forEach(function (id) {
+          var node = cy.getElementById(id);
+          if (node && node.length && node.style('display') !== 'none') {
+            found.push(node);
+          }
+        });
+        return found;
+      }
+
+      function addCapsule(path, from, to, radius) {
+        var dx = to.x - from.x, dy = to.y - from.y;
+        var length = Math.sqrt(dx * dx + dy * dy);
+        if (!length) { return; }
+        var nx = (-dy / length) * radius, ny = (dx / length) * radius;
+        path.moveTo(from.x + nx, from.y + ny);
+        path.lineTo(to.x + nx, to.y + ny);
+        path.lineTo(to.x - nx, to.y - ny);
+        path.lineTo(from.x - nx, from.y - ny);
+        path.closePath();
+      }
+
+      function draw() {
+        var width = container.clientWidth, height = container.clientHeight;
+        var ratio = window.devicePixelRatio || 1;
+        if (canvas.width !== Math.round(width * ratio) ||
+            canvas.height !== Math.round(height * ratio)) {
+          canvas.width = Math.round(width * ratio);
+          canvas.height = Math.round(height * ratio);
+          canvas.style.width = width + 'px';
+          canvas.style.height = height + 'px';
+        }
+        var ctx = canvas.getContext('2d');
+        ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+        ctx.clearRect(0, 0, width, height);
+
+        var mode = (viewSelect && viewSelect.value) || 'full';
+        if (mode !== 'full' || !regionsEnabled()) { return; }
+
+        ['ospf', 'bgp'].forEach(function (protocol) {
+          var view = routingView[protocol];
+          if (!view) { return; }
+          (view.groups || []).forEach(function (group) {
+            var members = visibleMembers(group);
+            if (!members.length) { return; }
+            var byId = {};
+            members.forEach(function (node) { byId[node.id()] = true; });
+
+            // One path per region: overlapping sub-shapes filled with the
+            // nonzero rule merge into a single flat tint instead of
+            // darkening where they cross.
+            var path = new Path2D();
+            var padding = 18;
+            members.forEach(function (node) {
+              var point = node.renderedPosition();
+              var radius = Math.max(
+                node.renderedWidth(), node.renderedHeight()
+              ) / 2 + padding;
+              path.moveTo(point.x + radius, point.y);
+              path.arc(point.x, point.y, radius, 0, Math.PI * 2);
+            });
+            members.forEach(function (node) {
+              node.connectedEdges().forEach(function (edge) {
+                var other = edge.source().id() === node.id()
+                  ? edge.target() : edge.source();
+                // Only ever join two members of THIS region.
+                if (!byId[other.id()] || other.id() < node.id()) { return; }
+                if (edge.style('display') === 'none') { return; }
+                addCapsule(
+                  path, node.renderedPosition(), other.renderedPosition(),
+                  Math.min(
+                    Math.max(node.renderedWidth(), node.renderedHeight()),
+                    Math.max(other.renderedWidth(), other.renderedHeight())
+                  ) / 2 + padding
+                );
+              });
+            });
+            ctx.save();
+            ctx.globalAlpha = 0.11;
+            ctx.fillStyle = PALETTE[protocol];
+            ctx.fill(path, 'nonzero');
+            ctx.restore();
+          });
+        });
+      }
+
+      window.__atlasRegionsDraw = draw;
+      cy.on('render', draw);
+      window.addEventListener('resize', draw);
+      if (panel) {
+        panel.addEventListener('change', function (event) {
+          if (event.target && event.target.dataset &&
+              event.target.dataset.layer === 'protocolRegions') {
+            draw();
+          }
+        });
+      }
+      draw();
     })();
 
     // -- Per-user hidden devices --------------------------------------------
