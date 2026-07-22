@@ -2521,10 +2521,16 @@
         var length = Math.sqrt(dx * dx + dy * dy);
         if (!length) { return; }
         var nx = (-dy / length) * radius, ny = (dx / length) * radius;
+        // Wind the SAME way as the disc arcs (from+n, from-n, to-n, to+n).
+        // With the opposite order, a capsule's winding cancelled the disc's
+        // where they overlap, and the nonzero rule left a white hole in the
+        // lens at every node a capsule meets — worst at the core, where
+        // several converge. Same winding makes the counts ADD (a solid
+        // fill), not cancel.
         path.moveTo(from.x + nx, from.y + ny);
-        path.lineTo(to.x + nx, to.y + ny);
-        path.lineTo(to.x - nx, to.y - ny);
         path.lineTo(from.x - nx, from.y - ny);
+        path.lineTo(to.x - nx, to.y - ny);
+        path.lineTo(to.x + nx, to.y + ny);
         path.closePath();
       }
 

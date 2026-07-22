@@ -101,6 +101,26 @@ class HonestShapeTests(unittest.TestCase):
 
         self.assertIn("if (!byId[other.id()]", BLOCK)
 
+    def test_a_capsule_winds_with_the_discs_so_the_fill_has_no_holes(self) -> None:
+        """The union is filled with the nonzero rule, which counts SIGNED
+        winding. A capsule wound the opposite way to the disc arcs cancelled
+        their winding where the two overlap, so nonzero left a white hole in
+        the lens at every node a capsule meets — worst at the core, where
+        several converge. The capsule must trace the same rotational sense
+        as the arcs (from+n -> from-n -> to-n -> to+n) so the counts ADD to
+        a solid fill instead of cancelling.
+        """
+
+        capsule = SOURCE.split("function addCapsule", 1)[1][:900]
+        order = [
+            capsule.index("from.x + nx"),
+            capsule.index("from.x - nx"),
+            capsule.index("to.x - nx"),
+            capsule.index("to.x + nx"),
+        ]
+        self.assertEqual(order, sorted(order),
+                         "capsule vertices must be from+n, from-n, to-n, to+n")
+
     def test_each_shape_is_filled_once(self) -> None:
         """Overlapping sub-shapes filled separately would darken where
         they cross, reading as a stronger claim in the middle of a
