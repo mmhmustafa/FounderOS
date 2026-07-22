@@ -307,6 +307,18 @@ class Tier2And3DriverTests(unittest.TestCase):
         self.assertEqual(1, len(routing["ospf_adjacencies"]))
         self.assertEqual("65010", routing["bgp_sessions"][0]["remote_as"])
         self.assertEqual("65060", routing["bgp_sessions"][0]["local_as"])
+        # The real RIB, not just the count: Aruba's prefix-line grammar
+        # normalizes into the same RouteEntry every platform uses.
+        table = {r["prefix"]: r for r in device.metadata["routing_table"]}
+        self.assertEqual(device.metadata["route_count"], len(table))
+        self.assertEqual(("static", "172.20.20.1"),
+                         (table["0.0.0.0/0"]["protocol"],
+                          table["0.0.0.0/0"]["next_hop"]))
+        # A connected route names its port after "via" and has no next-hop.
+        local = table["10.255.0.60/32"]
+        self.assertEqual((None, "loopback0", True),
+                         (local["next_hop"], local["interface"],
+                          local["connected"]))
 
     def test_wlc_identity_aps_wlans_and_cdp(self) -> None:
         discovery = CiscoWlcDriver().discover(

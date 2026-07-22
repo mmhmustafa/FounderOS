@@ -36,6 +36,7 @@ from founderos_atlas.routing import (
     bgp_sessions_from_summary,
     routing_metadata,
 )
+from founderos_atlas.routing.table import prefix_line_route_dicts
 
 from .. import capabilities as caps
 from ..capabilities import CommandSpec, EXPERIMENTAL, TIER_DEEP, TIER_FAST
@@ -346,6 +347,12 @@ class CiscoNXOSDriver(ProductionDriver):
         ]
         if peers:
             metadata["bgp_peers"] = tuple(tuple(sorted(p.items())) for p in peers)
+        # The real RIB: NX-OS writes the prefix on its own line with the
+        # next-hops indented beneath it — a different grammar, the same
+        # canonical RouteEntry.
+        routing_table = prefix_line_route_dicts(raw.get(SHOW_ROUTES, ""))
+        if routing_table:
+            metadata["routing_table"] = routing_table
         ospf = tuple(
             OspfAdjacencyObservation(
                 neighbor_router_id=str(item.metadata.get("router_id")),

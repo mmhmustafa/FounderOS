@@ -32,6 +32,7 @@ from founderos_atlas.routing import (
     bgp_sessions_from_summary,
     routing_metadata,
 )
+from founderos_atlas.routing.table import route_table_dicts
 
 from .. import capabilities as caps
 from ..capabilities import CommandSpec, EXPERIMENTAL, TIER_DEEP, TIER_FAST, TIER_STANDARD
@@ -285,6 +286,11 @@ class CiscoIOSXEDriver(ProductionDriver):
                   if re.match(r"^[A-Z*]", l.strip() or "-")]
         if routes:
             metadata["route_count"] = len(routes)
+        # The real RIB alongside the count: IOS-XE speaks the shared
+        # `show ip route` grammar, so the canonical parser reads it.
+        routing_table = route_table_dicts(raw.get(SHOW_ROUTES, ""))
+        if routing_table:
+            metadata["routing_table"] = routing_table
         ospf = tuple(
             OspfAdjacencyObservation(
                 neighbor_router_id=str(item.metadata.get("router_id")),

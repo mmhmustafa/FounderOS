@@ -29,6 +29,7 @@ from founderos_atlas.routing import (
     bgp_sessions_from_summary,
     routing_metadata,
 )
+from founderos_atlas.routing.table import route_table_dicts
 
 from .. import capabilities as caps
 from ..capabilities import CommandSpec, EXPERIMENTAL, TIER_DEEP, TIER_FAST
@@ -277,6 +278,11 @@ class AristaEOSDriver(ProductionDriver):
         ]
         if peers:
             metadata["bgp_peers"] = tuple(tuple(sorted(p.items())) for p in peers)
+        # The real RIB: EOS speaks the shared `show ip route` grammar
+        # (indented), so the canonical parser reads it.
+        routing_table = route_table_dicts(raw.get(SHOW_ROUTES, ""))
+        if routing_table:
+            metadata["routing_table"] = routing_table
         ospf = tuple(
             OspfAdjacencyObservation(
                 neighbor_router_id=str(item.metadata.get("router_id")),

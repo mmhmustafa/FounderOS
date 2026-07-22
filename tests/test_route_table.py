@@ -11,7 +11,11 @@ from __future__ import annotations
 
 import unittest
 
-from founderos_atlas.routing.table import parse_route_table, route_table_dicts
+from founderos_atlas.routing.table import (
+    parse_prefix_line_route_table,
+    parse_route_table,
+    route_table_dicts,
+)
 
 
 FRR = """Codes: K - kernel route, C - connected, S - static, R - RIP,
@@ -82,6 +86,73 @@ class CiscoGrammarTests(unittest.TestCase):
         )
         # Both carry the shared prefix's metric.
         self.assertTrue(all(r.metric == 30 for r in ecmp))
+
+
+NXOS = """IP Route Table for VRF "default"
+'*' denotes best ucast next-hop
+
+10.10.10.0/24, ubest/mbest: 1/0, attached
+    *via 10.10.10.3, Vlan10, [0/0], 12w3d, direct
+192.0.2.11/32, ubest/mbest: 1/0
+    *via 10.10.99.2, Eth1/49, [110/41], 12w3d, ospf-1, intra
+"""
+
+ARUBA = """Displaying ipv4 routes selected for forwarding
+
+'[x/y]' denotes [distance/metric]
+
+0.0.0.0/0, vrf default
+    via  172.20.20.1,  [1/0],  static
+10.255.0.60/32, vrf default
+    via  loopback0,  [0/0],  connected
+192.0.2.128/25, vrf default
+    via  172.20.60.3,  [110/2],  ospf
+"""
+
+
+class PrefixLineGrammarTests(unittest.TestCase):
+    """NX-OS and Aruba CX put the prefix on its own line and the next-hops
+    beneath it. They differ in FIELD ORDER, so one field-agnostic reader
+    serves both — and normalizes into the same RouteEntry as the Cisco
+    grammar, which is the whole point of the canonical model.
+    """
+
+    def test_nxos_next_hop_interface_and_metric(self) -> None:
+        routes = {r.prefix: r for r in parse_prefix_line_route_table(NXOS)}
+        self.assertEqual(2, len(routes))
+        ospf = routes["192.0.2.11/32"]
+        self.assertEqual(("ospf", "10.10.99.2", "Eth1/49", 110, 41),
+                         (ospf.protocol, ospf.next_hop, ospf.interface,
+                          ospf.distance, ospf.metric))
+
+    def test_nxos_direct_is_a_connected_route(self) -> None:
+        """NX-OS words a connected route "direct" and lists the local
+        address as its via — it is still a connected route, and the
+        canonical flag must say so."""
+
+        routes = {r.prefix: r for r in parse_prefix_line_route_table(NXOS)}
+        direct = routes["10.10.10.0/24"]
+        self.assertEqual("connected", direct.protocol)
+        self.assertTrue(direct.connected)
+
+    def test_aruba_reads_the_same_shape_with_a_different_field_order(self) -> None:
+        routes = {r.prefix: r for r in parse_prefix_line_route_table(ARUBA)}
+        self.assertEqual(3, len(routes))
+        # Aruba names the interface after "via" for a connected route...
+        local = routes["10.255.0.60/32"]
+        self.assertEqual(("connected", None, "loopback0"),
+                         (local.protocol, local.next_hop, local.interface))
+        # ...and an address for a routed one.
+        self.assertEqual(("static", "172.20.20.1"),
+                         (routes["0.0.0.0/0"].protocol,
+                          routes["0.0.0.0/0"].next_hop))
+
+    def test_a_line_with_no_protocol_word_is_not_invented(self) -> None:
+        self.assertEqual(
+            (), parse_prefix_line_route_table(
+                "10.0.0.0/8, vrf default\n    via  10.0.0.1,  [1/0]\n"
+            )
+        )
 
 
 class RobustnessTests(unittest.TestCase):

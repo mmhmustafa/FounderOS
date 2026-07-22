@@ -35,8 +35,11 @@ _VIA = re.compile(r"\bvia\s+(\d{1,3}(?:\.\d{1,3}){3})\b")
 _METRIC = re.compile(r"\[(\d+)/(\d+)\]")
 # A leading protocol code: one code letter, then any run of sub-code
 # letters and selection markers, then whitespace before the prefix. The
-# very first letter is the protocol.
-_LEADING_CODE = re.compile(r"^([A-Za-z])[A-Za-z*> ]*?\s")
+# very first letter is the protocol. Leading indentation is tolerated —
+# Arista EOS indents every route line — and is unambiguous because a code
+# line must also carry a prefix, while an ECMP continuation carries a
+# "via" and no prefix.
+_LEADING_CODE = re.compile(r"^\s*([A-Za-z])[A-Za-z*> ]*?\s")
 # Header / legend / grouping lines that carry no route. Indented lines are
 # NOT skipped here — an indented "via" is an ECMP continuation of the route
 # above it; legend and header lines fall through harmlessly because they
@@ -129,17 +132,22 @@ def parse_route_table(text: str) -> tuple[RouteEntry, ...]:
                 "prefix": prefix, "protocol": protocol,
                 "distance": distance, "metric": metric,
             }
-            connected = "directly connected" in tail.lower()
+            directly = "directly connected" in tail.lower()
             via = _VIA.search(line)
             next_hop = via.group(1) if via else None
-            if next_hop in (None, "0.0.0.0") and connected:
+            if next_hop in (None, "0.0.0.0") and directly:
                 next_hop = None
             entries.append(RouteEntry(
                 prefix=prefix, protocol=protocol,
                 next_hop=next_hop,
                 interface=_interface_token(tail),
                 distance=distance, metric=metric,
-                connected=connected or (next_hop is None and not via),
+                # The PROTOCOL is what makes a route connected, not the
+                # phrasing: NX-OS writes "direct" and lists the local
+                # interface address as the via, which is still a connected
+                # route. Deriving the flag from the protocol keeps every
+                # dialect agreeing on the same fact.
+                connected=protocol in ("connected", "local"),
             ))
             continue
 
@@ -155,7 +163,99 @@ def parse_route_table(text: str) -> tuple[RouteEntry, ...]:
     return tuple(entries)
 
 
+# -- the prefix-line dialect (Cisco NX-OS, Aruba CX) -------------------------
+#
+# A second grammar, normalizing into the SAME RouteEntry: the prefix sits on
+# its own line and each next-hop follows on an indented "via" line.
+#
+#   NX-OS:  10.10.10.0/24, ubest/mbest: 1/0, attached
+#               *via 10.10.10.3, Vlan10, [0/0], 12w3d, direct
+#   ArubaCX: 172.20.60.0/24, vrf default
+#               via  vlan10,  [0/0],  connected
+#
+# The two differ in field ORDER, so the via line is read field-agnostically:
+# whichever comma-separated field looks like an address is the next-hop,
+# whichever looks like a port is the interface, and the protocol is matched
+# from a known vocabulary. That way neither platform needs its own parser,
+# and a third vendor with the same shape gets it free.
+
+_PREFIX_HEADER = re.compile(r"^(\d{1,3}(?:\.\d{1,3}){3}/\d{1,2})\s*,")
+_VIA_LINE = re.compile(r"^\s+\*?via\s+(?P<rest>.+)$", re.IGNORECASE)
+_ADDRESS = re.compile(r"^\d{1,3}(?:\.\d{1,3}){3}$")
+# NX-OS calls a connected route "direct"; everything else is already the
+# canonical word, optionally suffixed with a process or AS ("ospf-1").
+_PROTOCOL_WORDS = {
+    "direct": "connected", "connected": "connected", "local": "local",
+    "static": "static", "ospf": "ospf", "bgp": "bgp", "rip": "rip",
+    "eigrp": "eigrp", "isis": "isis", "kernel": "kernel", "am": "local",
+}
+
+
+def _protocol_word(field: str) -> str | None:
+    head = field.strip().lower().split("-", 1)[0]
+    return _PROTOCOL_WORDS.get(head)
+
+
+def parse_prefix_line_route_table(text: str) -> tuple[RouteEntry, ...]:
+    """Read the NX-OS / Aruba CX route grammar into RouteEntry."""
+
+    entries: list[RouteEntry] = []
+    prefix: str | None = None
+    for raw in (text or "").splitlines():
+        header = _PREFIX_HEADER.match(raw.strip())
+        if header and not raw[:1].isspace():
+            prefix = header.group(1)
+            continue
+        via = _VIA_LINE.match(raw)
+        if not (via and prefix):
+            continue
+        next_hop = interface = protocol = None
+        distance = metric = None
+        for field in via.group("rest").split(","):
+            token = field.strip()
+            if not token:
+                continue
+            bracket = _METRIC.search(token)
+            if bracket:
+                distance, metric = int(bracket.group(1)), int(bracket.group(2))
+                continue
+            if _ADDRESS.match(token):
+                if next_hop is None:
+                    next_hop = token
+                continue
+            word = _protocol_word(token)
+            if word and protocol is None:
+                protocol = word
+                continue
+            # Not an address, a metric, or a protocol: the first such token
+            # that looks like a port is the interface. Later ones (NX-OS
+            # writes "intra"/"external" after the protocol) are ignored.
+            if interface is None and not _DURATION.match(token):
+                if re.match(r"^[A-Za-z][A-Za-z0-9._/\-]*$", token):
+                    interface = token
+        if protocol is None:
+            continue        # no protocol word: not a route line we understand
+        entries.append(RouteEntry(
+            prefix=prefix, protocol=protocol, next_hop=next_hop,
+            interface=interface, distance=distance, metric=metric,
+            connected=protocol in ("connected", "local"),
+        ))
+    return tuple(entries)
+
+
+def route_dicts(entries) -> list[dict]:
+    """Any parsed RouteEntry sequence as JSON-ready dicts."""
+
+    return [entry.to_dict() for entry in entries]
+
+
 def route_table_dicts(text: str) -> list[dict]:
     """The parsed RIB as JSON-ready dicts for snapshot metadata."""
 
-    return [entry.to_dict() for entry in parse_route_table(text)]
+    return route_dicts(parse_route_table(text))
+
+
+def prefix_line_route_dicts(text: str) -> list[dict]:
+    """The NX-OS / Aruba CX RIB as JSON-ready dicts."""
+
+    return route_dicts(parse_prefix_line_route_table(text))

@@ -29,6 +29,7 @@ from founderos_atlas.routing import (
     OspfAdjacencyObservation,
     routing_metadata,
 )
+from founderos_atlas.routing.table import prefix_line_route_dicts
 
 from .. import capabilities as caps
 from ..capabilities import CommandSpec, EXPERIMENTAL, TIER_DEEP, TIER_FAST
@@ -298,6 +299,12 @@ class ArubaCXDriver(ProductionDriver):
         metadata["route_count"] = len(re.findall(
             r"(?m)^\d+\.\d+\.\d+\.\d+/\d+,", raw.get(SHOW_ROUTES, "")
         ))
+        # The real RIB alongside the count. Aruba CX writes the prefix on its
+        # own line with the next-hops indented beneath it — the same shape
+        # NX-OS uses, read by the same parser into the same RouteEntry.
+        routing_table = prefix_line_route_dicts(raw.get(SHOW_ROUTES, ""))
+        if routing_table:
+            metadata["routing_table"] = routing_table
 
         bgp_neighbors = tuple(
             NetworkNeighbor(

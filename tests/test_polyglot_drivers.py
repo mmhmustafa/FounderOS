@@ -228,6 +228,19 @@ class IOSXETests(unittest.TestCase):
         self.assertEqual(1, len(metadata["bgp_peers"]))
         self.assertGreaterEqual(metadata["route_count"], 5)
 
+    def test_the_real_rib_rides_beside_the_count(self) -> None:
+        """IOS-XE speaks the shared `show ip route` grammar, so the canonical
+        parser captures prefixes and next-hops, not just how many there
+        were."""
+
+        disc, _ = _discover(self._driver(), XE.normal(), hint="10.10.10.2")
+        table = disc.result.device.metadata["routing_table"]
+        ospf = next(r for r in table if r["protocol"] == "ospf")
+        self.assertEqual(("192.0.2.12/32", "10.10.99.1", "Port-channel1"),
+                         (ospf["prefix"], ospf["next_hop"], ospf["interface"]))
+        default = next(r for r in table if r["prefix"] == "0.0.0.0/0")
+        self.assertEqual("10.10.99.1", default["next_hop"])
+
     def test_lldp_disabled_is_an_honest_empty_not_a_failure(self) -> None:
         outputs = XE.normal()
         outputs["show lldp neighbors detail"] = XE.SHOW_LLDP_DISABLED
@@ -319,6 +332,21 @@ class NXOSTests(unittest.TestCase):
         self.assertEqual("Po10", pcs[0]["port_channel"])
         self.assertEqual(("Eth1/1", "Eth1/2"), pcs[0]["members"])
 
+    def test_the_nxos_rib_normalizes_into_the_canonical_table(self) -> None:
+        """NX-OS writes a different route grammar (prefix line, indented
+        next-hops, "direct" for connected) and still lands in the same
+        RouteEntry shape every other platform uses."""
+
+        from founderos_atlas.platforms.drivers import CiscoNXOSDriver
+
+        disc, _ = _discover(CiscoNXOSDriver(), NX.normal(), hint="10.10.20.2")
+        table = {r["prefix"]: r for r in
+                 disc.result.device.metadata["routing_table"]}
+        ospf = table["192.0.2.11/32"]
+        self.assertEqual(("ospf", "10.10.99.2", "Eth1/49"),
+                         (ospf["protocol"], ospf["next_hop"], ospf["interface"]))
+        self.assertTrue(table["10.10.10.0/24"]["connected"])
+
     def test_a_disabled_feature_is_never_failed(self) -> None:
         from founderos_atlas.platforms.drivers import CiscoNXOSDriver
 
@@ -330,6 +358,20 @@ class NXOSTests(unittest.TestCase):
 
 
 class EOSTests(unittest.TestCase):
+    def test_the_indented_eos_rib_is_captured(self) -> None:
+        """EOS indents every route line and uses two-letter sub-codes
+        ("B E"). Both were invisible to a parser anchored at column 0."""
+
+        from founderos_atlas.platforms.drivers import AristaEOSDriver
+
+        disc, _ = _discover(AristaEOSDriver(), EOS.normal(), hint="10.10.20.3")
+        table = {r["prefix"]: r for r in
+                 disc.result.device.metadata["routing_table"]}
+        bgp = table["192.0.2.11/32"]
+        self.assertEqual(("bgp", "10.10.30.0", "Ethernet1"),
+                         (bgp["protocol"], bgp["next_hop"], bgp["interface"]))
+        self.assertTrue(table["10.10.10.0/24"]["connected"])
+
     def test_identity_needs_show_hostname_and_gets_it(self) -> None:
         from founderos_atlas.platforms.drivers import AristaEOSDriver
 
