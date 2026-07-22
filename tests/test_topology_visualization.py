@@ -46,10 +46,31 @@ class TopologyVisualizationTests(unittest.TestCase):
         the graph, so right-click paste still works in the inputs."""
 
         html = TopologyRenderer(self.snapshot).render()
-        handler = html.split("would cover ours", 1)[1][:900]
+        handler = html.split("would cover ours", 1)[1][:1500]
         self.assertIn("addEventListener('contextmenu'", handler)
         self.assertIn("}, true)", handler)                 # capture phase
-        self.assertIn("graph.contains(event.target)", handler)  # graph-scoped
+        self.assertIn("graph.contains(target)", handler)   # graph-scoped
+
+    def test_a_second_right_click_is_not_swallowed_by_the_first_menu(self) -> None:
+        """The reported bug: right-click worked once, then gave the browser
+        menu. Our menu is a SIBLING of #cy and overlays the graph, so the
+        menu one right-click opens sits on top of the device the next one
+        aims at; that second click fails the "inside #cy" test and the
+        native menu leaks.
+
+        Two halves: a stale menu is closed on mousedown — which runs BEFORE
+        contextmenu, so the browser hit-tests the device underneath — and a
+        right-click that still lands on the menu is suppressed rather than
+        handed to the browser.
+        """
+
+        html = TopologyRenderer(self.snapshot).render()
+        block = html.split("would cover ours", 1)[1][:2400]
+        self.assertIn("contextMenu.contains(target)", block)
+        self.assertIn("addEventListener('mousedown'", block)
+        # A press INSIDE the menu must not close it, or the item would
+        # vanish before it could be chosen.
+        self.assertIn("if (!contextMenu.contains(event.target))", block)
 
     def test_nodes_carry_their_addressed_interfaces(self) -> None:
         """The hover card names every IP a device answers on, so the node

@@ -1377,10 +1377,32 @@
     // intermittently. Capture runs top-down (document first), so it always
     // sees the event. Scoped to the graph, so right-click still works — for
     // paste — in the search box, the trace inputs, and the side panels.
+    // Our own menu is a SIBLING of #cy, not a child, and it overlays the
+    // graph — so the menu one right-click opens sits on top of the device
+    // the NEXT right-click aims at. The second click then lands on the menu,
+    // fails the "inside #cy" test, and the browser menu appears: right-click
+    // worked the first time and not the second. Both halves are handled.
     document.addEventListener('contextmenu', event => {
       if (!servedByAtlas) { return; }
+      const target = event.target;
+      if (contextMenu.contains(target)) {
+        // A right-click ON the open menu: never the browser's menu, and
+        // close ours so the next right-click reaches the graph again.
+        event.preventDefault();
+        hideContextMenu();
+        return;
+      }
       const graph = document.getElementById('cy');
-      if (graph && graph.contains(event.target)) { event.preventDefault(); }
+      if (graph && graph.contains(target)) { event.preventDefault(); }
+    }, true);
+
+    // Close a stale menu on the way DOWN. mousedown runs before contextmenu,
+    // so by the time the browser hit-tests for the right-click the menu is
+    // gone and the device underneath is the target — the second right-click
+    // behaves exactly like the first. A press that lands inside the menu is
+    // left alone, or the item would vanish before it could be chosen.
+    document.addEventListener('mousedown', event => {
+      if (!contextMenu.contains(event.target)) { hideContextMenu(); }
     }, true);
 
     // Semantic zoom: higher resolution cannot make 3px text readable. Node
