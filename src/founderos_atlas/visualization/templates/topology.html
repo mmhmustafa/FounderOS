@@ -2324,15 +2324,19 @@
       canvas.style.left = '0';
       canvas.style.top = '0';
       canvas.style.pointerEvents = 'none';
-      // Beneath every Cytoscape canvas, whatever indices it chose.
+      // Beneath every Cytoscape canvas, whatever indices it chose — but
+      // never below zero. #cy is positioned with z-index:auto, so it is
+      // NOT a stacking context: a negative index here does not mean
+      // "behind the graph", it means "behind the nearest ancestor that
+      // IS one", and #cy's own opaque background then hides the tint
+      // completely. It painted; nobody could see it.
       var zIndexes = Array.prototype.slice
         .call(container.querySelectorAll('canvas'))
         .map(function (node) {
           return parseInt(window.getComputedStyle(node).zIndex, 10) || 0;
         });
-      canvas.style.zIndex = String(
-        Math.min.apply(null, zIndexes.concat([0])) - 1
-      );
+      var floor = zIndexes.length ? Math.min.apply(null, zIndexes) : 1;
+      canvas.style.zIndex = String(Math.max(floor - 1, 0));
       container.insertBefore(canvas, container.firstChild);
 
       var PALETTE = { ospf: '#2563eb', bgp: '#7c3aed' };
@@ -2353,6 +2357,68 @@
         return found;
       }
 
+      function memberRadius(node, padding) {
+        return Math.max(node.renderedWidth(), node.renderedHeight()) / 2
+          + padding;
+      }
+
+      // A single circle reads as one region; the union of discs and
+      // capsules reads as a cluster of blobs. So prefer the circle —
+      // but only where it is honest, which is what enclosesOutsider
+      // decides. This is NOT a convex hull by another name: a hull is
+      // fitted to the members and then silently swallows whatever sits
+      // between them, whereas this circle is REJECTED the moment it
+      // covers a device that is not a member.
+      function enclosingCircle(members, padding) {
+        var cx = 0, cy0 = 0;
+        members.forEach(function (node) {
+          var point = node.renderedPosition();
+          cx += point.x; cy0 += point.y;
+        });
+        cx /= members.length; cy0 /= members.length;
+        var radius = 0;
+        members.forEach(function (node) {
+          var point = node.renderedPosition();
+          var dx = point.x - cx, dy = point.y - cy0;
+          var reach = Math.sqrt(dx * dx + dy * dy)
+            + memberRadius(node, padding);
+          if (reach > radius) { radius = reach; }
+        });
+        return { x: cx, y: cy0, r: radius };
+      }
+
+      function enclosesOutsider(circle, byId) {
+        var found = false;
+        cy.nodes().forEach(function (node) {
+          if (found || byId[node.id()]) { return; }
+          if (node.style('display') === 'none') { return; }
+          var point = node.renderedPosition();
+          var dx = point.x - circle.x, dy = point.y - circle.y;
+          // Measured against the device's own extent, not just its
+          // centre: a router half-covered by the tint still reads to an
+          // operator as a member of the region.
+          var reach = Math.max(
+            node.renderedWidth(), node.renderedHeight()
+          ) / 2;
+          if (Math.sqrt(dx * dx + dy * dy) - reach < circle.r) {
+            found = true;
+          }
+        });
+        return found;
+      }
+
+      function label(ctx, protocol, text, anchor) {
+        if (!text) { return; }
+        ctx.save();
+        ctx.globalAlpha = 0.9;
+        ctx.fillStyle = PALETTE[protocol];
+        ctx.font = '600 11px ui-sans-serif, system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText(text, anchor.x, anchor.y - 5);
+        ctx.restore();
+      }
+
       function addCapsule(path, from, to, radius) {
         var dx = to.x - from.x, dy = to.y - from.y;
         var length = Math.sqrt(dx * dx + dy * dy);
@@ -2363,6 +2429,140 @@
         path.lineTo(to.x - nx, to.y - ny);
         path.lineTo(from.x - nx, from.y - ny);
         path.closePath();
+      }
+
+      function isBgpEdge(edge) {
+        // The mesh between edge routers is typed "verified-routed" (a
+        // route was actually observed across it), so relationship alone
+        // misses it — the BGP evidence rides on bgp_health / protocols.
+        var rel = edge.data('relationship');
+        if (rel === 'protocol-peer' || rel === 'bgp') { return true; }
+        if (edge.data('bgp_health') != null) { return true; }
+        var protocols = edge.data('protocols');
+        return Array.isArray(protocols) && protocols.indexOf('bgp') !== -1;
+      }
+
+      // An OSPF area is a self-contained region: one shape, its members.
+      function drawRegion(ctx, protocol, group) {
+        var members = visibleMembers(group);
+        if (!members.length) { return; }
+        var byId = {};
+        members.forEach(function (node) { byId[node.id()] = true; });
+
+        // One path per region: overlapping sub-shapes filled with the
+        // nonzero rule merge into a single flat tint instead of
+        // darkening where they cross.
+        var path = new Path2D();
+        var padding = 18;
+        var circle = enclosingCircle(members, padding);
+        var anchor;
+        if (!enclosesOutsider(circle, byId)) {
+          path.moveTo(circle.x + circle.r, circle.y);
+          path.arc(circle.x, circle.y, circle.r, 0, Math.PI * 2);
+          anchor = { x: circle.x, y: circle.y - circle.r };
+        } else {
+          members.forEach(function (node) {
+            var point = node.renderedPosition();
+            var radius = memberRadius(node, padding);
+            path.moveTo(point.x + radius, point.y);
+            path.arc(point.x, point.y, radius, 0, Math.PI * 2);
+            if (!anchor || point.y - radius < anchor.y) {
+              anchor = { x: point.x, y: point.y - radius };
+            }
+          });
+          members.forEach(function (node) {
+            node.connectedEdges().forEach(function (edge) {
+              var other = edge.source().id() === node.id()
+                ? edge.target() : edge.source();
+              // Only ever join two members of THIS region.
+              if (!byId[other.id()] || other.id() < node.id()) { return; }
+              if (edge.style('display') === 'none') { return; }
+              addCapsule(
+                path, node.renderedPosition(), other.renderedPosition(),
+                Math.min(
+                  Math.max(node.renderedWidth(), node.renderedHeight()),
+                  Math.max(other.renderedWidth(), other.renderedHeight())
+                ) / 2 + padding
+              );
+            });
+          });
+        }
+        ctx.save();
+        ctx.globalAlpha = 0.11;
+        ctx.fillStyle = PALETTE[protocol];
+        ctx.fill(path, 'nonzero');
+        ctx.restore();
+        // Without this the layer is a set of coloured shapes an
+        // operator has to guess at — which is exactly how it landed.
+        label(ctx, protocol, group.label, anchor);
+      }
+
+      // BGP is not a set of separate regions but a peering FABRIC: the
+      // question an operator asks of it is "who peers with whom". So the
+      // ASes are drawn as distinct circles (distinct labels — they are
+      // NOT one AS) tied together by a thin ribbon along each observed
+      // session. The ribbon exists only where a session does, so the
+      // mesh a reader infers is the mesh Atlas actually saw. The ribbon
+      // is deliberately thinner than a member disc so it reads as a
+      // connection, not a region; it traces an edge Cytoscape already
+      // draws, so it encloses nothing the edge line does not.
+      function drawBgpFabric(ctx, groups) {
+        var members = [], byId = {};
+        groups.forEach(function (group) {
+          visibleMembers(group).forEach(function (node) {
+            members.push(node); byId[node.id()] = true;
+          });
+        });
+        if (!members.length) { return; }
+
+        var padding = 18;
+        var path = new Path2D();
+        members.forEach(function (node) {
+          var point = node.renderedPosition();
+          var radius = memberRadius(node, padding);
+          path.moveTo(point.x + radius, point.y);
+          path.arc(point.x, point.y, radius, 0, Math.PI * 2);
+        });
+        // Wide enough to read as a peering session at a glance — a
+        // hairline vanished on the estate view — yet still visibly
+        // thinner than a member disc so it stays a connection, not a
+        // second AS.
+        var PEER_HALF_WIDTH = 12;
+        members.forEach(function (node) {
+          node.connectedEdges().forEach(function (edge) {
+            if (!isBgpEdge(edge)) { return; }
+            if (edge.style('display') === 'none') { return; }
+            var other = edge.source().id() === node.id()
+              ? edge.target() : edge.source();
+            // Only ever join two members, and draw each session once.
+            if (!byId[other.id()] || other.id() < node.id()) { return; }
+            addCapsule(
+              path, node.renderedPosition(), other.renderedPosition(),
+              PEER_HALF_WIDTH
+            );
+          });
+        });
+        ctx.save();
+        // A touch stronger than an OSPF area (0.11): the fabric is mostly
+        // thin ribbon, which needs the extra weight to hold its own.
+        ctx.globalAlpha = 0.18;
+        ctx.fillStyle = PALETTE.bgp;
+        ctx.fill(path, 'nonzero');
+        ctx.restore();
+
+        // One caption per AS at its own circle: the ribbon says they
+        // peer, the labels say which AS each one is.
+        groups.forEach(function (group) {
+          var ms = visibleMembers(group);
+          if (!ms.length) { return; }
+          var anchor;
+          ms.forEach(function (node) {
+            var point = node.renderedPosition();
+            var top = point.y - memberRadius(node, padding);
+            if (!anchor || top < anchor.y) { anchor = { x: point.x, y: top }; }
+          });
+          label(ctx, 'bgp', group.label, anchor);
+        });
       }
 
       function draw() {
@@ -2382,56 +2582,28 @@
         var mode = (viewSelect && viewSelect.value) || 'full';
         if (mode !== 'full' || !regionsEnabled()) { return; }
 
-        ['ospf', 'bgp'].forEach(function (protocol) {
-          var view = routingView[protocol];
-          if (!view) { return; }
-          (view.groups || []).forEach(function (group) {
-            var members = visibleMembers(group);
-            if (!members.length) { return; }
-            var byId = {};
-            members.forEach(function (node) { byId[node.id()] = true; });
-
-            // One path per region: overlapping sub-shapes filled with the
-            // nonzero rule merge into a single flat tint instead of
-            // darkening where they cross.
-            var path = new Path2D();
-            var padding = 18;
-            members.forEach(function (node) {
-              var point = node.renderedPosition();
-              var radius = Math.max(
-                node.renderedWidth(), node.renderedHeight()
-              ) / 2 + padding;
-              path.moveTo(point.x + radius, point.y);
-              path.arc(point.x, point.y, radius, 0, Math.PI * 2);
-            });
-            members.forEach(function (node) {
-              node.connectedEdges().forEach(function (edge) {
-                var other = edge.source().id() === node.id()
-                  ? edge.target() : edge.source();
-                // Only ever join two members of THIS region.
-                if (!byId[other.id()] || other.id() < node.id()) { return; }
-                if (edge.style('display') === 'none') { return; }
-                addCapsule(
-                  path, node.renderedPosition(), other.renderedPosition(),
-                  Math.min(
-                    Math.max(node.renderedWidth(), node.renderedHeight()),
-                    Math.max(other.renderedWidth(), other.renderedHeight())
-                  ) / 2 + padding
-                );
-              });
-            });
-            ctx.save();
-            ctx.globalAlpha = 0.11;
-            ctx.fillStyle = PALETTE[protocol];
-            ctx.fill(path, 'nonzero');
-            ctx.restore();
+        // OSPF areas are self-contained regions; BGP is a peering
+        // fabric. Same tint, two questions — see each helper.
+        if (routingView.ospf) {
+          (routingView.ospf.groups || []).forEach(function (group) {
+            drawRegion(ctx, 'ospf', group);
           });
-        });
+        }
+        if (routingView.bgp) {
+          drawBgpFabric(ctx, routingView.bgp.groups || []);
+        }
       }
 
       window.__atlasRegionsDraw = draw;
       cy.on('render', draw);
       window.addEventListener('resize', draw);
+      // Switching views changes whether this layer draws at all, so it
+      // asks for its own repaint rather than waiting for Cytoscape to
+      // happen to issue one. Borrowing another component's redraw is how
+      // a layer ends up showing the previous view's answer.
+      if (viewSelect) {
+        viewSelect.addEventListener('change', function () { draw(); });
+      }
       if (panel) {
         panel.addEventListener('change', function (event) {
           if (event.target && event.target.dataset &&
