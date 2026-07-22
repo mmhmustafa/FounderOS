@@ -375,6 +375,88 @@ class FRRoutingDriverTests(unittest.TestCase):
         self.assertEqual(("static", "10.0.0.254"),
                          (default["protocol"], default["next_hop"]))
 
+    def test_ios_driver_captures_policy_routing(self) -> None:
+        """Policy routes decide a flow BEFORE the table does, so a
+        forwarding verdict blind to them can be confidently wrong."""
+
+        from tests.test_multihop_discovery import interface_brief
+
+        transport = StubTransport(
+            {
+                "show version": show_version("R1"),
+                "show ip interface brief": interface_brief("10.0.0.1"),
+                "show cdp neighbors detail": "",
+                "show ip route": "C  10.0.0.0/24 is directly connected, Gi0/0\n",
+                "show ip policy": (
+                    "Interface      Route map\n"
+                    "GigabitEthernet0/1 PBR-BRANCH\n"
+                ),
+                "show route-map": (
+                    "route-map PBR-BRANCH, permit, sequence 10\n"
+                    "  Match clauses:\n"
+                    "  Set clauses:\n"
+                    "    ip next-hop 192.0.2.5\n"
+                    "  Policy routing matches: 0 packets, 0 bytes\n"
+                ),
+            }
+        )
+        discovery = CiscoIOSDriver().discover(
+            transport, management_ip_hint="10.0.0.1"
+        )
+        metadata = discovery.result.device.metadata
+        self.assertTrue(metadata["policy_routes_captured"])
+        policies = metadata["policy_routes"]
+        self.assertEqual(1, len(policies))
+        self.assertEqual("GigabitEthernet0/1", policies[0]["ingress_interface"])
+        self.assertEqual("192.0.2.5", policies[0]["next_hop"])
+
+    def test_a_device_with_no_policy_routing_says_so(self) -> None:
+        """"Asked, and this device policy-routes nothing" is a FACT the
+        engine needs. It must not look like "never asked", which is the
+        key being absent — silence and evidence of absence are different
+        answers and the engine treats them differently."""
+
+        from tests.test_multihop_discovery import interface_brief
+
+        transport = StubTransport(
+            {
+                "show version": show_version("R1"),
+                "show ip interface brief": interface_brief("10.0.0.1"),
+                "show cdp neighbors detail": "",
+                "show ip policy": "",
+                "show route-map": "",
+            }
+        )
+        discovery = CiscoIOSDriver().discover(
+            transport, management_ip_hint="10.0.0.1"
+        )
+        metadata = discovery.result.device.metadata
+        self.assertTrue(metadata["policy_routes_captured"])
+        self.assertEqual((), tuple(metadata["policy_routes"]))
+
+    def test_policy_capture_never_implies_routes_were_collected(self) -> None:
+        """A device that answered the policy commands but not `show ip
+        route` has collected NO routes. Reporting "0 route(s)" collected
+        would say it had."""
+
+        from tests.test_multihop_discovery import interface_brief
+
+        transport = StubTransport(
+            {
+                "show version": show_version("R1"),
+                "show ip interface brief": interface_brief("10.0.0.1"),
+                "show cdp neighbors detail": "",
+                "show ip policy": "",
+            }
+        )
+        discovery = CiscoIOSDriver().discover(
+            transport, management_ip_hint="10.0.0.1"
+        )
+        self.assertNotEqual(
+            CAP_COLLECTED, discovery.capability("routes").state
+        )
+        self.assertNotIn("routing_table", discovery.result.device.metadata)
+
     def test_ios_driver_states_routes_uncollected_when_absent(self) -> None:
         """Honesty: no `show ip route` output means routes are marked
         not-collected, never an empty table implied to be complete."""

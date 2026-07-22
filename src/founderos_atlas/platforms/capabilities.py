@@ -36,6 +36,11 @@ BGP = "bgp"
 OSPF = "ospf"
 ROUTES = "routes"
 STATIC_ROUTES = "static-routes"
+# Policy-based routing: the rules consulted BEFORE the routing table. A
+# separate capability from ROUTES because a device can answer one and not
+# the other, and "no policy routing configured" must stay distinguishable
+# from "Atlas never asked".
+POLICY_ROUTES = "policy-routes"
 VRF = "vrf"
 VLAN = "vlan"
 LAG = "lag"                      # port-channel / aggregated ethernet / MLAG
@@ -47,7 +52,7 @@ API_MANAGEMENT = "api-management"
 CAPABILITIES = (
     IDENTITY, VERSION, INVENTORY, CONFIGURATION, INTERFACES,
     INTERFACE_ADDRESSES, INTERFACE_DESCRIPTIONS, ARP, MAC_TABLE, LLDP, CDP,
-    BGP, OSPF, ROUTES, STATIC_ROUTES, VRF, VLAN, LAG, STP,
+    BGP, OSPF, ROUTES, STATIC_ROUTES, POLICY_ROUTES, VRF, VLAN, LAG, STP,
     FIRST_HOP_REDUNDANCY, WEB_MANAGEMENT, API_MANAGEMENT,
 )
 

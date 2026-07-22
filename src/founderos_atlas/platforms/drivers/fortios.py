@@ -53,6 +53,10 @@ from founderos_atlas.routing import (
     routing_metadata,
 )
 from founderos_atlas.routing.table import route_table_dicts
+from founderos_atlas.routing.policy import (
+    parse_fortios_policy_routes,
+    policy_route_dicts,
+)
 
 from .. import capabilities as caps
 from ..capabilities import CommandSpec, EXPERIMENTAL, TIER_DEEP, TIER_FAST
@@ -69,6 +73,7 @@ GET_HA = "get system ha status"
 SHOW_VDOM = "show vdom"
 GET_ROUTES = "get router info routing-table all"
 SHOW_STATIC = "show router static"
+SHOW_POLICY_ROUTES = "show router policy"
 GET_BGP = "get router info bgp summary"
 GET_OSPF = "get router info ospf neighbor"
 SHOW_RUNNING = "show"
@@ -273,6 +278,7 @@ class FortiOSDriver(ProductionDriver):
             CommandSpec("virtual-firewalls", (SHOW_VDOM,)),
             CommandSpec(caps.ROUTES, (GET_ROUTES,)),
             CommandSpec(caps.STATIC_ROUTES, (SHOW_STATIC,)),
+            CommandSpec(caps.POLICY_ROUTES, (SHOW_POLICY_ROUTES,)),
             CommandSpec(caps.BGP, (GET_BGP,)),
             CommandSpec(caps.OSPF, (GET_OSPF,)),
             CommandSpec(caps.CONFIGURATION, (SHOW_RUNNING,), tier=TIER_DEEP),
@@ -321,6 +327,22 @@ class FortiOSDriver(ProductionDriver):
         routing_table = route_table_dicts(raw.get(GET_ROUTES, ""))
         if routing_table:
             metadata["routing_table"] = routing_table
+
+        # Policy routes decide a flow BEFORE the table above is consulted,
+        # so a forwarding verdict that ignores them can be confidently
+        # wrong. Recorded only when the command actually answered: a
+        # FortiOS without PBR returns nothing here, and that silence must
+        # not be stored as though Atlas had read a policy set.
+        if SHOW_POLICY_ROUTES in raw:
+            policy_routes = policy_route_dicts(parse_fortios_policy_routes(
+                raw.get(SHOW_POLICY_ROUTES, ""),
+                source_command=SHOW_POLICY_ROUTES,
+            ))
+            metadata["policy_routes"] = policy_routes
+            # An empty tuple here is a FACT — asked, and there are none.
+            # The engine needs that apart from "never asked", which is the
+            # key being absent altogether.
+            metadata["policy_routes_captured"] = True
 
         bgp_neighbors = tuple(
             NetworkNeighbor(

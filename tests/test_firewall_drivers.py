@@ -124,6 +124,42 @@ class FortiOSTests(unittest.TestCase):
         kinds = {c["context_type"] for c in evidence["virtual_contexts"]}
         self.assertEqual({"vdom"}, kinds)
 
+    def test_policy_routes_are_captured_and_normalised(self) -> None:
+        """FortiOS consults `config router policy` BEFORE the routing
+        table, so a forwarding verdict blind to it can be confidently
+        wrong. It normalises into the same model every platform uses."""
+
+        discovery, _ = _fortigate(**{"show router policy": (
+            "config router policy\n"
+            "    edit 1\n"
+            '        set input-device "port3"\n'
+            '        set src "10.10.0.0 255.255.0.0"\n'
+            "        set protocol 6\n"
+            "        set start-port 443\n"
+            "        set end-port 443\n"
+            "        set gateway 192.0.2.1\n"
+            '        set output-device "port1"\n'
+            "    next\n"
+            "end\n"
+        )})
+        metadata = discovery.result.device.metadata
+        self.assertTrue(metadata["policy_routes_captured"])
+        policy = metadata["policy_routes"][0]
+        self.assertEqual("10.10.0.0/16", policy["source"])
+        self.assertEqual("tcp", policy["protocol"])
+        # Device metadata normalises sequences to tuples on the way in.
+        self.assertEqual((443,), tuple(policy["destination_ports"]))
+        self.assertEqual("192.0.2.1", policy["next_hop"])
+        self.assertEqual("port3", policy["ingress_interface"])
+
+    def test_a_fortigate_without_policy_routing_records_the_absence(self) -> None:
+        # Asked and there are none — a different answer from never asked,
+        # and the engine must be able to tell them apart.
+        discovery, _ = _fortigate(**{"show router policy": ""})
+        metadata = discovery.result.device.metadata
+        self.assertTrue(metadata["policy_routes_captured"])
+        self.assertEqual((), tuple(metadata["policy_routes"]))
+
     def test_routing_evidence_is_vendor_neutral(self) -> None:
         discovery, _ = _fortigate()
         metadata = discovery.result.device.metadata

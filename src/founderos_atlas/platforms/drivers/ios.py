@@ -21,6 +21,11 @@ from founderos_atlas.discovery.adapters.cisco_ios import (
     SHOW_VERSION,
 )
 from founderos_atlas.routing.table import route_table_dicts
+from founderos_atlas.routing.policy import (
+    parse_ip_policy_bindings,
+    parse_route_map_policy_routes,
+    policy_route_dicts,
+)
 
 from ..base import (
     CAP_COLLECTED,
@@ -31,6 +36,12 @@ from ..base import (
 )
 
 SHOW_ROUTES = "show ip route"
+# Policy routing on IOS takes BOTH commands. `show route-map` gives the
+# match and set clauses; `show ip policy` gives which interface each map
+# is bound to. A route-map nothing references forwards nothing, so the
+# clauses alone would report policy routing on a device applying none.
+SHOW_ROUTE_MAP = "show route-map"
+SHOW_IP_POLICY = "show ip policy"
 
 
 class CiscoIOSDriver(PlatformDriver):
@@ -55,6 +66,8 @@ class CiscoIOSDriver(PlatformDriver):
             CapabilitySpec("interfaces", SHOW_INTERFACES, required=True),
             CapabilitySpec("neighbors", SHOW_NEIGHBORS),
             CapabilitySpec("routes", SHOW_ROUTES),
+            CapabilitySpec("policy-routes", SHOW_IP_POLICY),
+            CapabilitySpec("policy-route-maps", SHOW_ROUTE_MAP),
         )
 
     def annotate(self, discovery: DriverDiscovery) -> DriverDiscovery:
@@ -62,14 +75,36 @@ class CiscoIOSDriver(PlatformDriver):
         routing_table = route_table_dicts(route_text)
         result = discovery.result
         capabilities = discovery.capabilities
-        if routing_table:
+        # Policy routes are recorded whenever the BINDING command answered,
+        # even when it named nothing. "Asked, and this device policy-routes
+        # nothing" is a fact the engine needs; it must not look the same as
+        # "never asked", which is this key being absent.
+        policy_routes = ()
+        policy_captured = SHOW_IP_POLICY in discovery.raw_outputs
+        if policy_captured:
+            policy_routes = policy_route_dicts(parse_route_map_policy_routes(
+                discovery.raw_outputs.get(SHOW_ROUTE_MAP, ""),
+                bindings=parse_ip_policy_bindings(
+                    discovery.raw_outputs.get(SHOW_IP_POLICY, "")
+                ),
+                source_command=SHOW_ROUTE_MAP,
+            ))
+        if routing_table or policy_captured:
             metadata = dict(result.device.metadata)
-            metadata["routing_table"] = routing_table
+            if routing_table:
+                metadata["routing_table"] = routing_table
+            if policy_captured:
+                metadata["policy_routes"] = policy_routes
+                metadata["policy_routes_captured"] = True
             result = replace(
                 result, device=replace(result.device, metadata=metadata)
             )
+        if routing_table:
             # Refine the collection-plan's "routes" status with the count,
-            # replacing it rather than appending a duplicate.
+            # replacing it rather than appending a duplicate. Guarded on the
+            # ROUTE table specifically: a device that answered the policy
+            # commands but not `show ip route` has collected no routes, and
+            # reporting "0 route(s) collected" would say it had.
             capabilities = tuple(
                 CapabilityStatus(
                     "routes", CAP_COLLECTED, f"{len(routing_table)} route(s)"
