@@ -173,6 +173,32 @@ class ViewerContractTests(unittest.TestCase):
         flow = self.viewer.split("function startFlow", 1)[1][:200]
         self.assertIn("if (reducedMotion) { return; }", flow)
 
+    def test_a_policy_drop_offers_a_what_if_fix(self) -> None:
+        """When the trace stops at an ACL or firewall deny, the operator can
+        simulate the fix: re-run assuming that hop permits the flow, to see
+        if it then gets through (or where it stops next). The offer is
+        scoped to policy drops — a link or management failure has no rule to
+        permit away."""
+
+        self.assertIn('id="trace-whatif"', self.viewer)
+        self.assertIn("assume_permit_at: assume", self.viewer)
+        self.assertIn("firewall-deny", self.viewer)
+        self.assertIn("state.whatIfDevice = f.device", self.viewer)
+        # The offer is gated on a policy failure_type, not any failure.
+        gate = self.viewer.split("var policyDeny", 1)[1][:160]
+        self.assertIn("'acl-deny'", gate)
+        self.assertIn("'firewall-deny'", gate)
+
+    def test_a_what_if_result_is_labelled_hypothetical(self) -> None:
+        """Every line a what-if produces names the assumed hops, so it can
+        never be mistaken for the real verdict."""
+
+        self.assertIn("function whatIfPrefix", self.viewer)
+        self.assertIn("assuming ", self.viewer)
+        # A fresh trace and a Clear both forget the assumed hops.
+        run = self.viewer.split("runButton.addEventListener", 1)[1][:200]
+        self.assertIn("state.assumePermit = []", run)
+
     def test_the_flow_can_be_paused_and_resumed(self) -> None:
         """A packet looping forever with no off switch is a nuisance; the
         operator must be able to stop it without clearing the trace, and

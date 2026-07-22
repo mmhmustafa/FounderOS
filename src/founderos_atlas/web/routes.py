@@ -4819,12 +4819,20 @@ def register_routes(app) -> None:
             "evaluated and are listed under what Atlas cannot see."
         )
 
-    def _run_path_trace(source, destination, intent, case_id=""):
+    def _run_path_trace(source, destination, intent, case_id="",
+                        assume_permit_at=()):
         """Run one deterministic path investigation for the active scope
         and return the stored report dict (with declared intent attached)
         or an error string. Shared by the Paths form and the topology
         viewer's packet-trace API — one engine, one record, one honesty
-        note about how much policy evidence the verdict rests on."""
+        note about how much policy evidence the verdict rests on.
+
+        ``assume_permit_at`` runs a WHAT-IF: the named devices are treated
+        as permitting the flow (their captured filtering dropped) so an
+        operator can see whether fixing that hop lets the packet through,
+        and where it would stop next. A what-if is transient — it does not
+        persist, does not enter history, and its result comes from the run
+        itself, never from the on-disk report (which stays the real one)."""
 
         from founderos_atlas.path_intelligence import (
             investigate_path_for_scope,
@@ -4839,7 +4847,7 @@ def register_routes(app) -> None:
                 return None, "No discovery has run yet in any network."
             profiles = profile_service().list_profiles()
             enterprise_dir = enterprise_scope_dir(output_dir())
-            investigate_path_for_scope(
+            result = investigate_path_for_scope(
                 source,
                 destination,
                 output_dir=enterprise_dir,
@@ -4858,11 +4866,12 @@ def register_routes(app) -> None:
                     ).output_dir
                     for profile in profiles
                 ),
+                assume_permit_at=assume_permit_at,
             )
             report_dir = enterprise_dir
         else:
             scope = scopes[scope_id]
-            investigate_path_for_scope(
+            result = investigate_path_for_scope(
                 source,
                 destination,
                 output_dir=scope.output_dir,
@@ -4870,12 +4879,18 @@ def register_routes(app) -> None:
                 generated_at=generated_at,
                 profile_id=scope.scope_id,
                 intent=intent or None,
+                assume_permit_at=assume_permit_at,
             )
             report_dir = scope.output_dir
         report_path = report_dir / "path_investigation_report.json"
-        stored = load_json(report_path)
-        if not isinstance(stored, dict):
-            return None, "The investigation produced no readable report."
+        if assume_permit_at:
+            # Transient: read the what-if straight off the run, never the
+            # on-disk report — which is (still) the real investigation.
+            stored = result.to_dict()
+        else:
+            stored = load_json(report_path)
+            if not isinstance(stored, dict):
+                return None, "The investigation produced no readable report."
         if intent:
             stored["intent"] = intent
             stored["intent_note"] = _intent_note(stored)
@@ -4893,7 +4908,7 @@ def register_routes(app) -> None:
                 )
             except ValueError:
                 pass
-        if intent or case_id:
+        if (intent or case_id) and not assume_permit_at:
             import json as _json
 
             report_path.write_text(
@@ -4956,9 +4971,22 @@ def register_routes(app) -> None:
         intent = {"protocol": protocol} if protocol else {}
         if port is not None:
             intent["port"] = str(port)
-        stored, error = _run_path_trace(source, destination, intent)
+        # What-if: device names to treat as permitting this flow. Bounded so
+        # a request cannot ask the engine to drop filtering estate-wide.
+        raw_permit = body.get("assume_permit_at") or []
+        if not isinstance(raw_permit, list):
+            return {"error": "assume_permit_at must be a list of devices"}, 400
+        assume_permit_at = tuple(
+            str(name).strip() for name in raw_permit[:8] if str(name).strip()
+        )
+        stored, error = _run_path_trace(
+            source, destination, intent, assume_permit_at=assume_permit_at
+        )
         if error:
             return {"error": error}, 409
+        if assume_permit_at:
+            stored = dict(stored)
+            stored["what_if"] = {"assumed_permit_at": list(assume_permit_at)}
         return stored
 
     def _reachability_detail(state, hostname, probe_protocol):

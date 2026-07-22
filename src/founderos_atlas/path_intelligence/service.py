@@ -12,6 +12,7 @@ No secrets ever appear in an investigation, its reports, or its history.
 
 from __future__ import annotations
 
+import copy
 from datetime import datetime
 import json
 from pathlib import Path
@@ -38,6 +39,39 @@ _STATUS_LABEL = {
 }
 
 
+def apply_permit_whatif(snapshot, device_policies, assume_permit_at):
+    """Drop the captured filtering of the named devices, for a what-if run.
+
+    Returns a (snapshot, device_policies) pair in which each named device
+    has its firewall chain (snapshot metadata) and any parsed ACL removed,
+    so the engine reads no filter there and the flow is treated as
+    permitted. Inputs are not mutated — the snapshot is deep-copied and the
+    policy map rebuilt — because the caller's originals belong to the real
+    investigation. It answers "if this hop permitted the flow, does it get
+    through, and where does it stop next?", not "a specific rule was
+    edited": all filtering at the hop is lifted, which is a broader change
+    than one rule, so the honest framing is "assumed permitted here".
+    """
+
+    permit = {str(name).casefold() for name in assume_permit_at}
+    if isinstance(snapshot, dict):
+        snapshot = copy.deepcopy(snapshot)
+        for device in snapshot.get("devices") or ():
+            if not isinstance(device, dict):
+                continue
+            if str(device.get("hostname") or "").casefold() in permit:
+                meta = device.get("metadata")
+                if isinstance(meta, dict):
+                    meta.pop("firewall", None)
+    if device_policies:
+        device_policies = {
+            key: value
+            for key, value in device_policies.items()
+            if key not in permit
+        }
+    return snapshot, device_policies
+
+
 def investigate_path_for_scope(
     source: str,
     destination: str,
@@ -51,6 +85,8 @@ def investigate_path_for_scope(
     captured_config_devices: tuple[str, ...] | None = None,
     intent: dict | None = None,
     policy_roots: tuple[Path, ...] | None = None,
+    assume_permit_at: tuple[str, ...] = (),
+    persist: bool = True,
 ) -> PathInvestigationResult:
     """Investigate one source→destination pair using scope evidence on disk.
 
@@ -95,6 +131,15 @@ def investigate_path_for_scope(
             hostnames,
             safe_name=safe_artifact_name,
         )
+
+    # The what-if never persists: it must not overwrite the real report or
+    # enter the investigation history.
+    if assume_permit_at:
+        snapshot, device_policies = apply_permit_whatif(
+            snapshot, device_policies, assume_permit_at
+        )
+        persist = False
+
     result = investigate_path(
         source,
         destination,
@@ -107,7 +152,8 @@ def investigate_path_for_scope(
         intent=intent,
         device_policies=device_policies,
     )
-    _persist(out, result)
+    if persist:
+        _persist(out, result)
     return result
 
 

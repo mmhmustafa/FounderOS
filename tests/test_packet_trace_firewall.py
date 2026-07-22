@@ -230,6 +230,37 @@ num   pkts bytes target     prot opt in     out     source               destina
         self.assertEqual("connected", result.status)
         self.assertNotIn("policy", result.basis)
 
+    def test_what_if_permitting_the_hop_lets_the_flow_through(self) -> None:
+        """The trace names the blocking firewall and the fix; the what-if
+        confirms the fix works. Dropping that hop's captured filtering — as
+        apply_permit_whatif does for the service's assume_permit_at — turns
+        the same blocked flow into a connected one, without touching the
+        real snapshot."""
+
+        from founderos_atlas.path_intelligence.service import apply_permit_whatif
+
+        snapshot = self.snapshot_with_chain(self.DENY_ALL)
+        intent = {"protocol": "tcp", "port": "443"}
+        blocked = investigate_path(
+            "R1", "SW2", snapshot=snapshot, generated_at=NOW, intent=intent
+        )
+        self.assertEqual("failed", blocked.status)
+        self.assertEqual("firewall-deny", blocked.failure_type)
+
+        whatif_snapshot, _ = apply_permit_whatif(snapshot, None, ("SW1",))
+        allowed = investigate_path(
+            "R1", "SW2", snapshot=whatif_snapshot, generated_at=NOW,
+            intent=intent,
+        )
+        self.assertEqual("connected", allowed.status)
+        # The real snapshot is untouched — SW1 still carries its chain.
+        sw1 = next(d for d in snapshot["devices"] if d["hostname"] == "SW1")
+        self.assertIn("firewall", sw1["metadata"])
+        stripped = next(
+            d for d in whatif_snapshot["devices"] if d["hostname"] == "SW1"
+        )
+        self.assertNotIn("firewall", stripped["metadata"])
+
 
 class SilentTailTests(unittest.TestCase):
     """A traceroute meeting a device that drops probes never recovers:

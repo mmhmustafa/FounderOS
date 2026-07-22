@@ -332,6 +332,8 @@
         <div class="trace-actions">
           <button type="button" class="trace-primary" id="trace-run">Trace</button>
           <button type="button" id="trace-replay" hidden>Replay</button>
+          <button type="button" id="trace-whatif" hidden
+            title="Re-run the trace assuming this hop is changed to permit the flow — does it get through, and where does it stop next?">Simulate fix</button>
           <button type="button" id="trace-flow" hidden
             title="Pause or resume the flowing packet">Pause flow</button>
           <button type="button" id="trace-live" class="trace-probe" hidden
@@ -2868,6 +2870,7 @@
       var portInput = document.getElementById('trace-port');
       var runButton = document.getElementById('trace-run');
       var replayButton = document.getElementById('trace-replay');
+      var whatIfButton = document.getElementById('trace-whatif');
       var flowButton = document.getElementById('trace-flow');
       var liveButton = document.getElementById('trace-live');
       var clearButton = document.getElementById('trace-clear');
@@ -2876,6 +2879,10 @@
       var state = {
         source: '', destination: '', report: null, running: false,
         flowNodes: null,
+        // Devices a what-if is assuming permit the flow; empty on a real
+        // trace. Accumulates so repeated "Simulate fix" walks the packet
+        // through one blocking hop after another.
+        assumePermit: [],
       };
       var reducedMotion = window.matchMedia(
         '(prefers-reduced-motion: reduce)'
@@ -2952,6 +2959,15 @@
         statusEl.textContent = text || '';
         statusEl.dataset.tone = tone || '';
         statusEl.hidden = !text;
+      }
+
+      // Names the hops a what-if is assuming permit the flow, so every line
+      // it produces is unmistakably hypothetical, never the real verdict.
+      function whatIfPrefix() {
+        return state.assumePermit.length
+          ? 'What-if — assuming ' + state.assumePermit.join(', ')
+            + ' permit this: '
+          : '';
       }
 
       function syncProto() {
@@ -3066,8 +3082,10 @@
           + 'trace-warn-hop trace-failed trace-actual trace-actual-hop'
         );
         cy.getElementById('__trace_dot').remove();
+        whatIfButton.hidden = true;
         if (!keepReport) {
           state.report = null;
+          state.assumePermit = [];   // Clear forgets the what-if hops.
           replayButton.hidden = true;
           liveButton.hidden = true;
           liveDetail.hidden = true;
@@ -3176,10 +3194,24 @@
           var failed = hops.filter(function (hop) { return hop.status === 'failed'; });
           if (failed.length) {
             var f = failed[0];
-            showStatus('Stopped at ' + f.device + ': ' + f.explanation
+            showStatus(whatIfPrefix() + 'Stopped at ' + f.device + ': '
+              + f.explanation
               + (f.failure_type ? ' [' + f.failure_type + ']' : ''), 'failed');
+            // A policy drop can be simulated away: offer to re-run assuming
+            // this hop permits the flow, to see if that is the only block.
+            var policyDeny = f.failure_type === 'acl-deny'
+              || f.failure_type === 'firewall-deny';
+            if (policyDeny && state.assumePermit.indexOf(f.device) === -1) {
+              state.whatIfDevice = f.device;
+              whatIfButton.textContent = 'Simulate fix at ' + f.device;
+              whatIfButton.hidden = false;
+            } else {
+              whatIfButton.hidden = true;
+            }
           } else if (report.status && report.status !== 'connected') {
-            showStatus(report.failure_summary || ('Result: ' + report.status), 'warn');
+            whatIfButton.hidden = true;
+            showStatus(whatIfPrefix()
+              + (report.failure_summary || ('Result: ' + report.status)), 'warn');
           } else {
             // The policy caveat comes from the engine's own accounting
             // (basis.policy), never a static string: say exactly how many
@@ -3204,8 +3236,9 @@
                   + 'configurations on this path)';
               }
             }
-            showStatus('Connected: ' + hops.length + ' hop(s)' + caveat
-              + (state.notes || ''), 'ok');
+            whatIfButton.hidden = true;
+            showStatus(whatIfPrefix() + 'Connected: ' + hops.length
+              + ' hop(s)' + caveat + (state.notes || ''), 'ok');
             // The path is whole, so let the packet flow it end to end.
             startFlow(nodes);
           }
@@ -3261,7 +3294,7 @@
         step();
       }
 
-      runButton.addEventListener('click', function () {
+      function runTrace() {
         if (state.running) { return; }
         if (!state.source || !state.destination) {
           showStatus('Right-click a device to set the source, another for '
@@ -3269,7 +3302,9 @@
           panel.hidden = false;
           return;
         }
-        showStatus('Investigating…', '');
+        whatIfButton.hidden = true;
+        var assume = state.assumePermit || [];
+        showStatus(assume.length ? 'Simulating the fix…' : 'Investigating…', '');
         var csrfMatch = document.cookie.match(/(?:^|; )atlas_csrf=([^;]*)/);
         var headers = { 'Content-Type': 'application/json' };
         if (csrfMatch) {
@@ -3280,6 +3315,7 @@
           body: JSON.stringify({
             source: state.source, destination: state.destination,
             protocol: protoSelect.value, port: portInput.value,
+            assume_permit_at: assume,
           }),
         }).then(function (response) {
           return response.json().then(function (body) {
@@ -3294,6 +3330,20 @@
         }).catch(function () {
           showStatus('Trace failed — Atlas could not be reached.', 'failed');
         });
+      }
+
+      runButton.addEventListener('click', function () {
+        // A fresh trace forgets any what-if hops assumed by a prior run.
+        state.assumePermit = [];
+        runTrace();
+      });
+
+      whatIfButton.addEventListener('click', function () {
+        if (state.running || !state.whatIfDevice) { return; }
+        if (state.assumePermit.indexOf(state.whatIfDevice) === -1) {
+          state.assumePermit = state.assumePermit.concat([state.whatIfDevice]);
+        }
+        runTrace();
       });
 
       replayButton.addEventListener('click', function () {
