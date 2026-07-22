@@ -807,6 +807,32 @@ class TopologyViewerActionTests(unittest.TestCase):
         self.assertIn("/console/", source)
         self.assertIn("Configuration History", source)
 
+    def test_the_console_opens_in_a_popup_not_a_full_page_navigation(self) -> None:
+        """Opening a console must not replace the map. A full-page
+        navigation there loses the topology and the exact view the
+        operator was in, and coming Back stranded the view selector out of
+        sync with the picture. The console link is intercepted and opened
+        as a pop-up window instead."""
+
+        source = self._viewer_source()
+        self.assertIn("function openConsolePopup", source)
+        self.assertIn("window.open(", source)
+        # The SSH links carry the marker the interceptor keys on, and no
+        # longer navigate the top frame away.
+        self.assertIn("a[data-console]", source)
+        self.assertIn("data-console data-console-name", source)
+        ssh_button = source.split("if (ssh && ssh.eligible) {", 1)[1][:400]
+        self.assertNotIn('target="_top"', ssh_button)
+
+    def test_the_view_selector_cannot_desync_from_the_map(self) -> None:
+        """The browser restores a select to its previous value on Back,
+        after the script has already rendered the default view — so the
+        selector must opt out of that restoration."""
+
+        source = self._viewer_source()
+        select = source.split('id="view-mode"', 1)[1][:120]
+        self.assertIn('autocomplete="off"', select)
+
     def test_an_unresolved_peer_is_never_offered_a_session(self) -> None:
         """`nodeDetails` returns before `nodeActions` for an observed peer.
 

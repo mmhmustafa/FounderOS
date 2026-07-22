@@ -264,7 +264,11 @@
     <h1>Atlas Topology Viewer</h1>
     <input id="search" type="search" placeholder="Search hostname, IP, vendor, or platform" aria-label="Search topology">
     <label class="layout-label" id="view-label" style="display:none">View
-      <select id="view-mode" aria-label="Topology view level">
+      <!-- autocomplete=off: without it the browser restores this select to
+           its previous value on a Back navigation AFTER the script has
+           already rendered the default view — leaving the selector saying
+           "All devices" while the map shows the site overview. -->
+      <select id="view-mode" aria-label="Topology view level" autocomplete="off">
         <option value="sites" selected>Site overview</option>
         <option value="full">All devices (pan)</option>
         <option value="ospf">OSPF areas</option>
@@ -977,7 +981,8 @@
       let html = '';
       const ssh = actions.ssh;
       if (ssh && ssh.eligible) {
-        html += `<a class="node-action node-action-primary" target="_top" href="/console/${encodeURIComponent(ssh.device_id || actions.device_id)}">Open SSH Console</a>`;
+        const sshId = ssh.device_id || actions.device_id;
+        html += `<a class="node-action node-action-primary" data-console data-console-name="${escapeHtml(sshId)}" href="/console/${encodeURIComponent(sshId)}">Open SSH Console</a>`;
       } else if (ssh) {
         html += `<span class="node-action node-action-disabled" title="${escapeHtml(ssh.reason || 'SSH unavailable')}">SSH unavailable</span>`;
       }
@@ -1227,9 +1232,38 @@
     });
     cy.on('tap pan zoom', hideContextMenu);
 
+    // An SSH console opens in its own pop-up window, not by replacing the
+    // map. An operator mid-investigation should not lose the topology (and
+    // the exact view they were in) to a full-page navigation and a Back
+    // button — the very thing that stranded the view selector out of sync
+    // with the picture. A per-device window name reuses one pop-up per
+    // device instead of stacking duplicates.
+    function openConsolePopup(url, name) {
+      const win = window.open(
+        url, 'atlas-console-' + (name || 'device'),
+        'popup=yes,width=1100,height=760'
+      );
+      if (win) { win.focus(); }
+      return win;
+    }
+    document.addEventListener('click', event => {
+      const link = event.target.closest
+        && event.target.closest('a[data-console]');
+      if (!link) { return; }
+      event.preventDefault();
+      openConsolePopup(
+        link.getAttribute('href'), link.getAttribute('data-console-name')
+      );
+    });
+
     const contextItem = (label, href, options = {}) => {
       if (options.disabled) {
         return `<span class="menu-item menu-item-disabled" title="${escapeHtml(options.reason || '')}">${escapeHtml(label)}</span>`;
+      }
+      // A console item opens a pop-up (intercepted by the data-console
+      // click handler) instead of navigating the whole page away.
+      if (options.console) {
+        return `<a class="menu-item" data-console data-console-name="${escapeHtml(options.console)}" href="${escapeHtml(href)}">${escapeHtml(label)}</a>`;
       }
       const external = options.external
         ? ' target="_blank" rel="noopener noreferrer"' : ' target="_top"';
@@ -1262,8 +1296,10 @@
       const actions = await fetchActions(data.id, data.hostname || data.label);
       const ssh = actions && actions.ssh;
       if (ssh && ssh.eligible) {
+        const sshId = ssh.device_id || data.id;
         items += contextItem('Open SSH Console',
-                             `/console/${encodeURIComponent(ssh.device_id || data.id)}`);
+                             `/console/${encodeURIComponent(sshId)}`,
+                             { console: sshId });
       } else {
         items += contextItem('Open SSH Console', '', {
           disabled: true, reason: (ssh && ssh.reason) || 'SSH could not be resolved'
