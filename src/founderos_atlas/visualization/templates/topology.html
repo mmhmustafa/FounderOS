@@ -167,7 +167,14 @@
     .node-action:hover { border-color: #94a3b8; background: #f8fafc; }
     .node-action-primary { background: #2563eb; border-color: #2563eb; color: #fff; }
     .node-action-primary:hover { background: #1d4ed8; border-color: #1d4ed8; }
-    #tooltip { position: fixed; left: 0; top: 0; display: none; z-index: 10; pointer-events: none; padding: 7px 10px; border-radius: 6px; background: rgba(17,24,39,0.92); color: white; font-size: 12px; box-shadow: 0 4px 12px rgba(15,23,42,0.25); will-change: transform; max-width: 320px; }
+    #tooltip { position: fixed; left: 0; top: 0; display: none; z-index: 10; pointer-events: none; padding: 7px 10px; border-radius: 6px; background: rgba(17,24,39,0.92); color: white; font-size: 12px; box-shadow: 0 4px 12px rgba(15,23,42,0.25); will-change: transform; max-width: 340px; }
+    #tooltip .tt-head { font-weight: 600; }
+    #tooltip .tt-sub { color: #cbd5e1; margin-top: 1px; }
+    #tooltip .tt-ifaces { margin-top: 5px; padding-top: 4px; border-top: 1px solid rgba(148,163,184,0.35); display: grid; grid-template-columns: auto 1fr; gap: 1px 10px; }
+    #tooltip .tt-if-name { font-family: ui-monospace, "SF Mono", Menlo, monospace; color: #93c5fd; white-space: nowrap; }
+    #tooltip .tt-if-ip { font-family: ui-monospace, "SF Mono", Menlo, monospace; white-space: nowrap; }
+    #tooltip .tt-if-desc { grid-column: 1 / -1; color: #94a3b8; margin: 0 0 3px; font-style: italic; }
+    #tooltip .tt-more { grid-column: 1 / -1; color: #94a3b8; margin-top: 2px; }
     @media (max-width: 1050px) {
       header { display: flex; flex-wrap: wrap; }
       header h1 { flex: 0 0 auto; }
@@ -2048,16 +2055,51 @@
 
     // Reachable from the console for debugging and driveable UI tests.
     window.cy = cy;
+    // A device hover names every IP the box answers on, not just its
+    // management endpoint — each with the port it sits on and that port's
+    // description. Built as escaped HTML (descriptions come from device
+    // configs, so they are untrusted text). A long list is capped; the
+    // details pane stays the exhaustive place.
+    const TOOLTIP_IFACE_CAP = 14;
+    function deviceTooltipHtml(data) {
+      let html = `<div class="tt-head">${escapeHtml(data.label)}</div>`;
+      if (data.management_ip && data.management_ip !== 'unknown') {
+        html += `<div class="tt-sub">mgmt ${escapeHtml(data.management_ip)}</div>`;
+      }
+      const ifaces = data.interface_addresses || [];
+      if (ifaces.length) {
+        html += '<div class="tt-ifaces">';
+        ifaces.slice(0, TOOLTIP_IFACE_CAP).forEach(iface => {
+          html += `<span class="tt-if-name">${escapeHtml(iface.name || '—')}</span>`
+            + `<span class="tt-if-ip">${escapeHtml(iface.ip)}</span>`;
+          if (iface.description) {
+            html += `<span class="tt-if-desc">${escapeHtml(iface.description)}</span>`;
+          }
+        });
+        if (ifaces.length > TOOLTIP_IFACE_CAP) {
+          html += `<span class="tt-more">+${ifaces.length - TOOLTIP_IFACE_CAP} `
+            + 'more — click the device for all</span>';
+        }
+        html += '</div>';
+      } else {
+        html += '<div class="tt-sub">No addressed interfaces recorded</div>';
+      }
+      return html;
+    }
+
     let hoveredId = null;
     cy.on('mouseover', 'node', event => {
       if (event.target.id() === hoveredId) { return; }
       hoveredId = event.target.id();
       const hovered = event.target.data();
-      tooltip.textContent = hovered.kind === 'site'
-        ? `${hovered.label} · ${hovered.count} devices · double-click to open`
-        : hovered.kind === 'protocol-domain'
-          ? `${hovered.label} · ${hovered.count} devices`
-          : `${hovered.label} · ${hovered.management_ip}`;
+      if (hovered.kind === 'site') {
+        tooltip.textContent =
+          `${hovered.label} · ${hovered.count} devices · double-click to open`;
+      } else if (hovered.kind === 'protocol-domain') {
+        tooltip.textContent = `${hovered.label} · ${hovered.count} devices`;
+      } else {
+        tooltip.innerHTML = deviceTooltipHtml(hovered);
+      }
       tooltip.style.display = 'block';
       // Hover emphasis: a halo on the focused device, brightened links, and
       // a fade on everything else. Never a size change -- growing the node
@@ -2070,6 +2112,9 @@
     });
     cy.on('mouseout', 'node', () => {
       cy.elements().removeClass('faded node-lift edge-hi');
+      // Clear the de-dupe guard, or re-entering the SAME device never
+      // re-shows its card (the guard would treat it as a no-op move).
+      hoveredId = null;
     });
     // Hovering a link reveals its interface names (Packet-Tracer style, on
     // demand) and names the connection in plain terms — never the internal

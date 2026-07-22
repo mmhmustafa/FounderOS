@@ -20,6 +20,7 @@ from founderos_atlas.visualization import (
     TopologyRenderer,
     topology_visual_style_is_current,
 )
+from founderos_atlas.visualization.renderer import _addressed_interfaces
 from founderos_runtime.cli import main
 
 
@@ -35,6 +36,68 @@ class TopologyVisualizationTests(unittest.TestCase):
         kinds = {node["data"]["kind"] for node in elements["nodes"]}
         self.assertEqual({"discovered", "observed"}, kinds)
         self.assertTrue(all(edge["data"]["source"] for edge in elements["edges"]))
+
+    def test_nodes_carry_their_addressed_interfaces(self) -> None:
+        """The hover card names every IP a device answers on, so the node
+        data must carry the addressed interfaces — not only the count and
+        the management endpoint."""
+
+        elements = TopologyRenderer(self.snapshot).elements()
+        discovered = [
+            node for node in elements["nodes"]
+            if node["data"]["kind"] == "discovered"
+        ]
+        self.assertTrue(discovered)
+        for node in discovered:
+            listed = node["data"]["interface_addresses"]
+            self.assertIsInstance(listed, list)
+            # The fixture device has addressed interfaces; every entry
+            # carries an IP and the port it sits on.
+            self.assertTrue(listed)
+            for entry in listed:
+                self.assertIn("ip", entry)
+                self.assertIn("name", entry)
+                self.assertIn("description", entry)
+                self.assertTrue(entry["ip"])
+
+    def test_addressed_interfaces_lists_only_ip_bearing_ports(self) -> None:
+        """A switchport with no L3 address is not an answer to "which IPs
+        does this own", so it is left out; an addressed port keeps its
+        name and description."""
+
+        listed = _addressed_interfaces([
+            {"name": "Gi0/0", "ip_address": "10.1.1.1",
+             "description": "core uplink"},
+            {"name": "Gi0/1", "ip_address": None, "description": "to access"},
+            {"name": "Vlan10", "ip_address": "10.2.0.1", "description": ""},
+        ])
+        self.assertEqual(
+            [
+                {"name": "Gi0/0", "ip": "10.1.1.1", "description": "core uplink"},
+                {"name": "Vlan10", "ip": "10.2.0.1", "description": ""},
+            ],
+            listed,
+        )
+
+    def test_the_hover_card_renders_interfaces_and_escapes_them(self) -> None:
+        """Descriptions come from device configs — untrusted text — so the
+        card builds escaped HTML, and it reads the addressed-interface
+        data, not just the management IP."""
+
+        html = TopologyRenderer(self.snapshot).render()
+        self.assertIn("function deviceTooltipHtml", html)
+        self.assertIn("data.interface_addresses", html)
+        self.assertIn("escapeHtml(iface.ip)", html)
+        self.assertIn("escapeHtml(iface.description)", html)
+
+    def test_re_entering_a_device_re_shows_its_card(self) -> None:
+        """The hover de-dupes repeat mouseover on the same node, so the
+        guard must be cleared on mouseout — otherwise moving away and
+        back to the same device never re-shows the card."""
+
+        html = TopologyRenderer(self.snapshot).render()
+        mouseout = html.split("cy.on('mouseout', 'node'", 1)[1][:400]
+        self.assertIn("hoveredId = null", mouseout)
 
     def test_html_generation_contains_interactive_features(self) -> None:
         html = TopologyRenderer(self.snapshot).render()

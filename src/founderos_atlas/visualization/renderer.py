@@ -207,6 +207,12 @@ class TopologyRenderer:
                 "platform": str(device["platform"]),
                 "os": f"{device['os_name']} {device['os_version']}",
                 "interfaces": len(device["interfaces"]),
+                # The addressed interfaces, for the hover card: an engineer
+                # asking "what is this box" wants every IP it answers on and
+                # the port each sits on, not just the management endpoint.
+                "interface_addresses": _addressed_interfaces(
+                    device["interfaces"]
+                ),
                 "neighbors": neighbor_counts.get(hostname_key, 0),
                 "role": role,
                 "role_evidence": role_evidence,
@@ -1492,6 +1498,34 @@ def _device_aliases(device: Any) -> tuple[str, ...]:
     identity = metadata.get("identity") or {}
     aliases = identity.get("aliases") or ()
     return tuple(str(alias) for alias in aliases)
+
+
+def _addressed_interfaces(
+    interfaces: Iterable[Mapping[str, Any]],
+) -> list[dict[str, str]]:
+    """The IP-bearing interfaces, in discovery order, for the hover card.
+
+    Only interfaces that actually carry an address are listed — the
+    question the hover answers is "which IPs does this device own", and a
+    switchport with no L3 address is not an answer to it (those remain in
+    the full details pane). Each entry keeps the port it sits on and its
+    description, because "10.1.1.1 on Gi0/1, the core uplink" is the fact
+    an engineer is reaching for; a bare address is half of it.
+    """
+
+    listed: list[dict[str, str]] = []
+    for interface in interfaces or ():
+        ip = str(interface.get("ip_address") or "").strip()
+        if not ip:
+            continue
+        listed.append(
+            {
+                "name": str(interface.get("name") or "").strip(),
+                "ip": ip,
+                "description": str(interface.get("description") or "").strip(),
+            }
+        )
+    return listed
 
 
 def _vendor_color(vendor: str) -> str:
