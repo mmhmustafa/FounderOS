@@ -28,6 +28,7 @@ from founderos_atlas.routing import (
     bgp_sessions_from_summary,
     routing_metadata,
 )
+from founderos_atlas.routing.table import route_table_dicts
 
 from ..base import (
     CAP_COLLECTED,
@@ -296,7 +297,9 @@ class FRRoutingDriver(PlatformDriver):
         address proves a TCP/179 session, never SSH manageability.
         """
 
-        routes = _parse_route_summary(discovery.raw_outputs.get(SHOW_ROUTES, ""))
+        route_text = discovery.raw_outputs.get(SHOW_ROUTES, "")
+        routes = _parse_route_summary(route_text)
+        routing_table = route_table_dicts(route_text)
         bgp_peers = _parse_bgp_peers(
             discovery.raw_outputs.get(SHOW_BGP_SUMMARY, "")
         )
@@ -307,7 +310,11 @@ class FRRoutingDriver(PlatformDriver):
         result = discovery.result
         metadata = dict(result.device.metadata)
         if routes is not None:
-            metadata["routes"] = routes
+            metadata["routes"] = routes          # the count summary (kept)
+        if routing_table:
+            # The real RIB — prefix, next-hop, interface, protocol — cited
+            # to `show ip route`. The summary above stays for the dashboard.
+            metadata["routing_table"] = routing_table
         if bgp_peers is not None:
             metadata["bgp_peers"] = bgp_peers
             if bgp_peers.get("router_id"):

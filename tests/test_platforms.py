@@ -305,6 +305,19 @@ class FRRoutingDriverTests(unittest.TestCase):
         routes = discovery.result.device.metadata["routes"]
         self.assertEqual(3, routes["total"])
         self.assertEqual({"connected": 2, "ospf": 1}, routes["by_protocol"])
+        # The count summary is kept, but the full RIB now rides alongside it:
+        # every route with its prefix, next-hop, and interface.
+        table = discovery.result.device.metadata["routing_table"]
+        self.assertEqual(3, len(table))
+        ospf = next(r for r in table if r["protocol"] == "ospf")
+        self.assertEqual(
+            ("10.0.0.0/24", "10.99.0.2", "eth1"),
+            (ospf["prefix"], ospf["next_hop"], ospf["interface"]),
+        )
+        connected = next(r for r in table if r["prefix"] == "10.20.0.0/24")
+        self.assertEqual((None, "eth0", True),
+                         (connected["next_hop"], connected["interface"],
+                          connected["connected"]))
         stamp = discovery.result.device.metadata["platform_driver"]
         self.assertEqual("frr", stamp["platform_id"])
         self.assertEqual("FRRoutingDriver", stamp["driver"])
@@ -331,7 +344,41 @@ class FRRoutingDriverTests(unittest.TestCase):
         )
         self.assertNotIn("show version", transport.commands)
 
-    def test_ios_driver_marks_routes_not_collected(self) -> None:
+    def test_ios_driver_captures_the_routing_table(self) -> None:
+        from tests.test_multihop_discovery import interface_brief
+
+        transport = StubTransport(
+            {
+                "show version": show_version("R1"),
+                "show ip interface brief": interface_brief("10.0.0.1"),
+                "show cdp neighbors detail": "",
+                "show ip route": (
+                    "C        10.0.0.0/24 is directly connected, "
+                    "GigabitEthernet0/0\n"
+                    "O        10.2.2.0/24 [110/20] via 10.0.0.2, 00:05:12, "
+                    "GigabitEthernet0/1\n"
+                    "S*       0.0.0.0/0 [1/0] via 10.0.0.254\n"
+                ),
+            }
+        )
+        discovery = CiscoIOSDriver().discover(
+            transport, management_ip_hint="10.0.0.1"
+        )
+        self.assertEqual(CAP_COLLECTED, discovery.capability("routes").state)
+        table = discovery.result.device.metadata["routing_table"]
+        self.assertEqual(3, len(table))
+        ospf = next(r for r in table if r["protocol"] == "ospf")
+        self.assertEqual("10.2.2.0/24", ospf["prefix"])
+        self.assertEqual("10.0.0.2", ospf["next_hop"])
+        self.assertEqual("GigabitEthernet0/1", ospf["interface"])
+        default = next(r for r in table if r["prefix"] == "0.0.0.0/0")
+        self.assertEqual(("static", "10.0.0.254"),
+                         (default["protocol"], default["next_hop"]))
+
+    def test_ios_driver_states_routes_uncollected_when_absent(self) -> None:
+        """Honesty: no `show ip route` output means routes are marked
+        not-collected, never an empty table implied to be complete."""
+
         from tests.test_multihop_discovery import interface_brief
 
         transport = StubTransport(
@@ -344,12 +391,13 @@ class FRRoutingDriverTests(unittest.TestCase):
         discovery = CiscoIOSDriver().discover(
             transport, management_ip_hint="10.0.0.1"
         )
-        self.assertEqual(
-            CAP_NOT_COLLECTED, discovery.capability("routes").state
+        # Not collected (the collection plan's own status stands); crucially
+        # NO routing_table is invented.
+        self.assertNotEqual(
+            CAP_COLLECTED, discovery.capability("routes").state
         )
-        self.assertEqual(
-            "cisco-ios",
-            discovery.result.device.metadata["platform_driver"]["platform_id"],
+        self.assertNotIn(
+            "routing_table", discovery.result.device.metadata
         )
 
 
