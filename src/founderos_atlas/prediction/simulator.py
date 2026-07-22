@@ -560,5 +560,61 @@ def _evaluate_reboot_device(
     )
 
 
+def _evaluate_shutdown_device(
+    request: ChangeRequest, graph: DependencyGraph
+) -> Evaluation:
+    """A power-off has the SAME blast radius as a reboot — the device is off
+    the network and everything depending on it is affected — so it reuses
+    the reboot topology reasoning. What differs is duration: a reboot comes
+    back on its own, a shutdown stays down until someone powers it on, so
+    the outage is open-ended, not "for the duration of the reload".
+    """
+
+    node_id = device_node_id(request.target_device)
+    if graph.node(node_id) is None:
+        return Evaluation(
+            target_node_id=None,
+            outcomes=(
+                PredictedOutcome(
+                    category="platform",
+                    description=(
+                        f"{request.target_device} is not in the discovered "
+                        "topology; impact cannot be traced."
+                    ),
+                    likelihood=LIKELIHOOD_POSSIBLE,
+                ),
+            ),
+            unknowns=(
+                f"{request.target_device} not present in the current "
+                "topology snapshot",
+            ),
+        )
+    return Evaluation(
+        target_node_id=node_id,
+        outcomes=(
+            PredictedOutcome(
+                category="platform",
+                description=(
+                    f"{request.target_device} goes offline and stays down "
+                    "until it is powered back on — there is no automatic "
+                    "recovery."
+                ),
+                likelihood=LIKELIHOOD_EXPECTED,
+                evidence=(node_id,),
+            ),
+            PredictedOutcome(
+                category="connectivity",
+                description=(
+                    "Every link on the device goes down; traffic through it "
+                    "must reroute for the duration of the outage."
+                ),
+                likelihood=LIKELIHOOD_EXPECTED,
+                evidence=(node_id,),
+            ),
+        ),
+    )
+
+
 register_evaluator("shutdown-interface", _evaluate_shutdown_interface)
 register_evaluator("reboot-device", _evaluate_reboot_device)
+register_evaluator("shutdown-device", _evaluate_shutdown_device)

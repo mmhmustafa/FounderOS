@@ -4601,7 +4601,9 @@ def register_routes(app) -> None:
         change_type = request.form.get("change_type", "shutdown-interface").strip()
         # Only engine-modeled types are offered; anything else falls back
         # to the modeled default rather than pretending.
-        if change_type not in ("shutdown-interface", "reboot-device"):
+        if change_type not in (
+            "shutdown-interface", "reboot-device", "shutdown-device"
+        ):
             change_type = "shutdown-interface"
         needs_interface = change_type == "shutdown-interface"
         if not device or (needs_interface and not interface):

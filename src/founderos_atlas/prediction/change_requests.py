@@ -96,6 +96,17 @@ register_change_type(
 )
 register_change_type(
     ChangeTypeSpec(
+        name="shutdown-device",
+        category="platform",
+        # A shutdown is undone by powering the device back on — but not by
+        # the automation, and not on its own, so it is not "reversible" in
+        # the sense the pipeline means (a change it can roll back itself).
+        reversible_by_default=False,
+        description="Power a device down (stays down until brought back).",
+    )
+)
+register_change_type(
+    ChangeTypeSpec(
         name="upgrade-firmware",
         category="platform",
         reversible_by_default=False,

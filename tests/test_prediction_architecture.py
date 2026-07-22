@@ -262,6 +262,25 @@ class PredictionPipelineTests(unittest.TestCase):
         self.assertIn("SW2", prediction.blast_radius.affected_devices)
         self.assertFalse(prediction.rollback.reversible)
 
+    def test_shutdown_device_shares_the_reboot_blast_radius(self) -> None:
+        """A power-off takes the device off the network exactly as a reboot
+        does, so the blast radius is the same — what differs is that it does
+        not come back on its own, which the outcome wording states and the
+        rollback reflects (not self-reversible)."""
+
+        request = ChangeRequest(
+            request_id="cr-3",
+            change_type="shutdown-device",
+            target_device="SW1",
+        )
+        prediction = predict(request, snapshot=chain(), generated_at=NOW)
+        self.assertIn("SW2", prediction.blast_radius.affected_devices)
+        self.assertFalse(prediction.rollback.reversible)
+        # It is a modeled type (has an evaluator), so the page offers it.
+        self.assertIn("shutdown-device", registered_evaluators())
+        text = " ".join(o.description for o in prediction.outcomes)
+        self.assertIn("no automatic recovery", text)
+
     def test_unregistered_change_type_predicts_honestly(self) -> None:
         request = ChangeRequest(
             request_id="cr-3",
