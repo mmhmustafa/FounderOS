@@ -107,6 +107,14 @@ register_change_type(
 )
 register_change_type(
     ChangeTypeSpec(
+        name="decommission-device",
+        category="platform",
+        reversible_by_default=False,  # a removal is not undone by automation
+        description="Permanently remove a device from service.",
+    )
+)
+register_change_type(
+    ChangeTypeSpec(
         name="upgrade-firmware",
         category="platform",
         reversible_by_default=False,

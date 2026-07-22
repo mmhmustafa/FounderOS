@@ -281,6 +281,22 @@ class PredictionPipelineTests(unittest.TestCase):
         text = " ".join(o.description for o in prediction.outcomes)
         self.assertIn("no automatic recovery", text)
 
+    def test_decommission_shares_the_blast_radius_but_is_permanent(self) -> None:
+        """Removing a device for good has the same topology blast radius as a
+        shutdown, framed as permanent — the outage is not one to wait out."""
+
+        request = ChangeRequest(
+            request_id="cr-4",
+            change_type="decommission-device",
+            target_device="SW1",
+        )
+        prediction = predict(request, snapshot=chain(), generated_at=NOW)
+        self.assertIn("SW2", prediction.blast_radius.affected_devices)
+        self.assertFalse(prediction.rollback.reversible)
+        self.assertIn("decommission-device", registered_evaluators())
+        text = " ".join(o.description for o in prediction.outcomes)
+        self.assertIn("permanently", text)
+
     def test_unregistered_change_type_predicts_honestly(self) -> None:
         request = ChangeRequest(
             request_id="cr-3",

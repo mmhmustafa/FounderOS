@@ -615,6 +615,72 @@ def _evaluate_shutdown_device(
     )
 
 
+def _evaluate_decommission_device(
+    request: ChangeRequest, graph: DependencyGraph
+) -> Evaluation:
+    """A decommission is a device going down and never coming back — the
+    same topology blast radius as a shutdown, but permanent. The outage is
+    not an outage to wait out; whatever was reachable only through this
+    device stays unreachable until the network is re-cabled, and the device
+    itself should stop being managed so discovery does not report it as a
+    fault forever.
+    """
+
+    node_id = device_node_id(request.target_device)
+    if graph.node(node_id) is None:
+        return Evaluation(
+            target_node_id=None,
+            outcomes=(
+                PredictedOutcome(
+                    category="platform",
+                    description=(
+                        f"{request.target_device} is not in the discovered "
+                        "topology; impact cannot be traced."
+                    ),
+                    likelihood=LIKELIHOOD_POSSIBLE,
+                ),
+            ),
+            unknowns=(
+                f"{request.target_device} not present in the current "
+                "topology snapshot",
+            ),
+        )
+    return Evaluation(
+        target_node_id=node_id,
+        outcomes=(
+            PredictedOutcome(
+                category="platform",
+                description=(
+                    f"{request.target_device} is removed from service for "
+                    "good; it will not return without being reinstalled."
+                ),
+                likelihood=LIKELIHOOD_EXPECTED,
+                evidence=(node_id,),
+            ),
+            PredictedOutcome(
+                category="connectivity",
+                description=(
+                    "Every link on the device is lost permanently; traffic "
+                    "through it must be rerouted, not waited out."
+                ),
+                likelihood=LIKELIHOOD_EXPECTED,
+                evidence=(node_id,),
+            ),
+            PredictedOutcome(
+                category="topology",
+                description=(
+                    "Anything reachable only through it stays cut off until "
+                    "the network is re-cabled; stop managing the device in "
+                    "Atlas so discovery does not report it missing forever."
+                ),
+                likelihood=LIKELIHOOD_PROBABLE,
+                evidence=(node_id,),
+            ),
+        ),
+    )
+
+
 register_evaluator("shutdown-interface", _evaluate_shutdown_interface)
 register_evaluator("reboot-device", _evaluate_reboot_device)
 register_evaluator("shutdown-device", _evaluate_shutdown_device)
+register_evaluator("decommission-device", _evaluate_decommission_device)

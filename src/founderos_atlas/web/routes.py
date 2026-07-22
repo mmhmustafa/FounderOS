@@ -4602,7 +4602,8 @@ def register_routes(app) -> None:
         # Only engine-modeled types are offered; anything else falls back
         # to the modeled default rather than pretending.
         if change_type not in (
-            "shutdown-interface", "reboot-device", "shutdown-device"
+            "shutdown-interface", "reboot-device", "shutdown-device",
+            "decommission-device",
         ):
             change_type = "shutdown-interface"
         needs_interface = change_type == "shutdown-interface"
