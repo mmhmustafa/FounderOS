@@ -203,6 +203,54 @@ class ViewerContractTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn('name="destination_address"', paths)
 
+    def test_the_two_ends_of_the_question_are_marked_apart(self) -> None:
+        """Every hop wore the same cyan ring, so on a long path the source
+        and destination were indistinguishable from the transit devices
+        between them."""
+
+        self.assertIn("node.trace-endpoint-src", self.viewer)
+        self.assertIn("node.trace-endpoint-dst", self.viewer)
+        self.assertIn("addClass('trace-endpoint-src')", self.viewer)
+        self.assertIn("addClass('trace-endpoint-dst')", self.viewer)
+        # The marks are explained, or a coloured ring means nothing.
+        self.assertIn('id="trace-key"', self.viewer)
+
+    def test_the_destination_mark_is_the_device_that_was_asked_for(self) -> None:
+        """NOT the last hop reached. On a blocked trace they differ, and
+        badging the blocking firewall as the destination would misreport
+        the answer — so the mark follows the declared destination, which
+        stays visible even when the packet never got there."""
+
+        self.assertIn("var dstNode = nodeFor(state.destination);", self.viewer)
+        marked = self.viewer.split("var dstNode = nodeFor", 1)[1][:400]
+        self.assertIn("pathColl = pathColl.union(dstNode)", marked)
+
+    def test_the_destination_mark_never_borrows_a_measured_colour(self) -> None:
+        # Violet is the peer edge and the live probe's OBSERVED path. An
+        # endpoint mark in that colour would read as "this was measured".
+        dst = self.viewer.split("node.trace-endpoint-dst", 1)[1][:260]
+        self.assertNotIn("#7c3aed", dst)
+        self.assertIn("#db2777", dst)
+
+    def test_everything_off_the_path_recedes(self) -> None:
+        """On an estate of 58 links the path competed with the whole map.
+        Dimmed, never hidden: the context stays, and nothing is removed
+        from the map to make the answer look tidier."""
+
+        self.assertIn(".trace-dimmed", self.viewer)
+        self.assertIn("addClass('trace-dimmed')", self.viewer)
+        self.assertIn("difference(pathColl.union(pathEdges))", self.viewer)
+        # The regions live on their own canvas, out of reach of element
+        # dimming, and would otherwise stay vivid while the map receded.
+        self.assertIn("function setRegionsFaded", self.viewer)
+        self.assertIn("protocol-region-canvas", self.viewer)
+
+    def test_clearing_a_trace_leaves_nothing_faded_or_badged(self) -> None:
+        clear = self.viewer.split("function clearTrace", 1)[1][:1400]
+        self.assertIn("trace-dimmed", clear)
+        self.assertIn("trace-endpoint-src", clear)
+        self.assertIn("setRegionsFaded(false)", clear)
+
     def test_the_routes_a_path_relies_on_can_be_withdrawn(self) -> None:
         """"What breaks if this route goes away?" — the panel lists the route
         each hop forwarded on and offers to withdraw it and re-run. It reads
@@ -329,7 +377,7 @@ class ViewerContractTests(unittest.TestCase):
         that did not reframe started from an off-screen source and the
         packet's start was never seen — the reported bug."""
 
-        run = self.viewer.split("function runAnimation", 1)[1][:1800]
+        run = self.viewer.split("function runAnimation", 1)[1][:3200]
         self.assertIn("fit: { eles: pathColl", run)
 
 

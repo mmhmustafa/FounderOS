@@ -135,6 +135,18 @@
     #trace-status[data-tone="failed"] { color: #b91c1c; font-weight: 600; }
     #trace-status[data-tone="warn"] { color: #b45309; }
     #trace-status[data-tone="ok"] { color: #166534; }
+    /* A ring on a device means nothing unless the panel says what it
+       means. Shown only while a trace is drawn. */
+    #trace-key { margin: 5px 0 0; font-size: 11px; color: #475569;
+      display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+    #trace-key span { width: 10px; height: 10px; border-radius: 50%;
+      display: inline-block; margin-left: 6px; }
+    #trace-key span:first-child { margin-left: 0; }
+    #trace-key .trace-key-src { background: #059669; }
+    #trace-key .trace-key-dst { background: #db2777; }
+    #trace-key .trace-key-path { background: #0891b2; border-radius: 2px;
+      width: 14px; height: 4px; }
+    body[data-theme="dark"] #trace-key { color: #a9b6c8; }
     #trace-routes { margin-top: 7px; font-size: 12px; }
     #trace-routes .trace-routes-head { margin: 0 0 3px; color: #475569; font-weight: 600; }
     #trace-routes ul { list-style: none; margin: 0; padding: 0; }
@@ -366,6 +378,11 @@
           <button type="button" id="trace-clear">Clear</button>
         </div>
         <p id="trace-status" role="status" aria-live="polite" hidden></p>
+        <p id="trace-key" hidden>
+          <span class="trace-key-src"></span>source
+          <span class="trace-key-dst"></span>destination
+          <span class="trace-key-path"></span>path
+        </p>
         <div id="trace-routes" hidden>
           <p class="trace-routes-head">Routes this path relies on</p>
           <ul id="trace-routes-list"></ul>
@@ -2495,6 +2512,11 @@
 
       var canvas = document.createElement('canvas');
       canvas.setAttribute('aria-hidden', 'true');
+      // Named so a running trace can fade it: the protocol regions live on
+      // their OWN canvas, outside Cytoscape, so element-level dimming does
+      // not reach them and they would stay vivid while the rest of the map
+      // receded — competing with the path for the eye.
+      canvas.id = 'protocol-region-canvas';
       canvas.style.position = 'absolute';
       canvas.style.left = '0';
       canvas.style.top = '0';
@@ -2964,6 +2986,7 @@
         // Routes a what-if is assuming withdrawn, as {device, prefix}.
         withdrawn: [],
       };
+      var keyEl = document.getElementById('trace-key');
       var routesPanel = document.getElementById('trace-routes');
       var routesList = document.getElementById('trace-routes-list');
       var reducedMotion = window.matchMedia(
@@ -2997,6 +3020,30 @@
         .style({ 'border-width': 3, 'border-color': '#d97706' })
         .selector('node.trace-failed')
         .style({ 'border-width': 5, 'border-color': '#dc2626' })
+        // The two ends of the question, told apart at a glance. Every hop
+        // used to carry the same cyan ring, so on a long path the source
+        // and the destination were indistinguishable from the transit
+        // devices between them.
+        .selector('node.trace-endpoint-src')
+        .style({ 'border-width': 6, 'border-color': '#059669',
+                 'border-style': 'solid', 'overlay-color': '#059669',
+                 'overlay-opacity': 0.18, 'overlay-padding': 10,
+                 'z-index': 36 })
+        // Pink, NOT the violet used for peer edges and the live probe's
+        // observed path — an endpoint mark that borrowed either colour
+        // would read as "this hop was measured", which it is not.
+        .selector('node.trace-endpoint-dst')
+        .style({ 'border-width': 6, 'border-color': '#db2777',
+                 'border-style': 'double', 'overlay-color': '#db2777',
+                 'overlay-opacity': 0.18, 'overlay-padding': 10,
+                 'z-index': 36 })
+        // Everything the packet does not touch recedes. On an estate of
+        // 58 links the path competed with the whole map for attention;
+        // fading the rest is what actually makes it read. Dimmed, never
+        // hidden — the context is still there, and nothing is removed
+        // from the map to make the answer look tidier.
+        .selector('.trace-dimmed')
+        .style({ opacity: 0.12 })
         .selector('node.trace-dot')
         .style({ width: 18, height: 18, shape: 'ellipse',
                  'background-color': '#22d3ee', 'border-width': 3,
@@ -3035,6 +3082,15 @@
       function styleTraceEdge(edge, cls) {
         edge.addClass(cls);
         edge.style(TRACE_EDGE_INLINE[cls]);
+      }
+
+      // The protocol regions are painted on their own canvas, so the
+      // element dimming above cannot reach them. Fade the whole layer
+      // instead — and only ever fade it, never hide it: the OSPF area or
+      // AS a hop sits in is still context worth seeing behind the path.
+      function setRegionsFaded(faded) {
+        var layer = document.getElementById('protocol-region-canvas');
+        if (layer) { layer.style.opacity = faded ? '0.18' : ''; }
       }
 
       function showStatus(text, tone) {
@@ -3263,8 +3319,14 @@
           .removeStyle(TRACE_EDGE_PROPS);
         cy.elements().removeClass(
           'trace-pass trace-warn trace-unknown trace-hop '
-          + 'trace-warn-hop trace-failed trace-actual trace-actual-hop'
+          + 'trace-warn-hop trace-failed trace-actual trace-actual-hop '
+          // A map left faded after the trace is gone reads as a broken
+          // view, and the endpoint marks would badge a question no longer
+          // being asked.
+          + 'trace-dimmed trace-endpoint-src trace-endpoint-dst'
         );
+        setRegionsFaded(false);
+        keyEl.hidden = true;
         cy.getElementById('__trace_dot').remove();
         whatIfButton.hidden = true;
         if (!keepReport) {
@@ -3368,6 +3430,36 @@
         // both the source and the block are in view every run.
         var pathColl = cy.collection();
         nodes.forEach(function (n) { if (n) { pathColl = pathColl.union(n); } });
+
+        // Mark the two ends of the question. The source is the first hop,
+        // but the destination is the device that was ASKED for — NOT the
+        // last hop reached. On a blocked trace those differ, and badging
+        // the blocking firewall as the destination would misreport the
+        // answer. The real destination stays undimmed even when the packet
+        // never got there, so the map still shows where you were headed.
+        var srcNode = nodes[0];
+        var dstNode = nodeFor(state.destination);
+        if (srcNode) { srcNode.addClass('trace-endpoint-src'); }
+        if (dstNode) {
+          dstNode.addClass('trace-endpoint-dst');
+          pathColl = pathColl.union(dstNode);
+        }
+
+        // Fade everything the packet does not touch. The path edges are
+        // painted hop by hop as the animation runs, so they are collected
+        // here up front and spared.
+        var pathEdges = cy.collection();
+        for (var pi = 1; pi < nodes.length; pi += 1) {
+          if (!nodes[pi - 1] || !nodes[pi]) { continue; }
+          var seg = segmentEdge(nodes[pi - 1], nodes[pi]);
+          if (seg) { pathEdges = pathEdges.union(seg); }
+        }
+        cy.elements()
+          .difference(pathColl.union(pathEdges))
+          .addClass('trace-dimmed');
+        setRegionsFaded(true);
+        keyEl.hidden = false;
+
         if (pathColl.length) {
           if (reducedMotion) { cy.fit(pathColl, 60); }
           else { cy.animate({ fit: { eles: pathColl, padding: 60 } },
