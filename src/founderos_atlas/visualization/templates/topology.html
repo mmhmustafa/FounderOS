@@ -330,6 +330,10 @@
         <h3>Packet trace</h3>
         <div class="trace-row"><label for="trace-proto">Source</label><output id="trace-source">—</output></div>
         <div class="trace-row"><label>Destination</label><output id="trace-destination">—</output></div>
+        <div class="trace-row"><label for="trace-dst-ip">Dest IP</label>
+          <input id="trace-dst-ip" type="text" inputmode="decimal"
+            placeholder="optional — pins which address"
+            title="Which address the flow is for. Without it the trace accepts a route to ANY address the destination owns, which can validate a management path instead of this one."></div>
         <div class="trace-row"><label for="trace-proto">Protocol</label>
           <select id="trace-proto"><option value="">any</option><option value="tcp">TCP</option><option value="udp">UDP</option><option value="icmp">ICMP</option></select></div>
         <div class="trace-row"><label for="trace-port">Port</label>
@@ -2905,6 +2909,7 @@
       var destinationOut = document.getElementById('trace-destination');
       var protoSelect = document.getElementById('trace-proto');
       var portInput = document.getElementById('trace-port');
+      var destIpInput = document.getElementById('trace-dst-ip');
       var runButton = document.getElementById('trace-run');
       var replayButton = document.getElementById('trace-replay');
       var whatIfButton = document.getElementById('trace-whatif');
@@ -3413,6 +3418,7 @@
           body: JSON.stringify({
             source: state.source, destination: state.destination,
             protocol: protoSelect.value, port: portInput.value,
+            destination_address: (destIpInput.value || '').trim(),
             assume_permit_at: assume,
             withdraw_routes: state.withdrawn,
           }),

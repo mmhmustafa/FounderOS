@@ -46,10 +46,12 @@
       </label>
     </div>
     <details>
-      <summary class="muted">Declared intent (optional): VRF, source address, protocol, port</summary>
+      <summary class="muted">Declared intent (optional): VRF, addresses, protocol, port</summary>
       <div class="form-row">
         <label>VRF <input name="vrf" placeholder="default"></label>
         <label>Source address <input name="source_address" placeholder="10.0.10.20"></label>
+        <label title="Which address the flow is for. Without it a route to ANY address the destination owns satisfies the check, which can validate a management path instead of this one."
+          >Destination address <input name="destination_address" placeholder="10.0.20.30"></label>
         <label>Protocol
           <select name="protocol">
             <option value="">any / unspecified</option>

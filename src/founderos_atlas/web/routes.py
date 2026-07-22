@@ -4930,6 +4930,9 @@ def register_routes(app) -> None:
         intent = {
             "vrf": request.form.get("vrf", "").strip(),
             "source_address": request.form.get("source_address", "").strip(),
+            "destination_address": request.form.get(
+                "destination_address", ""
+            ).strip(),
             "protocol": request.form.get("protocol", "").strip(),
             "port": request.form.get("port", "").strip(),
         }
@@ -4973,6 +4976,18 @@ def register_routes(app) -> None:
         intent = {"protocol": protocol} if protocol else {}
         if port is not None:
             intent["port"] = str(port)
+        # Which address the flow is for. Without it every check falls back to
+        # "any address the destination owns", which can validate a management
+        # path rather than the one being asked about.
+        destination_address = str(body.get("destination_address") or "").strip()
+        if destination_address:
+            from ipaddress import ip_address as _ip
+
+            try:
+                _ip(destination_address)
+            except ValueError:
+                return {"error": "destination_address must be an IP address"}, 400
+            intent["destination_address"] = destination_address
         # What-if: device names to treat as permitting this flow. Bounded so
         # a request cannot ask the engine to drop filtering estate-wide.
         raw_permit = body.get("assume_permit_at") or []

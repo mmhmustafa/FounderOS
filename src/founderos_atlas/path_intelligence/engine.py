@@ -23,6 +23,7 @@ from __future__ import annotations
 
 from collections import deque
 from hashlib import sha256
+from ipaddress import ip_address
 
 from .firewall import (
     evaluate_firewall,
@@ -186,6 +187,12 @@ class _Investigation:
         # own addresses are what a chain rule is matched against.
         self.destination_addresses = self._device_addresses(destination_key)
         self.source_addresses = self._device_addresses(source_key)
+        # A declared destination address pins WHICH address the flow is for.
+        # Without one every check falls back to "any address this device
+        # owns", which answers "can the device be reached at all" rather
+        # than "would THIS flow get through" — a weaker question, and the
+        # one that quietly validated a management path.
+        self.declared_destination = self._declared_destination()
         # The forwarding check skips the destination itself: once the packet
         # has arrived there is no next hop left to decide.
         self.destination_key = destination_key
@@ -917,7 +924,8 @@ class _Investigation:
         there is nothing left to forward.
         """
 
-        if not self.destination_addresses:
+        targets = self._match_addresses()
+        if not targets:
             return None            # nothing to look up; make no claim
         if key == self.destination_key:
             return None            # arrived; no forwarding decision remains
@@ -934,7 +942,7 @@ class _Investigation:
             )
             return None
         self.route_hops_evaluated += 1
-        for address in self.destination_addresses:
+        for address in targets:
             match = longest_prefix_match(routes, address)
             if match is not None:
                 evidence.append(
@@ -946,7 +954,7 @@ class _Investigation:
                 # parse the sentence above.
                 chosen.append(dict(match))
                 return None
-        target = self.destination_addresses[0]
+        target = targets[0]
         return HopResult(
             hop_number=hop_number,
             device=name,
@@ -995,7 +1003,7 @@ class _Investigation:
             self.intent,
             ingress=ingress,
             egress=egress,
-            destination_addresses=self.destination_addresses,
+            destination_addresses=self._match_addresses(),
             source_addresses=self.source_addresses,
         )
         citation = (
@@ -1067,12 +1075,50 @@ class _Investigation:
                 found.append(address)
         return tuple(found)
 
+    def _declared_destination(self) -> str | None:
+        """The destination address the operator declared, if it is one.
+
+        A malformed value is ignored rather than allowed to silently narrow
+        every match to an address that cannot exist.
+        """
+
+        declared = str(self.intent.get("destination_address") or "").strip()
+        if not declared:
+            return None
+        try:
+            ip_address(declared)
+        except ValueError:
+            self.unknowns.append(
+                f"Declared destination address {declared!r} is not a valid "
+                "address and was ignored."
+            )
+            return None
+        return declared
+
+    def _match_addresses(self) -> tuple[str, ...]:
+        """The destination address(es) policy and forwarding match against.
+
+        A declared address wins outright: the operator said which address
+        the flow is for, so matching anything else would answer a different
+        question. With none declared this stays every address the device
+        owns — the honest "can it be reached at all".
+        """
+
+        if self.declared_destination:
+            return (self.declared_destination,)
+        return self.destination_addresses
+
     def _describe_intent(self) -> str:
         protocol = self.intent.get("protocol", "").upper() or "IP"
         port = self.intent.get("port", "")
         label = f"{protocol}/{port}" if port else protocol
         source = self.intent.get("source_address", "")
         suffix = f" from {source}" if source else ""
+        # Naming the declared destination matters: it is the address every
+        # check narrowed to, so a verdict that mentions it cannot be read as
+        # being about some other address the device also owns.
+        if self.declared_destination:
+            suffix += f" to {self.declared_destination}"
         return f"the declared {label} packet{suffix}"
 
     def _flow_endpoints(self) -> tuple[str, str]:
@@ -1086,7 +1132,9 @@ class _Investigation:
         src = str(self.intent.get("source_address") or "") or (
             self.source_addresses[0] if self.source_addresses else ""
         )
-        dst = self.destination_addresses[0] if self.destination_addresses else ""
+        dst = self.declared_destination or (
+            self.destination_addresses[0] if self.destination_addresses else ""
+        )
         return src, dst
 
     def _firewall_remedy(self, chain: str) -> str | None:

@@ -189,6 +189,20 @@ class ViewerContractTests(unittest.TestCase):
         self.assertIn("'acl-deny'", gate)
         self.assertIn("'firewall-deny'", gate)
 
+    def test_the_flow_can_name_which_address_it_is_for(self) -> None:
+        """A device owns several addresses. Without naming one, a route to
+        ANY of them satisfies the forwarding check — which can validate the
+        management path instead of the flow being asked about."""
+
+        self.assertIn('id="trace-dst-ip"', self.viewer)
+        self.assertIn("destination_address:", self.viewer)
+        # Both surfaces that run the engine offer it, or the two disagree
+        # about what a trace means.
+        paths = Path(
+            "src/founderos_atlas/web/templates/paths.html"
+        ).read_text(encoding="utf-8")
+        self.assertIn('name="destination_address"', paths)
+
     def test_the_routes_a_path_relies_on_can_be_withdrawn(self) -> None:
         """"What breaks if this route goes away?" — the panel lists the route
         each hop forwarded on and offers to withdraw it and re-run. It reads

@@ -176,6 +176,90 @@ class EngineForwardingTests(unittest.TestCase):
         self.assertEqual("connected", result.status)
 
 
+class DeclaredDestinationTests(unittest.TestCase):
+    """Which address the flow is FOR.
+
+    A device owns several addresses — management, dataplane, loopback. With
+    none declared, a route to ANY of them satisfies the check, so a trace
+    could be reported as forwarding when the only route it found was to the
+    management address. Declaring the destination narrows every check to the
+    address actually being asked about.
+    """
+
+    def _snapshot(self):
+        """SW2 reachable at two addresses; SW1 routes only one of them."""
+
+        snapshot = snapshot_with_routes("SW1", [
+            route("10.0.0.0/24", "ospf", "10.0.0.9", distance=110),
+        ])
+        for device in snapshot["devices"]:
+            if device["hostname"] == "SW2":
+                device["interfaces"] = [
+                    {"name": "Gi0/1", "ip_address": "192.168.5.5",
+                     "status": "up", "protocol_status": "up",
+                     "description": None, "metadata": {}},
+                ]
+        return snapshot
+
+    def test_without_a_declaration_any_address_satisfies_the_check(self) -> None:
+        result = investigate_path("R1", "SW2", snapshot=self._snapshot(),
+                                  generated_at=NOW)
+        self.assertEqual("connected", result.status)
+        self.assertEqual(
+            "10.0.0.0/24",
+            next(h for h in result.hops if h.device == "SW1").route["prefix"],
+        )
+
+    def test_a_declared_address_with_no_route_is_a_black_hole(self) -> None:
+        """The correctness win: the device IS reachable at its management
+        address, so the undeclared trace connects — but the flow being asked
+        about targets an address nothing routes, and that must not be hidden
+        behind a route to a different address."""
+
+        result = investigate_path(
+            "R1", "SW2", snapshot=self._snapshot(), generated_at=NOW,
+            intent={"protocol": "tcp", "port": "443",
+                    "destination_address": "192.168.5.5"},
+        )
+        self.assertEqual("failed", result.status)
+        self.assertEqual("no-route", result.failure_type)
+        blocked = next(h for h in result.hops if h.status == "failed")
+        self.assertIn("no route to 192.168.5.5", blocked.explanation)
+
+    def test_a_declared_address_that_is_routed_still_connects(self) -> None:
+        result = investigate_path(
+            "R1", "SW2", snapshot=self._snapshot(), generated_at=NOW,
+            intent={"protocol": "tcp", "port": "443",
+                    "destination_address": "10.0.0.3"},
+        )
+        self.assertEqual("connected", result.status)
+
+    def test_the_verdict_names_the_address_it_judged(self) -> None:
+        """A verdict that narrowed to one address must say so, or it reads
+        as being about the device as a whole."""
+
+        result = investigate_path(
+            "R1", "SW2", snapshot=self._snapshot(), generated_at=NOW,
+            intent={"protocol": "tcp", "port": "443",
+                    "destination_address": "192.168.5.5"},
+        )
+        blocked = next(h for h in result.hops if h.status == "failed")
+        self.assertIn("to 192.168.5.5", blocked.explanation)
+
+    def test_a_malformed_address_is_ignored_and_said_out_loud(self) -> None:
+        """Silently narrowing every match to an address that cannot exist
+        would fail the whole trace for a typo."""
+
+        result = investigate_path(
+            "R1", "SW2", snapshot=self._snapshot(), generated_at=NOW,
+            intent={"protocol": "tcp", "destination_address": "not-an-ip"},
+        )
+        self.assertEqual("connected", result.status)
+        self.assertTrue(
+            any("not a valid address" in item for item in result.unknowns)
+        )
+
+
 class WithdrawRouteWhatIfTests(unittest.TestCase):
     """"What breaks if this route goes away?" — asked by withdrawing the
     prefix from the captured table and re-running the same engine."""
