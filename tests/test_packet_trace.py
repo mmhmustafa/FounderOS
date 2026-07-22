@@ -253,22 +253,70 @@ class ViewerContractTests(unittest.TestCase):
 
     def test_the_destination_addresses_are_offered_from_the_device(self) -> None:
         """Pinning the flow to an address should be a choice from evidence,
-        not something the operator goes and looks up. A LIST, not a select:
-        an address Atlas never captured must still be askable."""
+        not something the operator goes and looks up."""
 
-        self.assertIn('list="trace-dst-ip-options"', self.viewer)
-        self.assertIn('<datalist id="trace-dst-ip-options">', self.viewer)
+        self.assertIn('id="trace-dst-ip-pick"', self.viewer)
         self.assertIn("function syncDestinationAddresses", self.viewer)
-        sync = self.viewer.split("function syncDestinationAddresses", 1)[1][:900]
+        sync = self.viewer.split("function syncDestinationAddresses", 1)[1][:1400]
         self.assertIn("data.interface_addresses", sync)
         self.assertIn("management", sync)
+
+    def test_every_address_stays_reachable_after_one_is_chosen(self) -> None:
+        """A datalist FILTERS its options to whatever the field already
+        contains, so once an address was picked the list showed only that
+        one and the others could not be reached without clearing the box.
+        A select always shows them all."""
+
+        self.assertNotIn('list="trace-dst-ip-options"', self.viewer)
+        self.assertNotIn("<datalist", self.viewer)
+        self.assertIn("<select id=\"trace-dst-ip-pick\"", self.viewer)
+
+    def test_an_uncaptured_address_is_still_askable(self) -> None:
+        # A closed dropdown would forbid asking about an address Atlas has
+        # no evidence for, which is a question the operator may well have
+        # better grounds for than Atlas does.
+        self.assertIn("Other address…", self.viewer)
+        self.assertIn("CUSTOM_ADDRESS", self.viewer)
+        self.assertIn("function declaredDestinationAddress", self.viewer)
+        self.assertIn("destination_address: declaredDestinationAddress()",
+                      self.viewer)
 
     def test_a_pinned_address_does_not_follow_a_new_destination(self) -> None:
         # It belongs to the device it was picked for; carried over, it
         # would quietly ask about an address that device may not have.
-        set_fn = self.viewer.split("window.atlasTraceSet = function", 1)[1][:500]
+        set_fn = self.viewer.split("window.atlasTraceSet = function", 1)[1][:600]
         self.assertIn("destIpInput.value = ''", set_fn)
         self.assertIn("syncDestinationAddresses()", set_fn)
+
+    def test_the_viewer_never_leaks_a_template_comment_onto_the_page(self) -> None:
+        """This file is NOT a Jinja template — the renderer fills it by
+        string replacement, so a Jinja comment is never stripped and
+        renders as literal text. Two shipped into the header and the trace
+        panel and were plainly visible on screen."""
+
+        self.assertNotIn("{" + "#", self.viewer)
+        self.assertNotIn("#" + "}", self.viewer)
+
+    def test_a_console_opened_from_the_map_is_bare(self) -> None:
+        """The viewer opens consoles through its OWN popup helper, not the
+        app's atlas-device-actions.js, so a console launched from the map
+        still arrived wearing the whole navigation shell."""
+
+        popup = self.viewer.split("function openConsolePopup", 1)[1][:600]
+        self.assertIn("searchParams.set('chrome', 'bare')", popup)
+
+    def test_zoom_moves_in_steps_the_operator_controls(self) -> None:
+        """The wheel alone gave no way to land on a chosen scale and no way
+        to know which scale you were on — one notch crossed most of the
+        range."""
+
+        self.assertIn('id="zoom-in"', self.viewer)
+        self.assertIn('id="zoom-out"', self.viewer)
+        self.assertIn('id="zoom-level"', self.viewer)
+        self.assertIn("wheelSensitivity: 0.15", self.viewer)
+        # A fixed RATIO, because zoom is multiplicative: a constant
+        # increment would crawl at the wide end and leap at the close end.
+        self.assertIn("var STEP = 1.25", self.viewer)
 
     def test_the_routes_a_path_relies_on_can_be_withdrawn(self) -> None:
         """"What breaks if this route goes away?" — the panel lists the route

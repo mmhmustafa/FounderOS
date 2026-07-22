@@ -42,9 +42,14 @@
       -webkit-font-smoothing: antialiased;
     }
     button, input, select, textarea { font: inherit; }
+    /* Flex, not a fixed 7-column grid. The grid stretched every control to
+       its column, so a plain button rendered 200px wide, and each control
+       added since (Export, stepped zoom) pushed the toolbar onto another
+       row and grew the header. Flex sizes each control to its content and
+       wraps only when it must. */
     header {
-      display: grid; grid-template-columns: auto minmax(180px, 1fr) auto auto auto auto auto;
-      gap: 9px 12px; align-items: center; padding: 11px 16px;
+      display: flex; flex-wrap: wrap;
+      gap: 8px 10px; align-items: center; padding: 10px 16px;
       background: #111827; color: white; border-bottom: 1px solid #263244;
     }
     header h1 { margin: 0; font-size: 18px; line-height: 1.2; white-space: nowrap; letter-spacing: -.01em; }
@@ -57,9 +62,12 @@
     .layout-label { color: #cbd5e1; font-size: 12px; display: flex; align-items: center; gap: 6px; white-space: nowrap; }
     .layout-label select { border: 1px solid #64748b; border-radius: 6px; padding: 6px 8px; background: white; color: var(--ink); cursor: pointer; }
     .summary {
-      grid-column: 1 / -1; margin: 0; color: #cbd5e1; font-size: 12px;
+      flex: 1 0 100%; margin: 0; color: #cbd5e1; font-size: 12px;
       line-height: 1.35; font-variant-numeric: tabular-nums;
     }
+    /* The one control that should take the slack; everything else is
+       sized by its own content. */
+    header #search { flex: 1 1 200px; }
     main { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 280px; }
     main.details-collapsed { grid-template-columns: minmax(0, 1fr); }
     main.details-collapsed aside { display: none; }
@@ -272,6 +280,10 @@
     .layers-reset { margin-top: 4px; font-size: 12px; padding: 4px 8px; border: 1px solid var(--line, #d6dbe3); border-radius: 6px; background: #f8fafc; cursor: pointer; }
     .layers-reset:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
     .layers-status { margin: 6px 0 0; font-size: 11px; max-width: 220px; color: #b45309; }
+    .zoom-controls { display: inline-flex; align-items: center; gap: 4px; }
+    .zoom-controls button { min-width: 26px; padding: 4px 7px; }
+    #zoom-level { min-width: 44px; text-align: center; font-size: 12px;
+      font-variant-numeric: tabular-nums; color: var(--muted, #475569); }
 
     /* Print / Save as PDF. Without this the printed page is the CONTROLS —
        search box, layer menus, the trace panel — with the map squeezed
@@ -345,6 +357,18 @@
       </select>
     </label>
     <button id="fit" type="button" title="Reset at a scale where labels remain readable">Reset view</button>
+    <!--
+      Stepped zoom. The wheel alone gave no way to land on a chosen scale,
+      and no way to know which scale you were on. Each press is one fixed
+      step and the readout says where you are, so "a bit further out" is a
+      thing you can actually ask for.
+    -->
+    <span class="zoom-controls">
+      <button id="zoom-out" type="button" aria-label="Zoom out one step" title="Zoom out one step">−</button>
+      <output id="zoom-level" aria-live="off" title="Current zoom">100%</output>
+      <button id="zoom-in" type="button" aria-label="Zoom in one step" title="Zoom in one step">+</button>
+      <button id="zoom-all" type="button" title="Zoom out until the whole network fits, however large">Fit all</button>
+    </span>
     <details id="export-panel" class="layers-menu">
       <summary aria-label="Export this topology as an image or PDF">Export</summary>
       <div class="layers-body" role="group" aria-label="Export topology">
@@ -379,12 +403,16 @@
     <button id="edit-mode" type="button" aria-pressed="false" title="Curate persistent site membership" hidden>Edit topology</button>
     <button id="details-toggle" type="button" aria-controls="details" aria-expanded="true">Details</button>
     <span class="summary" id="summary"></span>
-    {#
+    <!--
       Print only. A topology diagram in a change record has to say which
-      snapshot it is of and when that snapshot was taken, or it is a
-      drawing rather than evidence — and on paper there is no hover, no
-      panel and no URL left to ask.
-    #}
+      snapshot it is of, or it is a drawing rather than evidence — and on
+      paper there is no hover, no panel and no URL left to ask.
+
+      An HTML comment, and only ever an HTML comment: this file is not a
+      Jinja template. The renderer fills it by string replacement, so a
+      Jinja comment is never stripped — it renders on the page as literal
+      text, which is exactly how two of them shipped into view.
+    -->
     <span class="print-only" id="print-provenance"></span>
   </header>
   <main id="viewer-main">
@@ -395,18 +423,23 @@
         <h3>Packet trace</h3>
         <div class="trace-row"><label for="trace-proto">Source</label><output id="trace-source">—</output></div>
         <div class="trace-row"><label>Destination</label><output id="trace-destination">—</output></div>
-        <div class="trace-row"><label for="trace-dst-ip">Dest IP</label>
-          {#
-            A list, not a select: it offers the addresses Atlas actually
-            captured on the destination, while still accepting one it did
-            not capture. A closed dropdown would make an address Atlas has
-            no evidence for impossible to ask about.
-          #}
+        <!--
+          A select, not a datalist. A datalist FILTERS its options to
+          whatever the field already contains, so once an address was
+          chosen the list showed only that one and the others became
+          unreachable without clearing the box first. The select always
+          shows every captured address; "Other address…" keeps one Atlas
+          never captured askable, which a closed dropdown would forbid.
+        -->
+        <div class="trace-row"><label for="trace-dst-ip-pick">Dest IP</label>
+          <select id="trace-dst-ip-pick" autocomplete="off"
+            title="Which address the flow is for. Without one, the trace accepts a route to ANY address the destination owns, which can validate a management path instead of this one.">
+            <option value="">any address</option>
+          </select></div>
+        <div class="trace-row" id="trace-dst-ip-row" hidden>
+          <label for="trace-dst-ip">Address</label>
           <input id="trace-dst-ip" type="text" inputmode="decimal"
-            list="trace-dst-ip-options" autocomplete="off"
-            placeholder="optional — pins which address"
-            title="Which address the flow is for. Without it the trace accepts a route to ANY address the destination owns, which can validate a management path instead of this one."></div>
-        <datalist id="trace-dst-ip-options"></datalist>
+            autocomplete="off" placeholder="e.g. 10.251.0.4"></div>
         <div class="trace-row"><label for="trace-proto">Protocol</label>
           <select id="trace-proto"><option value="">any</option><option value="tcp">TCP</option><option value="udp">UDP</option><option value="icmp">ICMP</option></select></div>
         <div class="trace-row"><label for="trace-port">Port</label>
@@ -637,6 +670,11 @@
       layout: { name: 'preset', fit: false },
       minZoom: MIN_ZOOM,
       maxZoom: 3,
+      // The default wheel step is far too coarse over a range this wide:
+      // one notch jumped most of the way from readable to unreadable, so
+      // there was no way to sit at a chosen scale. Smaller steps make the
+      // whole range reachable a little at a time.
+      wheelSensitivity: 0.15,
       pixelRatio: RENDER_PIXEL_RATIO,
       textureOnViewport: false,
       motionBlur: false,
@@ -1368,8 +1406,19 @@
     // with the picture. A per-device window name reuses one pop-up per
     // device instead of stacking duplicates.
     function openConsolePopup(url, name) {
+      // Ask for the bare layout. The viewer opens consoles through its OWN
+      // path, not the app's atlas-device-actions.js, so a popup launched
+      // from the map still arrived wearing the whole navigation shell.
+      // Every call site goes through here, so this is the one place it
+      // belongs.
+      let target = url;
+      try {
+        const parsed = new URL(url, window.location.href);
+        parsed.searchParams.set('chrome', 'bare');
+        target = parsed.href;
+      } catch (error) { /* no URL support: open it unchanged */ }
       const win = window.open(
-        url, 'atlas-console-' + (name || 'device'),
+        target, 'atlas-console-' + (name || 'device'),
         'popup=yes,width=1100,height=760'
       );
       if (win) { win.focus(); }
@@ -2442,6 +2491,54 @@
       });
     })();
 
+    // -- Stepped zoom -------------------------------------------------------
+    // A fixed RATIO per press, not a fixed amount: zoom is multiplicative,
+    // so a constant increment would crawl at the wide end and leap at the
+    // close end. 1.25 gives roughly a dozen presses across the whole range.
+    (function () {
+      var stepIn = document.getElementById('zoom-in');
+      var stepOut = document.getElementById('zoom-out');
+      var fitAll = document.getElementById('zoom-all');
+      var readout = document.getElementById('zoom-level');
+      if (!stepIn || !stepOut || !readout || typeof cy === 'undefined') {
+        return;
+      }
+      var STEP = 1.25;
+
+      function showLevel() {
+        readout.textContent = Math.round((cy.zoom() || 1) * 100) + '%';
+      }
+
+      function stepZoom(factor) {
+        var next = Math.min(
+          cy.maxZoom(), Math.max(cy.minZoom(), (cy.zoom() || 1) * factor)
+        );
+        // Zoom about the centre of the viewport, not the graph's origin,
+        // so what you were looking at stays where you were looking.
+        cy.zoom({
+          level: next,
+          renderedPosition: { x: cy.width() / 2, y: cy.height() / 2 },
+        });
+        showLevel();
+      }
+
+      stepIn.addEventListener('click', function () { stepZoom(STEP); });
+      stepOut.addEventListener('click', function () { stepZoom(1 / STEP); });
+      if (fitAll) {
+        fitAll.addEventListener('click', function () {
+          // Whatever it takes to show everything drawn — the readable
+          // floor does not apply when seeing it ALL is the request.
+          var shown = cy.elements().filter(function (element) {
+            return element.style('display') !== 'none';
+          });
+          if (shown.length) { cy.fit(shown, 40); }
+          showLevel();
+        });
+      }
+      cy.on('zoom', showLevel);
+      showLevel();
+    })();
+
     document.getElementById('search').addEventListener('input', event => {
       const query = event.target.value.trim().toLowerCase();
       cy.nodes().removeClass('search-match search-muted');
@@ -3131,6 +3228,12 @@
       var protoSelect = document.getElementById('trace-proto');
       var portInput = document.getElementById('trace-port');
       var destIpInput = document.getElementById('trace-dst-ip');
+      var destIpPick = document.getElementById('trace-dst-ip-pick');
+      var destIpRow = document.getElementById('trace-dst-ip-row');
+      var CUSTOM_ADDRESS = '__custom__';
+      if (destIpPick) {
+        destIpPick.addEventListener('change', syncCustomAddressRow);
+      }
       var runButton = document.getElementById('trace-run');
       var replayButton = document.getElementById('trace-replay');
       var whatIfButton = document.getElementById('trace-whatif');
@@ -3390,29 +3493,59 @@
       // declared. Nothing here narrows anything on its own — it only
       // fills the list.
       function syncDestinationAddresses() {
-        var list = document.getElementById('trace-dst-ip-options');
-        if (!list) { return; }
-        list.textContent = '';
+        if (!destIpPick) { return; }
+        destIpPick.textContent = '';
+        var any = document.createElement('option');
+        any.value = '';
+        any.textContent = 'any address';
+        destIpPick.appendChild(any);
+
         var node = state.destination ? nodeFor(state.destination) : null;
-        if (!node) { return; }
-        var data = node.data();
-        var seen = {};
-        var options = [];
-        (data.interface_addresses || []).forEach(function (iface) {
-          if (!iface || !iface.ip || seen[iface.ip]) { return; }
-          seen[iface.ip] = true;
-          options.push({ ip: iface.ip, why: iface.name || 'interface' });
-        });
-        var mgmt = data.management_ip;
-        if (mgmt && mgmt !== 'unknown' && !seen[mgmt]) {
-          options.push({ ip: mgmt, why: 'management' });
+        if (node) {
+          var data = node.data();
+          var seen = {};
+          var options = [];
+          (data.interface_addresses || []).forEach(function (iface) {
+            if (!iface || !iface.ip || seen[iface.ip]) { return; }
+            seen[iface.ip] = true;
+            options.push({ ip: iface.ip, why: iface.name || 'interface' });
+          });
+          var mgmt = data.management_ip;
+          if (mgmt && mgmt !== 'unknown' && !seen[mgmt]) {
+            options.push({ ip: mgmt, why: 'management' });
+          }
+          options.forEach(function (item) {
+            var option = document.createElement('option');
+            option.value = item.ip;
+            // The interface name is the point: it is what tells the
+            // dataplane address from the management one.
+            option.textContent = item.ip + ' — ' + item.why;
+            destIpPick.appendChild(option);
+          });
         }
-        options.forEach(function (item) {
-          var option = document.createElement('option');
-          option.value = item.ip;
-          option.label = item.ip + ' — ' + item.why;
-          list.appendChild(option);
-        });
+        // Always last, and always present: an address Atlas never
+        // captured must stay askable.
+        var other = document.createElement('option');
+        other.value = CUSTOM_ADDRESS;
+        other.textContent = 'Other address…';
+        destIpPick.appendChild(other);
+        syncCustomAddressRow();
+      }
+
+      function syncCustomAddressRow() {
+        var custom = destIpPick && destIpPick.value === CUSTOM_ADDRESS;
+        destIpRow.hidden = !custom;
+        if (!custom) { destIpInput.value = ''; }
+      }
+
+      // What the trace should actually ask about, from whichever control
+      // is in play.
+      function declaredDestinationAddress() {
+        if (!destIpPick) { return ''; }
+        if (destIpPick.value === CUSTOM_ADDRESS) {
+          return (destIpInput.value || '').trim();
+        }
+        return destIpPick.value || '';
       }
 
       window.atlasTraceSet = function (which, label) {
@@ -3423,6 +3556,7 @@
           // carrying it onto a different destination would quietly ask
           // about an address that device may not even have.
           destIpInput.value = '';
+          if (destIpPick) { destIpPick.value = ''; }
           syncDestinationAddresses();
         }
         panel.hidden = false;
@@ -3803,7 +3937,7 @@
           body: JSON.stringify({
             source: state.source, destination: state.destination,
             protocol: protoSelect.value, port: portInput.value,
-            destination_address: (destIpInput.value || '').trim(),
+            destination_address: declaredDestinationAddress(),
             assume_permit_at: assume,
             withdraw_routes: state.withdrawn,
           }),
@@ -3979,6 +4113,7 @@
         sourceOut.textContent = '—';
         destinationOut.textContent = '—';
         destIpInput.value = '';
+        if (destIpPick) { destIpPick.value = ''; }
         syncDestinationAddresses();
         showStatus('', '');
         panel.hidden = true;
