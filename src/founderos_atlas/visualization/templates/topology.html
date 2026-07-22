@@ -351,9 +351,17 @@
         <div class="trace-row"><label for="trace-proto">Source</label><output id="trace-source">—</output></div>
         <div class="trace-row"><label>Destination</label><output id="trace-destination">—</output></div>
         <div class="trace-row"><label for="trace-dst-ip">Dest IP</label>
+          {#
+            A list, not a select: it offers the addresses Atlas actually
+            captured on the destination, while still accepting one it did
+            not capture. A closed dropdown would make an address Atlas has
+            no evidence for impossible to ask about.
+          #}
           <input id="trace-dst-ip" type="text" inputmode="decimal"
+            list="trace-dst-ip-options" autocomplete="off"
             placeholder="optional — pins which address"
             title="Which address the flow is for. Without it the trace accepts a route to ANY address the destination owns, which can validate a management path instead of this one."></div>
+        <datalist id="trace-dst-ip-options"></datalist>
         <div class="trace-row"><label for="trace-proto">Protocol</label>
           <select id="trace-proto"><option value="">any</option><option value="tcp">TCP</option><option value="udp">UDP</option><option value="icmp">ICMP</option></select></div>
         <div class="trace-row"><label for="trace-port">Port</label>
@@ -3217,9 +3225,50 @@
       }
       protoSelect.addEventListener('change', syncProto);
 
+      // Offer the addresses the DESTINATION actually has, so pinning the
+      // flow to one is a choice from evidence rather than something the
+      // operator must go and look up. Built from the same captured
+      // interface data the hover card shows; the management address is
+      // included but never first, because it is the one that silently
+      // answered the wrong question before a destination could be
+      // declared. Nothing here narrows anything on its own — it only
+      // fills the list.
+      function syncDestinationAddresses() {
+        var list = document.getElementById('trace-dst-ip-options');
+        if (!list) { return; }
+        list.textContent = '';
+        var node = state.destination ? nodeFor(state.destination) : null;
+        if (!node) { return; }
+        var data = node.data();
+        var seen = {};
+        var options = [];
+        (data.interface_addresses || []).forEach(function (iface) {
+          if (!iface || !iface.ip || seen[iface.ip]) { return; }
+          seen[iface.ip] = true;
+          options.push({ ip: iface.ip, why: iface.name || 'interface' });
+        });
+        var mgmt = data.management_ip;
+        if (mgmt && mgmt !== 'unknown' && !seen[mgmt]) {
+          options.push({ ip: mgmt, why: 'management' });
+        }
+        options.forEach(function (item) {
+          var option = document.createElement('option');
+          option.value = item.ip;
+          option.label = item.ip + ' — ' + item.why;
+          list.appendChild(option);
+        });
+      }
+
       window.atlasTraceSet = function (which, label) {
         state[which] = label;
         (which === 'source' ? sourceOut : destinationOut).textContent = label;
+        if (which === 'destination') {
+          // A pinned address belongs to the device it was picked for;
+          // carrying it onto a different destination would quietly ask
+          // about an address that device may not even have.
+          destIpInput.value = '';
+          syncDestinationAddresses();
+        }
         panel.hidden = false;
         showStatus(
           state.source && state.destination
@@ -3773,6 +3822,8 @@
         state.destination = '';
         sourceOut.textContent = '—';
         destinationOut.textContent = '—';
+        destIpInput.value = '';
+        syncDestinationAddresses();
         showStatus('', '');
         panel.hidden = true;
       });

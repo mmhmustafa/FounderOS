@@ -251,6 +251,25 @@ class ViewerContractTests(unittest.TestCase):
         self.assertIn("trace-endpoint-src", clear)
         self.assertIn("setRegionsFaded(false)", clear)
 
+    def test_the_destination_addresses_are_offered_from_the_device(self) -> None:
+        """Pinning the flow to an address should be a choice from evidence,
+        not something the operator goes and looks up. A LIST, not a select:
+        an address Atlas never captured must still be askable."""
+
+        self.assertIn('list="trace-dst-ip-options"', self.viewer)
+        self.assertIn('<datalist id="trace-dst-ip-options">', self.viewer)
+        self.assertIn("function syncDestinationAddresses", self.viewer)
+        sync = self.viewer.split("function syncDestinationAddresses", 1)[1][:900]
+        self.assertIn("data.interface_addresses", sync)
+        self.assertIn("management", sync)
+
+    def test_a_pinned_address_does_not_follow_a_new_destination(self) -> None:
+        # It belongs to the device it was picked for; carried over, it
+        # would quietly ask about an address that device may not have.
+        set_fn = self.viewer.split("window.atlasTraceSet = function", 1)[1][:500]
+        self.assertIn("destIpInput.value = ''", set_fn)
+        self.assertIn("syncDestinationAddresses()", set_fn)
+
     def test_the_routes_a_path_relies_on_can_be_withdrawn(self) -> None:
         """"What breaks if this route goes away?" — the panel lists the route
         each hop forwarded on and offers to withdraw it and re-run. It reads
