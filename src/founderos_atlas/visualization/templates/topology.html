@@ -113,16 +113,20 @@
     #context-menu button.menu-item { width: 100%; text-align: left; border: 0; background: transparent; font: inherit; color: #0f172a; cursor: pointer; }
     #context-menu button.menu-item:hover { background: #eff6ff; }
     #hidden-note { color: #0f172a; }
+    /* The panel grows with the path it is describing, so it is capped to
+       the viewport and scrolls: a long route list must never push its own
+       content off the bottom of the screen where it cannot be read. */
     #trace-panel { position: absolute; left: 12px; bottom: 12px; z-index: 25;
       background: #fff; color: #0f172a; border: 1px solid #d6dbe3;
       border-radius: 8px; padding: 10px 12px; min-width: 250px; max-width: 320px;
+      max-height: calc(100% - 24px); overflow-y: auto;
       box-shadow: 0 6px 20px rgba(15,23,42,.15); font-size: 13px; }
     #trace-panel h3 { margin: 0 0 6px; font-size: 13px; }
     #trace-panel .trace-row { display: flex; gap: 6px; align-items: center; margin: 4px 0; }
     #trace-panel .trace-row label { flex: 0 0 74px; color: #475569; font-size: 12px; }
     #trace-panel .trace-row output { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     #trace-panel select, #trace-panel input[type="number"] { font: inherit; padding: 3px 6px; border: 1px solid #d6dbe3; border-radius: 5px; width: 100%; }
-    #trace-panel .trace-actions { display: flex; gap: 6px; margin-top: 8px; }
+    #trace-panel .trace-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
     #trace-panel button { font: inherit; font-size: 12px; padding: 4px 10px; border: 1px solid #d6dbe3; border-radius: 6px; background: #f8fafc; color: #0f172a; cursor: pointer; }
     #trace-panel button.trace-primary { background: #2563eb; border-color: #2563eb; color: #fff; }
     /* The active probe is visually distinct: amber = "this touches the network". */
@@ -131,11 +135,15 @@
     #trace-status[data-tone="failed"] { color: #b91c1c; font-weight: 600; }
     #trace-status[data-tone="warn"] { color: #b45309; }
     #trace-status[data-tone="ok"] { color: #166534; }
-    #trace-routes { margin-top: 7px; font-size: 12px; max-width: 300px; }
+    #trace-routes { margin-top: 7px; font-size: 12px; }
     #trace-routes .trace-routes-head { margin: 0 0 3px; color: #475569; font-weight: 600; }
     #trace-routes ul { list-style: none; margin: 0; padding: 0; }
-    #trace-routes li { display: flex; gap: 6px; align-items: baseline; padding: 1px 0; }
-    #trace-routes .trace-route-what { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+    /* Device and Withdraw sit on the first line; the route itself takes a
+       full line below and WRAPS. Truncating it defeats the point of the
+       list — a half-shown prefix or next hop is not evidence you can act
+       on, and long next hops (IPv6, %-scoped) are normal. */
+    #trace-routes li { display: flex; flex-wrap: wrap; gap: 1px 6px; align-items: baseline; padding: 3px 0; }
+    #trace-routes .trace-route-what { flex-basis: 100%; white-space: normal; overflow-wrap: anywhere; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
     #trace-routes .trace-route-dev { color: #475569; }
     #trace-routes button { font: inherit; font-size: 11px; padding: 1px 6px; border: 1px solid #d6dbe3; border-radius: 5px; background: #f8fafc; color: #0f172a; cursor: pointer; }
     #trace-routes li.trace-route-gone .trace-route-what { text-decoration: line-through; opacity: 0.6; }
@@ -349,6 +357,8 @@
           <button type="button" id="trace-replay" hidden>Replay</button>
           <button type="button" id="trace-whatif" hidden
             title="Re-run the trace assuming this hop is changed to permit the flow — does it get through, and where does it stop next?">Simulate fix</button>
+          <button type="button" id="trace-revert" hidden
+            title="Drop every assumption — permitted hops and withdrawn routes — and re-run the real trace">Revert what-if</button>
           <button type="button" id="trace-flow" hidden
             title="Pause or resume the flowing packet">Pause flow</button>
           <button type="button" id="trace-live" class="trace-probe" hidden
@@ -2913,6 +2923,7 @@
       var runButton = document.getElementById('trace-run');
       var replayButton = document.getElementById('trace-replay');
       var whatIfButton = document.getElementById('trace-whatif');
+      var revertButton = document.getElementById('trace-revert');
       var flowButton = document.getElementById('trace-flow');
       var liveButton = document.getElementById('trace-live');
       var clearButton = document.getElementById('trace-clear');
@@ -3005,6 +3016,20 @@
         statusEl.textContent = text || '';
         statusEl.dataset.tone = tone || '';
         statusEl.hidden = !text;
+      }
+
+      // An assumption you cannot take back is a trap: once a hop is assumed
+      // to permit, or a route is withdrawn, every later verdict is
+      // hypothetical and the only way out was to clear the whole trace and
+      // set it up again. This offers the way back to the real answer, and
+      // covers BOTH kinds of assumption.
+      function assumptionsActive() {
+        return (state.assumePermit && state.assumePermit.length > 0)
+          || (state.withdrawn && state.withdrawn.length > 0);
+      }
+
+      function syncRevert() {
+        revertButton.hidden = !assumptionsActive();
       }
 
       // Names what a what-if is assuming, so every line it produces is
@@ -3191,6 +3216,7 @@
           liveDetail.hidden = true;
           liveOutput.textContent = '';
         }
+        syncRevert();
       }
 
       function segmentEdge(fromNode, toNode) {
@@ -3291,6 +3317,7 @@
           state.running = false;
           replayButton.hidden = false;
           liveButton.hidden = false;
+          syncRevert();
           var failed = hops.filter(function (hop) { return hop.status === 'failed'; });
           if (failed.length) {
             var f = failed[0];
@@ -3450,6 +3477,17 @@
         if (state.assumePermit.indexOf(state.whatIfDevice) === -1) {
           state.assumePermit = state.assumePermit.concat([state.whatIfDevice]);
         }
+        runTrace();
+      });
+
+      revertButton.addEventListener('click', function () {
+        if (state.running) { return; }
+        // Back to the real verdict: drop the assumed permits AND the
+        // withdrawn routes, then re-run. The source, destination and
+        // declared packet are kept, so this is one click rather than
+        // setting the whole trace up again.
+        state.assumePermit = [];
+        state.withdrawn = [];
         runTrace();
       });
 

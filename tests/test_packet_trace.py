@@ -217,6 +217,42 @@ class ViewerContractTests(unittest.TestCase):
         self.assertIn("withdraw_routes: state.withdrawn", self.viewer)
         self.assertIn("Withdraw", self.viewer)
 
+    def test_every_assumption_can_be_taken_back(self) -> None:
+        """An assumption with no way back is a trap: once a hop was assumed
+        to permit, or a route withdrawn, every later verdict was
+        hypothetical and the only escape was clearing the whole trace and
+        setting it up again. Revert drops BOTH kinds and re-runs."""
+
+        self.assertIn('id="trace-revert"', self.viewer)
+        self.assertIn("function assumptionsActive", self.viewer)
+        revert = self.viewer.split("revertButton.addEventListener", 1)[1][:420]
+        self.assertIn("state.assumePermit = []", revert)
+        self.assertIn("state.withdrawn = []", revert)
+        self.assertIn("runTrace()", revert)
+
+    def test_the_way_back_is_offered_exactly_when_it_applies(self) -> None:
+        # Shown whenever an assumption is live — including a withdrawn
+        # route, which had no revert at all — and hidden once none is.
+        self.assertIn("revertButton.hidden = !assumptionsActive()", self.viewer)
+        self.assertIn("state.withdrawn.length > 0", self.viewer)
+
+    def test_the_routes_it_relies_on_are_shown_in_full(self) -> None:
+        """A truncated prefix or next hop is not evidence anyone can act
+        on, and long next hops (IPv6, %-scoped) are normal — so the route
+        text wraps onto its own line instead of being ellipsised."""
+
+        style = self.viewer.split("#trace-routes .trace-route-what", 1)[1][:200]
+        self.assertNotIn("text-overflow: ellipsis", style)
+        self.assertNotIn("white-space: nowrap", style)
+        self.assertIn("overflow-wrap: anywhere", style)
+
+    def test_the_panel_cannot_push_its_own_content_offscreen(self) -> None:
+        # A long route list grew the panel past the viewport, so the rows
+        # at the bottom could not be read at all — the reported symptom.
+        panel = self.viewer.split("#trace-panel { position", 1)[1][:340]
+        self.assertIn("max-height: calc(100% - 24px)", panel)
+        self.assertIn("overflow-y: auto", panel)
+
     def test_a_withdrawal_is_named_in_every_line_it_produces(self) -> None:
         prefix = self.viewer.split("function whatIfPrefix", 1)[1][:600]
         self.assertIn("withdrawn from", prefix)
