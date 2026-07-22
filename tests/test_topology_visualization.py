@@ -169,6 +169,43 @@ class TopologyVisualizationTests(unittest.TestCase):
         html = TopologyRenderer(self.snapshot).render()
         self.assertIn("or zoom out", html)
 
+    def test_an_export_carries_the_protocol_regions(self) -> None:
+        """OSPF areas and AS boundaries are painted on their OWN canvas,
+        outside Cytoscape — so cy.png() returns the graph without them and
+        every export silently lost the protocol context the screen shows.
+        The export composites both layers."""
+
+        html = TopologyRenderer(self.snapshot).render()
+        self.assertIn("function composeMapImage", html)
+        self.assertIn("window.__atlasRegionsRenderTo", html)
+        compose = html.split("function composeMapImage", 1)[1][:2400]
+        # Regions beneath, graph over — the order the screen paints them.
+        self.assertLess(
+            compose.index("__atlasRegionsRenderTo"),
+            compose.index("ctx.drawImage(image"),
+        )
+        # The graph layer must be transparent or it would bury them.
+        self.assertNotIn("bg: '#ffffff'", compose)
+
+    def test_the_region_layer_can_paint_into_any_canvas(self) -> None:
+        # It drew only into its own canvas, which is why nothing else
+        # could include it.
+        html = TopologyRenderer(self.snapshot).render()
+        self.assertIn("function renderTo(ctx)", html)
+        self.assertIn("window.__atlasRegionsRenderTo = renderTo", html)
+
+    def test_the_export_frames_the_regions_and_the_graph_alike(self) -> None:
+        """Regions are positioned from renderedPosition(), so the viewport
+        must be framed as the output will be BEFORE they are drawn — and
+        only restored once the graph capture and the region pass are both
+        done, or the two layers would disagree."""
+
+        html = TopologyRenderer(self.snapshot).render()
+        compose = html.split("function composeMapImage", 1)[1][:2400]
+        self.assertIn("cy.fit(shown", compose)
+        self.assertIn("finally", compose)
+        self.assertIn("cy.zoom(saved.zoom)", compose)
+
     def test_the_map_can_be_exported_as_an_image(self) -> None:
         """A picture of the map, for a ticket or a change record. Uses
         Cytoscape's own raster export — no library added, so the artifact
@@ -178,11 +215,11 @@ class TopologyVisualizationTests(unittest.TestCase):
         self.assertIn('id="export-panel"', html)
         self.assertIn('data-export="png"', html)
         self.assertIn('data-export="jpg"', html)
-        self.assertIn("cy.jpg(options)", html)
-        self.assertIn("cy.png(options)", html)
+        self.assertIn("cy.png({", html)
+        self.assertIn("image/jpeg", html)
         # Whole graph by default: an estate that needs panning must still
         # export complete, not cropped to the viewport.
-        self.assertIn("full: !visibleOnly.checked", html)
+        self.assertIn("var whole = !visibleOnly.checked", html)
 
     def test_pdf_prints_vector_rather_than_bundling_a_pdf_writer(self) -> None:
         """The browser's print path renders the page as vector at the
@@ -223,12 +260,14 @@ class TopologyVisualizationTests(unittest.TestCase):
 
         html = TopologyRenderer(self.snapshot).render()
         printer = html.split("function printAsImage", 1)[1][:1200]
-        self.assertIn("output: 'base64uri'", printer)
+        # The composite hands back a data: URI from canvas.toDataURL.
+        self.assertIn("composeMapImage('image/png')", printer)
         self.assertNotIn("createObjectURL", printer)
+        self.assertIn("canvas.toDataURL", html)
         # Awaited: an <img> that has not decoded yet prints blank for the
         # same reason the canvas did.
-        self.assertIn("image.onload", printer)
-        self.assertIn("full: true", printer)
+        self.assertIn("loadImage(dataUri)", printer)
+        self.assertIn("image.onload", html)
 
     def test_the_print_image_is_not_hidden_along_with_the_graph(self) -> None:
         """It lived INSIDE .graph-wrap once, and printing hides

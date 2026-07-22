@@ -2478,20 +2478,109 @@
         link.remove();
       }
 
+      // One image containing BOTH layers. The protocol regions are painted
+      // on their own canvas outside Cytoscape, so cy.png() returns the
+      // graph without them — an exported map lost every OSPF area and AS
+      // boundary, silently, while the screen still showed them.
+      //
+      // The regions are positioned from renderedPosition(), so the
+      // viewport has to be framed exactly as the output will be before
+      // they are drawn. That is why the framing, the graph capture and the
+      // region pass all happen together, and the view is only restored
+      // once all three are done.
+      function composeMapImage(mime, quality) {
+        var wrap = document.querySelector('.graph-wrap');
+        var graph = document.getElementById('cy');
+        var whole = !visibleOnly.checked;
+        var saved = {
+          zoom: cy.zoom(), pan: Object.assign({}, cy.pan()),
+          wrapStyle: wrap.getAttribute('style') || '',
+          graphStyle: graph.getAttribute('style') || '',
+        };
+        var width, height;
+        try {
+          if (whole) {
+            wrap.style.width = EXPORT_W + 'px';
+            wrap.style.height = EXPORT_H + 'px';
+            graph.style.width = EXPORT_W + 'px';
+            graph.style.height = EXPORT_H + 'px';
+            cy.resize();
+            var shown = cy.elements().filter(function (element) {
+              return element.style('display') !== 'none';
+            });
+            if (shown.length) { cy.fit(shown, 28); }
+          }
+          width = cy.width();
+          height = cy.height();
+          // Transparent background: an opaque one here would bury the
+          // regions this composite exists to keep.
+          var graphUri = cy.png({
+            output: 'base64uri', full: false, scale: EXPORT_SCALE,
+          });
+          var canvas = document.createElement('canvas');
+          canvas.width = Math.round(width * EXPORT_SCALE);
+          canvas.height = Math.round(height * EXPORT_SCALE);
+          var ctx = canvas.getContext('2d');
+          // White first — JPEG has no alpha, and a PDF wants paper.
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.setTransform(EXPORT_SCALE, 0, 0, EXPORT_SCALE, 0, 0);
+          if (window.__atlasRegionsRenderTo) {
+            window.__atlasRegionsRenderTo(ctx);
+          }
+          ctx.setTransform(1, 0, 0, 1, 0, 0);
+          return loadImage(graphUri).then(function (image) {
+            // Graph over regions, the same order the screen paints them.
+            ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+            return canvas.toDataURL(mime, quality);
+          });
+        } finally {
+          wrap.setAttribute('style', saved.wrapStyle);
+          graph.setAttribute('style', saved.graphStyle);
+          if (whole) {
+            cy.resize();
+            cy.zoom(saved.zoom);
+            cy.pan(saved.pan);
+          }
+        }
+      }
+
+      function dataUriToBlob(dataUri) {
+        var comma = dataUri.indexOf(',');
+        var header = dataUri.slice(0, comma);
+        var mime = (header.match(/data:([^;]+)/) || [])[1] || 'image/png';
+        var binary = atob(dataUri.slice(comma + 1));
+        var bytes = new Uint8Array(binary.length);
+        for (var i = 0; i < binary.length; i += 1) {
+          bytes[i] = binary.charCodeAt(i);
+        }
+        return new Blob([bytes], { type: mime });
+      }
+
+      function loadImage(source) {
+        return new Promise(function (resolve, reject) {
+          var image = new Image();
+          image.onload = function () { resolve(image); };
+          image.onerror = function () {
+            reject(new Error('the rendered map could not be loaded'));
+          };
+          image.src = source;
+        });
+      }
+
       function exportRaster(kind) {
         // full:true renders the WHOLE graph at its own extent rather than
         // the viewport, so an estate that needs panning still exports
         // complete. The checkbox is there for when the framing IS the
         // point — a screenshot of what you are looking at.
-        var options = {
-          output: 'blob-promise',
-          full: !visibleOnly.checked,
-          scale: 2,
-          bg: getComputedStyle(document.body)
-            .getPropertyValue('--bg').trim() || '#ffffff',
-        };
-        var maker = kind === 'jpg' ? cy.jpg(options) : cy.png(options);
-        return Promise.resolve(maker).then(function (blob) {
+        var mime = kind === 'jpg' ? 'image/jpeg' : 'image/png';
+        return composeMapImage(mime, kind === 'jpg' ? 0.92 : undefined)
+          .then(function (dataUri) {
+          // Downloaded as a blob rather than the data: URI itself — a
+          // multi-megabyte data URI in an href is refused or truncated by
+          // some browsers. Decoded by hand rather than fetched, so the
+          // artifact's connect-src policy is never involved.
+          var blob = dataUriToBlob(dataUri);
           var url = URL.createObjectURL(blob);
           download(url, exportName(kind));
           // Revoked late: revoking before the click is handled loses the
@@ -2512,6 +2601,9 @@
       // the @media rules land relative to beforeprint is browser-specific
       // and a measurement taken at the wrong moment fits to the wrong box.
       var PRINT_W = 1000, PRINT_H = 560;   // ~landscape A4 inside margins
+      // The framing every composited export is rendered at, and the factor
+      // that turns it into print-usable pixels.
+      var EXPORT_W = 1600, EXPORT_H = 900, EXPORT_SCALE = 2;
       var restore = null;
 
       function fitForPrint() {
@@ -2561,30 +2653,21 @@
         var holder = document.getElementById('print-image');
         // A data: URI, NOT a blob: one. The artifact is served under
         // img-src 'self' data:, so a blob URL is refused outright and the
-        // image silently never loads — which is how this failed the first
-        // time. Downloads are unaffected by that policy, which is why PNG
-        // export can keep using a blob.
-        return Promise.resolve(cy.png({
-          output: 'base64uri', full: true, scale: 2, bg: '#ffffff',
-        })).then(function (dataUri) {
-          return new Promise(function (resolve, reject) {
-            var image = new Image();
-            // Awaited: an <img> that has not decoded yet prints blank for
-            // the same reason the live canvas did.
-            image.onload = function () { resolve(image); };
-            image.onerror = function () {
-              reject(new Error('the rendered map could not be loaded'));
-            };
-            image.alt = 'Atlas topology';
-            // Inline, so the fit is the same in both media and can be
-            // measured before printing. Left to a print-only rule, an
-            // 8000px-wide image is unconstrained everywhere it can be
-            // checked and only behaves where it cannot.
-            image.style.width = '100%';
-            image.style.height = 'auto';
-            image.src = dataUri;
-          });
+        // image silently never loads — which is how this failed once
+        // already. Downloads are unaffected by that policy, which is why
+        // the raster exports can keep using a blob.
+        return composeMapImage('image/png').then(function (dataUri) {
+          // Awaited: an <img> that has not decoded yet prints blank for
+          // the same reason the live canvas did.
+          return loadImage(dataUri);
         }).then(function (image) {
+          image.alt = 'Atlas topology';
+          // Inline, so the fit is the same in both media and can be
+          // measured before printing. Left to a print-only rule, an
+          // 8000px-wide image is unconstrained everywhere it can be
+          // checked and only behaves where it cannot.
+          image.style.width = '100%';
+          image.style.height = 'auto';
           holder.textContent = '';
           holder.appendChild(image);
           // Swapped with INLINE styles, not by a print-media class. An
@@ -3187,6 +3270,31 @@
         });
       }
 
+      // The painting itself, into ANY context whose transform is already
+      // set. Split out from draw() so an export can composite these
+      // regions into its own canvas: they live outside Cytoscape, so
+      // cy.png() renders the graph without them and an exported map
+      // silently lost every OSPF area and AS boundary on it.
+      //
+      // Positions come from renderedPosition(), so the caller must have
+      // the viewport framed exactly as it wants the output framed.
+      function renderTo(ctx) {
+        var mode = (viewSelect && viewSelect.value) || 'full';
+        if (mode !== 'full' || !regionsEnabled()) { return false; }
+
+        // OSPF areas are self-contained regions; BGP is a peering
+        // fabric. Same tint, two questions — see each helper.
+        if (routingView.ospf) {
+          (routingView.ospf.groups || []).forEach(function (group) {
+            drawRegion(ctx, 'ospf', group);
+          });
+        }
+        if (routingView.bgp) {
+          drawBgpFabric(ctx, routingView.bgp.groups || []);
+        }
+        return true;
+      }
+
       function draw() {
         var width = container.clientWidth, height = container.clientHeight;
         var ratio = window.devicePixelRatio || 1;
@@ -3200,23 +3308,11 @@
         var ctx = canvas.getContext('2d');
         ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
         ctx.clearRect(0, 0, width, height);
-
-        var mode = (viewSelect && viewSelect.value) || 'full';
-        if (mode !== 'full' || !regionsEnabled()) { return; }
-
-        // OSPF areas are self-contained regions; BGP is a peering
-        // fabric. Same tint, two questions — see each helper.
-        if (routingView.ospf) {
-          (routingView.ospf.groups || []).forEach(function (group) {
-            drawRegion(ctx, 'ospf', group);
-          });
-        }
-        if (routingView.bgp) {
-          drawBgpFabric(ctx, routingView.bgp.groups || []);
-        }
+        renderTo(ctx);
       }
 
       window.__atlasRegionsDraw = draw;
+      window.__atlasRegionsRenderTo = renderTo;
       cy.on('render', draw);
       window.addEventListener('resize', draw);
       // Switching views changes whether this layer draws at all, so it

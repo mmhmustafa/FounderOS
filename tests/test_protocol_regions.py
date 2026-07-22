@@ -211,11 +211,18 @@ class ScopeTests(unittest.TestCase):
 
     def test_the_canvas_is_cleared_before_the_scope_check(self) -> None:
         """Leaving the previous view's tint on screen after switching is
-        the failure this ordering prevents."""
+        the failure this ordering prevents.
 
-        cleared = BLOCK.index("ctx.clearRect")
-        guarded = BLOCK.index("if (mode !== 'full'")
-        self.assertLess(cleared, guarded)
+        The scope check now lives in renderTo(), which an export shares, so
+        this compares where each RUNS rather than where each appears in the
+        file: draw() clears unconditionally and only then delegates, so an
+        early return cannot skip the clear."""
+
+        draw = BLOCK.split("function draw()", 1)[1].split("\n      }", 1)[0]
+        self.assertLess(draw.index("ctx.clearRect"), draw.index("renderTo(ctx)"))
+        # And the guard is genuinely inside the delegate, not lost.
+        render_to = BLOCK.split("function renderTo(ctx)", 1)[1][:400]
+        self.assertIn("if (mode !== 'full'", render_to)
 
     def test_it_redraws_as_the_graph_moves(self) -> None:
         self.assertIn("cy.on('render', draw)", BLOCK)
