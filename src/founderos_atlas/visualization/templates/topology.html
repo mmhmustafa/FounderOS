@@ -291,23 +291,49 @@
        sheet, and the summary line stays because a topology diagram with
        no counts and no provenance is a drawing, not a record. */
     .print-only { display: none; }
+    #print-image { display: none; }
     @media print {
       @page { margin: 12mm; }
       body { background: #fff; }
       .print-only { display: block; font-size: 10px; color: #555;
         margin-top: 2px; word-break: break-all; }
+      /* Every control, not just the ones that existed when this was
+         written. A control that survives onto the sheet is furniture
+         nobody can press. */
       header #search, header .layout-label, header #fit,
+      header .zoom-controls, header #details-toggle, header #edit-mode,
       #layers-panel, #export-panel, #trace-panel, #context-menu,
-      #details-panel, #viewport-hint, #open-sites, #legend {
+      #details-panel, #viewport-hint, #open-sites, #legend, #node-list {
         display: none !important;
       }
-      header { display: block; border: 0; padding: 0 0 6px; }
-      header h1 { font-size: 16px; margin: 0 0 2px; }
-      #summary { font-size: 11px; color: #333; }
-      .graph-wrap, #cy {
-        height: 165mm !important; width: 100% !important;
-        border: 1px solid #ccc;
+      /* The screen header is a dark bar with white text. On paper that is
+         a band of toner and, worse, white text on white once the
+         background is dropped. */
+      header {
+        display: block; border: 0; padding: 0 0 6px;
+        background: #fff !important; color: #000 !important;
       }
+      header h1 { font-size: 16px; margin: 0 0 2px; color: #000; }
+      #summary {
+        display: block; font-size: 11px; color: #333 !important;
+        margin: 0;
+      }
+      /* Deliberately NOT forcing a size. The print fit sets explicit pixel
+         dimensions and re-renders the canvas to match; overriding them
+         here would leave the browser scaling that bitmap to a different
+         aspect ratio, stretching the map. This is only a floor for the
+         case where scripting never ran. */
+      main { display: block; }
+      .graph-wrap { min-height: 120mm; border: 1px solid #ccc; }
+      #cy { min-height: 120mm; }
+      /* Printing the rendered image: the live graph steps aside entirely,
+         so there is no chance of a half-painted canvas appearing beside
+         or instead of it. */
+      body.printing-image .graph-wrap { display: none !important; }
+      body.printing-image #print-image {
+        display: block !important; border: 1px solid #ccc;
+      }
+      #print-image img { width: 100%; height: auto; }
       /* Cytoscape paints to a canvas; without this Chrome drops the
          backgrounds and the map prints as an empty box. */
       * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
@@ -478,6 +504,9 @@
           <pre id="trace-live-output"></pre>
         </details>
       </div>
+      <!-- Holds the rendered map while the print dialog is open; empty at
+           every other moment, and never shown on screen. -->
+      <div id="print-image" aria-hidden="true"></div>
       <div id="open-sites" aria-label="Open sites"></div>
       <div id="viewport-hint" role="status" aria-live="polite" hidden></div>
       <div id="legend" aria-label="Legend">
@@ -2468,6 +2497,110 @@
         });
       }
 
+      // Cytoscape paints into a canvas sized to the VIEWPORT, and printing
+      // does not re-render it — so whatever was off-screen was simply
+      // absent from the sheet, silently. A printed topology missing a
+      // whole site is worse than no printout: it looks complete.
+      //
+      // The graph is therefore re-laid at a fixed print size and fitted to
+      // everything drawn, then put back exactly as it was. Explicit pixel
+      // sizes rather than waiting on the print stylesheet, because when
+      // the @media rules land relative to beforeprint is browser-specific
+      // and a measurement taken at the wrong moment fits to the wrong box.
+      var PRINT_W = 1000, PRINT_H = 560;   // ~landscape A4 inside margins
+      var restore = null;
+
+      function fitForPrint() {
+        if (restore) { return; }
+        var wrap = document.querySelector('.graph-wrap');
+        var graph = document.getElementById('cy');
+        restore = {
+          zoom: cy.zoom(), pan: Object.assign({}, cy.pan()),
+          wrapStyle: wrap.getAttribute('style') || '',
+          graphStyle: graph.getAttribute('style') || '',
+        };
+        wrap.style.width = PRINT_W + 'px';
+        wrap.style.height = PRINT_H + 'px';
+        graph.style.width = PRINT_W + 'px';
+        graph.style.height = PRINT_H + 'px';
+        cy.resize();
+        var shown = cy.elements().filter(function (element) {
+          return element.style('display') !== 'none';
+        });
+        if (shown.length) { cy.fit(shown, 24); }
+      }
+
+      function restoreAfterPrint() {
+        if (!restore) { return; }
+        var wrap = document.querySelector('.graph-wrap');
+        var graph = document.getElementById('cy');
+        wrap.setAttribute('style', restore.wrapStyle);
+        graph.setAttribute('style', restore.graphStyle);
+        cy.resize();
+        cy.zoom(restore.zoom);
+        cy.pan(restore.pan);
+        restore = null;
+      }
+
+      // Printing the LIVE canvas cannot be made reliable. window.print()
+      // is synchronous, Cytoscape repaints on an animation frame, and the
+      // browser snapshots whatever is in the canvas at that instant — so
+      // the sheet came out with the protocol regions (drawn by our own
+      // code) but no devices, links or labels at all.
+      //
+      // So the printed map is the raster export instead: the exact same
+      // cy.png() path used by PNG export, rendered full-graph, awaited,
+      // decoded, and placed in the page as an ordinary <img> before the
+      // dialog opens. An image has no paint timing to lose, and the print
+      // shows precisely what the PNG export would have given.
+      function printAsImage() {
+        var holder = document.getElementById('print-image');
+        // A data: URI, NOT a blob: one. The artifact is served under
+        // img-src 'self' data:, so a blob URL is refused outright and the
+        // image silently never loads — which is how this failed the first
+        // time. Downloads are unaffected by that policy, which is why PNG
+        // export can keep using a blob.
+        return Promise.resolve(cy.png({
+          output: 'base64uri', full: true, scale: 2, bg: '#ffffff',
+        })).then(function (dataUri) {
+          return new Promise(function (resolve, reject) {
+            var image = new Image();
+            // Awaited: an <img> that has not decoded yet prints blank for
+            // the same reason the live canvas did.
+            image.onload = function () { resolve(image); };
+            image.onerror = function () {
+              reject(new Error('the rendered map could not be loaded'));
+            };
+            image.alt = 'Atlas topology';
+            image.src = dataUri;
+          });
+        }).then(function (image) {
+          holder.textContent = '';
+          holder.appendChild(image);
+          document.body.classList.add('printing-image');
+          try {
+            window.print();
+          } finally {
+            document.body.classList.remove('printing-image');
+            holder.textContent = '';
+          }
+          say('Print dialog opened — choose "Save as PDF".');
+        });
+      }
+
+      // Ctrl+P and the browser's own print entry cannot be awaited, so
+      // they get the best effort available: refit the live canvas. It is
+      // better than printing a viewport crop, and the Export button
+      // remains the path that is guaranteed correct.
+      window.addEventListener('beforeprint', function () {
+        if (document.body.classList.contains('printing-image')) { return; }
+        fitForPrint();
+      });
+      window.addEventListener('afterprint', restoreAfterPrint);
+      window.atlasFitForPrint = fitForPrint;
+      window.atlasRestoreAfterPrint = restoreAfterPrint;
+      window.atlasPrintAsImage = printAsImage;
+
       panel.addEventListener('click', function (event) {
         var button = event.target.closest('[data-export]');
         if (!button) { return; }
@@ -2475,8 +2608,11 @@
         say('Preparing ' + kind.toUpperCase() + '…');
         try {
           if (kind === 'pdf') {
-            say('Opening the print dialog — choose "Save as PDF".');
-            window.print();
+            say('Rendering the map for print…');
+            printAsImage().catch(function (error) {
+              say('Print failed: ' + (error && error.message
+                ? error.message : 'the map could not be rendered'), true);
+            });
             return;
           }
           exportRaster(kind).catch(function (error) {

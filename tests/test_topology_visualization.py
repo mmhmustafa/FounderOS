@@ -199,6 +199,68 @@ class TopologyVisualizationTests(unittest.TestCase):
         self.assertIn("#layers-panel, #export-panel, #trace-panel", html)
         self.assertIn("print-color-adjust: exact", html)
 
+    def test_printing_uses_a_rendered_image_not_the_live_canvas(self) -> None:
+        """Printing the live canvas cannot be made reliable: window.print()
+        is synchronous, Cytoscape repaints on an animation frame, and the
+        browser snapshots whatever is in the canvas at that instant. The
+        sheet came out with the protocol regions — drawn by our own code —
+        and no devices, links or labels at all.
+
+        The printed map is the raster export instead, awaited and decoded
+        before the dialog opens. An image has no paint timing to lose."""
+
+        html = TopologyRenderer(self.snapshot).render()
+        self.assertIn("function printAsImage", html)
+        self.assertIn('id="print-image"', html)
+        self.assertIn("body.printing-image .graph-wrap", html)
+        pdf = html.split("if (kind === 'pdf')", 1)[1][:360]
+        self.assertIn("printAsImage()", pdf)
+
+    def test_the_print_image_uses_a_data_uri_the_policy_allows(self) -> None:
+        """The artifact is served under img-src 'self' data:, so a blob URL
+        is refused outright and the image silently never loads — which is
+        exactly how the first attempt failed. Downloads are unaffected by
+        that policy, which is why PNG export can keep its blob."""
+
+        html = TopologyRenderer(self.snapshot).render()
+        printer = html.split("function printAsImage", 1)[1][:1200]
+        self.assertIn("output: 'base64uri'", printer)
+        self.assertNotIn("createObjectURL", printer)
+        # Awaited: an <img> that has not decoded yet prints blank for the
+        # same reason the canvas did.
+        self.assertIn("image.onload", printer)
+        self.assertIn("full: true", printer)
+
+    def test_ctrl_p_still_refits_the_live_canvas(self) -> None:
+        # The browser's own print entry cannot be awaited, so it gets the
+        # best effort available rather than a viewport crop.
+        html = TopologyRenderer(self.snapshot).render()
+        self.assertIn("function fitForPrint", html)
+        self.assertIn("cy.resize()", html)
+        self.assertIn("beforeprint", html)
+        self.assertIn("afterprint", html)
+
+    def test_the_view_is_put_back_exactly_after_printing(self) -> None:
+        # Printing must not leave the operator somewhere else on the map.
+        html = TopologyRenderer(self.snapshot).render()
+        restore = html.split("function restoreAfterPrint", 1)[1][:520]
+        self.assertIn("cy.zoom(restore.zoom)", restore)
+        self.assertIn("cy.pan(restore.pan)", restore)
+
+    def test_the_print_sheet_carries_no_controls_and_no_dark_bar(self) -> None:
+        """A control that survives onto paper is furniture nobody can
+        press, and the screen header is a dark bar whose white text goes
+        invisible once backgrounds are dropped."""
+
+        html = TopologyRenderer(self.snapshot).render()
+        self.assertIn("header .zoom-controls", html)
+        self.assertIn("header #details-toggle", html)
+        self.assertIn("header #edit-mode", html)
+        self.assertIn("background: #fff !important", html)
+        # The forced size is gone: it fought the fitted pixel dimensions
+        # and left the browser stretching that bitmap.
+        self.assertNotIn("height: 165mm !important", html)
+
     def test_an_exported_map_carries_its_provenance(self) -> None:
         """An image that leaves Atlas loses every affordance that said what
         it was. The snapshot and its timestamp travel in the filename, and
