@@ -33,6 +33,7 @@ from founderos_atlas.discovery.models import (
     NetworkInterface,
     NetworkNeighbor,
 )
+from founderos_atlas.routing.table import iproute2_route_dicts
 
 from ..base import (
     CAP_COLLECTED,
@@ -295,11 +296,19 @@ class AtlasLabFirewallDriver(PlatformDriver):
 
         raw = discovery.raw_outputs
         firewall = parse_firewall_rules(raw.get(SHOW_FIREWALL_RULES, ""))
-        if not firewall:
+        # The RIB is captured whether or not the rule set parsed: a firewall
+        # that reports its routes but whose chain could not be read is still
+        # a device whose forwarding we can reason about, and the two pieces
+        # of evidence do not depend on each other.
+        routing_table = iproute2_route_dicts(raw.get(SHOW_ROUTE, ""))
+        if not firewall and not routing_table:
             return discovery
         metadata = dict(discovery.result.device.metadata)
-        metadata["firewall"] = firewall
-        metadata["route_count"] = _count_routes(raw.get(SHOW_ROUTE, ""))
+        if firewall:
+            metadata["firewall"] = firewall
+        if routing_table:
+            metadata["route_count"] = _count_routes(raw.get(SHOW_ROUTE, ""))
+            metadata["routing_table"] = routing_table
         result = replace(
             discovery.result,
             device=replace(discovery.result.device, metadata=metadata),

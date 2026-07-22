@@ -13,6 +13,7 @@ import unittest
 
 from founderos_atlas.routing.table import (
     parse_columnar_route_table,
+    parse_iproute2_route_table,
     parse_junos_route_table,
     parse_prefix_line_route_table,
     parse_route_table,
@@ -229,6 +230,58 @@ class ColumnarGrammarTests(unittest.TestCase):
         ospf = self.routes["192.0.2.128/25"]
         self.assertEqual(("172.20.40.3", "ethernet1/2", 110),
                          (ospf.next_hop, ospf.interface, ospf.metric))
+
+
+# Captured verbatim from an AtlasLab perimeter firewall (`show route`).
+IPROUTE2 = """default via 10.90.1.1 dev eth1
+10.90.1.0/30 dev eth1 proto kernel scope link src 10.90.1.2
+10.90.1.4/30 dev eth2 proto kernel scope link src 10.90.1.5
+10.251.1.0/24 via 10.90.1.6 dev eth2
+172.20.20.0/24 dev eth0 proto kernel scope link src 172.20.20.12
+172.30.4.0/22 via 10.90.1.6 dev eth2
+"""
+
+
+class Iproute2GrammarTests(unittest.TestCase):
+    """Linux-based devices (the lab's perimeter firewalls) answer with
+    iproute2: no protocol code, no columns — named fields in any order,
+    and "default" for 0.0.0.0/0."""
+
+    def setUp(self) -> None:
+        self.routes = {r.prefix: r
+                       for r in parse_iproute2_route_table(IPROUTE2)}
+
+    def test_every_route_line_is_read(self) -> None:
+        self.assertEqual(6, len(self.routes))
+
+    def test_default_is_the_default_route(self) -> None:
+        default = self.routes["0.0.0.0/0"]
+        self.assertEqual(("static", "10.90.1.1", "eth1"),
+                         (default.protocol, default.next_hop, default.interface))
+
+    def test_proto_kernel_with_no_via_is_connected(self) -> None:
+        link = self.routes["172.20.20.0/24"]
+        self.assertEqual(("connected", None, "eth0", True),
+                         (link.protocol, link.next_hop, link.interface,
+                          link.connected))
+
+    def test_a_via_route_keeps_its_next_hop_and_port(self) -> None:
+        far = self.routes["172.30.4.0/22"]
+        self.assertEqual(("10.90.1.6", "eth2"), (far.next_hop, far.interface))
+
+    def test_ecmp_nexthop_continuations_are_read(self) -> None:
+        routes = parse_iproute2_route_table(
+            "default proto static\n"
+            "\tnexthop via 10.0.0.1 dev eth0 weight 1\n"
+            "\tnexthop via 10.0.0.2 dev eth1 weight 1\n"
+        )
+        self.assertEqual({"10.0.0.1", "10.0.0.2"},
+                         {r.next_hop for r in routes})
+        self.assertTrue(all(r.prefix == "0.0.0.0/0" for r in routes))
+
+    def test_a_host_route_without_a_mask_becomes_a_32(self) -> None:
+        routes = parse_iproute2_route_table("10.1.2.3 via 10.0.0.1 dev eth0\n")
+        self.assertEqual("10.1.2.3/32", routes[0].prefix)
 
 
 class RobustnessTests(unittest.TestCase):

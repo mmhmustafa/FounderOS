@@ -354,6 +354,82 @@ def parse_columnar_route_table(text: str) -> tuple[RouteEntry, ...]:
     return tuple(entries)
 
 
+# -- the iproute2 dialect (Linux-based firewalls and hosts) ------------------
+#
+#   default via 10.90.1.1 dev eth1
+#   10.90.1.0/30 dev eth1 proto kernel scope link src 10.90.1.2
+#   10.251.1.0/24 via 10.90.1.6 dev eth2
+#
+# No protocol code and no columns: the fields are named, in any order, and
+# "default" is how this dialect writes 0.0.0.0/0. A route with no `via` is
+# reachable on its link — connected — which is also what `proto kernel`
+# means here. ECMP arrives as indented `nexthop via …` continuation lines.
+
+_IPROUTE_HEAD = re.compile(
+    r"^(?P<prefix>default|\d{1,3}(?:\.\d{1,3}){3}(?:/\d{1,2})?)\b(?P<rest>.*)$"
+)
+_IPROUTE_NEXTHOP = re.compile(r"^nexthop\b(?P<rest>.*)$")
+_IPROUTE_PROTOCOLS = {
+    "kernel": "connected", "static": "static", "boot": "static",
+    "dhcp": "dhcp", "ra": "ra", "ospf": "ospf", "bgp": "bgp",
+    "rip": "rip", "isis": "isis", "babel": "babel",
+    # FRR/Quagga and BIRD install with their own protocol ids; report the
+    # daemon rather than guessing which protocol inside it chose the route.
+    "zebra": "zebra", "bird": "bird",
+}
+
+
+def _iproute_field(rest: str, name: str) -> str | None:
+    found = re.search(rf"\b{name}\s+(\S+)", rest)
+    return found.group(1) if found else None
+
+
+def _iproute_entry(prefix: str, rest: str) -> RouteEntry:
+    next_hop = _iproute_field(rest, "via")
+    interface = _iproute_field(rest, "dev")
+    metric = _iproute_field(rest, "metric")
+    proto = _iproute_field(rest, "proto")
+    if proto:
+        protocol = _IPROUTE_PROTOCOLS.get(proto, proto)
+    else:
+        # iproute2 omits `proto boot` for a route configured by hand. With
+        # no next-hop the prefix is simply on this link.
+        protocol = "connected" if not next_hop else "static"
+    return RouteEntry(
+        prefix=prefix, protocol=protocol, next_hop=next_hop,
+        interface=interface,
+        metric=int(metric) if metric and metric.isdigit() else None,
+        connected=protocol in ("connected", "local"),
+    )
+
+
+def parse_iproute2_route_table(text: str) -> tuple[RouteEntry, ...]:
+    """Read Linux `ip route` output into RouteEntry."""
+
+    entries: list[RouteEntry] = []
+    prefix: str | None = None
+    for raw in (text or "").splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        hop = _IPROUTE_NEXTHOP.match(line)
+        if hop and prefix:                      # an ECMP continuation
+            entries.append(_iproute_entry(prefix, hop.group("rest")))
+            continue
+        head = _IPROUTE_HEAD.match(line)
+        if not head:
+            continue                            # blackhole/unreachable: not modelled
+        prefix = head.group("prefix")
+        if prefix == "default":
+            prefix = "0.0.0.0/0"
+        elif "/" not in prefix:
+            prefix += "/32"
+        rest = head.group("rest")
+        if "via" in rest or "dev" in rest:
+            entries.append(_iproute_entry(prefix, rest))
+    return tuple(entries)
+
+
 def route_dicts(entries) -> list[dict]:
     """Any parsed RouteEntry sequence as JSON-ready dicts."""
 
@@ -382,3 +458,9 @@ def columnar_route_dicts(text: str) -> list[dict]:
     """The PAN-OS RIB as JSON-ready dicts."""
 
     return route_dicts(parse_columnar_route_table(text))
+
+
+def iproute2_route_dicts(text: str) -> list[dict]:
+    """The Linux `ip route` RIB as JSON-ready dicts."""
+
+    return route_dicts(parse_iproute2_route_table(text))
