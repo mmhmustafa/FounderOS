@@ -358,7 +358,7 @@
           <button type="button" id="trace-whatif" hidden
             title="Re-run the trace assuming this hop is changed to permit the flow — does it get through, and where does it stop next?">Simulate fix</button>
           <button type="button" id="trace-revert" hidden
-            title="Drop every assumption — permitted hops and withdrawn routes — and re-run the real trace">Revert what-if</button>
+            title="Drop EVERY assumption at once — permitted hops and withdrawn routes — and re-run the real trace. To undo one withdrawn route on its own, use Restore beside it.">Revert all</button>
           <button type="button" id="trace-flow" hidden
             title="Pause or resume the flowing packet">Pause flow</button>
           <button type="button" id="trace-live" class="trace-probe" hidden
@@ -3045,52 +3045,88 @@
         return parts.length ? 'What-if — assuming ' + parts.join(' and ') + ': ' : '';
       }
 
+      function routeKey(device, prefix) { return device + ' ' + prefix; }
+
       // The routes the path actually forwarded on, each one something the
       // operator can ask "and if this went away?" about. Only hops whose
       // device had a captured table carry one, so this list is exactly as
       // long as the forwarding evidence is — never padded with guesses.
+      //
+      // The withdrawn ones are kept from state rather than read back out of
+      // the report, because a withdrawal that BREAKS the path takes its own
+      // hop off the re-run: the row would vanish at the exact moment the
+      // operator most wants to put it back.
       function renderRoutes(report) {
         var hops = (report && report.hops) || [];
         routesList.textContent = '';
-        var shown = 0;
+        var rows = [];
+        var seen = {};
         hops.forEach(function (hop) {
           if (!hop.route || !hop.route.prefix) { return; }
-          shown += 1;
+          seen[routeKey(hop.device, hop.route.prefix)] = true;
+          rows.push({
+            device: hop.device,
+            prefix: hop.route.prefix,
+            what: hop.route.prefix
+              + (hop.route.next_hop ? ' via ' + hop.route.next_hop : '')
+              + (hop.route.protocol ? ' (' + hop.route.protocol + ')' : ''),
+          });
+        });
+        state.withdrawn.forEach(function (item) {
+          if (seen[routeKey(item.device, item.prefix)]) { return; }
+          // No next hop or protocol to show: this route is not in the
+          // re-run at all. Say only what is known — it was withdrawn.
+          rows.push({ device: item.device, prefix: item.prefix,
+                      what: item.prefix });
+        });
+        rows.forEach(function (entry) {
           var gone = state.withdrawn.some(function (item) {
-            return item.device === hop.device
-              && item.prefix === hop.route.prefix;
+            return item.device === entry.device && item.prefix === entry.prefix;
           });
           var row = document.createElement('li');
           if (gone) { row.className = 'trace-route-gone'; }
           var device = document.createElement('span');
           device.className = 'trace-route-dev';
-          device.textContent = hop.device;
+          device.textContent = entry.device;
           var what = document.createElement('span');
           what.className = 'trace-route-what';
-          what.textContent = hop.route.prefix
-            + (hop.route.next_hop ? ' via ' + hop.route.next_hop : '')
-            + (hop.route.protocol ? ' (' + hop.route.protocol + ')' : '');
-          what.title = what.textContent;
+          what.textContent = entry.what;
+          what.title = entry.what;
           row.appendChild(device);
           row.appendChild(what);
-          if (!gone) {
-            var button = document.createElement('button');
-            button.type = 'button';
+          var button = document.createElement('button');
+          button.type = 'button';
+          if (gone) {
+            // Undo THIS withdrawal alone. The blanket revert drops every
+            // assumption at once, which is the wrong tool when several are
+            // in play and only one is being questioned.
+            button.textContent = 'Restore';
+            button.title = 'Put this route back and re-run, leaving every '
+              + 'other assumption in place';
+            button.addEventListener('click', function () {
+              if (state.running) { return; }
+              state.withdrawn = state.withdrawn.filter(function (item) {
+                return !(item.device === entry.device
+                  && item.prefix === entry.prefix);
+              });
+              runTrace();
+            });
+          } else {
             button.textContent = 'Withdraw';
             button.title = 'Re-run assuming this route is withdrawn — does '
               + 'the path survive on a less specific route, or break?';
             button.addEventListener('click', function () {
               if (state.running) { return; }
               state.withdrawn = state.withdrawn.concat([
-                { device: hop.device, prefix: hop.route.prefix }
+                { device: entry.device, prefix: entry.prefix }
               ]);
               runTrace();
             });
-            row.appendChild(button);
           }
+          row.appendChild(button);
           routesList.appendChild(row);
         });
-        routesPanel.hidden = shown === 0;
+        routesPanel.hidden = rows.length === 0;
       }
 
       function syncProto() {

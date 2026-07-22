@@ -230,6 +230,39 @@ class ViewerContractTests(unittest.TestCase):
         self.assertIn("state.withdrawn = []", revert)
         self.assertIn("runTrace()", revert)
 
+    def test_a_single_withdrawal_can_be_undone_on_its_own(self) -> None:
+        """With several assumptions in play, the blanket revert is the
+        wrong tool for questioning just one of them: it drops the lot. Each
+        withdrawn route carries its own Restore, which leaves every other
+        assumption standing."""
+
+        self.assertIn("'Restore'", self.viewer)
+        restore = self.viewer.split("button.textContent = 'Restore'", 1)[1][:520]
+        self.assertIn("state.withdrawn.filter", restore)
+        self.assertIn("runTrace()", restore)
+        # Filtered by BOTH device and prefix — the same prefix withdrawn at
+        # two devices is two separate assumptions.
+        self.assertIn("item.device === entry.device", restore)
+        self.assertIn("item.prefix === entry.prefix", restore)
+
+    def test_a_withdrawn_route_stays_listed_when_it_breaks_the_path(self) -> None:
+        """The row used to be derived purely from the report, so a
+        withdrawal that broke the path took its own hop off the re-run and
+        the row vanished — removing the only per-route way back at exactly
+        the moment it was wanted. The withdrawal list is state, and rows
+        are the union of it and the report."""
+
+        render = self.viewer.split("function renderRoutes", 1)[1][:1500]
+        self.assertIn("state.withdrawn.forEach", render)
+        self.assertIn("if (seen[routeKey(item.device, item.prefix)]) { return; }",
+                      render)
+
+    def test_the_blanket_revert_says_it_is_blanket(self) -> None:
+        # With a per-route Restore alongside it, a button labelled just
+        # "Revert what-if" reads as undoing the one you are looking at.
+        self.assertIn(">Revert all</button>", self.viewer)
+        self.assertIn("Drop EVERY assumption at once", self.viewer)
+
     def test_the_way_back_is_offered_exactly_when_it_applies(self) -> None:
         # Shown whenever an assumption is live — including a withdrawn
         # route, which had no revert at all — and hidden once none is.
