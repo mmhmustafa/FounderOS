@@ -72,6 +72,47 @@ def apply_permit_whatif(snapshot, device_policies, assume_permit_at):
     return snapshot, device_policies
 
 
+def apply_route_whatif(snapshot, withdraw_routes):
+    """Withdraw the named routes from the devices that hold them.
+
+    ``withdraw_routes`` is a sequence of (device, prefix) pairs. Each is
+    removed from that device's captured routing table, so the engine's
+    longest-prefix match reaches whatever the device would ACTUALLY fall
+    back to — a less specific route, a default, or nothing at all, which
+    is the answer the operator is asking for.
+
+    Withdrawing a prefix is not the same as claiming the route is gone: it
+    is a question ("if this were withdrawn…"), and the caller labels it as
+    one. The input snapshot is deep-copied, never mutated, because the
+    original belongs to the real investigation.
+    """
+
+    wanted = {
+        (str(device).casefold(), str(prefix).strip())
+        for device, prefix in withdraw_routes
+    }
+    if not isinstance(snapshot, dict):
+        return snapshot
+    snapshot = copy.deepcopy(snapshot)
+    for device in snapshot.get("devices") or ():
+        if not isinstance(device, dict):
+            continue
+        host = str(device.get("hostname") or "").casefold()
+        metadata = device.get("metadata")
+        if not isinstance(metadata, dict):
+            continue
+        table = metadata.get("routing_table")
+        if not table:
+            continue
+        kept = [
+            route for route in table
+            if (host, str((route or {}).get("prefix") or "")) not in wanted
+        ]
+        if len(kept) != len(table):
+            metadata["routing_table"] = kept
+    return snapshot
+
+
 def investigate_path_for_scope(
     source: str,
     destination: str,
@@ -86,6 +127,7 @@ def investigate_path_for_scope(
     intent: dict | None = None,
     policy_roots: tuple[Path, ...] | None = None,
     assume_permit_at: tuple[str, ...] = (),
+    withdraw_routes: tuple[tuple[str, str], ...] = (),
     persist: bool = True,
 ) -> PathInvestigationResult:
     """Investigate one source→destination pair using scope evidence on disk.
@@ -132,12 +174,15 @@ def investigate_path_for_scope(
             safe_name=safe_artifact_name,
         )
 
-    # The what-if never persists: it must not overwrite the real report or
+    # A what-if never persists: it must not overwrite the real report or
     # enter the investigation history.
     if assume_permit_at:
         snapshot, device_policies = apply_permit_whatif(
             snapshot, device_policies, assume_permit_at
         )
+        persist = False
+    if withdraw_routes:
+        snapshot = apply_route_whatif(snapshot, withdraw_routes)
         persist = False
 
     result = investigate_path(

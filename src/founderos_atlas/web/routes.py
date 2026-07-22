@@ -4820,7 +4820,7 @@ def register_routes(app) -> None:
         )
 
     def _run_path_trace(source, destination, intent, case_id="",
-                        assume_permit_at=()):
+                        assume_permit_at=(), withdraw_routes=()):
         """Run one deterministic path investigation for the active scope
         and return the stored report dict (with declared intent attached)
         or an error string. Shared by the Paths form and the topology
@@ -4867,6 +4867,7 @@ def register_routes(app) -> None:
                     for profile in profiles
                 ),
                 assume_permit_at=assume_permit_at,
+                withdraw_routes=withdraw_routes,
             )
             report_dir = enterprise_dir
         else:
@@ -4880,10 +4881,11 @@ def register_routes(app) -> None:
                 profile_id=scope.scope_id,
                 intent=intent or None,
                 assume_permit_at=assume_permit_at,
+                withdraw_routes=withdraw_routes,
             )
             report_dir = scope.output_dir
         report_path = report_dir / "path_investigation_report.json"
-        if assume_permit_at:
+        if assume_permit_at or withdraw_routes:
             # Transient: read the what-if straight off the run, never the
             # on-disk report — which is (still) the real investigation.
             stored = result.to_dict()
@@ -4908,7 +4910,7 @@ def register_routes(app) -> None:
                 )
             except ValueError:
                 pass
-        if (intent or case_id) and not assume_permit_at:
+        if (intent or case_id) and not (assume_permit_at or withdraw_routes):
             import json as _json
 
             report_path.write_text(
@@ -4979,14 +4981,41 @@ def register_routes(app) -> None:
         assume_permit_at = tuple(
             str(name).strip() for name in raw_permit[:8] if str(name).strip()
         )
+        # What-if: routes to withdraw, as {device, prefix} pairs. Bounded for
+        # the same reason — a request cannot ask the engine to empty a table.
+        raw_withdraw = body.get("withdraw_routes") or []
+        if not isinstance(raw_withdraw, list):
+            return {"error": "withdraw_routes must be a list"}, 400
+        withdraw_routes = []
+        for item in raw_withdraw[:16]:
+            if not isinstance(item, dict):
+                return {
+                    "error": "each withdraw_routes entry needs device and prefix"
+                }, 400
+            device = str(item.get("device") or "").strip()
+            prefix = str(item.get("prefix") or "").strip()
+            if not device or not prefix:
+                return {
+                    "error": "each withdraw_routes entry needs device and prefix"
+                }, 400
+            withdraw_routes.append((device, prefix))
+        withdraw_routes = tuple(withdraw_routes)
         stored, error = _run_path_trace(
-            source, destination, intent, assume_permit_at=assume_permit_at
+            source, destination, intent,
+            assume_permit_at=assume_permit_at,
+            withdraw_routes=withdraw_routes,
         )
         if error:
             return {"error": error}, 409
-        if assume_permit_at:
+        if assume_permit_at or withdraw_routes:
             stored = dict(stored)
-            stored["what_if"] = {"assumed_permit_at": list(assume_permit_at)}
+            stored["what_if"] = {
+                "assumed_permit_at": list(assume_permit_at),
+                "withdrawn_routes": [
+                    {"device": device, "prefix": prefix}
+                    for device, prefix in withdraw_routes
+                ],
+            }
         return stored
 
     def _reachability_detail(state, hostname, probe_protocol):

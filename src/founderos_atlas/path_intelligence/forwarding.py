@@ -23,8 +23,14 @@ from ipaddress import ip_address, ip_network
 from typing import Any
 
 
-def routes_from_metadata(metadata: Any) -> tuple[dict, ...]:
-    """The captured RIB out of a snapshot device's metadata, or empty.
+def routes_from_metadata(metadata: Any) -> tuple[dict, ...] | None:
+    """The captured RIB out of a snapshot device's metadata.
+
+    Returns None when no table was captured at all, and a tuple — possibly
+    EMPTY — when one was. The difference matters: "we never looked" must
+    stay unevaluated, while "we looked and the table holds nothing that
+    could carry this packet" is a real verdict. Conflating them would have
+    made a what-if that withdraws every route read as silence.
 
     Accepts the list-of-dicts the drivers write and the ordered key/value
     pairs a snapshot serializer may produce, so this survives a change of
@@ -33,8 +39,12 @@ def routes_from_metadata(metadata: Any) -> tuple[dict, ...]:
     """
 
     if not isinstance(metadata, dict):
-        return ()
+        return None
+    if "routing_table" not in metadata:
+        return None
     captured = metadata.get("routing_table")
+    if captured is None:
+        return None
     if not captured:
         return ()
     routes: list[dict] = []

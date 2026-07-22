@@ -189,6 +189,27 @@ class ViewerContractTests(unittest.TestCase):
         self.assertIn("'acl-deny'", gate)
         self.assertIn("'firewall-deny'", gate)
 
+    def test_the_routes_a_path_relies_on_can_be_withdrawn(self) -> None:
+        """"What breaks if this route goes away?" — the panel lists the route
+        each hop forwarded on and offers to withdraw it and re-run. It reads
+        hop.route structurally rather than parsing the evidence sentence, and
+        lists only hops that HAD a captured table, so it is never padded with
+        guesses."""
+
+        self.assertIn('id="trace-routes"', self.viewer)
+        self.assertIn("function renderRoutes", self.viewer)
+        self.assertIn("if (!hop.route || !hop.route.prefix) { return; }",
+                      self.viewer)
+        self.assertIn("withdraw_routes: state.withdrawn", self.viewer)
+        self.assertIn("Withdraw", self.viewer)
+
+    def test_a_withdrawal_is_named_in_every_line_it_produces(self) -> None:
+        prefix = self.viewer.split("function whatIfPrefix", 1)[1][:600]
+        self.assertIn("withdrawn from", prefix)
+        # A fresh trace and Clear both forget the withdrawals.
+        run = self.viewer.split("runButton.addEventListener", 1)[1][:260]
+        self.assertIn("state.withdrawn = []", run)
+
     def test_a_what_if_result_is_labelled_hypothetical(self) -> None:
         """Every line a what-if produces names the assumed hops, so it can
         never be mistaken for the real verdict."""

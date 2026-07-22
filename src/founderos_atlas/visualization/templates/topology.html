@@ -131,6 +131,17 @@
     #trace-status[data-tone="failed"] { color: #b91c1c; font-weight: 600; }
     #trace-status[data-tone="warn"] { color: #b45309; }
     #trace-status[data-tone="ok"] { color: #166534; }
+    #trace-routes { margin-top: 7px; font-size: 12px; max-width: 300px; }
+    #trace-routes .trace-routes-head { margin: 0 0 3px; color: #475569; font-weight: 600; }
+    #trace-routes ul { list-style: none; margin: 0; padding: 0; }
+    #trace-routes li { display: flex; gap: 6px; align-items: baseline; padding: 1px 0; }
+    #trace-routes .trace-route-what { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+    #trace-routes .trace-route-dev { color: #475569; }
+    #trace-routes button { font: inherit; font-size: 11px; padding: 1px 6px; border: 1px solid #d6dbe3; border-radius: 5px; background: #f8fafc; color: #0f172a; cursor: pointer; }
+    #trace-routes li.trace-route-gone .trace-route-what { text-decoration: line-through; opacity: 0.6; }
+    body[data-theme="dark"] #trace-routes .trace-routes-head,
+    body[data-theme="dark"] #trace-routes .trace-route-dev { color: #a9b6c8; }
+    body[data-theme="dark"] #trace-routes button { background: #1a2740; color: #e5edf8; border-color: #3a4b63; }
     .trace-hostkey-link { display: inline-block; margin-top: 4px; color: #2563eb; font-weight: 600; }
     body[data-theme="dark"] .trace-hostkey-link { color: #93c5fd; }
     #trace-live-detail { margin-top: 6px; font-size: 12px; }
@@ -341,6 +352,10 @@
           <button type="button" id="trace-clear">Clear</button>
         </div>
         <p id="trace-status" role="status" aria-live="polite" hidden></p>
+        <div id="trace-routes" hidden>
+          <p class="trace-routes-head">Routes this path relies on</p>
+          <ul id="trace-routes-list"></ul>
+        </div>
         <details id="trace-live-detail" hidden>
           <summary>Probe output</summary>
           <pre id="trace-live-output"></pre>
@@ -2883,7 +2898,11 @@
         // trace. Accumulates so repeated "Simulate fix" walks the packet
         // through one blocking hop after another.
         assumePermit: [],
+        // Routes a what-if is assuming withdrawn, as {device, prefix}.
+        withdrawn: [],
       };
+      var routesPanel = document.getElementById('trace-routes');
+      var routesList = document.getElementById('trace-routes-list');
       var reducedMotion = window.matchMedia(
         '(prefers-reduced-motion: reduce)'
       ).matches;
@@ -2961,13 +2980,65 @@
         statusEl.hidden = !text;
       }
 
-      // Names the hops a what-if is assuming permit the flow, so every line
-      // it produces is unmistakably hypothetical, never the real verdict.
+      // Names what a what-if is assuming, so every line it produces is
+      // unmistakably hypothetical, never the real verdict.
       function whatIfPrefix() {
-        return state.assumePermit.length
-          ? 'What-if — assuming ' + state.assumePermit.join(', ')
-            + ' permit this: '
-          : '';
+        var parts = [];
+        if (state.assumePermit.length) {
+          parts.push(state.assumePermit.join(', ') + ' permit this');
+        }
+        state.withdrawn.forEach(function (item) {
+          parts.push(item.prefix + ' withdrawn from ' + item.device);
+        });
+        return parts.length ? 'What-if — assuming ' + parts.join(' and ') + ': ' : '';
+      }
+
+      // The routes the path actually forwarded on, each one something the
+      // operator can ask "and if this went away?" about. Only hops whose
+      // device had a captured table carry one, so this list is exactly as
+      // long as the forwarding evidence is — never padded with guesses.
+      function renderRoutes(report) {
+        var hops = (report && report.hops) || [];
+        routesList.textContent = '';
+        var shown = 0;
+        hops.forEach(function (hop) {
+          if (!hop.route || !hop.route.prefix) { return; }
+          shown += 1;
+          var gone = state.withdrawn.some(function (item) {
+            return item.device === hop.device
+              && item.prefix === hop.route.prefix;
+          });
+          var row = document.createElement('li');
+          if (gone) { row.className = 'trace-route-gone'; }
+          var device = document.createElement('span');
+          device.className = 'trace-route-dev';
+          device.textContent = hop.device;
+          var what = document.createElement('span');
+          what.className = 'trace-route-what';
+          what.textContent = hop.route.prefix
+            + (hop.route.next_hop ? ' via ' + hop.route.next_hop : '')
+            + (hop.route.protocol ? ' (' + hop.route.protocol + ')' : '');
+          what.title = what.textContent;
+          row.appendChild(device);
+          row.appendChild(what);
+          if (!gone) {
+            var button = document.createElement('button');
+            button.type = 'button';
+            button.textContent = 'Withdraw';
+            button.title = 'Re-run assuming this route is withdrawn — does '
+              + 'the path survive on a less specific route, or break?';
+            button.addEventListener('click', function () {
+              if (state.running) { return; }
+              state.withdrawn = state.withdrawn.concat([
+                { device: hop.device, prefix: hop.route.prefix }
+              ]);
+              runTrace();
+            });
+            row.appendChild(button);
+          }
+          routesList.appendChild(row);
+        });
+        routesPanel.hidden = shown === 0;
       }
 
       function syncProto() {
@@ -3086,6 +3157,8 @@
         if (!keepReport) {
           state.report = null;
           state.assumePermit = [];   // Clear forgets the what-if hops.
+          state.withdrawn = [];
+          routesPanel.hidden = true;
           replayButton.hidden = true;
           liveButton.hidden = true;
           liveDetail.hidden = true;
@@ -3304,7 +3377,10 @@
         }
         whatIfButton.hidden = true;
         var assume = state.assumePermit || [];
-        showStatus(assume.length ? 'Simulating the fix…' : 'Investigating…', '');
+        showStatus(
+          state.withdrawn.length ? 'Simulating the withdrawal…'
+            : assume.length ? 'Simulating the fix…' : 'Investigating…', ''
+        );
         var csrfMatch = document.cookie.match(/(?:^|; )atlas_csrf=([^;]*)/);
         var headers = { 'Content-Type': 'application/json' };
         if (csrfMatch) {
@@ -3316,6 +3392,7 @@
             source: state.source, destination: state.destination,
             protocol: protoSelect.value, port: portInput.value,
             assume_permit_at: assume,
+            withdraw_routes: state.withdrawn,
           }),
         }).then(function (response) {
           return response.json().then(function (body) {
@@ -3325,6 +3402,7 @@
               return;
             }
             state.report = body;
+            renderRoutes(body);
             animateReport(body);
           });
         }).catch(function () {
@@ -3333,8 +3411,9 @@
       }
 
       runButton.addEventListener('click', function () {
-        // A fresh trace forgets any what-if hops assumed by a prior run.
+        // A fresh trace forgets every what-if a prior run assumed.
         state.assumePermit = [];
+        state.withdrawn = [];
         runTrace();
       });
 

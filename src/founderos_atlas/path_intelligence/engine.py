@@ -679,6 +679,7 @@ class _Investigation:
         # Forwarding (PR-102): the link is up and policy permits the packet —
         # would this device actually forward it? Adjacency says a way exists;
         # only the routing table says the device would use it.
+        chosen_route: list[dict] = []
         no_route = self._route_check(
             hop_number=hop_number,
             key=key,
@@ -686,9 +687,11 @@ class _Investigation:
             egress=egress,
             link_state=link_state,
             evidence=evidence,
+            chosen=chosen_route,
         )
         if no_route is not None:
             return no_route
+        route = chosen_route[0] if chosen_route else None
 
         if missing:
             self.unknowns.extend(missing)
@@ -709,6 +712,7 @@ class _Investigation:
                 evidence=tuple(evidence),
                 missing_evidence=tuple(missing),
                 failure_type=None,
+                route=route,
             )
         parts = []
         if ingress:
@@ -734,6 +738,7 @@ class _Investigation:
             ),
             evidence=tuple(evidence),
             failure_type=None,
+            route=route,
         )
 
     def _policy_check(
@@ -893,6 +898,7 @@ class _Investigation:
         egress: str | None,
         link_state: str,
         evidence: list[str],
+        chosen: list[dict],
     ) -> HopResult | None:
         """Would this hop forward the packet toward the destination?
 
@@ -918,7 +924,8 @@ class _Investigation:
         name = self._display_name(key)
         device = self.devices.get(key)
         routes = routes_from_metadata((device or {}).get("metadata"))
-        if not routes:
+        if routes is None:
+            # No table was captured — "we never looked" is not a verdict.
             if name not in self.route_hops_unevaluated:
                 self.route_hops_unevaluated.append(name)
             self.unknowns.append(
@@ -934,6 +941,10 @@ class _Investigation:
                     f"{name} routes {address} by {describe_route(match)} "
                     f"(captured routing table)"
                 )
+                # Hand the chosen route back structurally so a caller can
+                # act on it — withdraw it and re-run — without having to
+                # parse the sentence above.
+                chosen.append(dict(match))
                 return None
         target = self.destination_addresses[0]
         return HopResult(

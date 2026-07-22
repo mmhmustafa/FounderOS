@@ -20,6 +20,7 @@ from founderos_atlas.path_intelligence.forwarding import (
     longest_prefix_match,
     routes_from_metadata,
 )
+from founderos_atlas.path_intelligence.service import apply_route_whatif
 from tests.test_prediction_architecture import NOW, chain
 
 
@@ -83,8 +84,17 @@ class LongestPrefixTests(unittest.TestCase):
         self.assertEqual(
             1, len(routes_from_metadata({"routing_table": [as_pairs]}))
         )
-        self.assertEqual((), routes_from_metadata({}))
-        self.assertEqual((), routes_from_metadata(None))
+
+    def test_never_captured_is_distinct_from_captured_and_empty(self) -> None:
+        """"We never looked" must stay unevaluated, while "we looked and the
+        table holds nothing" is a real verdict. Conflating them made a
+        what-if that withdraws every route read as silence instead of as the
+        black hole it creates."""
+
+        self.assertIsNone(routes_from_metadata({}))          # never captured
+        self.assertIsNone(routes_from_metadata(None))
+        self.assertIsNone(routes_from_metadata({"routing_table": None}))
+        self.assertEqual((), routes_from_metadata({"routing_table": []}))
 
     def test_a_route_reads_as_an_operator_would_say_it(self) -> None:
         self.assertIn(
@@ -164,6 +174,68 @@ class EngineForwardingTests(unittest.TestCase):
         result = investigate_path("R1", "SW2", snapshot=snapshot,
                                   generated_at=NOW)
         self.assertEqual("connected", result.status)
+
+
+class WithdrawRouteWhatIfTests(unittest.TestCase):
+    """"What breaks if this route goes away?" — asked by withdrawing the
+    prefix from the captured table and re-running the same engine."""
+
+    def _snapshot(self):
+        return snapshot_with_routes("SW1", [
+            route("10.0.0.0/24", "ospf", "10.0.0.9", distance=110),
+            route("0.0.0.0/0", "static", "10.0.0.254", distance=1),
+        ])
+
+    def test_withdrawing_a_prefix_falls_back_to_the_less_specific_route(self) -> None:
+        """The answer an operator actually wants: not "it breaks" but WHAT
+        the device would then use. Withdrawing the /24 leaves the default,
+        and the packet still gets through by it."""
+
+        snapshot = self._snapshot()
+        before = investigate_path("R1", "SW2", snapshot=snapshot,
+                                  generated_at=NOW)
+        self.assertEqual(
+            "10.0.0.0/24",
+            next(h for h in before.hops if h.device == "SW1").route["prefix"],
+        )
+        after = investigate_path(
+            "R1", "SW2", generated_at=NOW,
+            snapshot=apply_route_whatif(snapshot, [("SW1", "10.0.0.0/24")]),
+        )
+        self.assertEqual("connected", after.status)
+        self.assertEqual(
+            "0.0.0.0/0",
+            next(h for h in after.hops if h.device == "SW1").route["prefix"],
+        )
+
+    def test_withdrawing_every_route_is_a_black_hole_not_silence(self) -> None:
+        snapshot = apply_route_whatif(
+            self._snapshot(), [("SW1", "10.0.0.0/24"), ("SW1", "0.0.0.0/0")]
+        )
+        result = investigate_path("R1", "SW2", snapshot=snapshot,
+                                  generated_at=NOW)
+        self.assertEqual("failed", result.status)
+        self.assertEqual("no-route", result.failure_type)
+
+    def test_the_real_snapshot_is_never_mutated(self) -> None:
+        """A what-if is a question, not an edit: the caller's snapshot
+        belongs to the real investigation."""
+
+        snapshot = self._snapshot()
+        apply_route_whatif(snapshot, [("SW1", "10.0.0.0/24")])
+        table = next(d for d in snapshot["devices"]
+                     if d["hostname"] == "SW1")["metadata"]["routing_table"]
+        self.assertEqual(2, len(table))
+
+    def test_withdrawing_a_route_another_device_holds_changes_nothing(self) -> None:
+        # The pair is (device, prefix): a prefix is only withdrawn from the
+        # device that was named, never wherever it happens to appear.
+        snapshot = apply_route_whatif(
+            self._snapshot(), [("SW2", "10.0.0.0/24")]
+        )
+        table = next(d for d in snapshot["devices"]
+                     if d["hostname"] == "SW1")["metadata"]["routing_table"]
+        self.assertEqual(2, len(table))
 
 
 if __name__ == "__main__":

@@ -58,6 +58,11 @@ class HopResult:
     evidence: tuple[str, ...] = ()
     missing_evidence: tuple[str, ...] = ()
     failure_type: str | None = None
+    # The route this hop would forward on, when a routing table was
+    # captured to decide it. Structured rather than only narrated, so a
+    # caller can act on it — withdraw it and re-run, say — without parsing
+    # an English sentence back apart.
+    route: dict[str, Any] | None = None
 
     @property
     def confidence_band(self) -> str:
@@ -83,6 +88,7 @@ class HopResult:
             "evidence": list(self.evidence),
             "missing_evidence": list(self.missing_evidence),
             "failure_type": self.failure_type,
+            "route": dict(self.route) if self.route else None,
         }
 
 
