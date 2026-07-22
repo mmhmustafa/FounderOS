@@ -2626,11 +2626,12 @@
           path.moveTo(point.x + radius, point.y);
           path.arc(point.x, point.y, radius, 0, Math.PI * 2);
         });
-        // Wide enough to read as a peering session at a glance — a
-        // hairline vanished on the estate view — yet still visibly
-        // thinner than a member disc so it stays a connection, not a
-        // second AS.
-        var PEER_HALF_WIDTH = 12;
+        // A bold peering band, so the fabric tying the ASes together
+        // reads at a glance across the whole estate. Kept just under a
+        // member disc's radius (nodeRadius + 18 padding) so a circle
+        // still reads as the AS and the band as the link between them,
+        // not a second region.
+        var PEER_HALF_WIDTH = 36;
         members.forEach(function (node) {
           node.connectedEdges().forEach(function (edge) {
             if (!isBgpEdge(edge)) { return; }
