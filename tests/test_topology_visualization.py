@@ -169,6 +169,60 @@ class TopologyVisualizationTests(unittest.TestCase):
         html = TopologyRenderer(self.snapshot).render()
         self.assertIn("or zoom out", html)
 
+    def test_the_map_can_be_exported_as_an_image(self) -> None:
+        """A picture of the map, for a ticket or a change record. Uses
+        Cytoscape's own raster export — no library added, so the artifact
+        stays self-contained and offline."""
+
+        html = TopologyRenderer(self.snapshot).render()
+        self.assertIn('id="export-panel"', html)
+        self.assertIn('data-export="png"', html)
+        self.assertIn('data-export="jpg"', html)
+        self.assertIn("cy.jpg(options)", html)
+        self.assertIn("cy.png(options)", html)
+        # Whole graph by default: an estate that needs panning must still
+        # export complete, not cropped to the viewport.
+        self.assertIn("full: !visibleOnly.checked", html)
+
+    def test_pdf_prints_vector_rather_than_bundling_a_pdf_writer(self) -> None:
+        """The browser's print path renders the page as vector at the
+        printer's resolution. A bundled PDF writer would have wrapped the
+        same raster in a PDF envelope and called it a document — and cost
+        the artifact its self-containment."""
+
+        html = TopologyRenderer(self.snapshot).render()
+        self.assertIn('data-export="pdf"', html)
+        self.assertIn("window.print()", html)
+        self.assertIn("@media print", html)
+        # Without a print stylesheet the sheet is the CONTROLS, with the
+        # map squeezed into what is left.
+        self.assertIn("#layers-panel, #export-panel, #trace-panel", html)
+        self.assertIn("print-color-adjust: exact", html)
+
+    def test_an_exported_map_carries_its_provenance(self) -> None:
+        """An image that leaves Atlas loses every affordance that said what
+        it was. The snapshot and its timestamp travel in the filename, and
+        on paper in a printed line — there is no hover or URL left to ask."""
+
+        html = TopologyRenderer(self.snapshot).render()
+        self.assertIn("function exportName", html)
+        self.assertIn('id="print-provenance"', html)
+        self.assertIn("snapshotSummary.snapshot_id", html)
+
+    def test_an_export_never_dates_the_network_from_the_printer(self) -> None:
+        """A snapshot deliberately carries NO observation time — its id is
+        a content address, and stamping a time would make identical
+        content hash differently. So the export states the time it does
+        know, the moment it was produced, and says so in those words
+        rather than passing it off as when the network was observed."""
+
+        html = TopologyRenderer(self.snapshot).render()
+        self.assertIn("'atlas-topology_' + view + '_exported-'", html)
+        self.assertIn("'Printed '", html)
+        # An observation time is quoted only where one genuinely exists.
+        self.assertIn("if (snapshotSummary.created_at) {", html)
+        self.assertIn("'snapshot taken '", html)
+
     def test_html_generation_contains_interactive_features(self) -> None:
         html = TopologyRenderer(self.snapshot).render()
         self.assertIn("Atlas Topology Viewer", html)

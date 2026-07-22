@@ -1157,6 +1157,11 @@ class TopologyRenderer:
         summary_json = _script_json(
             {
                 "snapshot_id": self._snapshot.snapshot_id,
+                # An exported image leaves Atlas and loses every affordance
+                # that told the reader what it was. The snapshot it came
+                # from and when that snapshot was taken travel with it, so
+                # a picture in a ticket can still be dated and traced back.
+                "created_at": self._snapshot.created_at,
                 "device_count": self._snapshot.device_count,
                 "edge_count": self._snapshot.edge_count,
                 "warning_count": len(self._snapshot.warnings),

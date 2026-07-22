@@ -272,6 +272,34 @@
     .layers-reset { margin-top: 4px; font-size: 12px; padding: 4px 8px; border: 1px solid var(--line, #d6dbe3); border-radius: 6px; background: #f8fafc; cursor: pointer; }
     .layers-reset:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
     .layers-status { margin: 6px 0 0; font-size: 11px; max-width: 220px; color: #b45309; }
+
+    /* Print / Save as PDF. Without this the printed page is the CONTROLS —
+       search box, layer menus, the trace panel — with the map squeezed
+       into whatever space is left. The controls go, the graph takes the
+       sheet, and the summary line stays because a topology diagram with
+       no counts and no provenance is a drawing, not a record. */
+    .print-only { display: none; }
+    @media print {
+      @page { margin: 12mm; }
+      body { background: #fff; }
+      .print-only { display: block; font-size: 10px; color: #555;
+        margin-top: 2px; word-break: break-all; }
+      header #search, header .layout-label, header #fit,
+      #layers-panel, #export-panel, #trace-panel, #context-menu,
+      #details-panel, #viewport-hint, #open-sites, #legend {
+        display: none !important;
+      }
+      header { display: block; border: 0; padding: 0 0 6px; }
+      header h1 { font-size: 16px; margin: 0 0 2px; }
+      #summary { font-size: 11px; color: #333; }
+      .graph-wrap, #cy {
+        height: 165mm !important; width: 100% !important;
+        border: 1px solid #ccc;
+      }
+      /* Cytoscape paints to a canvas; without this Chrome drops the
+         backgrounds and the map prints as an empty box. */
+      * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    }
   </style>
 </head>
 <body>
@@ -317,6 +345,16 @@
       </select>
     </label>
     <button id="fit" type="button" title="Reset at a scale where labels remain readable">Reset view</button>
+    <details id="export-panel" class="layers-menu">
+      <summary aria-label="Export this topology as an image or PDF">Export</summary>
+      <div class="layers-body" role="group" aria-label="Export topology">
+        <button type="button" class="layers-reset" data-export="png">PNG image</button>
+        <button type="button" class="layers-reset" data-export="jpg">JPG image</button>
+        <button type="button" class="layers-reset" data-export="pdf">PDF (print dialog)</button>
+        <label><input type="checkbox" id="export-visible-only"> Only what is on screen</label>
+        <p class="layers-status" id="export-status" role="status" aria-live="polite" hidden></p>
+      </div>
+    </details>
     <details id="layers-panel" class="layers-menu">
       <summary aria-label="Choose which topology layers to show">Layers</summary>
       <div class="layers-body" role="group" aria-label="Topology layers">
@@ -341,6 +379,13 @@
     <button id="edit-mode" type="button" aria-pressed="false" title="Curate persistent site membership" hidden>Edit topology</button>
     <button id="details-toggle" type="button" aria-controls="details" aria-expanded="true">Details</button>
     <span class="summary" id="summary"></span>
+    {#
+      Print only. A topology diagram in a change record has to say which
+      snapshot it is of and when that snapshot was taken, or it is a
+      drawing rather than evidence — and on paper there is no hover, no
+      panel and no URL left to ask.
+    #}
+    <span class="print-only" id="print-provenance"></span>
   </header>
   <main id="viewer-main">
     <div class="graph-wrap">
@@ -454,6 +499,23 @@
     if (snapshotSummary.unresolved_peers) summaryParts.push(`${snapshotSummary.unresolved_peers} unresolved peer identities`);
     const fullSummaryText = summaryParts.join(' · ');
     document.getElementById('summary').textContent = fullSummaryText;
+    (function () {
+      var el = document.getElementById('print-provenance');
+      if (!el) { return; }
+      var bits = [];
+      // "Printed", not "taken": this is when the sheet was produced, and
+      // a snapshot carries no observation time to quote — its id is a
+      // content address, so a timestamp would break determinism. Saying
+      // "snapshot taken <now>" would date the network from the printer.
+      bits.push('Printed ' + new Date().toISOString().slice(0, 19) + 'Z');
+      if (snapshotSummary.created_at) {
+        bits.push('snapshot taken ' + snapshotSummary.created_at);
+      }
+      if (snapshotSummary.snapshot_id) {
+        bits.push(snapshotSummary.snapshot_id);
+      }
+      el.textContent = bits.join(' · ');
+    })();
     window.syncSummary = viewMode => {
       const el = document.getElementById('summary');
       if (viewMode === 'sites' && (typeof siteView !== 'undefined')) {
@@ -2286,6 +2348,100 @@
         expandedSites.size === 0;
       applyReadableViewport(isSkyline);
     });
+    // -- Export -------------------------------------------------------------
+    // A picture of the map, for a ticket or a change record. Raster export
+    // is Cytoscape's own (no library added, and the artifact stays
+    // self-contained). PDF goes through the browser's print dialog rather
+    // than a bundled PDF writer: the page prints as VECTOR at the printer's
+    // resolution, where a bundled writer would have wrapped the same raster
+    // in a PDF envelope and called it a document.
+    //
+    // The export shows exactly what is on the canvas — the layers you
+    // turned off are off, a running trace is included. It is a picture of
+    // your view, not a second rendering that might disagree with it.
+    (function () {
+      var panel = document.getElementById('export-panel');
+      if (!panel || typeof cy === 'undefined') { return; }
+      var status = document.getElementById('export-status');
+      var visibleOnly = document.getElementById('export-visible-only');
+
+      function say(message, isError) {
+        status.hidden = !message;
+        status.textContent = message || '';
+        status.style.color = isError ? '' : '#475569';
+      }
+
+      // Provenance rides in the filename: an image that leaves Atlas has
+      // no other way to say what it is of.
+      //
+      // The date here is when the file was EXPORTED, not when the network
+      // was observed. A snapshot deliberately carries no timestamp — its
+      // id is a content address, and stamping a time would make identical
+      // content hash differently. So the export cannot claim an observation
+      // time it does not have; it states the one time it does know, and
+      // the snapshot id carries the rest.
+      function exportName(extension) {
+        var when = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+        var view = (typeof viewSelect !== 'undefined' && viewSelect.value)
+          ? viewSelect.value : 'topology';
+        return 'atlas-topology_' + view + '_exported-' + when + '.' + extension;
+      }
+
+      function download(dataUrl, filename) {
+        var link = document.createElement('a');
+        link.href = dataUrl;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+      }
+
+      function exportRaster(kind) {
+        // full:true renders the WHOLE graph at its own extent rather than
+        // the viewport, so an estate that needs panning still exports
+        // complete. The checkbox is there for when the framing IS the
+        // point — a screenshot of what you are looking at.
+        var options = {
+          output: 'blob-promise',
+          full: !visibleOnly.checked,
+          scale: 2,
+          bg: getComputedStyle(document.body)
+            .getPropertyValue('--bg').trim() || '#ffffff',
+        };
+        var maker = kind === 'jpg' ? cy.jpg(options) : cy.png(options);
+        return Promise.resolve(maker).then(function (blob) {
+          var url = URL.createObjectURL(blob);
+          download(url, exportName(kind));
+          // Revoked late: revoking before the click is handled loses the
+          // download in some browsers.
+          setTimeout(function () { URL.revokeObjectURL(url); }, 10000);
+          say('Saved ' + exportName(kind));
+        });
+      }
+
+      panel.addEventListener('click', function (event) {
+        var button = event.target.closest('[data-export]');
+        if (!button) { return; }
+        var kind = button.getAttribute('data-export');
+        say('Preparing ' + kind.toUpperCase() + '…');
+        try {
+          if (kind === 'pdf') {
+            say('Opening the print dialog — choose "Save as PDF".');
+            window.print();
+            return;
+          }
+          exportRaster(kind).catch(function (error) {
+            say('Export failed: ' + (error && error.message
+              ? error.message : 'the browser refused to render the image'),
+              true);
+          });
+        } catch (error) {
+          say('Export failed: ' + (error && error.message
+            ? error.message : 'unavailable in this browser'), true);
+        }
+      });
+    })();
+
     document.getElementById('search').addEventListener('input', event => {
       const query = event.target.value.trim().toLowerCase();
       cy.nodes().removeClass('search-match search-muted');
