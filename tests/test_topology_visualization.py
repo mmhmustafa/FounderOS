@@ -37,6 +37,20 @@ class TopologyVisualizationTests(unittest.TestCase):
         self.assertEqual({"discovered", "observed"}, kinds)
         self.assertTrue(all(edge["data"]["source"] for edge in elements["edges"]))
 
+    def test_the_native_menu_is_suppressed_over_the_graph(self) -> None:
+        """Right-clicking a device must show Atlas's menu, not the
+        browser's. Bound to #cy in the bubble phase, the suppression
+        leaked intermittently — Cytoscape's canvas can stop the event
+        before it reaches #cy. It now listens in the CAPTURE phase on the
+        document (top-down, so it always sees the event) and is scoped to
+        the graph, so right-click paste still works in the inputs."""
+
+        html = TopologyRenderer(self.snapshot).render()
+        handler = html.split("would cover ours", 1)[1][:900]
+        self.assertIn("addEventListener('contextmenu'", handler)
+        self.assertIn("}, true)", handler)                 # capture phase
+        self.assertIn("graph.contains(event.target)", handler)  # graph-scoped
+
     def test_nodes_carry_their_addressed_interfaces(self) -> None:
         """The hover card names every IP a device answers on, so the node
         data must carry the addressed interfaces — not only the count and

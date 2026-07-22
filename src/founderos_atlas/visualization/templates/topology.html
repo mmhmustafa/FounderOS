@@ -1353,10 +1353,18 @@
       }
     });
 
-    // The browser's own context menu would cover ours on the canvas.
-    document.getElementById('cy').addEventListener('contextmenu', event => {
-      if (servedByAtlas) { event.preventDefault(); }
-    });
+    // The browser's own context menu would cover ours on the canvas. This
+    // listens in the CAPTURE phase on the document, not the bubble phase on
+    // #cy: Cytoscape's canvas handlers can stop the event propagating before
+    // it reaches a listener bound to #cy, which let the native menu through
+    // intermittently. Capture runs top-down (document first), so it always
+    // sees the event. Scoped to the graph, so right-click still works — for
+    // paste — in the search box, the trace inputs, and the side panels.
+    document.addEventListener('contextmenu', event => {
+      if (!servedByAtlas) { return; }
+      const graph = document.getElementById('cy');
+      if (graph && graph.contains(event.target)) { event.preventDefault(); }
+    }, true);
 
     // Semantic zoom: higher resolution cannot make 3px text readable. Node
     // labels have an 11px paint floor in the stylesheet; unresolved peers are
