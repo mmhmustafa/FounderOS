@@ -90,6 +90,12 @@
   "port": target.port,
   "credentialRef": target.credential_ref,
 } | tojson }}</script>
-<script src="{{ asset_url('atlas.js') }}"></script>
+{# atlas.js is loaded once by base.html, AFTER this block — and it is what
+   calls AtlasConsole.init(). Loading it a second time here ran init twice,
+   opening TWO xterm terminals on the same #terminal: the first kept its
+   "Press Connect" banner while connect() cleared and wrote the live session
+   to the second, so the page connected but the visible terminal stayed
+   blank. atlas-console.js above only DEFINES AtlasConsole; base.html runs
+   it. #}
 {% endif %}
 {% endblock %}

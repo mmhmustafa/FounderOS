@@ -1030,6 +1030,35 @@ class ConsoleGuiTests(unittest.TestCase):
                     f"copy button on {url} has no handler behind it",
                 )
 
+    def test_the_terminal_page_loads_atlas_js_exactly_once(self) -> None:
+        """atlas.js calls AtlasConsole.init(). base.html already loads it on
+        every page, and console.html loaded it a SECOND time — so init ran
+        twice and opened two xterm terminals on one #terminal div. The first
+        kept its "Press Connect" banner while connect() cleared and wrote the
+        live session to the second, so the page connected (badge + timer) but
+        the visible terminal never left its banner and showed no prompt.
+        """
+
+        import re
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = self._client(Path(tmp))
+            index = client.get("/console").get_data(as_text=True)
+            match = re.search(r'href="/console/([^"/]+)"', index)
+            self.assertIsNotNone(match, "no console link rendered")
+            page = client.get(
+                f"/console/{match.group(1)}", follow_redirects=True
+            ).get_data(as_text=True)
+            includes = re.findall(r'<script src="[^"]*\batlas\.js\b', page)
+            self.assertEqual(
+                1, len(includes),
+                f"atlas.js must load exactly once; found {len(includes)}",
+            )
+            # It still DEFINES the console (atlas-console.js) and still has the
+            # config the single init() reads.
+            self.assertIn("atlas-console.js", page)
+            self.assertIn("atlas-console-config", page)
+
     def test_the_copy_handler_is_not_trapped_in_the_terminal_page_script(self) -> None:
         """Pins the regression at its root: the handler must not live in a
         script only one page loads."""
