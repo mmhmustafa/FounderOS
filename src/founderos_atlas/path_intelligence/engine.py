@@ -28,6 +28,11 @@ from .firewall import (
     evaluate_firewall,
     firewall_from_metadata,
 )
+from .forwarding import (
+    describe_route,
+    longest_prefix_match,
+    routes_from_metadata,
+)
 from .policy import (
     DevicePolicy,
     INDETERMINATE,
@@ -36,6 +41,7 @@ from .policy import (
 from .models import (
     FAILURE_ACL_DENY,
     FAILURE_FIREWALL_DENY,
+    FAILURE_NO_ROUTE,
     FAILURE_ADMIN_SHUTDOWN,
     FAILURE_AMBIGUOUS_TOPOLOGY,
     FAILURE_DEVICE_UNREACHABLE,
@@ -144,6 +150,11 @@ class _Investigation:
         # Per-walk policy accounting for the honesty summary in basis.
         self.policy_hops_evaluated = 0
         self.policy_hops_unevaluated: list[str] = []
+        # The same accounting for forwarding: which hops had a captured
+        # routing table to reason over, and which were left unevaluated.
+        self.route_hops_evaluated = 0
+        self.route_hops_unevaluated: list[str] = []
+        self.destination_key: str | None = None
         self.destination_addresses: tuple[str, ...] = ()
         self.source_addresses: tuple[str, ...] = ()
         self.steps: list[InvestigationStep] = []
@@ -175,6 +186,9 @@ class _Investigation:
         # own addresses are what a chain rule is matched against.
         self.destination_addresses = self._device_addresses(destination_key)
         self.source_addresses = self._device_addresses(source_key)
+        # The forwarding check skips the destination itself: once the packet
+        # has arrived there is no next hop left to decide.
+        self.destination_key = destination_key
         problem = self._check_endpoints(source_key, destination_key)
         if problem is not None:
             return problem
@@ -662,6 +676,20 @@ class _Investigation:
         if policy_failure is not None:
             return policy_failure
 
+        # Forwarding (PR-102): the link is up and policy permits the packet —
+        # would this device actually forward it? Adjacency says a way exists;
+        # only the routing table says the device would use it.
+        no_route = self._route_check(
+            hop_number=hop_number,
+            key=key,
+            ingress=ingress,
+            egress=egress,
+            link_state=link_state,
+            evidence=evidence,
+        )
+        if no_route is not None:
+            return no_route
+
         if missing:
             self.unknowns.extend(missing)
             return HopResult(
@@ -855,6 +883,81 @@ class _Investigation:
                 f"{rule.cite(policy.source_path)}"
             )
         return None
+
+    def _route_check(
+        self,
+        *,
+        hop_number: int,
+        key: str,
+        ingress: str | None,
+        egress: str | None,
+        link_state: str,
+        evidence: list[str],
+    ) -> HopResult | None:
+        """Would this hop forward the packet toward the destination?
+
+        Adjacency proves a way exists; the routing table proves the device
+        would take it. Longest-prefix match against the RIB the device
+        itself reported — the rule every router applies.
+
+        Three outcomes, and only one of them is a verdict:
+          - a matching route: recorded as evidence, hop proceeds;
+          - a captured table with NO match: the packet is dropped here, and
+            saying so is honest because there WAS a table to be absent from;
+          - no captured table: not evaluated, never guessed — the same
+            treatment a device with no captured ACL gets.
+
+        The destination device itself is skipped: the packet has arrived,
+        there is nothing left to forward.
+        """
+
+        if not self.destination_addresses:
+            return None            # nothing to look up; make no claim
+        if key == self.destination_key:
+            return None            # arrived; no forwarding decision remains
+        name = self._display_name(key)
+        device = self.devices.get(key)
+        routes = routes_from_metadata((device or {}).get("metadata"))
+        if not routes:
+            if name not in self.route_hops_unevaluated:
+                self.route_hops_unevaluated.append(name)
+            self.unknowns.append(
+                f"No captured routing table for {name} — whether it has a "
+                "route to the destination is not evaluated at this hop."
+            )
+            return None
+        self.route_hops_evaluated += 1
+        for address in self.destination_addresses:
+            match = longest_prefix_match(routes, address)
+            if match is not None:
+                evidence.append(
+                    f"{name} routes {address} by {describe_route(match)} "
+                    f"(captured routing table)"
+                )
+                return None
+        target = self.destination_addresses[0]
+        return HopResult(
+            hop_number=hop_number,
+            device=name,
+            ingress_interface=ingress,
+            egress_interface=egress,
+            link_state=link_state,
+            management_state=self._management_state(key)[0],
+            status=HOP_FAILED,
+            confidence=self._clamp(CONFIDENCE_DIRECT_EVIDENCE),
+            explanation=(
+                f"{name} has no route to {target}: none of the "
+                f"{len(routes)} route(s) in its captured table matches, and "
+                "there is no default route — the packet is dropped here."
+            ),
+            evidence=(
+                *evidence,
+                f"captured routing table on {name}: {len(routes)} route(s), "
+                f"none matching {target} (longest-prefix match over the "
+                "table the device reported)",
+            ),
+            failure_type=FAILURE_NO_ROUTE,
+        )
 
     def _firewall_check(
         self,
@@ -1525,6 +1628,13 @@ class _Investigation:
                 "intent": dict(self.intent),
                 "hops_evaluated": self.policy_hops_evaluated,
                 "hops_unevaluated": list(self.policy_hops_unevaluated),
+            }
+        # Say how much of the verdict rests on real forwarding evidence:
+        # which hops had a captured routing table, and which did not.
+        if self.route_hops_evaluated or self.route_hops_unevaluated:
+            basis["routing"] = {
+                "hops_evaluated": self.route_hops_evaluated,
+                "hops_unevaluated": list(self.route_hops_unevaluated),
             }
         if extra_basis:
             basis.update(extra_basis)
