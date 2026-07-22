@@ -297,6 +297,25 @@ class PredictionPipelineTests(unittest.TestCase):
         text = " ".join(o.description for o in prediction.outcomes)
         self.assertIn("permanently", text)
 
+    def test_link_failure_takes_out_the_same_edge_as_a_shutdown(self) -> None:
+        """A cut cable removes the same edge an interface shutdown does — so
+        the reachability blast radius matches — but it is a two-ended
+        failure, not a plan, and is not automation-reversible."""
+
+        request = ChangeRequest(
+            request_id="cr-5",
+            change_type="link-failure",
+            target_device="SW1",
+            target_object="Gi0/2",
+        )
+        prediction = predict(request, snapshot=chain(), generated_at=NOW)
+        self.assertIn("SW2", prediction.blast_radius.affected_devices)
+        self.assertFalse(prediction.rollback.reversible)
+        self.assertIn("link-failure", registered_evaluators())
+        text = " ".join(o.description for o in prediction.outcomes)
+        self.assertIn("re-cabled", text)
+        self.assertIn("SW2", text)   # both ends named
+
     def test_unregistered_change_type_predicts_honestly(self) -> None:
         request = ChangeRequest(
             request_id="cr-3",

@@ -115,6 +115,17 @@ register_change_type(
 )
 register_change_type(
     ChangeTypeSpec(
+        name="link-failure",
+        category="physical",
+        # A cut cable or dead optic is fixed by re-cabling, not by rolling a
+        # config back — so, like a reboot, not reversible in the pipeline's
+        # sense. It is also not a planned change but a failure to rehearse.
+        reversible_by_default=False,
+        description="A physical link fails (cut cable, dead optic).",
+    )
+)
+register_change_type(
+    ChangeTypeSpec(
         name="upgrade-firmware",
         category="platform",
         reversible_by_default=False,

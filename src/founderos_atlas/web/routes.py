@@ -4603,10 +4603,12 @@ def register_routes(app) -> None:
         # to the modeled default rather than pretending.
         if change_type not in (
             "shutdown-interface", "reboot-device", "shutdown-device",
-            "decommission-device",
+            "decommission-device", "link-failure",
         ):
             change_type = "shutdown-interface"
-        needs_interface = change_type == "shutdown-interface"
+        # An interface names the link for both the admin shutdown and the
+        # physical-failure model; the device-level changes need none.
+        needs_interface = change_type in ("shutdown-interface", "link-failure")
         if not device or (needs_interface and not interface):
             flash(
                 "A device is required"

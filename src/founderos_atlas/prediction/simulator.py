@@ -680,7 +680,87 @@ def _evaluate_decommission_device(
     )
 
 
+def _evaluate_link_failure(
+    request: ChangeRequest, graph: DependencyGraph
+) -> Evaluation:
+    """A physical link failing takes the SAME edge out of the graph as
+    administratively shutting the interface — the reachability blast radius
+    is identical, which is why it reuses that neighbour discovery. What
+    differs is that it hits BOTH ends at once and is a failure, not a plan:
+    there is no `no shutdown` to undo it, and both attached devices see
+    their side go down together. Naming the interface names the link.
+    """
+
+    interface = request.target_object or "unknown"
+    node_id = interface_node_id(request.target_device, interface)
+    if graph.node(node_id) is None:
+        return Evaluation(
+            target_node_id=None,
+            outcomes=(
+                PredictedOutcome(
+                    category="connectivity",
+                    description=(
+                        f"{interface} on {request.target_device} is not in "
+                        "the discovered topology; impact cannot be traced."
+                    ),
+                    likelihood=LIKELIHOOD_POSSIBLE,
+                ),
+            ),
+            unknowns=(
+                f"{request.target_device} {interface} not present in the "
+                "current topology snapshot",
+            ),
+        )
+    adjacent: list[str] = []
+    for neighbor_id in graph.neighbors(node_id):
+        neighbor = graph.node(neighbor_id)
+        if neighbor is None:
+            continue
+        owner = neighbor.device or neighbor.name
+        if owner and owner.casefold() != request.target_device.casefold():
+            if owner not in adjacent:
+                adjacent.append(owner)
+    peers = ", ".join(adjacent[:3]) if adjacent else "the far end"
+    outcomes = [
+        PredictedOutcome(
+            category="physical",
+            description=(
+                f"The link on {interface} fails; {request.target_device} and "
+                f"{peers} both see their side go down at once."
+            ),
+            likelihood=LIKELIHOOD_EXPECTED,
+            evidence=(node_id,),
+        )
+    ]
+    if adjacent:
+        outcomes.append(
+            PredictedOutcome(
+                category="connectivity",
+                description=(
+                    f"Traffic between {request.target_device} and {peers} "
+                    "over this link must reroute or fail until it is "
+                    "re-cabled."
+                ),
+                likelihood=LIKELIHOOD_EXPECTED,
+                evidence=(node_id,),
+            )
+        )
+        outcomes.append(
+            PredictedOutcome(
+                category="topology",
+                description=(
+                    "Devices reachable only across this link are cut off "
+                    "until the cable or optic is replaced."
+                ),
+                likelihood=LIKELIHOOD_PROBABLE,
+                evidence=(node_id,),
+            )
+        )
+    return Evaluation(target_node_id=node_id, outcomes=tuple(outcomes))
+
+
 register_evaluator("shutdown-interface", _evaluate_shutdown_interface)
 register_evaluator("reboot-device", _evaluate_reboot_device)
 register_evaluator("shutdown-device", _evaluate_shutdown_device)
 register_evaluator("decommission-device", _evaluate_decommission_device)
+register_evaluator("link-failure", _evaluate_link_failure)
