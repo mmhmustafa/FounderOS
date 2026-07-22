@@ -134,6 +134,41 @@ class TopologyVisualizationTests(unittest.TestCase):
         mouseout = html.split("cy.on('mouseout', 'node'", 1)[1][:400]
         self.assertIn("hoveredId = null", mouseout)
 
+    def test_a_large_estate_can_be_zoomed_out_to_see_whole(self) -> None:
+        """The readable floor was installed as cy.minZoom(), so it did not
+        just decide where the view LANDED — it stopped the wheel, and a big
+        network could only ever be panned across a piece at a time. The
+        readable scale must be a starting point, not a cage."""
+
+        html = TopologyRenderer(self.snapshot).render()
+        self.assertIn("const MIN_ZOOM = 0.05", html)
+        self.assertIn("minZoom: MIN_ZOOM", html)
+        # No code re-installs a floor at the readable scale.
+        self.assertNotIn("cy.minZoom(floor)", html)
+        self.assertNotIn("cy.minZoom(0.2)", html)
+        # Landing at a readable scale is unchanged.
+        viewport = html.split("function applyReadableViewport", 1)[1][:1100]
+        self.assertIn("cy.zoom(floor)", viewport)
+        self.assertIn("cy.center(elements)", viewport)
+
+    def test_the_overview_scale_drops_labels_it_cannot_paint(self) -> None:
+        """Far enough out, every name paints at the 11px floor and they
+        overlap into noise, burying the shape of the network you zoomed out
+        to see. A DISTINCT class from label-suppressed, which peers drive on
+        their own schedule — sharing one would let each clear the other."""
+
+        html = TopologyRenderer(self.snapshot).render()
+        self.assertIn("const OVERVIEW_LABEL_ZOOM = 0.55", html)
+        self.assertIn("node.label-overview", html)
+        self.assertIn("addClass('label-overview')", html)
+        self.assertIn("removeClass('label-overview')", html)
+
+    def test_the_hint_says_zooming_out_is_possible(self) -> None:
+        # The hint used to offer panning as the only way to see more,
+        # because it was.
+        html = TopologyRenderer(self.snapshot).render()
+        self.assertIn("or zoom out", html)
+
     def test_html_generation_contains_interactive_features(self) -> None:
         html = TopologyRenderer(self.snapshot).render()
         self.assertIn("Atlas Topology Viewer", html)

@@ -47,9 +47,22 @@ class TopologyVisualQualityTests(unittest.TestCase):
         self.assertIn('revealDetails();', self.html)
 
     def test_full_topology_pans_at_a_readable_floor_instead_of_thumbnailing(self) -> None:
+        """A large graph LANDS at a readable scale and pans, rather than
+        auto-shrinking itself into an unreadable thumbnail.
+
+        This once asserted the mechanism — cy.minZoom(floor) — but that
+        clamp also froze the wheel, so an estate too big for one screen
+        could never be seen whole (PR-110). The guarantee is about where
+        the view lands; it is asserted here through the landing itself, and
+        the clamp is asserted ABSENT so it cannot creep back.
+        """
+
         self.assertIn('const READABLE_DEVICE_ZOOM = 0.86', self.html)
         self.assertIn('const READABLE_SITE_ZOOM = 0.84', self.html)
-        self.assertIn('cy.minZoom(floor);', self.html)
+        self.assertIn('const needsPan = fittedZoom < floor;', self.html)
+        self.assertIn('cy.zoom(floor);', self.html)
+        self.assertIn('cy.center(elements);', self.html)
+        self.assertNotIn('cy.minZoom(floor)', self.html)
         self.assertIn('applyReadableViewport(false);', self.html)
         self.assertIn('All devices (pan)', self.html)
         self.assertIn('id="viewport-hint"', self.html)

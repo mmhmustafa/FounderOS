@@ -536,13 +536,19 @@
       grid: { name: 'grid', animate: false, fit: true, padding: 40 }
     };
 
+    // How far out the operator may go DELIBERATELY. Atlas lands you at a
+    // readable scale (see applyReadableViewport), but a floor that also
+    // blocks the wheel makes a large estate impossible to see whole — the
+    // one question a map is for. Readability is the default, not a cage.
+    const MIN_ZOOM = 0.05;
+
     const cy = cytoscape({
       container: document.getElementById('cy'),
       elements: [...topologyElements.nodes, ...topologyElements.edges],
       // The real layout is selected below after the site model is known.
       // A preset avoids flashing a briefly auto-fitted miniature graph.
       layout: { name: 'preset', fit: false },
-      minZoom: 0.2,
+      minZoom: MIN_ZOOM,
       maxZoom: 3,
       pixelRatio: RENDER_PIXEL_RATIO,
       textureOnViewport: false,
@@ -594,6 +600,11 @@
           'label': 'data(display_label)'
         }},
         { selector: 'node.label-suppressed', style: { 'label': '' }},
+        // Far enough out that names would be an unreadable smear, the map
+        // becomes shape and colour only. A DISTINCT class from
+        // label-suppressed: peers use that one on their own schedule, and
+        // sharing it would let one rule clear the other's suppression.
+        { selector: 'node.label-overview', style: { 'label': '' }},
         // A folded site is a quiet cloud with its compact name INSIDE the
         // artwork. This stays legible at overview scale and removes the
         // floating nameplates that made the map feel diagram-generator-like.
@@ -1425,10 +1436,22 @@
     // shape, link style, hover tooltip, search, and the details panel.
     const PEER_LABEL_ZOOM = 0.9;
     const DETAIL_LABEL_ZOOM = 1.15;
+    // Zoomed out to take in a whole estate, every name paints at the 11px
+    // floor and they overlap into noise — the shape of the network is the
+    // thing you came for, and the labels bury it. Below this, names go.
+    const OVERVIEW_LABEL_ZOOM = 0.55;
     let peerLabelsHidden = null;
     let detailedLabelsShown = null;
+    let overviewLabelsHidden = null;
     const syncSemanticZoom = () => {
       const zoom = cy.zoom() || 1;
+      const overview = zoom < OVERVIEW_LABEL_ZOOM;
+      if (overview !== overviewLabelsHidden) {
+        overviewLabelsHidden = overview;
+        const named = cy.nodes('[kind != "protocol-domain"]');
+        if (overview) { named.addClass('label-overview'); }
+        else { named.removeClass('label-overview'); }
+      }
       const hidePeers = zoom < PEER_LABEL_ZOOM;
       if (hidePeers !== peerLabelsHidden) {
         peerLabelsHidden = hidePeers;
@@ -1478,12 +1501,14 @@
       const floor = isSkyline ? READABLE_SITE_ZOOM : READABLE_DEVICE_ZOOM;
       const padding = isSkyline ? 56 : 72;
 
-      // Release the previous mode's floor while measuring its natural fit.
-      cy.minZoom(0.2);
+      // The readable floor decides where Atlas LANDS you, and nothing more.
+      // It used to be installed as cy.minZoom(), which also stopped the
+      // wheel — so a big estate could never be seen whole, only panned
+      // across a piece at a time. The absolute floor stays in force; the
+      // readable one is now a starting point the operator can leave.
       cy.fit(elements, padding);
       const fittedZoom = cy.zoom();
       const needsPan = fittedZoom < floor;
-      cy.minZoom(floor);
       if (needsPan) {
         cy.zoom(floor);
         cy.center(elements);
@@ -1492,8 +1517,8 @@
       viewportHint.hidden = !needsPan;
       viewportHint.textContent = needsPan
         ? (isSkyline
-            ? 'Readable scale - drag to pan across sites'
-            : 'Readable scale - drag to pan; Site overview shows the whole estate')
+            ? 'Readable scale - drag to pan, or zoom out for the whole estate'
+            : 'Readable scale - drag to pan, or zoom out to see it all')
         : '';
       peerLabelsHidden = null;
       detailedLabelsShown = null;
