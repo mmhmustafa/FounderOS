@@ -128,6 +128,80 @@ class ViewerContractTests(unittest.TestCase):
     def test_reduced_motion_is_respected(self) -> None:
         self.assertIn("prefers-reduced-motion", self.viewer)
 
+    def test_the_trace_path_is_not_green(self) -> None:
+        """A healthy BGP/OSPF link is drawn green (#16a34a). The trace
+        used the SAME green, so on a path of healthy links the packet's
+        route was invisible — the operator's exact complaint. The pass
+        style must not carry that green."""
+
+        pass_style = self.viewer.split("edge.trace-pass", 1)[1][:160]
+        self.assertNotIn("#16a34a", pass_style)
+        self.assertIn("#0891b2", pass_style)   # cyan — unused elsewhere
+
+    def test_the_trace_colour_beats_a_healthy_links_style(self) -> None:
+        """The real defect behind the green trace: a healthy BGP/OSPF
+        edge carries an ATTRIBUTE style (bgp_health/ospf_health), and in
+        Cytoscape an attribute selector outranks a class selector — so
+        the .trace-pass CLASS lost and the packet's route stayed link-
+        green. The trace must paint its colour on as an inline element
+        style, which outranks both."""
+
+        self.assertIn("function styleTraceEdge", self.viewer)
+        self.assertIn("styleTraceEdge(edge,", self.viewer)
+        self.assertIn("TRACE_EDGE_INLINE", self.viewer)
+        # And the overlays are torn down, not left painted on.
+        self.assertIn("removeStyle(TRACE_EDGE_PROPS)", self.viewer)
+
+    def test_a_connected_path_flows_a_packet(self) -> None:
+        """The hop-by-hop reveal draws the route but does not read as a
+        packet moving; a dot that circulates the connected path does."""
+
+        self.assertIn("startFlow(nodes)", self.viewer)
+        self.assertIn("function startFlow", self.viewer)
+
+    def test_the_flow_stops_when_the_trace_is_cleared(self) -> None:
+        # A dot left animating over a cleared trace is a leak the eye
+        # reads as a live packet on a path that is no longer shown.
+        clear = self.viewer.split("function clearTrace", 1)[1][:160]
+        self.assertIn("stopFlow()", clear)
+
+    def test_the_packet_does_not_flow_a_path_it_could_not_complete(self) -> None:
+        """A stopped packet must not then be shown flowing to the
+        destination. The flow is gated on reduced motion and only ever
+        started from the connected verdict."""
+
+        flow = self.viewer.split("function startFlow", 1)[1][:200]
+        self.assertIn("if (reducedMotion) { return; }", flow)
+
+    def test_the_flow_can_be_paused_and_resumed(self) -> None:
+        """A packet looping forever with no off switch is a nuisance; the
+        operator must be able to stop it without clearing the trace, and
+        start it again."""
+
+        self.assertIn('id="trace-flow"', self.viewer)
+        self.assertIn("if (flowActive) { stopFlow(); }", self.viewer)
+        self.assertIn("else if (state.flowNodes) { startFlow(state.flowNodes)",
+                      self.viewer)
+        self.assertIn("'Pause flow' : 'Resume flow'", self.viewer)
+
+    def test_the_animation_speed_is_adjustable(self) -> None:
+        """Fixed timing suited nobody — too slow to skim, too fast to
+        follow a long path. The Speed selector re-times the very next hop
+        of both the reveal and the flow."""
+
+        self.assertIn('id="trace-speed"', self.viewer)
+        self.assertIn("function speedFactor", self.viewer)
+        self.assertIn("620 * speedFactor()", self.viewer)   # hop reveal
+        self.assertIn("430 * speedFactor()", self.viewer)   # flowing packet
+
+    def test_replay_reframes_the_whole_path(self) -> None:
+        """A failed trace ends centred on the blocked hop, so a Replay
+        that did not reframe started from an off-screen source and the
+        packet's start was never seen — the reported bug."""
+
+        run = self.viewer.split("function runAnimation", 1)[1][:1800]
+        self.assertIn("fit: { eles: pathColl", run)
+
 
 if __name__ == "__main__":
     unittest.main()

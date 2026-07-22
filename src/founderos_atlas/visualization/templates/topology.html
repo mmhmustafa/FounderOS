@@ -312,9 +312,17 @@
           <select id="trace-proto"><option value="">any</option><option value="tcp">TCP</option><option value="udp">UDP</option><option value="icmp">ICMP</option></select></div>
         <div class="trace-row"><label for="trace-port">Port</label>
           <input id="trace-port" type="number" min="1" max="65535" placeholder="e.g. 443"></div>
+        <div class="trace-row"><label for="trace-speed">Speed</label>
+          <select id="trace-speed">
+            <option value="slow">Slow</option>
+            <option value="normal" selected>Normal</option>
+            <option value="fast">Fast</option>
+          </select></div>
         <div class="trace-actions">
           <button type="button" class="trace-primary" id="trace-run">Trace</button>
           <button type="button" id="trace-replay" hidden>Replay</button>
+          <button type="button" id="trace-flow" hidden
+            title="Pause or resume the flowing packet">Pause flow</button>
           <button type="button" id="trace-live" class="trace-probe" hidden
             title="Active probe: runs a real traceroute from the source device — sends live packets">Validate live</button>
           <button type="button" id="trace-clear">Clear</button>
@@ -2764,34 +2772,52 @@
       var portInput = document.getElementById('trace-port');
       var runButton = document.getElementById('trace-run');
       var replayButton = document.getElementById('trace-replay');
+      var flowButton = document.getElementById('trace-flow');
       var liveButton = document.getElementById('trace-live');
       var clearButton = document.getElementById('trace-clear');
+      var speedSelect = document.getElementById('trace-speed');
       var statusEl = document.getElementById('trace-status');
-      var state = { source: '', destination: '', report: null, running: false };
+      var state = {
+        source: '', destination: '', report: null, running: false,
+        flowNodes: null,
+      };
       var reducedMotion = window.matchMedia(
         '(prefers-reduced-motion: reduce)'
       ).matches;
 
+      // Read live so the selector re-times the very next hop, both for
+      // the hop-by-hop reveal and the flowing packet. Larger = slower.
+      function speedFactor() {
+        var v = speedSelect ? speedSelect.value : 'normal';
+        return v === 'slow' ? 1.8 : v === 'fast' ? 0.45 : 1;
+      }
+
+      // The trace path is CYAN, deliberately not green: a healthy BGP or
+      // OSPF link is already drawn green (bgp_health/ospf_health =
+      // established, #16a34a), so a green trace vanished into the very
+      // links it crossed. Cyan is unused by any link, region, or health
+      // colour, so the packet's route reads as its own thing.
       cy.style()
         .selector('edge.trace-pass')
-        .style({ 'line-color': '#16a34a', 'target-arrow-color': '#16a34a',
-                 width: 4, 'z-index': 30 })
+        .style({ 'line-color': '#0891b2', 'target-arrow-color': '#0891b2',
+                 width: 5, 'z-index': 30 })
         .selector('edge.trace-warn')
         .style({ 'line-color': '#d97706', 'target-arrow-color': '#d97706',
                  width: 4, 'z-index': 30 })
         .selector('edge.trace-unknown')
         .style({ 'line-color': '#d97706', 'line-style': 'dashed', width: 3 })
         .selector('node.trace-hop')
-        .style({ 'border-width': 3, 'border-color': '#16a34a' })
+        .style({ 'border-width': 3, 'border-color': '#0891b2' })
         .selector('node.trace-warn-hop')
         .style({ 'border-width': 3, 'border-color': '#d97706' })
         .selector('node.trace-failed')
         .style({ 'border-width': 5, 'border-color': '#dc2626' })
         .selector('node.trace-dot')
-        .style({ width: 14, height: 14, shape: 'ellipse',
-                 'background-color': '#2563eb', 'border-width': 2,
+        .style({ width: 18, height: 18, shape: 'ellipse',
+                 'background-color': '#22d3ee', 'border-width': 3,
                  'border-color': '#fff', label: '', 'z-index': 40,
-                 events: 'no' })
+                 'overlay-color': '#0891b2', 'overlay-opacity': 0.25,
+                 'overlay-padding': 6, events: 'no' })
         .selector('edge.trace-actual')
         .style({ 'line-color': '#7c3aed', 'target-arrow-color': '#7c3aed',
                  'line-style': 'dashed', width: 5, 'z-index': 35 })
@@ -2799,6 +2825,32 @@
         .style({ 'border-width': 4, 'border-color': '#7c3aed',
                  'border-style': 'double' })
         .update();
+
+      // A healthy BGP/OSPF edge carries an ATTRIBUTE style
+      // (bgp_health/ospf_health = established, green) and in Cytoscape an
+      // attribute selector outranks a CLASS selector — so the trace
+      // classes alone lost, leaving the packet's route painted the same
+      // green as the links it crossed. Element inline styles outrank
+      // both, so the trace paints its colour on directly. These mirror
+      // the class styles above (kept as the visual contract / z-index);
+      // change them together.
+      var TRACE_EDGE_INLINE = {
+        'trace-pass': {
+          'line-color': '#0891b2', 'target-arrow-color': '#0891b2', width: 5 },
+        'trace-warn': {
+          'line-color': '#d97706', 'target-arrow-color': '#d97706', width: 4 },
+        'trace-unknown': {
+          'line-color': '#d97706', 'line-style': 'dashed', width: 3 },
+        'trace-actual': {
+          'line-color': '#7c3aed', 'target-arrow-color': '#7c3aed',
+          'line-style': 'dashed', width: 5 },
+      };
+      var TRACE_EDGE_PROPS =
+        'line-color target-arrow-color line-style width';
+      function styleTraceEdge(edge, cls) {
+        edge.addClass(cls);
+        edge.style(TRACE_EDGE_INLINE[cls]);
+      }
 
       function showStatus(text, tone) {
         statusEl.textContent = text || '';
@@ -2835,7 +2887,84 @@
         return match.length ? match[0] : null;
       }
 
+      // A packet endlessly circulating source→destination once the trace
+      // lands — the "flowing" read the hop-by-hop reveal alone did not
+      // give. It runs only on a fully connected path (a packet that was
+      // stopped does not flow) and only when motion is allowed.
+      var flowActive = false;
+      function setFlowButton() {
+        if (!flowButton) { return; }
+        // Offered whenever there is a path to flow, whether or not it is
+        // currently moving — so a paused packet can be resumed.
+        flowButton.hidden = reducedMotion || !state.flowNodes;
+        flowButton.textContent = flowActive ? 'Pause flow' : 'Resume flow';
+      }
+      function stopFlow() {
+        flowActive = false;
+        var dot = cy.getElementById('__trace_dot');
+        if (dot.length) { dot.stop(); }
+        setFlowButton();
+      }
+      function startFlow(pathNodes) {
+        if (reducedMotion) { return; }
+        pathNodes = pathNodes.filter(Boolean);
+        if (pathNodes.length < 2) { return; }
+        state.flowNodes = pathNodes;
+        flowActive = true;
+        setFlowButton();
+        var dot = cy.getElementById('__trace_dot');
+        if (!dot.length) {
+          dot = cy.add({
+            group: 'nodes', data: { id: '__trace_dot' },
+            position: {
+              x: pathNodes[0].position('x'), y: pathNodes[0].position('y')
+            },
+            classes: 'trace-dot',
+          });
+        }
+        var REST_MS = 300;
+        function run() {
+          if (!flowActive) { return; }
+          dot.position({
+            x: pathNodes[0].position('x'), y: pathNodes[0].position('y')
+          });
+          var k = 1;
+          (function next() {
+            if (!flowActive) { return; }
+            if (k >= pathNodes.length) {
+              setTimeout(run, REST_MS * speedFactor());
+              return;
+            }
+            var target = pathNodes[k];
+            dot.animate(
+              { position: {
+                x: target.position('x'), y: target.position('y')
+              } },
+              { duration: 430 * speedFactor(), easing: 'ease-in-out-sine',
+                complete: function () { k += 1; next(); } }
+            );
+          })();
+        }
+        run();
+      }
+
+      if (flowButton) {
+        flowButton.addEventListener('click', function () {
+          if (flowActive) { stopFlow(); }
+          else if (state.flowNodes) { startFlow(state.flowNodes); }
+        });
+      }
+
       function clearTrace(keepReport) {
+        stopFlow();
+        // A fresh run or replay recomputes the path from the report, so
+        // the remembered flow nodes must not survive into it.
+        state.flowNodes = null;
+        setFlowButton();
+        // Drop the inline overrides before the classes, or a cleared
+        // edge keeps the trace colour painted on directly.
+        cy.edges('.trace-pass, .trace-warn, .trace-unknown, .trace-actual')
+          .removeStyle(TRACE_EDGE_PROPS);
         cy.elements().removeClass(
           'trace-pass trace-warn trace-unknown trace-hop '
           + 'trace-warn-hop trace-failed trace-actual trace-actual-hop'
@@ -2925,8 +3054,24 @@
         }
         state.notes = notes.length ? ' — ' + notes.join('; ') : '';
         state.running = true;
-        var stepMs = reducedMotion ? 0 : 620;
+        // Live per-step so the Speed selector re-times the next hop.
+        function stepDuration() {
+          return reducedMotion ? 0 : Math.round(620 * speedFactor());
+        }
         var index = 0;
+
+        // Frame the whole path before animating. A failed trace ends
+        // centred on the blocked hop (the firewall), and without this a
+        // Replay then started from a source that was off-screen — the
+        // packet's start was never seen. Fitting to the path guarantees
+        // both the source and the block are in view every run.
+        var pathColl = cy.collection();
+        nodes.forEach(function (n) { if (n) { pathColl = pathColl.union(n); } });
+        if (pathColl.length) {
+          if (reducedMotion) { cy.fit(pathColl, 60); }
+          else { cy.animate({ fit: { eles: pathColl, padding: 60 } },
+            { duration: 350 }); }
+        }
 
         function finish() {
           state.running = false;
@@ -2965,11 +3110,14 @@
             }
             showStatus('Connected: ' + hops.length + ' hop(s)' + caveat
               + (state.notes || ''), 'ok');
+            // The path is whole, so let the packet flow it end to end.
+            startFlow(nodes);
           }
         }
 
         function step() {
           if (index >= hops.length) { finish(); return; }
+          var stepMs = stepDuration();
           var hop = hops[index];
           var node = nodes[index];
           if (node) {
@@ -2980,7 +3128,7 @@
             if (index > 0 && nodes[index - 1]) {
               var edge = segmentEdge(nodes[index - 1], node);
               if (edge) {
-                edge.addClass(
+                styleTraceEdge(edge,
                   hop.status === 'failed' || hop.status === 'unknown'
                     ? 'trace-unknown'
                     : hop.status === 'warning' ? 'trace-warn' : 'trace-pass'
@@ -3077,7 +3225,9 @@
           if (to) { to.addClass('trace-actual-hop'); }
           if (from && to) {
             var edge = segmentEdge(from, to);
-            if (edge) { edge.addClass('trace-actual'); }
+            // Same attribute-beats-class trap as the predicted path: the
+            // observed overlay must paint over a healthy link too.
+            if (edge) { styleTraceEdge(edge, 'trace-actual'); }
           }
         }
         var tone = body.verdict === 'confirmed' ? 'ok'
