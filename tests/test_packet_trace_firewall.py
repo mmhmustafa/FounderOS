@@ -198,6 +198,9 @@ num   pkts bytes target     prot opt in     out     source               destina
         blocked = result.hops[1]
         self.assertEqual(("SW1", "failed"), (blocked.device, blocked.status))
         self.assertIn("default policy is DROP", blocked.explanation)
+        # The remedy: the exact rule to add, scoped to the denied flow.
+        self.assertIn("To allow it, add: `iptables -I FORWARD", blocked.explanation)
+        self.assertIn("-p tcp --dport 443 -j ACCEPT`", blocked.explanation)
         self.assertTrue(
             any("enforced firewall chain" in item for item in blocked.evidence)
         )

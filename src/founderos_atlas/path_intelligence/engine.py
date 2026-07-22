@@ -789,7 +789,9 @@ class _Investigation:
                     confidence=self._clamp(CONFIDENCE_DIRECT_EVIDENCE),
                     explanation=(
                         f"ACL {binding.acl} on {where} denies {described}: "
-                        f"`{rule.raw}` — the packet is dropped at this hop."
+                        f"`{rule.raw}` — the packet is dropped at this hop. "
+                        f"To allow it, add ahead of that line: "
+                        f"`{self._acl_remedy()}`."
                     ),
                     evidence=(
                         *evidence,
@@ -814,7 +816,8 @@ class _Investigation:
                     explanation=(
                         f"No rule in ACL {binding.acl} on {where} permits "
                         f"{described} — the access-list's implicit deny "
-                        "drops the packet at this hop."
+                        "drops the packet at this hop. To allow it, add a "
+                        f"permit before the implicit deny: `{self._acl_remedy()}`."
                     ),
                     evidence=(
                         *evidence,
@@ -891,6 +894,16 @@ class _Investigation:
                 if verdict.kind == "deny"
                 else f"{name} drops {described} — {verdict.reason}."
             )
+            # The remedy: the exact rule to add, scoped to the denied flow.
+            # For an explicit deny it goes ahead of the blocking rule; for a
+            # default deny it is simply the permit the chain is missing.
+            remedy = self._firewall_remedy(policy.chain)
+            if remedy:
+                explanation += (
+                    f" To allow it, add: `{remedy}`"
+                    if verdict.kind == "default-deny"
+                    else f" To allow it, add ahead of that rule: `{remedy}`"
+                ) + "."
             return HopResult(
                 hop_number=hop_number,
                 device=name,
@@ -947,6 +960,61 @@ class _Investigation:
         source = self.intent.get("source_address", "")
         suffix = f" from {source}" if source else ""
         return f"the declared {label} packet{suffix}"
+
+    def _flow_endpoints(self) -> tuple[str, str]:
+        """The tested flow's source and destination addresses, best-effort.
+
+        A firewall/ACL rule is written against addresses, and the remedy
+        below scopes its suggestion to exactly the flow that was denied —
+        the least-permissive fix — rather than opening the port wholesale.
+        """
+
+        src = str(self.intent.get("source_address") or "") or (
+            self.source_addresses[0] if self.source_addresses else ""
+        )
+        dst = self.destination_addresses[0] if self.destination_addresses else ""
+        return src, dst
+
+    def _firewall_remedy(self, chain: str) -> str | None:
+        """The exact rule that would permit the denied flow — a suggestion,
+        never an assertion. Scoped to the declared packet; None when no
+        protocol was declared, because then there is no precise rule to
+        propose and a guess would be dishonest. -I inserts it ahead of the
+        rule (or default policy) that dropped the packet.
+        """
+
+        proto = str(self.intent.get("protocol") or "").lower()
+        if not proto:
+            return None
+        port = self.intent.get("port")
+        src, dst = self._flow_endpoints()
+        parts = [f"iptables -I {chain}"]
+        if src:
+            parts.append(f"-s {src}")
+        if dst:
+            parts.append(f"-d {dst}")
+        parts.append(f"-p {proto}")
+        if proto in ("tcp", "udp") and port:
+            parts.append(f"--dport {port}")
+        parts.append("-j ACCEPT")
+        return " ".join(parts)
+
+    def _acl_remedy(self) -> str:
+        """The IOS permit that would admit the denied flow, scoped to it.
+
+        A suggestion to place ahead of the deny (a lower sequence number),
+        not a claim about the running config.
+        """
+
+        proto = str(self.intent.get("protocol") or "ip").lower()
+        port = self.intent.get("port")
+        src, dst = self._flow_endpoints()
+        src_token = f"host {src}" if src else "any"
+        dst_token = f"host {dst}" if dst else "any"
+        line = f"permit {proto} {src_token} {dst_token}"
+        if proto in ("tcp", "udp") and port:
+            line += f" eq {port}"
+        return line
 
     def _interface_failure(
         self,

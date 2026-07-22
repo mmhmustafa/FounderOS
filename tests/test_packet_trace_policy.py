@@ -181,6 +181,10 @@ class EnginePolicyTests(unittest.TestCase):
         self.assertEqual(("SW1", "failed"), (blocked.device, blocked.status))
         self.assertIn("EDGE-IN", blocked.explanation)
         self.assertIn("deny tcp any any eq 443", blocked.explanation)
+        # The remedy: the exact permit to add ahead of the blocking line.
+        self.assertIn("To allow it, add ahead of that line: `permit tcp",
+                      blocked.explanation)
+        self.assertIn("eq 443`", blocked.explanation)
         self.assertTrue(
             any(
                 "configs/SW1/running_config.txt:5" in item
