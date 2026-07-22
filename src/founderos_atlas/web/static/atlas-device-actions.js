@@ -84,6 +84,33 @@
     }
   });
 
+  /* Open a device console in its own pop-up window, from ANY page and ANY
+     link that points at one — the topology rows, the console index, an
+     evidence record, and anything added later. An operator mid-task should
+     not lose the page (and their place in it) to a full-page navigation and
+     a Back button.
+
+     Matches the console PAGE — /console/<device> — and nothing else: not the
+     sessions list (/console/sessions), not a sub-resource (/console/<id>/…),
+     which are never device terminals. Modified clicks (new tab, middle,
+     download) are left to the browser. link.pathname resolves relative and
+     absolute hrefs the same way, so the rule cannot be dodged by URL form. */
+  var CONSOLE_PAGE = /^\/console\/(?!sessions(?:$|\/))[^/]+\/?$/;
+  document.addEventListener('click', function (event) {
+    if (event.defaultPrevented) { return; }
+    if (event.button !== 0 || event.metaKey || event.ctrlKey ||
+        event.shiftKey || event.altKey) { return; }
+    var link = event.target.closest ? event.target.closest('a[href]') : null;
+    if (!link || !CONSOLE_PAGE.test(link.pathname || '')) { return; }
+    event.preventDefault();
+    var name = (link.pathname || '').replace(/^\/console\//, '')
+      .replace(/\/$/, '');
+    try { name = decodeURIComponent(name); } catch (error) { /* keep raw */ }
+    var win = window.open(link.href, 'atlas-console-' + name,
+                          'popup=yes,width=1100,height=760');
+    if (win) { win.focus(); }
+  });
+
   /* Copy a management URL (HTTPS or HTTP). Same honesty as Copy SSH: never a
      credential, and never a false "Copied". */
   document.addEventListener('click', function (event) {

@@ -3381,12 +3381,15 @@
                 if (body.console_url) {
                   var link = document.createElement('a');
                   link.href = body.console_url;
-                  // The viewer runs inside an iframe and Atlas refuses
-                  // to be framed (X-Frame-Options / frame-ancestors),
-                  // so a link without _top lands the operator on a
-                  // blank pane instead of the console. Every other
-                  // link out of this viewer does the same.
-                  link.target = '_top';
+                  // Opens the console in its own pop-up, like every other
+                  // console link: data-console routes it through the
+                  // handler above (window.open), so it never navigates the
+                  // framed viewer — which, since Atlas refuses to be
+                  // framed, would otherwise land on a blank pane.
+                  link.setAttribute('data-console', '');
+                  var seg = body.console_url.split('/console/')[1] || 'device';
+                  link.setAttribute('data-console-name',
+                    decodeURIComponent(seg.replace(/\/.*$/, '')));
                   link.textContent = 'Review this device’s host key →';
                   link.className = 'trace-hostkey-link';
                   statusEl.appendChild(document.createElement('br'));

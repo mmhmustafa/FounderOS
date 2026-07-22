@@ -815,12 +815,16 @@ class ViewerLiveContractTests(unittest.TestCase):
         self.assertNotIn("accept key", self.viewer.lower())
 
     def test_the_host_key_link_escapes_the_viewer_frame(self) -> None:
-        """The viewer is framed and Atlas refuses to be framed, so a
-        link without _top lands on a blank pane. Found in the live GUI:
-        clicking through showed an empty page."""
+        """The viewer is framed and Atlas refuses to be framed, so this
+        console link must not navigate the frame — clicking through once
+        showed a blank pane. It used to break out with target=_top; it now
+        opens a pop-up window like every other console link (data-console,
+        handled by the viewer's window.open interceptor), which does not
+        navigate the frame at all."""
 
         block = self.viewer.split("body.console_url", 1)[1][:700]
-        self.assertIn("link.target = '_top'", block)
+        self.assertIn("setAttribute('data-console'", block)
+        self.assertNotIn("link.target = '_top'", block)
 
 
 if __name__ == "__main__":

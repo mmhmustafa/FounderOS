@@ -824,6 +824,44 @@ class TopologyViewerActionTests(unittest.TestCase):
         ssh_button = source.split("if (ssh && ssh.eligible) {", 1)[1][:400]
         self.assertNotIn('target="_top"', ssh_button)
 
+    def test_the_host_key_review_link_also_opens_a_popup(self) -> None:
+        """The Validate-live flow offers "Review this device's host key"
+        when a stored credential was refused. It opens a console too, so it
+        must pop up like the rest — it used to navigate the framed viewer
+        (target=_top), which is a second console entry point that escaped
+        the rule."""
+
+        source = self._viewer_source()
+        block = source.split("if (body.console_url) {", 1)[1][:700]
+        self.assertIn("setAttribute('data-console'", block)
+        self.assertNotIn("link.target = '_top'", block)
+
+    def test_every_console_link_across_the_site_opens_a_popup(self) -> None:
+        """The pop-up rule is not per-page: a console link on the topology
+        rows, the console index, or an evidence record must pop up too. A
+        global interceptor in the always-loaded device-actions script opens
+        any /console/<device> link in its own window."""
+
+        static = Path(__file__).resolve().parents[1] / "src/founderos_atlas/web/static"
+        js = (static / "atlas-device-actions.js").read_text(encoding="utf-8")
+        self.assertIn("window.open(", js)
+        # Matches the console PAGE, and only that.
+        self.assertIn(r"/^\/console\/(?!sessions", js)   # excludes the list
+        # A device terminal link, but not the sessions page or a sub-resource.
+        import re
+        pattern = re.search(
+            r"var CONSOLE_PAGE = (/.*/);", js
+        )
+        self.assertIsNotNone(pattern, "console-page matcher not found")
+        rx = re.compile(pattern.group(1).strip("/"))
+        self.assertTrue(rx.match("/console/frr%3Acore1"))
+        self.assertFalse(rx.match("/console/sessions"))
+        self.assertFalse(rx.match("/console/frr%3Acore1/token"))
+        self.assertFalse(rx.match("/console"))
+        # A modified click (new tab / middle button) is left to the browser.
+        self.assertIn("event.metaKey", js)
+        self.assertIn("event.button !== 0", js)
+
     def test_the_view_selector_cannot_desync_from_the_map(self) -> None:
         """The browser restores a select to its previous value on Back,
         after the script has already rendered the default view — so the
