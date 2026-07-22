@@ -8,8 +8,17 @@
   <meta name="atlas-csrf" content="{{ csrf_token() }}">
   {% block head %}{% endblock %}
 </head>
-<body data-theme="{{ ui_theme or 'system' }}" data-density="{{ ui_density or 'comfortable' }}" data-display-level="{{ display_level or 'simple' }}">
+{#
+  bare_chrome strips the navigation shell for a page opened as its own
+  window — today, the SSH console popup. The shell is for moving AROUND
+  Atlas; a popup is one task in one window, and the sidebar, search and
+  scope selector only steal room from the terminal. Everything the task
+  itself needs stays, and RBAC is enforced per request regardless of what
+  renders here, so this hides chrome and never a control that matters.
+#}
+<body data-theme="{{ ui_theme or 'system' }}" data-density="{{ ui_density or 'comfortable' }}" data-display-level="{{ display_level or 'simple' }}"{% if bare_chrome %} data-chrome="bare"{% endif %}>
 {% import "_icons.html" as icons %}
+{% if not bare_chrome %}
   <a class="skip-link" href="#atlas-main">Skip to content</a>
   <header class="topbar">
     <button type="button" class="nav-toggle" id="atlas-nav-toggle"
@@ -69,7 +78,9 @@
     </div>
     {% endif %}
   </header>
+{% endif %}
   <div class="layout">
+{% if not bare_chrome %}
     <div class="sidebar-backdrop" id="atlas-sidebar-backdrop" hidden></div>
     {#
       Five primary areas, one open at a time (PR: calmer navigation).
@@ -108,6 +119,7 @@
         {% else %}Authenticated · {{ auth_mode }} mode{% endif %}
       </div>
     </nav>
+{% endif %}
     <main class="content{% block content_class %}{% endblock %}" id="atlas-main" tabindex="-1">
       {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
@@ -122,6 +134,7 @@
     </main>
   </div>
 
+{% if not bare_chrome %}
   <div class="search-overlay" id="atlas-search" hidden aria-hidden="true">
     <div class="search-panel" role="dialog" aria-modal="true" aria-label="Enterprise search">
       <input type="search" id="atlas-search-input" autocomplete="off"
@@ -141,6 +154,7 @@
       </div>
     </div>
   </div>
+{% endif %}
 
   <script src="{{ asset_url('atlas.js') }}"></script>
   <script src="{{ asset_url('atlas-device-actions.js') }}"></script>

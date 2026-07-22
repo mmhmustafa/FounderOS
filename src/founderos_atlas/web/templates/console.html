@@ -4,10 +4,12 @@
 <link rel="stylesheet" href="{{ asset_url('vendor/xterm.css') }}">
 {% endblock %}
 {% block content %}
+{% if not bare_chrome %}
 <div class="page-head">
   <h1>SSH Console — {{ target.hostname }}</h1>
   <span class="actions"><a class="btn" href="/console">All Devices</a></span>
 </div>
+{% endif %}
 
 {% if not target.eligible %}
 <section class="card card-warn">
@@ -37,11 +39,25 @@
   </div>
 </div>
 
+{#
+  In a popup these are COLLAPSED, never dropped. The credential in use,
+  the basis for the endpoint and who Atlas believes is driving are part of
+  the session's honesty; a smaller window is a reason to fold them away,
+  not to stop disclosing them.
+#}
+{% if bare_chrome %}<details class="console-details"><summary>Session details</summary>{% endif %}
 <ul class="kv console-facts">
   <li><span>Credential set</span><span>{{ target.credential_name or 'none' }} <span class="muted">({{ target.username or 'no user' }})</span></span></li>
   <li><span>Endpoint evidence</span><span>Atlas authenticated to this address during discovery</span></li>
   <li><span>Operator</span><span>{{ operator.name }}{% if not operator.authenticated %} <span class="muted">— unverified: {{ operator.basis }}</span>{% endif %}</span></li>
 </ul>
+{% if bare_chrome %}
+<p class="muted">
+  The SSH session runs on the Atlas server; your browser holds only the terminal. The password
+  never leaves the server — it is not in this page, this URL, or the connection to it. What you
+  type is not filtered and not recorded; Atlas records only that a session happened.
+</p>
+</details>{% endif %}
 
 <div id="console-alert" class="card card-warn" hidden>
   <h2 id="console-alert-title">Attention</h2>
@@ -74,11 +90,13 @@
   <div id="terminal" class="console-terminal"></div>
 </section>
 
+{% if not bare_chrome %}
 <p class="muted">
   The SSH session runs on the Atlas server; your browser holds only the terminal. The password
   never leaves the server — it is not in this page, this URL, or the connection to it. What you
   type is not filtered and not recorded; Atlas records only that a session happened.
 </p>
+{% endif %}
 
 <script src="{{ asset_url('vendor/xterm.js') }}"></script>
 <script src="{{ asset_url('vendor/xterm-addon-fit.js') }}"></script>

@@ -555,6 +555,24 @@ body[data-theme="dark"] table[data-row-select] tbody tr.row-selected { backgroun
   position: relative;
   contain: paint;
 }
+/* Bare chrome: a window that IS one console. With no topbar or sidebar to
+   sit beside, the layout stops being a grid and the terminal takes the
+   height the shell gave back, rather than the viewport fraction it uses
+   when a whole page surrounds it. */
+body[data-chrome="bare"] .layout { display: block; min-height: 100vh; }
+body[data-chrome="bare"] .content {
+  max-width: none; padding: 12px 14px;
+  min-height: 100vh; display: flex; flex-direction: column;
+}
+body[data-chrome="bare"] .console-card {
+  flex: 1; display: flex; flex-direction: column; min-height: 0;
+}
+body[data-chrome="bare"] .console-terminal { flex: 1; height: auto; min-height: 240px; }
+body[data-chrome="bare"] .console-head { margin-bottom: 8px; }
+.console-details { margin-bottom: 10px; }
+.console-details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+.console-details .console-facts { margin-top: 8px; }
+
 .device-actions { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .device-actions-compact { gap: 4px; }
 .btn-console { background: var(--accent); color: #fff; border-color: var(--accent); }

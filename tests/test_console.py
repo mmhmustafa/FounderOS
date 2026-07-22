@@ -935,6 +935,82 @@ class ConsoleGuiTests(unittest.TestCase):
             self.assertIn("R1", page)
             self.assertIn("Open SSH Console", page)
 
+    def _console_url(self, client) -> str:
+        import re
+
+        page = client.get("/console").get_data(as_text=True)
+        match = re.search(r'href="(/console/[^"/?]+)"', page)
+        self.assertIsNotNone(match, "no device console link on /console")
+        return match.group(1)
+
+    def test_a_popup_console_drops_the_navigation_shell(self) -> None:
+        """A window that IS one console has nothing to navigate: the
+        sidebar, search and scope selector only take room from the
+        terminal."""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = self._client(Path(tmp))
+            url = self._console_url(client)
+            bare = client.get(url + "?chrome=bare").get_data(as_text=True)
+            self.assertEqual(1, bare.count('data-chrome="bare"'))
+            self.assertNotIn('id="atlas-sidebar"', bare)
+            self.assertNotIn('id="atlas-search"', bare)
+            self.assertNotIn('class="scope-form"', bare)
+            self.assertNotIn('id="atlas-nav-toggle"', bare)
+
+    def test_the_console_keeps_its_full_shell_as_a_normal_page(self) -> None:
+        # Only the popup asks for bare; a console opened as a page still
+        # has somewhere to navigate from.
+        with tempfile.TemporaryDirectory() as tmp:
+            client = self._client(Path(tmp))
+            page = client.get(self._console_url(client)).get_data(as_text=True)
+            self.assertIn('id="atlas-sidebar"', page)
+            self.assertNotIn('data-chrome="bare"', page)
+
+    def test_a_popup_console_keeps_everything_the_session_needs(self) -> None:
+        """Stripping chrome must never strip a control the task needs.
+        Host-key acceptance above all: a popup that cannot show a changed
+        fingerprint would leave the operator unable to make the trust
+        decision at exactly the moment it matters."""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = self._client(Path(tmp))
+            bare = client.get(
+                self._console_url(client) + "?chrome=bare"
+            ).get_data(as_text=True)
+            self.assertIn('id="console-alert"', bare)
+            self.assertIn('id="console-alert-fingerprints"', bare)
+            self.assertIn('id="fp-known"', bare)
+            self.assertIn('id="fp-new"', bare)
+            self.assertIn('id="btn-connect"', bare)
+            self.assertIn('id="btn-disconnect"', bare)
+            self.assertIn('id="terminal"', bare)
+            self.assertIn('id="console-state"', bare)
+
+    def test_a_popup_console_folds_its_disclosures_away_but_keeps_them(self) -> None:
+        """The credential in use, the basis for the endpoint and where the
+        password lives are part of the session's honesty. A smaller window
+        is a reason to collapse them, not to stop disclosing them."""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = self._client(Path(tmp))
+            bare = client.get(
+                self._console_url(client) + "?chrome=bare"
+            ).get_data(as_text=True)
+            self.assertIn("console-details", bare)
+            self.assertIn("Credential set", bare)
+            self.assertIn("Endpoint evidence", bare)
+            self.assertIn("The password", bare)
+            self.assertIn("never leaves the server", bare)
+
+    def test_the_popup_opener_asks_for_the_bare_layout(self) -> None:
+        source = Path(
+            "src/founderos_atlas/web/static/atlas-device-actions.js"
+        ).read_text(encoding="utf-8")
+        self.assertIn("searchParams.set('chrome', 'bare')", source)
+        # Built on the link's own URL, so a query it already carries lives.
+        self.assertIn("new URL(link.href", source)
+
     def test_the_universal_action_renders_on_topology(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             page = self._client(Path(tmp)).get("/topology").get_data(as_text=True)

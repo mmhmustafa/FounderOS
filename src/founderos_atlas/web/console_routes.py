@@ -120,6 +120,11 @@ def register_console_routes(app, deps) -> None:
             operator=operator.to_dict(),
             host_key=host_key,
             credential_sets=deps.credential_choices(scopes, scope_id),
+            # A window that IS one console has no use for the navigation
+            # shell. Asked for explicitly by the popup opener rather than
+            # sniffed from window.opener: a request either carries it or it
+            # does not, which is deterministic and testable server-side.
+            bare_chrome=request.args.get("chrome") == "bare",
             **context,
         )
 

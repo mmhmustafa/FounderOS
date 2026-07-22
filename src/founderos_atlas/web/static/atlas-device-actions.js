@@ -106,7 +106,18 @@
     var name = (link.pathname || '').replace(/^\/console\//, '')
       .replace(/\/$/, '');
     try { name = decodeURIComponent(name); } catch (error) { /* keep raw */ }
-    var win = window.open(link.href, 'atlas-console-' + name,
+    /* Ask for the bare layout. The popup is one task in one window, so
+       the sidebar, search and scope selector only take room from the
+       terminal. Built on the link's own URL so any query it already
+       carries survives, and only ever added for the POPUP — a console
+       opened as a normal page keeps the full shell to navigate from. */
+    var url = link.href;
+    try {
+      var parsed = new URL(link.href, window.location.href);
+      parsed.searchParams.set('chrome', 'bare');
+      url = parsed.href;
+    } catch (error) { /* no URL support: open it unchanged */ }
+    var win = window.open(url, 'atlas-console-' + name,
                           'popup=yes,width=1100,height=760');
     if (win) { win.focus(); }
   });
