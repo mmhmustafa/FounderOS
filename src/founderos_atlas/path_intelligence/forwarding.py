@@ -22,6 +22,8 @@ from __future__ import annotations
 from ipaddress import ip_address, ip_network
 from typing import Any
 
+from founderos_atlas.routing.policy import PolicyRoute, first_matching_policy
+
 
 def routes_from_metadata(metadata: Any) -> tuple[dict, ...] | None:
     """The captured RIB out of a snapshot device's metadata.
@@ -61,6 +63,50 @@ def routes_from_metadata(metadata: Any) -> tuple[dict, ...] | None:
             continue
         routes.append(fields)
     return tuple(routes)
+
+
+def policy_routes_from_metadata(metadata: Any) -> tuple[PolicyRoute, ...] | None:
+    """The captured policy routes, or None when none were ever captured.
+
+    Same three-state discipline as the RIB reader above, and for the same
+    reason: a device Atlas never asked about policy routing is NOT a
+    device that has none. Only the second is evidence, and only the second
+    licenses a forwarding verdict that ignores PBR.
+    """
+
+    if not isinstance(metadata, dict):
+        return None
+    if not metadata.get("policy_routes_captured"):
+        return None
+    captured = metadata.get("policy_routes") or ()
+    policies: list[PolicyRoute] = []
+    for entry in captured:
+        if isinstance(entry, dict):
+            fields = entry
+        else:
+            try:
+                fields = dict(entry)
+            except (TypeError, ValueError):
+                continue
+        sequence = fields.get("sequence")
+        if not isinstance(sequence, int):
+            continue
+        policies.append(PolicyRoute(
+            sequence=sequence,
+            source=fields.get("source"),
+            destination=fields.get("destination"),
+            protocol=fields.get("protocol"),
+            destination_ports=tuple(fields.get("destination_ports") or ()),
+            ingress_interface=fields.get("ingress_interface"),
+            next_hop=fields.get("next_hop"),
+            egress_interface=fields.get("egress_interface"),
+            table=fields.get("table"),
+            disabled=bool(fields.get("disabled")),
+            name=fields.get("name"),
+            unresolved_matches=tuple(fields.get("unresolved_matches") or ()),
+            source_command=fields.get("source_command"),
+        ))
+    return tuple(policies)
 
 
 def longest_prefix_match(routes, address: str) -> dict | None:

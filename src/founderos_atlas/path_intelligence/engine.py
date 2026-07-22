@@ -32,8 +32,10 @@ from .firewall import (
 from .forwarding import (
     describe_route,
     longest_prefix_match,
+    policy_routes_from_metadata,
     routes_from_metadata,
 )
+from founderos_atlas.routing.policy import first_matching_policy
 from .policy import (
     DevicePolicy,
     INDETERMINATE,
@@ -155,6 +157,14 @@ class _Investigation:
         # routing table to reason over, and which were left unevaluated.
         self.route_hops_evaluated = 0
         self.route_hops_unevaluated: list[str] = []
+        # Policy routing is accounted separately from the RIB. Today almost
+        # no device has it captured, so raising a per-hop unknown for each
+        # would bury every trace in noise about a feature most devices do
+        # not use. The coverage is stated once, in the basis, and a per-hop
+        # unknown is kept for the case that genuinely warrants one: policy
+        # WAS captured and Atlas cannot tell whether it diverts this flow.
+        self.policy_route_hops_evaluated = 0
+        self.policy_route_hops_unevaluated: list[str] = []
         self.destination_key: str | None = None
         self.destination_addresses: tuple[str, ...] = ()
         self.source_addresses: tuple[str, ...] = ()
@@ -931,6 +941,16 @@ class _Investigation:
             return None            # arrived; no forwarding decision remains
         name = self._display_name(key)
         device = self.devices.get(key)
+
+        # Policy routing decides BEFORE the table is consulted, so it is
+        # asked first. A rule that diverts this flow makes the RIB lookup
+        # moot; a rule Atlas cannot decide makes the RIB answer uncertain,
+        # and saying so is the whole point of asking.
+        if self._policy_route_check(
+            key=key, name=name, ingress=ingress, evidence=evidence,
+        ):
+            return None
+
         routes = routes_from_metadata((device or {}).get("metadata"))
         if routes is None:
             # No table was captured — "we never looked" is not a verdict.
@@ -977,6 +997,87 @@ class _Investigation:
             ),
             failure_type=FAILURE_NO_ROUTE,
         )
+
+    def _policy_route_check(
+        self,
+        *,
+        key: str,
+        name: str,
+        ingress: str | None,
+        evidence: list[str],
+    ) -> bool:
+        """Does policy routing decide this flow here?
+
+        Returns True when the flow is diverted and the routing table is
+        therefore not what forwards it — the caller then stops, because
+        matching the RIB would report a next hop the device does not use.
+
+        A rule that MATCHES but directs nothing (a Linux rule selecting a
+        table, an IOS deny clause meaning "do not policy-route this") does
+        not divert; the RIB still decides, and the caller continues.
+        """
+
+        device = self.devices.get(key) or {}
+        policies = policy_routes_from_metadata(device.get("metadata"))
+        if policies is None:
+            if name not in self.policy_route_hops_unevaluated:
+                self.policy_route_hops_unevaluated.append(name)
+            return False
+        self.policy_route_hops_evaluated += 1
+        if not policies:
+            evidence.append(
+                f"{name} has no policy routing configured (captured); the "
+                "routing table decides this flow"
+            )
+            return False
+
+        port = self.intent.get("port")
+        try:
+            port = int(str(port)) if port not in (None, "") else None
+        except (TypeError, ValueError):
+            port = None
+        chosen, undetermined = first_matching_policy(
+            policies,
+            source_address=self.intent.get("source_address") or None,
+            destination_address=self.declared_destination,
+            protocol=(self.intent.get("protocol") or None),
+            destination_port=port,
+            ingress_interface=ingress,
+        )
+
+        for policy in undetermined:
+            # A rule that MIGHT divert this flow. Reporting the RIB's
+            # answer without mentioning it would present a next hop that
+            # may simply not be the one used.
+            self.unknowns.append(
+                f"{name} has a policy route that may divert this flow but "
+                f"cannot be decided from what was captured — "
+                f"{policy.describe()}."
+            )
+
+        if chosen is None:
+            return False
+        if not chosen.directs_traffic():
+            if chosen.table:
+                # The rule sends the flow to another table, and the table
+                # Atlas captured is not that one. The RIB answer below
+                # would be about the wrong table entirely.
+                self.unknowns.append(
+                    f"{name} policy-routes this flow into table "
+                    f"{chosen.table} ({chosen.describe()}); the captured "
+                    "table is not that one, so the forwarding decision at "
+                    "this hop is not evaluated."
+                )
+                if name not in self.policy_route_hops_unevaluated:
+                    self.policy_route_hops_unevaluated.append(name)
+            return False
+
+        evidence.append(
+            f"{name} policy-routes this flow: {chosen.describe()} "
+            f"(captured {chosen.source_command or 'policy routing'}) — "
+            "this overrides the routing table"
+        )
+        return True
 
     def _firewall_check(
         self,
@@ -1694,6 +1795,18 @@ class _Investigation:
             basis["routing"] = {
                 "hops_evaluated": self.route_hops_evaluated,
                 "hops_unevaluated": list(self.route_hops_unevaluated),
+            }
+        # Policy routing gets its own accounting. A forwarding verdict is
+        # only as good as this coverage: a hop whose policy was never
+        # captured might divert the flow away from the route the table
+        # names, and the reader is entitled to know which hops those are.
+        if (
+            self.policy_route_hops_evaluated
+            or self.policy_route_hops_unevaluated
+        ):
+            basis["policy_routing"] = {
+                "hops_evaluated": self.policy_route_hops_evaluated,
+                "hops_unevaluated": list(self.policy_route_hops_unevaluated),
             }
         if extra_basis:
             basis.update(extra_basis)

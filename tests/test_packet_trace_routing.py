@@ -176,6 +176,143 @@ class EngineForwardingTests(unittest.TestCase):
         self.assertEqual("connected", result.status)
 
 
+class PolicyRoutingTests(unittest.TestCase):
+    """Policy routing decides a flow BEFORE the routing table does.
+
+    A forwarding verdict that reports the RIB's next hop while the device
+    diverts the flow elsewhere is not incomplete — it is wrong, and wrong
+    with full confidence. These pin that the engine asks policy first, and
+    that what it cannot decide is said rather than assumed away.
+    """
+
+    def _snapshot(self, policies, *, captured=True):
+        snapshot = snapshot_with_routes("SW1", [
+            route("0.0.0.0/0", "static", "10.0.0.254"),
+        ])
+        for device in snapshot["devices"]:
+            if device["hostname"] == "SW1":
+                metadata = dict(device["metadata"])
+                if captured:
+                    metadata["policy_routes_captured"] = True
+                    metadata["policy_routes"] = list(policies)
+                device["metadata"] = metadata
+        return snapshot
+
+    def _hop(self, result, device="SW1"):
+        return next(h for h in result.hops if h.device == device)
+
+    def test_a_matching_policy_route_overrides_the_table(self) -> None:
+        snapshot = self._snapshot([{
+            "sequence": 10, "source": "10.0.0.0/24",
+            "next_hop": "192.0.2.1", "egress_interface": "Gi0/9",
+            "source_command": "show router policy",
+        }])
+        result = investigate_path(
+            "R1", "SW2", snapshot=snapshot, generated_at=NOW,
+            intent={"protocol": "tcp", "port": "443",
+                    "source_address": "10.0.0.7"},
+        )
+        evidence = " ".join(self._hop(result).evidence)
+        self.assertIn("policy-routes this flow", evidence)
+        self.assertIn("192.0.2.1", evidence)
+        self.assertIn("overrides the routing table", evidence)
+        # The RIB's own answer is NOT also reported: the device does not
+        # use it for this flow, so quoting it would name a hop that is
+        # simply not the one taken.
+        self.assertNotIn("0.0.0.0/0", evidence)
+
+    def test_a_policy_that_cannot_be_decided_is_said_out_loud(self) -> None:
+        """The rule constrains a source the trace never declared. Silently
+        falling through to the table would report a next hop that a policy
+        rule may well override."""
+
+        snapshot = self._snapshot([{
+            "sequence": 10, "source": "10.99.0.0/16",
+            "next_hop": "192.0.2.1",
+        }])
+        result = investigate_path(
+            "R1", "SW2", snapshot=snapshot, generated_at=NOW,
+            intent={"protocol": "tcp", "port": "443"},
+        )
+        self.assertTrue(any(
+            "may divert this flow" in item for item in result.unknowns
+        ))
+
+    def test_a_contradicted_policy_leaves_the_table_in_charge(self) -> None:
+        # The flow's source is ruled out by the rule, so the rule is not
+        # in play at all and nothing uncertain needs saying.
+        snapshot = self._snapshot([{
+            "sequence": 10, "source": "10.99.0.0/16",
+            "next_hop": "192.0.2.1",
+        }])
+        result = investigate_path(
+            "R1", "SW2", snapshot=snapshot, generated_at=NOW,
+            intent={"protocol": "tcp", "source_address": "10.0.0.7"},
+        )
+        evidence = " ".join(self._hop(result).evidence)
+        self.assertIn("0.0.0.0/0", evidence)
+        self.assertFalse(any(
+            "may divert this flow" in item for item in result.unknowns
+        ))
+
+    def test_captured_and_empty_says_the_table_decides(self) -> None:
+        """"Asked, and this device policy-routes nothing" is evidence, and
+        it is what licenses trusting the routing table's answer."""
+
+        result = investigate_path(
+            "R1", "SW2", snapshot=self._snapshot([]), generated_at=NOW,
+            intent={"protocol": "tcp"},
+        )
+        evidence = " ".join(self._hop(result).evidence)
+        self.assertIn("no policy routing configured", evidence)
+        self.assertIn("0.0.0.0/0", evidence)
+
+    def test_a_table_selecting_rule_does_not_claim_a_next_hop(self) -> None:
+        """A Linux rule picks a TABLE; the captured RIB is not that table,
+        so the forwarding decision here is unevaluated rather than
+        answered from the wrong table."""
+
+        snapshot = self._snapshot([{
+            "sequence": 100, "table": "200", "source": "10.0.0.0/24",
+        }])
+        result = investigate_path(
+            "R1", "SW2", snapshot=snapshot, generated_at=NOW,
+            intent={"protocol": "tcp", "source_address": "10.0.0.7"},
+        )
+        self.assertTrue(any(
+            "table 200" in item and "not evaluated" in item
+            for item in result.unknowns
+        ))
+
+    def test_uncaptured_policy_is_accounted_without_flooding_unknowns(self) -> None:
+        """Almost no device has policy captured yet. A per-hop unknown for
+        each would bury every trace in noise about a feature most devices
+        do not use — so the coverage is stated once, in the basis."""
+
+        result = investigate_path(
+            "R1", "SW2", snapshot=self._snapshot([], captured=False),
+            generated_at=NOW, intent={"protocol": "tcp"},
+        )
+        accounting = result.to_dict()["basis"]["policy_routing"]
+        self.assertIn("SW1", accounting["hops_unevaluated"])
+        self.assertEqual(0, accounting["hops_evaluated"])
+        self.assertFalse(any(
+            "policy" in item and "divert" in item for item in result.unknowns
+        ))
+
+    def test_policy_routing_is_inert_on_a_snapshot_without_it(self) -> None:
+        # Every trace recorded before this existed must still read the
+        # same way. No policy metadata at all changes no verdict.
+        plain = investigate_path(
+            "R1", "SW2", snapshot=snapshot_with_routes("SW1", [
+                route("0.0.0.0/0", "static", "10.0.0.254")]),
+            generated_at=NOW, intent={"protocol": "tcp"},
+        )
+        self.assertEqual("connected", plain.status)
+        evidence = " ".join(self._hop(plain).evidence)
+        self.assertIn("0.0.0.0/0", evidence)
+
+
 class DeclaredDestinationTests(unittest.TestCase):
     """Which address the flow is FOR.
 
