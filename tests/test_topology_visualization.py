@@ -212,7 +212,6 @@ class TopologyVisualizationTests(unittest.TestCase):
         html = TopologyRenderer(self.snapshot).render()
         self.assertIn("function printAsImage", html)
         self.assertIn('id="print-image"', html)
-        self.assertIn("body.printing-image .graph-wrap", html)
         pdf = html.split("if (kind === 'pdf')", 1)[1][:360]
         self.assertIn("printAsImage()", pdf)
 
@@ -230,6 +229,35 @@ class TopologyVisualizationTests(unittest.TestCase):
         # same reason the canvas did.
         self.assertIn("image.onload", printer)
         self.assertIn("full: true", printer)
+
+    def test_the_print_image_is_not_hidden_along_with_the_graph(self) -> None:
+        """It lived INSIDE .graph-wrap once, and printing hides
+        .graph-wrap — so the image was hidden with its parent and the
+        sheet came out blank but for the header. It must be a sibling."""
+
+        html = TopologyRenderer(self.snapshot).render()
+        # It sits between the graph's closing tag and the details column —
+        # a sibling of .graph-wrap, so hiding the graph cannot hide it.
+        tail = html.split('<div id="print-image"', 1)[1]
+        self.assertTrue(
+            tail.lstrip().startswith('aria-hidden="true"></div>'),
+            "the print holder should be an empty sibling element",
+        )
+        self.assertIn('<aside id="details-panel"', tail[:400])
+
+    def test_the_print_swap_is_inline_not_a_media_only_rule(self) -> None:
+        """An @media print rule cannot be observed from script, so a
+        mistake in one stays invisible until someone prints. The swap and
+        the image fit are inline, identical in both media, measurable
+        before the dialog opens."""
+
+        html = TopologyRenderer(self.snapshot).render()
+        printer = html.split("function printAsImage", 1)[1][:2600]
+        self.assertIn("wrap.style.display = 'none'", printer)
+        self.assertIn("holder.style.display = 'block'", printer)
+        self.assertIn("image.style.width = '100%'", printer)
+        # And put back, or the map stays hidden after printing.
+        self.assertIn("wrap.style.display = previousWrap", printer)
 
     def test_ctrl_p_still_refits_the_live_canvas(self) -> None:
         # The browser's own print entry cannot be awaited, so it gets the

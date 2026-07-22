@@ -326,13 +326,11 @@
       main { display: block; }
       .graph-wrap { min-height: 120mm; border: 1px solid #ccc; }
       #cy { min-height: 120mm; }
-      /* Printing the rendered image: the live graph steps aside entirely,
-         so there is no chance of a half-painted canvas appearing beside
-         or instead of it. */
-      body.printing-image .graph-wrap { display: none !important; }
-      body.printing-image #print-image {
-        display: block !important; border: 1px solid #ccc;
-      }
+      /* Printing the rendered image. The show/hide is done with inline
+         styles from script; these only dress it and hide the details
+         column, so nothing here can silently undo the swap. */
+      body.printing-image #details-panel { display: none !important; }
+      body.printing-image #print-image { border: 1px solid #ccc; }
       #print-image img { width: 100%; height: auto; }
       /* Cytoscape paints to a canvas; without this Chrome drops the
          backgrounds and the map prints as an empty box. */
@@ -504,9 +502,6 @@
           <pre id="trace-live-output"></pre>
         </details>
       </div>
-      <!-- Holds the rendered map while the print dialog is open; empty at
-           every other moment, and never shown on screen. -->
-      <div id="print-image" aria-hidden="true"></div>
       <div id="open-sites" aria-label="Open sites"></div>
       <div id="viewport-hint" role="status" aria-live="polite" hidden></div>
       <div id="legend" aria-label="Legend">
@@ -528,6 +523,15 @@
         <div class="row" id="legend-bgp" style="display:none"><span class="dot" style="background:#f5f3ff;border:1px solid #a78bfa"></span> BGP AS boundary</div>
       </div>
     </div>
+    <!--
+      Holds the rendered map while the print dialog is open; empty at every
+      other moment, and never shown on screen.
+
+      A SIBLING of .graph-wrap, not a child. It lived inside it once, and
+      printing hides .graph-wrap — so the image was hidden along with its
+      parent and the sheet came out blank but for the header.
+    -->
+    <div id="print-image" aria-hidden="true"></div>
     <aside id="details-panel" aria-label="Topology details">
       <div id="details">
         <h2>Details</h2>
@@ -2572,16 +2576,33 @@
               reject(new Error('the rendered map could not be loaded'));
             };
             image.alt = 'Atlas topology';
+            // Inline, so the fit is the same in both media and can be
+            // measured before printing. Left to a print-only rule, an
+            // 8000px-wide image is unconstrained everywhere it can be
+            // checked and only behaves where it cannot.
+            image.style.width = '100%';
+            image.style.height = 'auto';
             image.src = dataUri;
           });
         }).then(function (image) {
           holder.textContent = '';
           holder.appendChild(image);
+          // Swapped with INLINE styles, not by a print-media class. An
+          // @media rule cannot be observed from script, so a mistake in it
+          // is invisible until someone prints; inline styles are the same
+          // in both media and can be measured before the dialog opens.
+          var wrap = document.querySelector('.graph-wrap');
+          var previousWrap = wrap.style.display;
+          var previousHolder = holder.style.display;
           document.body.classList.add('printing-image');
+          wrap.style.display = 'none';
+          holder.style.display = 'block';
           try {
             window.print();
           } finally {
             document.body.classList.remove('printing-image');
+            wrap.style.display = previousWrap;
+            holder.style.display = previousHolder;
             holder.textContent = '';
           }
           say('Print dialog opened — choose "Save as PDF".');
