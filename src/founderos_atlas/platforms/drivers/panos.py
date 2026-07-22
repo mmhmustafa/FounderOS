@@ -59,6 +59,7 @@ from founderos_atlas.routing import (
     OspfAdjacencyObservation,
     routing_metadata,
 )
+from founderos_atlas.routing.table import columnar_route_dicts
 
 from .. import capabilities as caps
 from ..capabilities import CommandSpec, EXPERIMENTAL, TIER_DEEP, TIER_FAST
@@ -412,6 +413,11 @@ class PanOsDriver(ProductionDriver):
         metadata["route_count"] = len(
             _ROUTE_ROW.findall(raw.get(SHOW_ROUTES, ""))
         )
+        # The real RIB across every virtual router: PAN-OS prints fixed
+        # columns and encodes the protocol as a flag letter.
+        routing_table = columnar_route_dicts(raw.get(SHOW_ROUTES, ""))
+        if routing_table:
+            metadata["routing_table"] = routing_table
         vrfs = sorted(set(_VR_HEAD.findall(raw.get(SHOW_ROUTES, ""))))
         if vrfs:
             metadata["vrfs"] = tuple(vrfs)

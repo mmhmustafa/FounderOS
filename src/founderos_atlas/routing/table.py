@@ -243,6 +243,117 @@ def parse_prefix_line_route_table(text: str) -> tuple[RouteEntry, ...]:
     return tuple(entries)
 
 
+# -- the Junos dialect -------------------------------------------------------
+#
+#   0.0.0.0/0          *[Static/5] 12w3d 02:11:04
+#                       >  to 10.10.20.1 via me0.0
+#   10.10.40.0/31      *[Direct/0] 12w3d 02:11:04
+#                       >  via ge-0/0/0.0
+#
+# The protocol and preference ride in brackets on the prefix line; each
+# next-hop follows indented, as "to <nh> via <iface>" or — for a direct
+# route, which has no next-hop — just "via <iface>".
+
+_JUNOS_HEADER = re.compile(
+    r"^(?P<prefix>\d{1,3}(?:\.\d{1,3}){3}/\d{1,2})\s+[*+-]*\["
+    r"(?P<proto>[A-Za-z]+)/(?P<pref>\d+)\]"
+)
+_JUNOS_METRIC = re.compile(r"metric\s+(\d+)")
+_JUNOS_HOP = re.compile(
+    r"^\s+[>*+\s]*(?:to\s+(?P<nh>\d{1,3}(?:\.\d{1,3}){3})\s+)?via\s+(?P<iface>\S+)"
+)
+_JUNOS_PROTOCOLS = {
+    "direct": "connected", "local": "local", "static": "static",
+    "ospf": "ospf", "ospf3": "ospf", "bgp": "bgp", "rip": "rip",
+    "isis": "isis", "access": "access", "aggregate": "aggregate",
+}
+
+
+def parse_junos_route_table(text: str) -> tuple[RouteEntry, ...]:
+    """Read Junos `show route` into RouteEntry."""
+
+    entries: list[RouteEntry] = []
+    current: dict | None = None
+    for raw in (text or "").splitlines():
+        header = _JUNOS_HEADER.match(raw)
+        if header:
+            metric = _JUNOS_METRIC.search(raw)
+            protocol = header.group("proto").lower()
+            current = {
+                "prefix": header.group("prefix"),
+                "protocol": _JUNOS_PROTOCOLS.get(protocol, protocol),
+                # Junos calls the administrative distance a "preference".
+                "distance": int(header.group("pref")),
+                "metric": int(metric.group(1)) if metric else None,
+            }
+            continue
+        hop = _JUNOS_HOP.match(raw)
+        if hop and current:
+            entries.append(RouteEntry(
+                prefix=current["prefix"], protocol=current["protocol"],
+                next_hop=hop.group("nh"),
+                interface=hop.group("iface").rstrip(","),
+                distance=current["distance"], metric=current["metric"],
+                connected=current["protocol"] in ("connected", "local"),
+            ))
+    return tuple(entries)
+
+
+# -- the columnar dialect (Palo Alto PAN-OS) ---------------------------------
+#
+#   destination        nexthop        metric flags  age  interface
+#   0.0.0.0/0          203.0.113.1    10     A S         ethernet1/1
+#   192.0.2.128/25     172.20.40.3    110    A Oi   5d   ethernet1/2
+#
+# Fixed columns, and the protocol is a FLAG letter rather than a word.
+
+_COLUMNAR_ROW = re.compile(
+    r"^(?P<prefix>\d{1,3}(?:\.\d{1,3}){3}/\d{1,2})\s+"
+    r"(?P<nh>\d{1,3}(?:\.\d{1,3}){3}|\S+)\s+(?P<metric>\d+)\s+(?P<rest>.+)$"
+)
+# PAN-OS flag letters: C connect, S static, B bgp, O/Oi/Oo/O1/O2 ospf,
+# R rip, H host. "A" (active) is a state, not a protocol.
+_COLUMNAR_FLAGS = {
+    "C": "connected", "H": "local", "S": "static", "B": "bgp",
+    "R": "rip", "O": "ospf", "Oi": "ospf", "Oo": "ospf",
+    "O1": "ospf", "O2": "ospf",
+}
+
+
+def parse_columnar_route_table(text: str) -> tuple[RouteEntry, ...]:
+    """Read the PAN-OS routing table into RouteEntry."""
+
+    entries: list[RouteEntry] = []
+    for raw in (text or "").splitlines():
+        row = _COLUMNAR_ROW.match(raw.strip())
+        if not row:
+            continue
+        protocol = interface = None
+        for token in row.group("rest").split():
+            if protocol is None and token in _COLUMNAR_FLAGS:
+                protocol = _COLUMNAR_FLAGS[token]
+                continue
+            # The interface is the trailing named column; ages ("2d") and
+            # the active flag are not it.
+            if (len(token) > 1 and token[0].isalpha()
+                    and not _DURATION.match(token)
+                    and token not in _COLUMNAR_FLAGS
+                    and re.match(r"^[A-Za-z][A-Za-z0-9._/\-]*$", token)):
+                interface = token
+        if protocol is None:
+            continue        # no protocol flag: not a route row we understand
+        next_hop = row.group("nh")
+        if not _ADDRESS.match(next_hop):
+            next_hop = None
+        entries.append(RouteEntry(
+            prefix=row.group("prefix"), protocol=protocol,
+            next_hop=next_hop, interface=interface,
+            metric=int(row.group("metric")),
+            connected=protocol in ("connected", "local"),
+        ))
+    return tuple(entries)
+
+
 def route_dicts(entries) -> list[dict]:
     """Any parsed RouteEntry sequence as JSON-ready dicts."""
 
@@ -259,3 +370,15 @@ def prefix_line_route_dicts(text: str) -> list[dict]:
     """The NX-OS / Aruba CX RIB as JSON-ready dicts."""
 
     return route_dicts(parse_prefix_line_route_table(text))
+
+
+def junos_route_dicts(text: str) -> list[dict]:
+    """The Junos RIB as JSON-ready dicts."""
+
+    return route_dicts(parse_junos_route_table(text))
+
+
+def columnar_route_dicts(text: str) -> list[dict]:
+    """The PAN-OS RIB as JSON-ready dicts."""
+
+    return route_dicts(parse_columnar_route_table(text))

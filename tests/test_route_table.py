@@ -12,6 +12,8 @@ from __future__ import annotations
 import unittest
 
 from founderos_atlas.routing.table import (
+    parse_columnar_route_table,
+    parse_junos_route_table,
     parse_prefix_line_route_table,
     parse_route_table,
     route_table_dicts,
@@ -153,6 +155,80 @@ class PrefixLineGrammarTests(unittest.TestCase):
                 "10.0.0.0/8, vrf default\n    via  10.0.0.1,  [1/0]\n"
             )
         )
+
+
+JUNOS = """inet.0: 12 destinations, 12 routes (12 active, 0 holddown, 0 hidden)
++ = Active Route, - = Last Active, * = Both
+
+0.0.0.0/0          *[Static/5] 12w3d 02:11:04
+                    >  to 10.10.20.1 via me0.0
+10.10.40.0/31      *[Direct/0] 12w3d 02:11:04
+                    >  via ge-0/0/0.0
+192.0.2.13/32      *[OSPF/10] 10w1d 11:22:33, metric 2
+                    >  to 10.10.40.0 via ge-0/0/0.0
+"""
+
+PANOS = """flags: A:active, C:connect, S:static, O:ospf, B:bgp, Oi:ospf intra-area
+
+VIRTUAL ROUTER: default (id 1)
+destination            nexthop          metric flags   age  interface
+0.0.0.0/0              203.0.113.1      10     A S          ethernet1/1
+172.20.40.0/24         172.20.40.1      0      A C          ethernet1/2
+192.0.2.128/25         172.20.40.3      110    A Oi     5d   ethernet1/2
+
+VIRTUAL ROUTER: tenant-b (id 2)
+destination            nexthop          metric flags   age  interface
+172.20.50.0/24         172.20.50.1      0      A C          ethernet1/3
+
+total routes shown: 4
+"""
+
+
+class JunosGrammarTests(unittest.TestCase):
+    """Junos carries protocol and preference in brackets on the prefix line
+    and puts each next-hop beneath it — "to <nh> via <iface>", or just
+    "via <iface>" for a direct route, which has no next-hop at all."""
+
+    def setUp(self) -> None:
+        self.routes = {r.prefix: r for r in parse_junos_route_table(JUNOS)}
+
+    def test_table_headers_carry_no_route(self) -> None:
+        self.assertEqual(3, len(self.routes))
+
+    def test_preference_is_the_administrative_distance(self) -> None:
+        ospf = self.routes["192.0.2.13/32"]
+        self.assertEqual(("ospf", "10.10.40.0", "ge-0/0/0.0", 10, 2),
+                         (ospf.protocol, ospf.next_hop, ospf.interface,
+                          ospf.distance, ospf.metric))
+
+    def test_a_direct_route_has_an_interface_and_no_next_hop(self) -> None:
+        direct = self.routes["10.10.40.0/31"]
+        self.assertEqual(("connected", None, "ge-0/0/0.0", True),
+                         (direct.protocol, direct.next_hop, direct.interface,
+                          direct.connected))
+
+
+class ColumnarGrammarTests(unittest.TestCase):
+    """PAN-OS prints fixed columns and encodes the protocol as a FLAG
+    letter, not a word — and spans every virtual router in one table."""
+
+    def setUp(self) -> None:
+        self.routes = {r.prefix: r for r in parse_columnar_route_table(PANOS)}
+
+    def test_every_virtual_router_is_read(self) -> None:
+        self.assertEqual(4, len(self.routes))
+        self.assertIn("172.20.50.0/24", self.routes)   # the tenant-b VR
+
+    def test_flag_letters_become_protocols(self) -> None:
+        self.assertEqual("static", self.routes["0.0.0.0/0"].protocol)
+        self.assertEqual("connected", self.routes["172.20.40.0/24"].protocol)
+        # "Oi" (OSPF intra-area) is still OSPF.
+        self.assertEqual("ospf", self.routes["192.0.2.128/25"].protocol)
+
+    def test_the_interface_column_is_not_confused_with_the_age(self) -> None:
+        ospf = self.routes["192.0.2.128/25"]
+        self.assertEqual(("172.20.40.3", "ethernet1/2", 110),
+                         (ospf.next_hop, ospf.interface, ospf.metric))
 
 
 class RobustnessTests(unittest.TestCase):

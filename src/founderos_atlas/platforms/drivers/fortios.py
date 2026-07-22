@@ -52,6 +52,7 @@ from founderos_atlas.routing import (
     bgp_sessions_from_summary,
     routing_metadata,
 )
+from founderos_atlas.routing.table import route_table_dicts
 
 from .. import capabilities as caps
 from ..capabilities import CommandSpec, EXPERIMENTAL, TIER_DEEP, TIER_FAST
@@ -315,6 +316,11 @@ class FortiOSDriver(ProductionDriver):
                 for s in sessions
             )
         metadata["route_count"] = _count_routes(raw.get(GET_ROUTES, ""))
+        # FortiOS prints the shared `show ip route` grammar, so the
+        # canonical parser reads it — no FortiOS-specific reader.
+        routing_table = route_table_dicts(raw.get(GET_ROUTES, ""))
+        if routing_table:
+            metadata["routing_table"] = routing_table
 
         bgp_neighbors = tuple(
             NetworkNeighbor(
@@ -530,9 +536,17 @@ def _iter_interfaces(text: str):
 
 
 def _count_routes(text: str) -> int:
+    """Route lines only.
+
+    A leading capital alone also matched the table's own header — "Routing
+    table for VRF=0" begins with an R — so every FortiGate reported one
+    route more than it had. A route line carries a prefix; the header does
+    not.
+    """
+
     return len([
         line for line in (text or "").splitlines()
-        if re.match(r"^\s*[A-Z*]", line)
+        if re.match(r"^\s*[A-Z*].*\b\d{1,3}(?:\.\d{1,3}){3}/\d{1,2}\b", line)
     ])
 
 

@@ -41,6 +41,7 @@ from founderos_atlas.routing import (
     bgp_sessions_from_summary,
     routing_metadata,
 )
+from founderos_atlas.routing.table import junos_route_dicts
 
 from .. import capabilities as caps
 from ..capabilities import CommandSpec, EXPERIMENTAL, TIER_DEEP, TIER_FAST
@@ -300,6 +301,11 @@ class JunosDriver(ProductionDriver):
         if peers:
             metadata["bgp_peers"] = tuple(tuple(sorted(p.items())) for p in peers)
         tables = re.findall(r"(?m)^(\S+\.inet6?\.0):", raw.get(SHOW_ROUTES, ""))
+        # The real RIB: Junos carries protocol and preference in brackets
+        # on the prefix line, next-hops indented beneath it.
+        routing_table = junos_route_dicts(raw.get(SHOW_ROUTES, ""))
+        if routing_table:
+            metadata["routing_table"] = routing_table
         if tables:
             metadata["routing_instances"] = tuple(sorted(set(tables)))
         ospf = tuple(

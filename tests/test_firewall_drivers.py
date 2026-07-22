@@ -133,6 +133,23 @@ class FortiOSTests(unittest.TestCase):
         protocols = {n.protocol for n in discovery.result.neighbors}
         self.assertEqual({"ospf", "bgp"}, protocols)
 
+    def test_the_real_rib_is_captured_and_the_count_excludes_the_header(self) -> None:
+        """FortiOS prints the shared `show ip route` grammar, so the canonical
+        parser reads it. The old count matched any line starting with a
+        capital — including the table's own "Routing table for VRF=0" header
+        — so every FortiGate reported one route more than it had."""
+
+        discovery, _ = _fortigate()
+        metadata = discovery.result.device.metadata
+        table = {r["prefix"]: r for r in metadata["routing_table"]}
+        self.assertEqual(6, len(table))
+        self.assertEqual(metadata["route_count"], len(table))
+        self.assertEqual(("static", "203.0.113.1", "port2"),
+                         (table["0.0.0.0/0"]["protocol"],
+                          table["0.0.0.0/0"]["next_hop"],
+                          table["0.0.0.0/0"]["interface"]))
+        self.assertTrue(table["172.20.20.0/24"]["connected"])
+
     def test_unknown_command_is_unsupported_not_failed(self) -> None:
         discovery, _ = _fortigate(**{"get vpn ipsec tunnel summary": FG.UNKNOWN})
         report = discovery.result.device.metadata["driver_diagnostics"]
@@ -224,6 +241,19 @@ class PanOsTests(unittest.TestCase):
             ("default", "tenant-b"),
             tuple(discovery.result.device.metadata["vrfs"]),
         )
+
+    def test_the_rib_spans_every_virtual_router(self) -> None:
+        """PAN-OS prints fixed columns with the protocol as a flag letter,
+        and one table covers every virtual router — the canonical table must
+        carry them all, not just the default VR."""
+
+        discovery, _ = _paloalto()
+        table = {r["prefix"]: r for r in
+                 discovery.result.device.metadata["routing_table"]}
+        self.assertIn("172.20.50.0/24", table)      # from the tenant-b VR
+        self.assertEqual("ospf", table["192.0.2.128/25"]["protocol"])
+        self.assertEqual("ethernet1/2", table["192.0.2.128/25"]["interface"])
+        self.assertEqual("static", table["0.0.0.0/0"]["protocol"])
 
     def test_unknown_command_is_unsupported_not_failed(self) -> None:
         discovery, _ = _paloalto(**{"show vpn ipsec-sa": PA.UNKNOWN})

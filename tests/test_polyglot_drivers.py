@@ -406,6 +406,22 @@ class EOSTests(unittest.TestCase):
 
 
 class JunosTests(unittest.TestCase):
+    def test_the_junos_rib_normalizes_into_the_canonical_table(self) -> None:
+        """Junos writes a third grammar — protocol and preference bracketed
+        on the prefix line — and still lands in the same RouteEntry."""
+
+        from founderos_atlas.platforms.drivers import JunosDriver
+
+        disc, _ = _discover(JunosDriver(), JN.normal(), hint="10.10.20.4")
+        table = {r["prefix"]: r for r in
+                 disc.result.device.metadata["routing_table"]}
+        ospf = table["192.0.2.13/32"]
+        self.assertEqual(("ospf", "10.10.40.0", "ge-0/0/0.0"),
+                         (ospf["protocol"], ospf["next_hop"], ospf["interface"]))
+        # A Direct route is connected and has no next-hop.
+        direct = table["10.10.40.0/31"]
+        self.assertEqual((None, True), (direct["next_hop"], direct["connected"]))
+
     def test_identity_from_junoss_own_fields(self) -> None:
         from founderos_atlas.platforms.drivers import JunosDriver
 
