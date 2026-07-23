@@ -315,6 +315,44 @@ class NXOSTests(unittest.TestCase):
         self.assertEqual("10", device.metadata["vpc"]["domain"])
         self.assertEqual("primary", device.metadata["vpc"]["role"])
 
+    def test_policy_routing_is_captured_from_both_halves(self) -> None:
+        """NX-OS policy routing is route-maps bound with `ip policy
+        route-map`, exactly as IOS does it — so the binding is half the
+        fact. A route-map nothing references forwards nothing."""
+
+        from founderos_atlas.platforms.drivers import CiscoNXOSDriver
+
+        outputs = dict(NX.normal())
+        outputs["show ip policy"] = (
+            "Interface      Route map\n"
+            "Ethernet1/10 PBR-USERS\n"
+        )
+        outputs["show route-map"] = (
+            "route-map PBR-USERS, permit, sequence 10\n"
+            "  Match clauses:\n"
+            "  Set clauses:\n"
+            "    ip next-hop 10.10.30.9\n"
+        )
+        disc, _ = _discover(CiscoNXOSDriver(), outputs, hint="10.10.20.2")
+        metadata = disc.result.device.metadata
+        self.assertTrue(metadata["policy_routes_captured"])
+        policy = metadata["policy_routes"][0]
+        self.assertEqual("Ethernet1/10", policy["ingress_interface"])
+        self.assertEqual("10.10.30.9", policy["next_hop"])
+
+    def test_a_switch_with_no_policy_routing_records_the_absence(self) -> None:
+        # "Asked, and none" is evidence; it must not look like "never
+        # asked", which is the key being absent entirely.
+        from founderos_atlas.platforms.drivers import CiscoNXOSDriver
+
+        outputs = dict(NX.normal())
+        outputs["show ip policy"] = ""
+        outputs["show route-map"] = ""
+        disc, _ = _discover(CiscoNXOSDriver(), outputs, hint="10.10.20.2")
+        metadata = disc.result.device.metadata
+        self.assertTrue(metadata["policy_routes_captured"])
+        self.assertEqual((), tuple(metadata["policy_routes"]))
+
     def test_interfaces_carry_their_vrf(self) -> None:
         from founderos_atlas.platforms.drivers import CiscoNXOSDriver
 

@@ -34,6 +34,10 @@ from founderos_atlas.discovery.models import (
     NetworkNeighbor,
 )
 from founderos_atlas.routing.table import iproute2_route_dicts
+from founderos_atlas.routing.policy import (
+    parse_iproute2_rule_commands,
+    policy_route_dicts,
+)
 
 from ..base import (
     CAP_COLLECTED,
@@ -301,7 +305,19 @@ class AtlasLabFirewallDriver(PlatformDriver):
         # a device whose forwarding we can reason about, and the two pieces
         # of evidence do not depend on each other.
         routing_table = iproute2_route_dicts(raw.get(SHOW_ROUTE, ""))
-        if not firewall and not routing_table:
+        # Policy rules come from the CONFIGURATION, not a live command.
+        # This appliance CLI answers a fixed list and rejects everything
+        # else, so there is no `ip rule` to ask for — but the config it
+        # booted with is already captured, and the rules written there are
+        # what the box is running. Reading them is evidence; inventing a
+        # command the device would refuse is not.
+        policy_captured = SHOW_RUNNING in raw
+        policy_routes = ()
+        if policy_captured:
+            policy_routes = policy_route_dicts(parse_iproute2_rule_commands(
+                raw.get(SHOW_RUNNING, ""), source_command=SHOW_RUNNING,
+            ))
+        if not firewall and not routing_table and not policy_captured:
             return discovery
         metadata = dict(discovery.result.device.metadata)
         if firewall:
@@ -309,6 +325,9 @@ class AtlasLabFirewallDriver(PlatformDriver):
         if routing_table:
             metadata["route_count"] = _count_routes(raw.get(SHOW_ROUTE, ""))
             metadata["routing_table"] = routing_table
+        if policy_captured:
+            metadata["policy_routes"] = policy_routes
+            metadata["policy_routes_captured"] = True
         result = replace(
             discovery.result,
             device=replace(discovery.result.device, metadata=metadata),

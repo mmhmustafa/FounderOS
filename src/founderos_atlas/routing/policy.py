@@ -332,6 +332,62 @@ def parse_iproute2_rules(
     return tuple(policies)
 
 
+_RULE_ADD = re.compile(r"(?:^|\s)ip\s+rule\s+add\s+(.*)$", re.IGNORECASE)
+
+
+def parse_iproute2_rule_commands(
+    text: str, *, source_command: str = "show running-config"
+) -> tuple[PolicyRoute, ...]:
+    """Policy rules as CONFIGURED, from `ip rule add` lines.
+
+    A Linux firewall's configuration is a shell script, and some of them
+    expose it where they expose no `ip rule` command at all — a fixed
+    command allow-list is common on appliance CLIs. Reading the rules the
+    device booted with is then the only evidence available, and it is real
+    evidence: it is what the operator wrote and the box ran.
+
+    The written form differs from the displayed one: `ip rule add from X
+    lookup Y pref N` rather than `N:\tfrom X lookup Y`. A rule with no
+    explicit preference gets the kernel's own default of 32766, so
+    ordering stays meaningful instead of collapsing to zero.
+
+    A `del` is NOT a rule and is skipped rather than read as one — the
+    same line with one word changed means the opposite thing.
+    """
+
+    policies: list[PolicyRoute] = []
+    for raw in (text or "").splitlines():
+        line = raw.strip()
+        if line.startswith("#") or " rule del " in f" {line} ":
+            continue
+        match = _RULE_ADD.search(line)
+        if not match:
+            continue
+        body = match.group(1).split("#", 1)[0].strip()
+        table = _token_after(body, "lookup") or _token_after(body, "table")
+        if table is None:
+            continue
+        preference = (
+            _token_after(body, "pref")
+            or _token_after(body, "preference")
+            or _token_after(body, "priority")
+        )
+        source = _token_after(body, "from")
+        destination = _token_after(body, "to")
+        policies.append(PolicyRoute(
+            sequence=_as_int(preference) if preference is not None else 32766,
+            source=None if source in (None, "all") else _clean_prefix(source),
+            destination=(
+                None if destination in (None, "all")
+                else _clean_prefix(destination)
+            ),
+            ingress_interface=_token_after(body, "iif"),
+            table=table,
+            source_command=source_command,
+        ))
+    return tuple(policies)
+
+
 def _token_after(body: str, keyword: str) -> str | None:
     parts = body.split()
     for index, token in enumerate(parts):
@@ -480,6 +536,192 @@ def parse_route_map_policy_routes(
                 egress = interface.group(1)
     flush()
     return tuple(policies)
+
+
+# -- Junos filter-based forwarding -----------------------------------------
+# Junos has no route-map. It matches traffic with a firewall FILTER term and
+# sends it to a routing INSTANCE: `then routing-instance <name>`. The
+# clauses live in the configuration, not in `show firewall filter` — that
+# command reports counters — so they are read from the set-format config the
+# driver already captures.
+#
+# As with route-maps, the binding is half the fact: a filter applied to no
+# interface forwards nothing, and the interface it is applied to is the
+# ingress the rule matches on.
+
+_JUNOS_TERM = re.compile(
+    r"^set\s+firewall\s+family\s+inet\s+filter\s+(\S+)\s+term\s+(\S+)\s+"
+    r"(from|then)\s+(.*)$",
+    re.IGNORECASE,
+)
+_JUNOS_BINDING = re.compile(
+    r"^set\s+interfaces\s+(\S+)\s+unit\s+(\S+)\s+family\s+inet\s+"
+    r"filter\s+input\s+(\S+)\s*$",
+    re.IGNORECASE,
+)
+
+
+def parse_junos_filter_forwarding(
+    text: str, *, source_command: str = "show configuration | display set"
+) -> tuple[PolicyRoute, ...]:
+    terms: dict[tuple[str, str], dict] = {}
+    order: list[tuple[str, str]] = []
+    bindings: dict[str, list[str]] = {}
+
+    for raw in (text or "").splitlines():
+        line = raw.strip()
+        binding = _JUNOS_BINDING.match(line)
+        if binding:
+            interface = f"{binding.group(1)}.{binding.group(2)}"
+            bindings.setdefault(binding.group(3), []).append(interface)
+            continue
+        match = _JUNOS_TERM.match(line)
+        if not match:
+            continue
+        key = (match.group(1), match.group(2))
+        if key not in terms:
+            terms[key] = {}
+            order.append(key)
+        clause = match.group(3).lower()
+        body = match.group(4).strip()
+        parts = body.split()
+        if not parts:
+            continue
+        name, value = parts[0].lower(), " ".join(parts[1:]).strip()
+        if clause == "from":
+            terms[key].setdefault("from", {})[name] = value
+        else:
+            terms[key].setdefault("then", {})[name] = value
+
+    policies: list[PolicyRoute] = []
+    for index, key in enumerate(order):
+        filter_name, term_name = key
+        fields = terms[key]
+        instance = (fields.get("then") or {}).get("routing-instance")
+        if not instance:
+            # A term that does not redirect is not policy routing. Accept,
+            # discard and counter-only terms belong to the firewall model,
+            # not this one.
+            continue
+        criteria = fields.get("from") or {}
+        port = _as_int(criteria.get("destination-port"))
+        interfaces = bindings.get(filter_name) or []
+        for interface in sorted(interfaces):
+            policies.append(PolicyRoute(
+                sequence=index,
+                source=_clean_prefix(criteria.get("source-address")),
+                destination=_clean_prefix(criteria.get("destination-address")),
+                protocol=_clean(criteria.get("protocol")),
+                destination_ports=(port,) if port is not None else (),
+                ingress_interface=interface,
+                # The instance names a routing TABLE. Its routes choose the
+                # next hop, so none is claimed here.
+                table=instance,
+                name=f"{filter_name} term {term_name}",
+                source_command=source_command,
+            ))
+    return tuple(policies)
+
+
+# -- PAN-OS policy-based forwarding ----------------------------------------
+# `show running pbf-policy` prints the same vsys/rule block shape as the
+# security policy this driver already reads: `name {` then `key value;`
+# lines. PBF matches on a source ZONE rather than an interface, which is
+# not the same thing — see below.
+
+_PANOS_RULE = re.compile(r"^\s*([A-Za-z0-9_.:\-]+)\s*\{\s*$")
+_PANOS_FIELD = re.compile(r"^\s*([A-Za-z0-9/_\-]+)[:\s]\s*(.+?);?\s*$")
+
+
+def parse_panos_pbf_rules(
+    text: str, *, source_command: str = "show running pbf-policy"
+) -> tuple[PolicyRoute, ...]:
+    policies: list[PolicyRoute] = []
+    current: dict[str, str] | None = None
+    name: str | None = None
+    depth = 0
+    sequence = 0
+
+    for raw in (text or "").splitlines():
+        line = raw.rstrip()
+        stripped = line.strip()
+        if not stripped:
+            continue
+        opened = _PANOS_RULE.match(line)
+        if opened:
+            depth += 1
+            # Depth 1 is the vsys wrapper; a rule is the block inside it.
+            if depth >= 2:
+                name = opened.group(1)
+                current = {}
+            continue
+        if stripped.startswith("}"):
+            if current is not None and name is not None:
+                policies.append(_panos_entry(
+                    name, current, sequence, source_command
+                ))
+                sequence += 1
+            current = None
+            name = None
+            depth = max(0, depth - 1)
+            continue
+        if current is None:
+            continue
+        field = _PANOS_FIELD.match(stripped)
+        if field:
+            current[field.group(1).lower()] = field.group(2).strip()
+    return tuple(policies)
+
+
+def _panos_entry(
+    name: str, fields: dict, sequence: int, source_command: str
+) -> PolicyRoute:
+    action = (fields.get("action") or "").lower()
+    unresolved: list[str] = []
+
+    # A source ZONE is not an ingress interface. Which interfaces are in a
+    # zone is knowable, but not from this command — so it is recorded as
+    # unresolved, leaving the rule undecidable rather than pretending the
+    # zone name is an interface name and matching on it.
+    zone = _panos_any(fields.get("from"))
+    if zone:
+        unresolved.append(f"source zone {zone}")
+    # Application matching is layer 7. Nothing in a path question can
+    # decide it, so a rule that turns on it can never be confirmed.
+    application = _panos_any(fields.get("application/service"))
+    if application:
+        unresolved.append(f"application/service {application}")
+
+    return PolicyRoute(
+        sequence=sequence,
+        source=_clean_prefix(_panos_any(fields.get("source"))),
+        destination=_clean_prefix(_panos_any(fields.get("destination"))),
+        ingress_interface=None,
+        next_hop=_panos_any(fields.get("next-hop")),
+        egress_interface=_panos_any(
+            fields.get("forwarding-egress-if/vsys")
+            or fields.get("forwarding-egress-if")
+        ),
+        # "no-pbf" means explicitly DO NOT policy-route this, and "discard"
+        # is a drop the firewall model owns — neither redirects, and
+        # neither may be read as a forward.
+        disabled=action in {"no-pbf", "discard", "disabled"},
+        name=name,
+        unresolved_matches=tuple(unresolved),
+        source_command=source_command,
+    )
+
+
+def _panos_any(value: object) -> str | None:
+    """PAN-OS writes an unconstrained match as "any"."""
+
+    text = _clean(value)
+    if text is None or text.lower() in {"any", "none"}:
+        return None
+    # A bracketed list is more than one value; none of them is safely a
+    # single prefix, so the caller sees the raw text and treats it as
+    # unresolved rather than mis-parsing the first entry as the whole set.
+    return text
 
 
 # -- shared helpers --------------------------------------------------------

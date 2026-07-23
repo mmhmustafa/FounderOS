@@ -37,6 +37,11 @@ from founderos_atlas.routing import (
     routing_metadata,
 )
 from founderos_atlas.routing.table import prefix_line_route_dicts
+from founderos_atlas.routing.policy import (
+    parse_ip_policy_bindings,
+    parse_route_map_policy_routes,
+    policy_route_dicts,
+)
 
 from .. import capabilities as caps
 from ..capabilities import CommandSpec, EXPERIMENTAL, TIER_DEEP, TIER_FAST
@@ -55,6 +60,12 @@ SHOW_ROUTES = "show ip route vrf all"
 SHOW_BGP = "show ip bgp summary vrf all"
 SHOW_OSPF = "show ip ospf neighbors"
 SHOW_VLAN = "show vlan brief"
+# NX-OS policy routing is route-maps bound to an interface with `ip policy
+# route-map`, exactly as IOS does it — so it reads with the same parser and
+# needs the same two halves. The binding is the load-bearing one: a
+# route-map nothing references forwards nothing.
+SHOW_IP_POLICY = "show ip policy"
+SHOW_ROUTE_MAP = "show route-map"
 SHOW_VRF = "show vrf"
 SHOW_MAC = "show mac address-table"
 SHOW_STP = "show spanning-tree"
@@ -110,6 +121,7 @@ class CiscoNXOSAdapter(DiscoveryAdapter):
         SHOW_INVENTORY, SHOW_INT_BRIEF, SHOW_LLDP, SHOW_CDP, SHOW_VPC,
         SHOW_PORT_CHANNEL, SHOW_ROUTES, SHOW_BGP, SHOW_OSPF, SHOW_VLAN,
         SHOW_VRF, SHOW_MAC, SHOW_STP, SHOW_RUNNING,
+        SHOW_IP_POLICY, SHOW_ROUTE_MAP,
     )
 
     def parse_inventory(
@@ -307,6 +319,8 @@ class CiscoNXOSDriver(ProductionDriver):
             CommandSpec(caps.FIRST_HOP_REDUNDANCY, ("show hsrp brief",),
                         tier=TIER_DEEP),
             CommandSpec(caps.ROUTES, (SHOW_ROUTES,)),
+            CommandSpec(caps.POLICY_ROUTES, (SHOW_IP_POLICY,)),
+            CommandSpec("policy-route-maps", (SHOW_ROUTE_MAP,)),
             CommandSpec(caps.BGP, (SHOW_BGP,)),
             CommandSpec(caps.OSPF, (SHOW_OSPF,)),
             CommandSpec(caps.VLAN, (SHOW_VLAN,)),
@@ -353,6 +367,18 @@ class CiscoNXOSDriver(ProductionDriver):
         routing_table = prefix_line_route_dicts(raw.get(SHOW_ROUTES, ""))
         if routing_table:
             metadata["routing_table"] = routing_table
+        # Policy routing decides before that table does. Keyed on the
+        # BINDING command answering: "asked, and this device policy-routes
+        # nothing" is evidence, and must not look like "never asked".
+        if SHOW_IP_POLICY in raw:
+            metadata["policy_routes"] = policy_route_dicts(
+                parse_route_map_policy_routes(
+                    raw.get(SHOW_ROUTE_MAP, ""),
+                    bindings=parse_ip_policy_bindings(raw.get(SHOW_IP_POLICY, "")),
+                    source_command=SHOW_ROUTE_MAP,
+                )
+            )
+            metadata["policy_routes_captured"] = True
         ospf = tuple(
             OspfAdjacencyObservation(
                 neighbor_router_id=str(item.metadata.get("router_id")),

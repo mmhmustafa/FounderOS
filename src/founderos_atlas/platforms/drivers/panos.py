@@ -60,6 +60,10 @@ from founderos_atlas.routing import (
     routing_metadata,
 )
 from founderos_atlas.routing.table import columnar_route_dicts
+from founderos_atlas.routing.policy import (
+    parse_panos_pbf_rules,
+    policy_route_dicts,
+)
 
 from .. import capabilities as caps
 from ..capabilities import CommandSpec, EXPERIMENTAL, TIER_DEEP, TIER_FAST
@@ -73,6 +77,9 @@ SHOW_NAT_POLICY = "show running nat-policy"
 SHOW_VPN = "show vpn ipsec-sa"
 SHOW_HA = "show high-availability state"
 SHOW_ROUTES = "show routing route"
+# Policy-based forwarding overrides the virtual router's table. Prints the
+# same vsys/rule block shape as the security policy above.
+SHOW_PBF = "show running pbf-policy"
 SHOW_BGP = "show routing protocol bgp peer"
 SHOW_OSPF = "show routing protocol ospf neighbor"
 SHOW_LLDP = "show lldp neighbors all"
@@ -152,7 +159,7 @@ class PanOsAdapter(DiscoveryAdapter):
     required_commands = (SHOW_SYSTEM_INFO, SHOW_INTERFACE_ALL)
     optional_commands = (
         SHOW_SECURITY_POLICY, SHOW_NAT_POLICY, SHOW_VPN, SHOW_HA,
-        SHOW_ROUTES, SHOW_BGP, SHOW_OSPF, SHOW_LLDP, SHOW_CONFIG,
+        SHOW_ROUTES, SHOW_PBF, SHOW_BGP, SHOW_OSPF, SHOW_LLDP, SHOW_CONFIG,
     )
 
     def parse_inventory(
@@ -371,6 +378,7 @@ class PanOsDriver(ProductionDriver):
                         )),
             CommandSpec(caps.LLDP, (SHOW_LLDP,)),
             CommandSpec(caps.ROUTES, (SHOW_ROUTES,)),
+            CommandSpec(caps.POLICY_ROUTES, (SHOW_PBF,)),
             CommandSpec(caps.BGP, (SHOW_BGP,)),
             CommandSpec(caps.OSPF, (SHOW_OSPF,)),
             CommandSpec(caps.CONFIGURATION, (SHOW_CONFIG,), tier=TIER_DEEP),
@@ -418,6 +426,15 @@ class PanOsDriver(ProductionDriver):
         routing_table = columnar_route_dicts(raw.get(SHOW_ROUTES, ""))
         if routing_table:
             metadata["routing_table"] = routing_table
+        # PBF is consulted before that table, so a forwarding verdict blind
+        # to it can be confidently wrong.
+        if SHOW_PBF in raw:
+            metadata["policy_routes"] = policy_route_dicts(
+                parse_panos_pbf_rules(
+                    raw.get(SHOW_PBF, ""), source_command=SHOW_PBF,
+                )
+            )
+            metadata["policy_routes_captured"] = True
         vrfs = sorted(set(_VR_HEAD.findall(raw.get(SHOW_ROUTES, ""))))
         if vrfs:
             metadata["vrfs"] = tuple(vrfs)

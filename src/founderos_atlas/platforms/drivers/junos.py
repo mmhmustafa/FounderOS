@@ -42,6 +42,10 @@ from founderos_atlas.routing import (
     routing_metadata,
 )
 from founderos_atlas.routing.table import junos_route_dicts
+from founderos_atlas.routing.policy import (
+    parse_junos_filter_forwarding,
+    policy_route_dicts,
+)
 
 from .. import capabilities as caps
 from ..capabilities import CommandSpec, EXPERIMENTAL, TIER_DEEP, TIER_FAST
@@ -306,6 +310,18 @@ class JunosDriver(ProductionDriver):
         routing_table = junos_route_dicts(raw.get(SHOW_ROUTES, ""))
         if routing_table:
             metadata["routing_table"] = routing_table
+        # Junos has no route-map: it matches with a firewall FILTER term
+        # and sends the traffic to a routing instance. Those clauses live
+        # in the configuration — `show firewall filter` reports counters —
+        # so they come from the config already captured here, and no new
+        # command is asked of the device.
+        if SHOW_CONFIG in raw:
+            metadata["policy_routes"] = policy_route_dicts(
+                parse_junos_filter_forwarding(
+                    raw.get(SHOW_CONFIG, ""), source_command=SHOW_CONFIG,
+                )
+            )
+            metadata["policy_routes_captured"] = True
         if tables:
             metadata["routing_instances"] = tuple(sorted(set(tables)))
         ospf = tuple(
