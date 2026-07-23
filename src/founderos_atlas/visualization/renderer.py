@@ -586,6 +586,40 @@ class TopologyRenderer:
         }
 
 
+    def _augment_with_derived(self, catalog):
+        """Fold sites derived from the hostname convention into the catalog.
+
+        Returns ``(catalog, fabric_placements)``. The declared catalog wins
+        outright — derivation only proposes sites for prefixes nobody has
+        named, and only when the naming convention plus the adjacency say
+        so (see sites/derivation.py). ``fabric_placements`` maps the few
+        shared devices that lean on one site to it; the rest stay honestly
+        unidentified.
+        """
+
+        from founderos_atlas.sites import SiteCatalog
+        from founderos_atlas.sites.derivation import DerivedDevice, derive_sites
+
+        devices = [
+            DerivedDevice(
+                device_id=str(device.get("device_id") or ""),
+                hostname=str(device.get("hostname") or ""),
+            )
+            for device in self._snapshot.devices
+        ]
+        try:
+            result = derive_sites(
+                devices, self._snapshot.edges,
+                existing_catalog=catalog or SiteCatalog(),
+            )
+        except Exception:  # noqa: BLE001 - derivation is best-effort colour
+            return catalog, {}
+        if not result.catalog.sites:
+            return catalog, dict(result.fabric_placements)
+        declared = tuple(catalog.sites) if catalog else ()
+        merged = SiteCatalog(sites=declared + tuple(result.catalog.sites))
+        return merged, dict(result.fabric_placements)
+
     def site_view(self, elements) -> dict:
         """Effective sites: inference underneath, durable overrides on top."""
 
@@ -603,6 +637,16 @@ class TopologyRenderer:
                 catalog = SiteCatalogRepository().load()
             except Exception:  # noqa: BLE001 - no catalog is a state, not an error
                 catalog = None
+
+        # Derive sites from the hostname convention for anything the
+        # declared catalog does not name. On a curated estate this adds
+        # nothing (every prefix is already declared); on an un-curated one
+        # it is the difference between 19 clean sites and one unreadable
+        # blob of "Site not identified". Derived sites are ordinary
+        # convention entries, so a device placed in one is still assigned
+        # LOW confidence by the engine below — inferred, and confirmable.
+        catalog, derived_placements = self._augment_with_derived(catalog)
+
         if catalog is None or not catalog.sites:
             return {
                 "sites": [], "membership": {}, "aggregated_edges": [],
@@ -722,6 +766,40 @@ class TopologyRenderer:
                                     )
                                 },
                             }
+
+        # A shared device that leans on one site by adjacency (see
+        # derivation) takes that site — but only where nothing stronger
+        # already placed it, and only for a site that actually exists in
+        # the merged catalog. Low confidence and its own source, so it
+        # never reads as a declared or pattern-matched assignment.
+        if derived_placements:
+            node_by_id = {
+                node["data"]["id"]: node["data"]
+                for node in elements["nodes"]
+            }
+            for device_id, site_id in derived_placements.items():
+                if site_id not in names:
+                    continue
+                if membership.get(device_id, "__none__") != "__none__":
+                    continue
+                data = node_by_id.get(device_id)
+                if data is None:
+                    continue
+                membership[device_id] = site_id
+                data["site_assignment"] = {
+                    "source": "adjacency",
+                    "effective_site_id": site_id,
+                    "effective_site_name": names.get(site_id, site_id),
+                    "inferred_site_id": site_id,
+                    "inferred_site_name": names.get(site_id),
+                    "confidence": "low",
+                    "evidence": {
+                        "detail": (
+                            "no site of its own; placed beside the site its "
+                            "links most point at"
+                        )
+                    },
+                }
 
         by_site: dict[str, list] = {}
         for node in elements["nodes"]:
