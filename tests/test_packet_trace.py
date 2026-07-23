@@ -71,6 +71,30 @@ class TraceApiTests(unittest.TestCase):
             })
             self.assertEqual(400, icmp_port.status_code)
 
+    def test_the_api_accepts_and_validates_both_endpoints(self) -> None:
+        """The trace API took a destination address but silently DROPPED a
+        source one, so a policy rule matching on source could never be
+        decided from the viewer however the operator framed the question."""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            _, client = build_world(Path(tmp))
+            source, destination = _two_devices(client)
+            ok = client.post("/api/paths/trace", json={
+                "source": source, "destination": destination,
+                "protocol": "icmp", "source_address": "10.0.0.5",
+            })
+            self.assertEqual(200, ok.status_code)
+            self.assertEqual("10.0.0.5",
+                             ok.get_json()["intent"]["source_address"])
+            # And it is validated, not passed through to the engine to
+            # quietly ignore.
+            bad = client.post("/api/paths/trace", json={
+                "source": source, "destination": destination,
+                "source_address": "not-an-ip",
+            })
+            self.assertEqual(400, bad.status_code)
+            self.assertIn("source_address", bad.get_json()["error"])
+
     def test_unknown_devices_get_an_honest_engine_answer(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             _, client = build_world(Path(tmp))
@@ -317,6 +341,50 @@ class ViewerContractTests(unittest.TestCase):
         # A fixed RATIO, because zoom is multiplicative: a constant
         # increment would crawl at the wide end and leap at the close end.
         self.assertIn("var STEP = 1.25", self.viewer)
+
+    def test_the_trace_says_how_much_policy_routing_it_could_read(self) -> None:
+        """Policy routing decides a flow BEFORE the routing table, so a hop
+        whose policy was never read can divert the packet away from the
+        route the trace reports — and the verdict looks identical either
+        way. The engine already accounts for this in basis.policy_routing;
+        the panel is where it becomes visible."""
+
+        self.assertIn('id="trace-coverage"', self.viewer)
+        self.assertIn("function showCoverage", self.viewer)
+        self.assertIn("basis.policy_routing", self.viewer)
+        coverage = self.viewer.split("function showCoverage", 1)[1][:1700]
+        self.assertIn("hops_evaluated", coverage)
+        self.assertIn("hops_unevaluated", coverage)
+
+    def test_the_trace_can_declare_where_the_flow_comes_from(self) -> None:
+        """Policy-routing rules match overwhelmingly on SOURCE. Without a
+        way to declare one, every such rule stays undecidable and its
+        "may divert this flow" warning can never be resolved — a warning
+        that is permanent is noise, not evidence."""
+
+        self.assertIn('id="trace-src-ip"', self.viewer)
+        self.assertIn("source_address: (srcIpInput.value", self.viewer)
+
+    def test_coverage_is_shown_on_a_failed_trace_too(self) -> None:
+        # A packet stopped at hop 3 tells you nothing about whether hop 2
+        # would have diverted it, so this cannot be tied to the connected
+        # branch the way the ACL caveat is.
+        finish = self.viewer.split("function finish()", 1)[1][:400]
+        self.assertIn("showCoverage(report)", finish)
+
+    def test_an_undecidable_policy_rule_is_surfaced_not_buried(self) -> None:
+        """A rule Atlas READ but could not decide is the case worth acting
+        on — no amount of re-running settles it — and nothing in the viewer
+        showed the engine's unknowns at all."""
+
+        coverage = self.viewer.split("function showCoverage", 1)[1][:1700]
+        self.assertIn("report.unknowns", coverage)
+        self.assertIn("may divert this flow", coverage)
+        self.assertIn("dataset.tone = undecided.length", coverage)
+
+    def test_clearing_the_trace_clears_the_coverage(self) -> None:
+        clear = self.viewer.split("function clearTrace", 1)[1][:1700]
+        self.assertIn("coverageEl.hidden = true", clear)
 
     def test_the_routes_a_path_relies_on_can_be_withdrawn(self) -> None:
         """"What breaks if this route goes away?" — the panel lists the route

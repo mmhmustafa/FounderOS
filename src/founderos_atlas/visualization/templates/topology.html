@@ -143,6 +143,13 @@
     #trace-status[data-tone="failed"] { color: #b91c1c; font-weight: 600; }
     #trace-status[data-tone="warn"] { color: #b45309; }
     #trace-status[data-tone="ok"] { color: #166534; }
+    /* Coverage is context, not the verdict — quieter than the status, but
+       amber when a rule was READ and could not be decided, because that
+       is the case an operator has to act on rather than merely note. */
+    #trace-coverage { margin: 4px 0 0; font-size: 11px; line-height: 1.35;
+      color: #475569; max-width: 300px; }
+    #trace-coverage[data-tone="warn"] { color: #b45309; font-weight: 600; }
+    body[data-theme="dark"] #trace-coverage { color: #a9b6c8; }
     /* A ring on a device means nothing unless the panel says what it
        means. Shown only while a trace is drawn. */
     #trace-key { margin: 5px 0 0; font-size: 11px; color: #475569;
@@ -464,6 +471,16 @@
           <label for="trace-dst-ip">Address</label>
           <input id="trace-dst-ip" type="text" inputmode="decimal"
             autocomplete="off" placeholder="e.g. 10.251.0.4"></div>
+        <!--
+          Source matters as much as destination once policy routing is
+          evaluated: PBR rules match overwhelmingly on SOURCE, so without
+          one every such rule stays undecidable and its warning can never
+          be resolved.
+        -->
+        <div class="trace-row"><label for="trace-src-ip">Source IP</label>
+          <input id="trace-src-ip" type="text" inputmode="decimal"
+            autocomplete="off" placeholder="optional — decides source rules"
+            title="Which address the flow comes FROM. Policy-routing rules usually match on source, and a rule Atlas cannot decide is reported as a possible diversion on every trace until one is given."></div>
         <div class="trace-row"><label for="trace-proto">Protocol</label>
           <select id="trace-proto"><option value="">any</option><option value="tcp">TCP</option><option value="udp">UDP</option><option value="icmp">ICMP</option></select></div>
         <div class="trace-row"><label for="trace-port">Port</label>
@@ -488,6 +505,14 @@
           <button type="button" id="trace-clear">Clear</button>
         </div>
         <p id="trace-status" role="status" aria-live="polite" hidden></p>
+        <!--
+          How much of the verdict rests on read policy routing. Its own
+          line rather than more text on the status, because it matters on
+          a FAILED trace as much as a connected one — a packet stopped at
+          hop 3 tells you nothing about whether hop 2 would have diverted
+          it somewhere else entirely.
+        -->
+        <p id="trace-coverage" hidden></p>
         <p id="trace-key" hidden>
           <span class="trace-key-src"></span>source
           <span class="trace-key-dst"></span>destination
@@ -3481,6 +3506,7 @@
       var protoSelect = document.getElementById('trace-proto');
       var portInput = document.getElementById('trace-port');
       var destIpInput = document.getElementById('trace-dst-ip');
+      var srcIpInput = document.getElementById('trace-src-ip');
       var destIpPick = document.getElementById('trace-dst-ip-pick');
       var destIpRow = document.getElementById('trace-dst-ip-row');
       var CUSTOM_ADDRESS = '__custom__';
@@ -3507,6 +3533,7 @@
         withdrawn: [],
       };
       var keyEl = document.getElementById('trace-key');
+      var coverageEl = document.getElementById('trace-coverage');
       var routesPanel = document.getElementById('trace-routes');
       var routesList = document.getElementById('trace-routes-list');
       var reducedMotion = window.matchMedia(
@@ -3611,6 +3638,46 @@
       function setRegionsFaded(faded) {
         var layer = document.getElementById('protocol-region-canvas');
         if (layer) { layer.style.opacity = faded ? '0.18' : ''; }
+      }
+
+      // Policy routing decides a flow BEFORE the routing table, so a hop
+      // whose policy was never read can divert the packet away from the
+      // route this trace reports — and the verdict would look identical.
+      // The engine already accounts for that in basis.policy_routing;
+      // this is the only place it becomes visible.
+      function showCoverage(report) {
+        if (!coverageEl) { return; }
+        var basis = (report && report.basis) || {};
+        var accounting = basis.policy_routing;
+        var parts = [];
+
+        if (accounting) {
+          var read = accounting.hops_evaluated || 0;
+          var unread = accounting.hops_unevaluated || [];
+          if (read && !unread.length) {
+            parts.push('Policy routing read at every hop.');
+          } else if (read) {
+            parts.push('Policy routing read at ' + read + ' hop(s); not '
+              + 'readable on ' + unread.join(', ') + '.');
+          } else if (unread.length) {
+            parts.push('Policy routing not readable on any hop ('
+              + unread.join(', ') + ') — if any of them diverts this flow, '
+              + 'this path would not show it.');
+          }
+        }
+
+        // The rules Atlas READ but could not decide. These are the ones
+        // worth acting on: a rule that may or may not divert this exact
+        // flow, which no amount of re-running will settle.
+        var undecided = (report.unknowns || []).filter(function (item) {
+          return item.indexOf('may divert this flow') !== -1
+            || item.indexOf('policy-routes this flow into table') !== -1;
+        });
+        undecided.forEach(function (item) { parts.push(item); });
+
+        coverageEl.textContent = parts.join(' ');
+        coverageEl.hidden = parts.length === 0;
+        coverageEl.dataset.tone = undecided.length ? 'warn' : '';
       }
 
       function showStatus(text, tone) {
@@ -3919,6 +3986,10 @@
         );
         setRegionsFaded(false);
         keyEl.hidden = true;
+        if (coverageEl) {
+          coverageEl.hidden = true;
+          coverageEl.textContent = '';
+        }
         cy.getElementById('__trace_dot').remove();
         whatIfButton.hidden = true;
         if (!keepReport) {
@@ -4063,6 +4134,9 @@
           replayButton.hidden = false;
           liveButton.hidden = false;
           syncRevert();
+          // Every verdict, not only a connected one: a trace stopped at
+          // hop 3 says nothing about whether hop 2 would have diverted it.
+          showCoverage(report);
           var failed = hops.filter(function (hop) { return hop.status === 'failed'; });
           if (failed.length) {
             var f = failed[0];
@@ -4191,6 +4265,7 @@
             source: state.source, destination: state.destination,
             protocol: protoSelect.value, port: portInput.value,
             destination_address: declaredDestinationAddress(),
+            source_address: (srcIpInput.value || '').trim(),
             assume_permit_at: assume,
             withdraw_routes: state.withdrawn,
           }),
@@ -4366,6 +4441,7 @@
         sourceOut.textContent = '—';
         destinationOut.textContent = '—';
         destIpInput.value = '';
+        if (srcIpInput) { srcIpInput.value = ''; }
         if (destIpPick) { destIpPick.value = ''; }
         syncDestinationAddresses();
         showStatus('', '');

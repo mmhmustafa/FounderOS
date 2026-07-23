@@ -4979,15 +4979,22 @@ def register_routes(app) -> None:
         # Which address the flow is for. Without it every check falls back to
         # "any address the destination owns", which can validate a management
         # path rather than the one being asked about.
-        destination_address = str(body.get("destination_address") or "").strip()
-        if destination_address:
-            from ipaddress import ip_address as _ip
+        # Both ends, and the SOURCE matters as much as the destination now
+        # that policy routing is evaluated: PBR rules match overwhelmingly
+        # on source, so a trace that cannot declare one leaves every such
+        # rule permanently undecidable — a warning that can never be
+        # resolved, which is noise rather than evidence.
+        from ipaddress import ip_address as _ip
 
+        for field in ("destination_address", "source_address"):
+            declared = str(body.get(field) or "").strip()
+            if not declared:
+                continue
             try:
-                _ip(destination_address)
+                _ip(declared)
             except ValueError:
-                return {"error": "destination_address must be an IP address"}, 400
-            intent["destination_address"] = destination_address
+                return {"error": f"{field} must be an IP address"}, 400
+            intent[field] = declared
         # What-if: device names to treat as permitting this flow. Bounded so
         # a request cannot ask the engine to drop filtering estate-wide.
         raw_permit = body.get("assume_permit_at") or []
