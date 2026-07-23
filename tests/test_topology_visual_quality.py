@@ -70,7 +70,9 @@ class TopologyVisualQualityTests(unittest.TestCase):
 
     def test_sites_and_hostname_first_labels_are_the_default_density_model(self) -> None:
         self.assertIn("viewSelect.value = 'sites';", self.html)
-        self.assertIn("const skylineNodes = cy.nodes('[kind = \"site\"]')", self.html)
+        # Site clouds ring around the overview — now via the shared
+        # siteRingSlots geometry rather than an inline skyline loop.
+        self.assertIn("cy.nodes('[kind = \"site\"]')", self.html)
         self.assertIn('const angle = -Math.PI / 2', self.html)
         self.assertIn('radiusX * Math.cos(angle)', self.html)
         self.assertIn("'text-valign': 'center'", self.html)
@@ -81,9 +83,43 @@ class TopologyVisualQualityTests(unittest.TestCase):
         self.assertIn('if (matches.length !== 1) { return; }', self.html)
 
     def test_overview_never_invents_an_internet_centre(self) -> None:
-        self.assertIn("site.site_type === 'wan' || site.site_type === 'internet'", self.html)
-        self.assertIn('transitSites.length === 1 ? transitSites[0].id : null', self.html)
-        self.assertIn('no centre cloud is invented', self.html)
+        # An explicitly typed transit domain may take the centre — the
+        # first, strongest signal, before any degree-based hub is even
+        # considered (see siteRingSlots).
+        self.assertIn("s.site_type === 'wan' || s.site_type === 'internet'", self.html)
+        self.assertIn("transit.length === 1 && siteSet.has(transit[0].id)", self.html)
+
+    def test_an_evidenced_hub_is_centred_but_a_mesh_is_not(self) -> None:
+        """A site every other site reaches THROUGH is a hub, and drawing a
+        star as a star is not inventing structure — it is the structure the
+        links already show. The honesty guard: only when one site connects
+        to a clear majority of the others and to strictly more than any
+        rival. A full mesh has no hub, so none is chosen."""
+
+        hub = self.html.split("if (!centre) {", 1)[1][:1300]
+        self.assertIn("aggregated_edges", hub)
+        # Majority-and-strictly-greatest, not mere maximum degree.
+        self.assertIn("hubDeg >= Math.ceil(others * 0.6)", hub)
+        self.assertIn("hubDeg > runnerUp", hub)
+
+    def test_opening_a_site_grows_it_in_place_not_into_a_column(self) -> None:
+        """The reported complaint: opening a site scattered its devices
+        into a band wedged alphabetically between other clouds. On one ring
+        now, every site has a slot — a closed one shows its cloud there, an
+        opened one clusters its devices there — so it grows where it stood."""
+
+        self.assertIn("function siteRingSlots", self.html)
+        expand = self.html.split("expandedSites.forEach(siteId =>", 1)[1][:600]
+        # Devices packed around the site's OWN slot.
+        self.assertIn("positions.get('site:' + siteId)", expand)
+        self.assertIn("memberOf[n.data('id')] === siteId", expand)
+
+    def test_the_ring_is_shared_by_the_closed_and_open_views(self) -> None:
+        # A site must not move between shut and open, or opening reads as a
+        # teleport rather than a growth. One geometry serves both.
+        self.assertEqual(1, self.html.count("function siteRingSlots"))
+        # Both the closed and the open branch call it.
+        self.assertGreaterEqual(self.html.count("siteRingSlots("), 3)
 
     def test_edit_mode_never_mistakes_a_temporary_drag_for_a_saved_move(self) -> None:
         self.assertIn("node.drop-target", self.html)

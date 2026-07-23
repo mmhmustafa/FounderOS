@@ -2037,6 +2037,59 @@
       });
     }
 
+    // Ring geometry for the site overview, shared by the closed skyline and
+    // the expand-in-place open view so a site sits in the SAME place
+    // whether shut or opened — opening a cloud then reads as it growing
+    // where it stood, not teleporting into a column between other clouds.
+    //
+    // ``fullIds`` are every site's node id ("site:<id>"). Returns the
+    // centre id (an evidenced hub, or null) and a position per site.
+    function siteRingSlots(fullIds) {
+      const ids = [...fullIds].sort();
+      const siteSet = new Set(ids);
+      // Hub: a site a clear majority of the others reach through. Only
+      // evidence, never mere degree, earns the centre (see the skyline
+      // comment). An explicitly-typed transit domain takes it first.
+      const transit = (siteView.sites || []).filter(
+        s => s.site_type === 'wan' || s.site_type === 'internet');
+      let centre = (transit.length === 1 && siteSet.has(transit[0].id))
+        ? transit[0].id : null;
+      if (!centre) {
+        const nb = new Map();
+        const link = (a, b) => {
+          if (!siteSet.has(a) || !siteSet.has(b) || a === b) { return; }
+          if (!nb.has(a)) { nb.set(a, new Set()); }
+          nb.get(a).add(b);
+        };
+        (siteView.aggregated_edges || []).forEach(e => {
+          link(e.source, e.target); link(e.target, e.source);
+        });
+        let hub = null, hubDeg = 0, runnerUp = 0;
+        nb.forEach((set, id) => {
+          const deg = set.size;
+          if (deg > hubDeg) { runnerUp = hubDeg; hubDeg = deg; hub = id; }
+          else if (deg > runnerUp) { runnerUp = deg; }
+        });
+        const others = ids.length - 1;
+        if (hub && others >= 3 && hubDeg >= Math.ceil(others * 0.6)
+            && hubDeg > runnerUp) { centre = hub; }
+      }
+      const centreX = 390, centreY = 245;
+      const ring = ids.filter(id => id !== centre);
+      const n = ring.length;
+      const radiusX = Math.max(245, Math.min(390, 78 * n));
+      const radiusY = Math.max(165, Math.min(235, 48 * n));
+      const pos = new Map();
+      if (centre) { pos.set(centre, { x: centreX, y: centreY }); }
+      ring.forEach((id, i) => {
+        if (!centre && n === 1) { pos.set(id, { x: centreX, y: centreY }); return; }
+        const angle = -Math.PI / 2 + (2 * Math.PI * i / n);
+        pos.set(id, { x: centreX + radiusX * Math.cos(angle),
+                      y: centreY + radiusY * Math.sin(angle) });
+      });
+      return { centre, positions: pos };
+    }
+
     function rebuildView() {
       const mode = (viewSelect && viewSelect.value) || 'full';
       const full = mode === 'full';
@@ -2080,52 +2133,56 @@
         }
         chosen = LAYOUTS[(layoutSelect && layoutSelect.value) || 'tiered']
           || LAYOUTS.tiered;
-      } else if (expandedSites.size === 0) {
-        // Only explicit semantics may influence transit placement. Unknown
-        // membership and graph degree never turn an ordinary site into WAN
-        // or Internet. With exactly one explicit transit domain, centre it;
-        // multiple peer domains remain equals.
-        const transitSites = (siteView.sites || []).filter(
-          site => site.site_type === 'wan' || site.site_type === 'internet');
-        const centre = transitSites.length === 1 ? transitSites[0].id : null;
-        // One explicitly typed WAN/Internet domain may occupy the centre,
-        // like a conventional network overview. If this lab has no such
-        // evidence, no centre cloud is invented: all sites remain peers on
-        // the ring and only their observed inter-site links are drawn.
-        const skylineNodes = cy.nodes('[kind = "site"]').sort(
-          (a, b) => String(a.data('label')).localeCompare(String(b.data('label')))
-        );
-        const ordered = skylineNodes.toArray();
-        let centreNode = null;
-        if (centre) {
-          const centreAt = ordered.findIndex(node => node.id() === centre);
-          if (centreAt >= 0) {
-            centreNode = ordered.splice(centreAt, 1)[0];
-          }
-        }
-        const centreX = 390;
-        const centreY = 245;
-        if (centreNode) { centreNode.position({x: centreX, y: centreY}); }
-        if (!centreNode && ordered.length === 1) {
-          ordered[0].position({x: centreX, y: centreY});
-        }
-        const ringCount = ordered.length;
-        const radiusX = Math.max(245, Math.min(390, 78 * ringCount));
-        const radiusY = Math.max(165, Math.min(235, 48 * ringCount));
-        ordered.forEach((node, index) => {
-          if (!centreNode && ringCount === 1) { return; }
-          const angle = -Math.PI / 2 + (2 * Math.PI * index / ringCount);
-          node.position({x: centreX + radiusX * Math.cos(angle),
-                         y: centreY + radiusY * Math.sin(angle)});
+      } else if (wantLogical) {
+        // The site overview, closed OR partly open, on one ring. Every site
+        // has a slot; a closed one shows its cloud there, an opened one
+        // shows its devices clustered there — so opening a site grows it in
+        // place instead of scattering its devices into a column wedged
+        // between other clouds (the reported complaint). An evidenced hub
+        // takes the centre; a mesh keeps everyone a peer on the ring.
+        const allIds = (siteView.sites || []).map(s => s.id || s.site_id);
+        const { positions } = siteRingSlots(allIds);
+        const fallback = { x: 390, y: 245 };
+
+        // Closed clouds: one node each, dropped on its slot.
+        cy.nodes('[kind = "site"]').forEach(node => {
+          const p = positions.get(node.id()) || fallback;
+          node.position({ x: p.x, y: p.y });
         });
-        applyReadableViewport(true);
+
+        // Opened sites: their devices packed into a tight block centred on
+        // the site's own slot, so the cluster reads as that site.
+        const memberOf = siteView.membership;
+        expandedSites.forEach(siteId => {
+          const slot = positions.get('site:' + siteId) || fallback;
+          const devices = cy.nodes().filter(
+            n => n.data('kind') !== 'site'
+              && memberOf[n.data('id')] === siteId);
+          const m = devices.length;
+          if (!m) { return; }
+          const cols = Math.ceil(Math.sqrt(m));
+          const gap = 66;
+          devices.forEach((node, i) => {
+            const row = Math.floor(i / cols), col = i % cols;
+            node.position({
+              x: slot.x + (col - (cols - 1) / 2) * gap,
+              y: slot.y + (row - (Math.ceil(m / cols) - 1) / 2) * gap,
+            });
+          });
+        });
+        applyReadableViewport(expandedSites.size === 0);
         finishRebuild('sites');
         return;
-      } else if (wantLogical) {
-        // Open sites keep the same discipline: tier bands per open site,
-        // closed clouds as their own bands.
-        cy.layout({ name: 'preset', animate: false, fit: false }).run();
-        runLogicalLayout();
+      } else if (expandedSites.size === 0) {
+        // A non-logical layout on the CLOSED overview still gets the ring —
+        // the overview is a relationship diagram, not a force blob.
+        const allIds = (siteView.sites || []).map(s => s.id || s.site_id);
+        const { positions } = siteRingSlots(allIds);
+        cy.nodes('[kind = "site"]').forEach(node => {
+          const p = positions.get(node.id());
+          if (p) { node.position({ x: p.x, y: p.y }); }
+        });
+        applyReadableViewport(true);
         finishRebuild('sites');
         return;
       } else {
