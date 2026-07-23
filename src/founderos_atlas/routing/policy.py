@@ -757,8 +757,14 @@ _FRR_BINDING = re.compile(
 )
 
 
-def frr_pbr_is_readable(text: str) -> bool:
-    """Whether `show pbr map` actually answered.
+def frr_pbr_is_readable(text: str | None) -> bool:
+    """Whether the PBR daemon actually answered.
+
+    Give this the JSON form's output, not the text form's. `show pbr map`
+    is silent BOTH when pbrd is down and when it is up with nothing
+    configured, so it can never distinguish them; `show pbr map json`
+    prints "[ ]" for the second, which is positive evidence someone
+    answered. Both observed on a real FRR 8.4 router.
 
     A router whose pbrd is down has told us nothing about policy routing.
     Recording that as "captured, and there are none" would assert an

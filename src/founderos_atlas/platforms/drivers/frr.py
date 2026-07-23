@@ -54,6 +54,19 @@ SHOW_ROUTES = "show ip route"
 # the interfaces each map is applied to.
 SHOW_PBR_MAP = "show pbr map"
 SHOW_PBR_INTERFACE = "show pbr interface"
+# The readability probe, and why it is a SEPARATE command.
+#
+# `show pbr map` prints nothing at all on a router whose pbrd is up but
+# has no rules — and nothing on a router whose pbrd is DOWN, because that
+# message goes to stderr. Silence therefore cannot tell "asked, and there
+# are none" from "never answered", so the text form alone can only ever
+# leave both unevaluated.
+#
+# The json form breaks the tie: an empty ruleset prints "[ ]", which is
+# positive evidence the daemon answered, while a dead pbrd still prints
+# its error. The rules themselves are still read from the text form,
+# because the json hides the next hop behind a nexthop-group reference.
+SHOW_PBR_MAP_JSON = "show pbr map json"
 SHOW_BGP_SUMMARY = "show bgp summary"
 SHOW_LLDP = "show lldp neighbors"
 SHOW_RUNNING = "show running-config"
@@ -297,6 +310,7 @@ class FRRoutingDriver(PlatformDriver):
             CapabilitySpec("ospf-neighbors", SHOW_OSPF_NEIGHBORS),
             CapabilitySpec("routes", SHOW_ROUTES),
             CapabilitySpec("policy-routes", SHOW_PBR_MAP),
+            CapabilitySpec("policy-routes-probe", SHOW_PBR_MAP_JSON),
             CapabilitySpec("policy-route-interfaces", SHOW_PBR_INTERFACE),
             CapabilitySpec("bgp", SHOW_BGP_SUMMARY),
             CapabilitySpec("lldp-neighbors", SHOW_LLDP),
@@ -334,8 +348,12 @@ class FRRoutingDriver(PlatformDriver):
         # this check it would parse to zero rules and be recorded as
         # "asked, and there are none", asserting an absence nobody
         # checked.
+        # Readability is decided by the JSON probe, not by the text: the
+        # text is silent both when there is nothing to report and when
+        # nobody answered, so it can never license "asked, and none".
         pbr_text = discovery.raw_outputs.get(SHOW_PBR_MAP)
-        if pbr_text is not None and frr_pbr_is_readable(pbr_text):
+        pbr_probe = discovery.raw_outputs.get(SHOW_PBR_MAP_JSON)
+        if pbr_text is not None and frr_pbr_is_readable(pbr_probe):
             metadata["policy_routes"] = policy_route_dicts(parse_frr_pbr_maps(
                 pbr_text,
                 bindings=parse_frr_pbr_interfaces(

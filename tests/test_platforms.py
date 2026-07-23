@@ -292,6 +292,7 @@ class FRRoutingDriverTests(unittest.TestCase):
         outputs["show pbr interface"] = (
             "  eth2(736) with pbr-policy ATLAS-TEST\n"
         )
+        outputs["show pbr map json"] = '[{"name":"ATLAS-TEST"}]'
         discovery = FRRoutingDriver().discover(
             StubTransport(outputs), management_ip_hint="10.20.0.1"
         )
@@ -307,13 +308,31 @@ class FRRoutingDriverTests(unittest.TestCase):
         router which never answered has no policy routing."""
 
         outputs = frr_outputs("delhi-r1", "10.20.0.1")
-        outputs["show pbr map"] = "pbrd is not running"
+        outputs["show pbr map"] = ""
+        outputs["show pbr map json"] = "pbrd is not running"
         discovery = FRRoutingDriver().discover(
             StubTransport(outputs), management_ip_hint="10.20.0.1"
         )
         self.assertNotIn(
             "policy_routes_captured", discovery.result.device.metadata
         )
+
+    def test_a_router_with_pbrd_up_and_no_rules_says_so(self) -> None:
+        """The whole point of the json probe. `show pbr map` is silent
+        here AND when pbrd is down, so the text alone would leave this
+        router unevaluated forever. "[ ]" says the daemon answered and has
+        nothing — which is evidence, and is what licenses trusting the
+        routing table on this hop."""
+
+        outputs = frr_outputs("delhi-r1", "10.20.0.1")
+        outputs["show pbr map"] = ""
+        outputs["show pbr map json"] = "[\n]"
+        discovery = FRRoutingDriver().discover(
+            StubTransport(outputs), management_ip_hint="10.20.0.1"
+        )
+        metadata = discovery.result.device.metadata
+        self.assertTrue(metadata["policy_routes_captured"])
+        self.assertEqual((), tuple(metadata["policy_routes"]))
 
     def test_silence_from_the_pbr_command_is_not_an_answer(self) -> None:
         """On a real router that message goes to STDERR and stdout comes

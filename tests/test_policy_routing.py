@@ -557,6 +557,16 @@ class FrrPbrTests(unittest.TestCase):
         self.assertFalse(frr_pbr_is_readable("pbrd is not running"))
         self.assertEqual((), parse_frr_pbr_maps("pbrd is not running"))
 
+    def test_an_empty_json_ruleset_IS_evidence_that_nobody_has_rules(self) -> None:
+        """The text form is silent both when pbrd is down and when it is up
+        with nothing configured, so it can never license "asked, and
+        none". The json form prints "[ ]" for the second — positive
+        evidence the daemon answered — and still prints its error for the
+        first. Both observed on a real FRR 8.4 router."""
+
+        self.assertTrue(frr_pbr_is_readable("[\n]"))
+        self.assertFalse(frr_pbr_is_readable("pbrd is not running"))
+
     def test_empty_output_is_not_evidence_of_no_policy_routing(self) -> None:
         """The subtle half, and the one that nearly shipped wrong. On a
         real router "pbrd is not running" goes to STDERR and stdout comes
