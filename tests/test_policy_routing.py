@@ -15,7 +15,10 @@ import unittest
 from founderos_atlas.routing.policy import (
     PolicyRoute,
     first_matching_policy,
+    frr_pbr_is_readable,
     parse_fortios_policy_routes,
+    parse_frr_pbr_interfaces,
+    parse_frr_pbr_maps,
     parse_ip_policy_bindings,
     parse_iproute2_rule_commands,
     parse_iproute2_rules,
@@ -483,6 +486,87 @@ class PanOsPbfTests(unittest.TestCase):
 
     def test_any_is_unconstrained_not_a_literal(self) -> None:
         self.assertIsNone(self.policies[0].destination)
+
+
+# Captured verbatim from a real FRRouting 8.4 router in the lab.
+FRR_PBR_MAP = """\
+  pbr-map ATLAS-TEST valid: yes
+    Seq: 10 rule: 309
+        Installed: yes Reason: Valid
+        SRC IP Match: 198.51.100.0/24
+        DST IP Match: 203.0.113.0/24
+        nexthop 172.30.12.2
+          Installed: yes Tableid: 10000
+    Seq: 20 rule: 319
+        Installed: no Reason: Invalid Src or Dst
+        IP Protocol Match: tcp
+        DST Port Match: 443
+        nexthop 172.30.12.3
+          Installed: yes Tableid: 10001
+"""
+
+FRR_PBR_INTERFACE = "  eth2(736) with pbr-policy ATLAS-TEST\n"
+
+
+class FrrPbrTests(unittest.TestCase):
+    """FRR's own daemon, its own grammar — neither route-map nor iproute2.
+
+    Every string here was observed on a real FRR 8.4 router, including the
+    two failure shapes that no documentation would have shown.
+    """
+
+    def setUp(self) -> None:
+        self.bindings = parse_frr_pbr_interfaces(FRR_PBR_INTERFACE)
+        self.policies = parse_frr_pbr_maps(
+            FRR_PBR_MAP, bindings=self.bindings
+        )
+
+    def test_the_binding_names_the_interface_without_its_index(self) -> None:
+        self.assertEqual({"ATLAS-TEST": ["eth2"]}, self.bindings)
+
+    def test_matches_and_the_next_hop_are_read(self) -> None:
+        rule = next(p for p in self.policies if p.sequence == 10)
+        self.assertEqual("198.51.100.0/24", rule.source)
+        self.assertEqual("203.0.113.0/24", rule.destination)
+        self.assertEqual("172.30.12.2", rule.next_hop)
+        self.assertEqual("eth2", rule.ingress_interface)
+        self.assertFalse(rule.disabled)
+
+    def test_protocol_and_port_matches_are_read(self) -> None:
+        rule = next(p for p in self.policies if p.sequence == 20)
+        self.assertEqual("tcp", rule.protocol)
+        self.assertEqual((443,), rule.destination_ports)
+
+    def test_a_rule_not_installed_in_the_kernel_forwards_nothing(self) -> None:
+        """FRR keeps a rule it could not install — "Installed: no Reason:
+        Invalid Src or Dst". It is configured and NOT enforcing, so
+        reading it as live would divert a flow the router does not."""
+
+        self.assertTrue(next(p for p in self.policies if p.sequence == 20).disabled)
+
+    def test_a_nexthop_installed_under_a_dead_rule_does_not_revive_it(self) -> None:
+        # Seq 20's nexthop says "Installed: yes" on its own line while the
+        # RULE says no. The first Installed line is the rule's.
+        rule = next(p for p in self.policies if p.sequence == 20)
+        self.assertTrue(rule.disabled)
+
+    def test_a_map_bound_to_nothing_forwards_nothing(self) -> None:
+        self.assertEqual((), parse_frr_pbr_maps(FRR_PBR_MAP))
+
+    def test_a_router_with_pbrd_down_has_told_us_nothing(self) -> None:
+        self.assertFalse(frr_pbr_is_readable("pbrd is not running"))
+        self.assertEqual((), parse_frr_pbr_maps("pbrd is not running"))
+
+    def test_empty_output_is_not_evidence_of_no_policy_routing(self) -> None:
+        """The subtle half, and the one that nearly shipped wrong. On a
+        real router "pbrd is not running" goes to STDERR and stdout comes
+        back EMPTY — so a check that only looks for the message passes an
+        empty string through and reports no policy routing on a router
+        that never answered. A pbrd that IS up with no maps also prints
+        nothing, so emptiness cannot tell the two apart."""
+
+        self.assertFalse(frr_pbr_is_readable(""))
+        self.assertFalse(frr_pbr_is_readable("   \n  "))
 
 
 class MatchingTests(unittest.TestCase):

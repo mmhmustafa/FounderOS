@@ -275,6 +275,61 @@ class FRRoutingAdapterTests(unittest.TestCase):
 
 
 class FRRoutingDriverTests(unittest.TestCase):
+    def test_policy_routing_is_captured_from_both_halves(self) -> None:
+        """FRR's PBR daemon has its own grammar. Both the rules and the
+        interface each map is applied to are needed — a map bound to
+        nothing forwards nothing."""
+
+        outputs = frr_outputs("delhi-r1", "10.20.0.1")
+        outputs["show pbr map"] = (
+            "  pbr-map ATLAS-TEST valid: yes\n"
+            "    Seq: 10 rule: 309\n"
+            "        Installed: yes Reason: Valid\n"
+            "        SRC IP Match: 198.51.100.0/24\n"
+            "        nexthop 172.30.12.2\n"
+            "          Installed: yes Tableid: 10000\n"
+        )
+        outputs["show pbr interface"] = (
+            "  eth2(736) with pbr-policy ATLAS-TEST\n"
+        )
+        discovery = FRRoutingDriver().discover(
+            StubTransport(outputs), management_ip_hint="10.20.0.1"
+        )
+        metadata = discovery.result.device.metadata
+        self.assertTrue(metadata["policy_routes_captured"])
+        rule = metadata["policy_routes"][0]
+        self.assertEqual("eth2", rule["ingress_interface"])
+        self.assertEqual("172.30.12.2", rule["next_hop"])
+
+    def test_a_router_with_pbrd_down_stays_unevaluated(self) -> None:
+        """vtysh answers "pbrd is not running" — NOT an unknown-command
+        rejection. Recorded as captured-and-empty it would assert that a
+        router which never answered has no policy routing."""
+
+        outputs = frr_outputs("delhi-r1", "10.20.0.1")
+        outputs["show pbr map"] = "pbrd is not running"
+        discovery = FRRoutingDriver().discover(
+            StubTransport(outputs), management_ip_hint="10.20.0.1"
+        )
+        self.assertNotIn(
+            "policy_routes_captured", discovery.result.device.metadata
+        )
+
+    def test_silence_from_the_pbr_command_is_not_an_answer(self) -> None:
+        """On a real router that message goes to STDERR and stdout comes
+        back EMPTY, so an empty capture is indistinguishable from a live
+        pbrd with no maps. Neither may be reported as "no policy
+        routing"."""
+
+        outputs = frr_outputs("delhi-r1", "10.20.0.1")
+        outputs["show pbr map"] = ""
+        discovery = FRRoutingDriver().discover(
+            StubTransport(outputs), management_ip_hint="10.20.0.1"
+        )
+        self.assertNotIn(
+            "policy_routes_captured", discovery.result.device.metadata
+        )
+
     def test_capabilities_are_recorded_never_raised(self) -> None:
         transport = StubTransport(
             frr_outputs(

@@ -29,6 +29,12 @@ from founderos_atlas.routing import (
     routing_metadata,
 )
 from founderos_atlas.routing.table import route_table_dicts
+from founderos_atlas.routing.policy import (
+    frr_pbr_is_readable,
+    parse_frr_pbr_interfaces,
+    parse_frr_pbr_maps,
+    policy_route_dicts,
+)
 
 from ..base import (
     CAP_COLLECTED,
@@ -43,6 +49,11 @@ SHOW_VERSION = "show version"
 SHOW_INTERFACES = "show interface"
 SHOW_OSPF_NEIGHBORS = "show ip ospf neighbor"
 SHOW_ROUTES = "show ip route"
+# FRR's policy routing lives in its own daemon with its own grammar —
+# neither route-map nor iproute2. Both halves are needed: the rules, and
+# the interfaces each map is applied to.
+SHOW_PBR_MAP = "show pbr map"
+SHOW_PBR_INTERFACE = "show pbr interface"
 SHOW_BGP_SUMMARY = "show bgp summary"
 SHOW_LLDP = "show lldp neighbors"
 SHOW_RUNNING = "show running-config"
@@ -285,6 +296,8 @@ class FRRoutingDriver(PlatformDriver):
             CapabilitySpec("interfaces", SHOW_INTERFACES, required=True),
             CapabilitySpec("ospf-neighbors", SHOW_OSPF_NEIGHBORS),
             CapabilitySpec("routes", SHOW_ROUTES),
+            CapabilitySpec("policy-routes", SHOW_PBR_MAP),
+            CapabilitySpec("policy-route-interfaces", SHOW_PBR_INTERFACE),
             CapabilitySpec("bgp", SHOW_BGP_SUMMARY),
             CapabilitySpec("lldp-neighbors", SHOW_LLDP),
         )
@@ -315,6 +328,22 @@ class FRRoutingDriver(PlatformDriver):
             # The real RIB — prefix, next-hop, interface, protocol — cited
             # to `show ip route`. The summary above stays for the dashboard.
             metadata["routing_table"] = routing_table
+        # Policy routing, and the one distinction that matters: a router
+        # whose pbrd is DOWN has told us nothing. vtysh answers "pbrd is
+        # not running" — not an unknown-command rejection — so without
+        # this check it would parse to zero rules and be recorded as
+        # "asked, and there are none", asserting an absence nobody
+        # checked.
+        pbr_text = discovery.raw_outputs.get(SHOW_PBR_MAP)
+        if pbr_text is not None and frr_pbr_is_readable(pbr_text):
+            metadata["policy_routes"] = policy_route_dicts(parse_frr_pbr_maps(
+                pbr_text,
+                bindings=parse_frr_pbr_interfaces(
+                    discovery.raw_outputs.get(SHOW_PBR_INTERFACE, "")
+                ),
+                source_command=SHOW_PBR_MAP,
+            ))
+            metadata["policy_routes_captured"] = True
         if bgp_peers is not None:
             metadata["bgp_peers"] = bgp_peers
             if bgp_peers.get("router_id"):

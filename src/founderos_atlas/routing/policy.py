@@ -724,6 +724,142 @@ def _panos_any(value: object) -> str | None:
     return text
 
 
+# -- FRRouting PBR ---------------------------------------------------------
+# FRR has its own daemon and its own grammar — neither route-map nor
+# iproute2. `show pbr map` prints the rules, `show pbr interface` prints
+# which interface each map is applied to, and the binding is half the fact
+# exactly as it is on IOS.
+#
+# Two states this output distinguishes and a naive read would not:
+#
+#   "pbrd is not running"   the daemon that would answer is DOWN. This is
+#                           not "no policy routing" — it is Atlas being
+#                           unable to tell, and it must stay unevaluated.
+#   "Installed: no"         the rule is configured but NOT in the kernel,
+#                           so it is not forwarding anything. Reading it
+#                           as live would divert a flow the router does
+#                           not divert.
+#
+# Both were observed on a real FRR 8.4 router, not inferred.
+
+PBRD_DOWN = "pbrd is not running"
+
+_FRR_MAP = re.compile(r"^\s*pbr-map\s+(\S+)\s+valid:\s*(\S+)", re.IGNORECASE)
+_FRR_SEQ = re.compile(r"^\s*Seq:\s*(\d+)\s+rule:\s*(\d+)", re.IGNORECASE)
+_FRR_INSTALLED = re.compile(r"^\s*Installed:\s*(\S+)", re.IGNORECASE)
+_FRR_MATCH = re.compile(
+    r"^\s*(SRC IP|DST IP|IP Protocol|SRC Port|DST Port)\s+Match:\s*(\S+)",
+    re.IGNORECASE,
+)
+_FRR_NEXTHOP = re.compile(r"^\s*nexthop\s+(\S+)", re.IGNORECASE)
+_FRR_BINDING = re.compile(
+    r"^\s*(\S+?)\(\d+\)\s+with\s+pbr-policy\s+(\S+)", re.IGNORECASE
+)
+
+
+def frr_pbr_is_readable(text: str) -> bool:
+    """Whether `show pbr map` actually answered.
+
+    A router whose pbrd is down has told us nothing about policy routing.
+    Recording that as "captured, and there are none" would assert an
+    absence nobody checked.
+
+    EMPTY output is not readable either, and that is the subtle half. On a
+    real FRR 8.4 router "pbrd is not running" goes to STDERR while stdout
+    comes back empty — so a check that only looks for the message passes
+    an empty string straight through and reports no policy routing on a
+    router that never answered. A pbrd that IS up but has no maps also
+    prints nothing, so emptiness cannot distinguish the two at all.
+
+    The cost is that a genuinely PBR-free router stays unevaluated instead
+    of confirmed-empty. That is the right direction to be wrong in: it
+    under-claims what Atlas knows rather than asserting an absence it
+    cannot see.
+    """
+
+    body = (text or "").strip()
+    if not body:
+        return False
+    return PBRD_DOWN not in body.lower()
+
+
+def parse_frr_pbr_interfaces(text: str) -> dict[str, list[str]]:
+    """Map name -> interfaces it is applied to, from `show pbr interface`."""
+
+    bindings: dict[str, list[str]] = {}
+    for raw in (text or "").splitlines():
+        match = _FRR_BINDING.match(raw)
+        if match:
+            bindings.setdefault(match.group(2), []).append(match.group(1))
+    return bindings
+
+
+def parse_frr_pbr_maps(
+    text: str,
+    *,
+    bindings: dict[str, list[str]] | None = None,
+    source_command: str = "show pbr map",
+) -> tuple[PolicyRoute, ...]:
+    if not frr_pbr_is_readable(text):
+        return ()
+
+    policies: list[PolicyRoute] = []
+    name: str | None = None
+    entry: dict | None = None
+
+    def flush() -> None:
+        if entry is None or name is None:
+            return
+        interfaces = (bindings or {}).get(name) or []
+        port = _as_int(entry.get("dst port"))
+        for interface in sorted(interfaces):
+            policies.append(PolicyRoute(
+                sequence=entry["sequence"],
+                source=_clean_prefix(entry.get("src ip")),
+                destination=_clean_prefix(entry.get("dst ip")),
+                protocol=_clean(entry.get("ip protocol")),
+                destination_ports=(port,) if port is not None else (),
+                ingress_interface=interface,
+                next_hop=entry.get("nexthop"),
+                # Configured but not in the kernel forwards nothing.
+                disabled=not entry.get("installed", False),
+                name=f"{name} seq {entry['sequence']}",
+                source_command=source_command,
+            ))
+
+    for raw in (text or "").splitlines():
+        header = _FRR_MAP.match(raw)
+        if header:
+            flush()
+            entry = None
+            name = header.group(1)
+            continue
+        sequence = _FRR_SEQ.match(raw)
+        if sequence:
+            flush()
+            entry = {"sequence": int(sequence.group(1))}
+            continue
+        if entry is None:
+            continue
+        installed = _FRR_INSTALLED.match(raw)
+        if installed:
+            # The FIRST Installed line belongs to the rule; a later one
+            # belongs to its nexthop, and a nexthop installed under a rule
+            # that is not must not make the rule look live.
+            if "installed" not in entry:
+                entry["installed"] = installed.group(1).lower() == "yes"
+            continue
+        criterion = _FRR_MATCH.match(raw)
+        if criterion:
+            entry[criterion.group(1).lower()] = criterion.group(2)
+            continue
+        nexthop = _FRR_NEXTHOP.match(raw)
+        if nexthop:
+            entry["nexthop"] = nexthop.group(1)
+    flush()
+    return tuple(policies)
+
+
 # -- shared helpers --------------------------------------------------------
 
 def _clean(value: object) -> str | None:
