@@ -164,6 +164,9 @@ ENDPOINT_PERMISSIONS: dict[str, str] = {
     # An ACTIVE probe (real traceroute over SSH) is console-tier work,
     # not read-only investigation — deliberately stricter than trace.
     "api_paths_validate_live": CONSOLE_USE,
+    # The link-latency pass pings each neighbour over SSH — the same
+    # active, console-tier work, and gated the same way.
+    "api_topology_measure_latency": CONSOLE_USE,
     "incidents_run": INVESTIGATE_RUN,
     "incidents_bulk": INVESTIGATE_RUN,
     "advisor_ask_route": INVESTIGATE_RUN,

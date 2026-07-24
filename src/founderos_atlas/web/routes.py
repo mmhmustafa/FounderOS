@@ -5556,6 +5556,208 @@ def register_routes(app) -> None:
             "output": output,
         }
 
+    @app.route("/api/topology/measure-latency", methods=["POST"])
+    def api_topology_measure_latency():
+        """Measure the RTT across each discovered link — an opt-in ACTIVE pass.
+
+        Discovery is read-only; this is not. It asks each device to ping
+        its own neighbour, so the number is the distance BETWEEN them —
+        the signal that separates one site (sub-millisecond) from a WAN
+        apart (milliseconds), which site derivation then reads to place a
+        shared device with the site it reaches fastest. Because it sends
+        packets it is the console case, exactly like the live traceroute:
+        operator-triggered, host-key-verified, audited, and off until
+        asked. A device Atlas cannot reach, or a link that answers no
+        timing, records absence — never a zero that would read as
+        "instant" and wrongly pull a device toward the nearest thing.
+        """
+
+        import json as _json
+        from uuid import uuid4
+
+        from founderos_atlas.console import (
+            dataplane_address,
+            run_probe_command,
+        )
+        from founderos_atlas.console.latency import (
+            LinkProbe,
+            apply_latency_to_edges,
+            measure_link_latency,
+        )
+        from founderos_atlas.topology.snapshot import (
+            TopologySnapshot,
+            content_address,
+        )
+
+        scopes = known_scopes()
+        scope_id = active_scope_id(scopes)
+        if scope_id == GLOBAL_SCOPE_ID:
+            return {
+                "error": "Choose a network scope — link latency is measured "
+                "per network, from each device's own console."
+            }, 409
+        scope = scopes[scope_id]
+        raw = load_json(scope.snapshot_path)
+        if not isinstance(raw, dict) or not raw.get("edges"):
+            return {
+                "error": "No topology has been discovered for this scope yet."
+            }, 409
+
+        devices = raw.get("devices") or []
+        targets = {t.device_id: t for t in console_targets(scopes, scope_id)}
+        host_key_store = console_host_key_store()
+        factory = app.config.get("ATLAS_PROBE_CLIENT_FACTORY")
+        probe_id = f"latency-{uuid4().hex[:12]}"
+
+        def _runner(**kwargs):
+            # The measurement stays transport-agnostic; the client factory
+            # (real paramiko, or a scripted client under test) is injected
+            # here, where the route already owns it.
+            return run_probe_command(client_factory=factory, **kwargs)
+
+        # One probe per edge whose local device we can log in to and whose
+        # neighbour has an address to ping. The neighbour's dataplane
+        # address is preferred, so the number reflects the link rather than
+        # an out-of-band management path.
+        by_hostname = {}
+        for device in devices:
+            name = str(device.get("hostname") or "").casefold()
+            if name:
+                by_hostname.setdefault(name, device)
+
+        logins = {}
+        probes = []
+        considered = 0
+        for edge in raw["edges"]:
+            local_id = str(edge.get("local_device_id") or "")
+            remote_name = str(edge.get("remote_hostname") or "")
+            target = targets.get(local_id)
+            if (
+                target is None
+                or not target.eligible
+                or not target.management_ip
+                or not target.credential_ref
+            ):
+                continue
+            if local_id not in logins:
+                try:
+                    logins[local_id] = console_credential_for(
+                        scopes, scope_id, target.credential_ref
+                    )
+                except KeyError:
+                    logins[local_id] = None
+            login = logins[local_id]
+            if login is None:
+                continue
+            address = str(edge.get("remote_management_ip") or "").strip()
+            neighbour = by_hostname.get(remote_name.casefold())
+            if neighbour is not None:
+                dataplane = dataplane_address(
+                    devices,
+                    neighbour.get("hostname"),
+                    neighbour.get("management_ip"),
+                )
+                if dataplane is not None:
+                    address = dataplane[0]
+            if not address:
+                continue
+            considered += 1
+            username, password = login
+            probes.append(LinkProbe(
+                local_device_id=local_id,
+                remote_hostname=remote_name,
+                host=target.management_ip,
+                port=target.port,
+                username=username,
+                password=password,
+                target_ip=address,
+                platform=target.platform or target.vendor or "",
+            ))
+
+        if not probes:
+            return {
+                "error": "No link on this network can be measured yet — the "
+                "devices need a verified management address, a stored "
+                "credential, and an accepted SSH host key. Open a device's "
+                "console to accept its key, then measure again.",
+                "measured": 0,
+                "considered": 0,
+            }, 409
+
+        measurements = measure_link_latency(
+            probes, host_key_store=host_key_store, run_command=_runner,
+        )
+
+        # Audit each attempt like a console connection — one login, one
+        # event, the operator and device named, the reason recorded.
+        audit = console_audit()
+        actor = current_actor()
+        for probe, measurement in zip(probes, measurements):
+            target = targets.get(probe.local_device_id)
+            audit.record(
+                "latency-probe",
+                session_id=probe_id,
+                operator=actor,
+                device_id=probe.local_device_id,
+                hostname=target.hostname if target else probe.local_device_id,
+                management_ip=probe.host,
+                port=probe.port,
+                credential_ref=target.credential_ref if target else None,
+                result="ok" if measurement.rtt_ms is not None else "no-reading",
+                detail=measurement.detail,
+            )
+
+        measured = [m for m in measurements if m.rtt_ms is not None]
+        # Write the readings onto their edges and re-address the snapshot.
+        # The id is a content address, so a mutated snapshot needs a fresh
+        # one or it would be rejected as tampered on the next read.
+        new_edges = tuple(apply_latency_to_edges(raw["edges"], measurements))
+        devices_t = tuple(devices)
+        warnings_t = tuple(raw.get("warnings") or ())
+        metadata = raw.get("metadata") or {}
+        created_at = raw.get("created_at")
+        snapshot = TopologySnapshot(
+            snapshot_id=content_address(
+                created_at=created_at,
+                devices=devices_t,
+                edges=new_edges,
+                warnings=warnings_t,
+                metadata=metadata,
+            ),
+            created_at=created_at,
+            devices=devices_t,
+            edges=new_edges,
+            warnings=warnings_t,
+            metadata=metadata,
+        )
+        scope.snapshot_path.write_text(
+            _json.dumps(snapshot.to_dict(), indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+        # Derivation re-reads rtt_ms on the next render; force the artifact
+        # to rebuild now so the diagram reflects the readings immediately.
+        refresh_scope_topology_viewer(scope, force=True)
+        enterprise_cache.update(fingerprint=None, graph=None, snapshot=None)
+
+        rtts = sorted(m.rtt_ms for m in measured)
+        unreachable = [
+            {"device": m.local_device_id, "neighbour": m.remote_hostname,
+             "reason": m.detail}
+            for m in measurements if m.rtt_ms is None
+        ]
+        return {
+            "probe": "active",
+            "probe_note": (
+                "Each device pinged its own neighbour at the operator's "
+                "request — real packets, timing the distance between them."
+            ),
+            "considered": considered,
+            "measured": len(measured),
+            "rtt_ms_min": rtts[0] if rtts else None,
+            "rtt_ms_max": rtts[-1] if rtts else None,
+            "unreachable": unreachable,
+        }
+
     # -- Compass (PR-039: deterministic change planning) -----------------------
 
     def compass_repository():
