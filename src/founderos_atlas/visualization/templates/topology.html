@@ -794,10 +794,18 @@
           'label': 'data(label)',
           'text-valign': 'top', 'text-halign': 'center', 'text-margin-y': 6,
           'color': '#334155', 'font-size': 13, 'font-weight': 700,
+          'text-wrap': 'wrap', 'text-max-width': 260, 'line-height': 1.25,
           'text-background-color': '#ffffff', 'text-background-opacity': 0.7,
           'text-background-shape': 'round-rectangle', 'text-background-padding': 3,
           'min-zoomed-font-size': 8,
           'z-index': 0, 'events': 'no',
+        }},
+        // In the All-Devices site-oval view the links that leave a site are
+        // faded to thin, light strokes, so the eye follows the site
+        // grouping rather than the web of inter-site wires. Intra-site links
+        // keep their normal weight.
+        { selector: 'edge.cross-site', style: {
+          'opacity': 0.22, 'width': 1,
         }},
         { selector: 'node[kind = "observed"]', style: { 'opacity': 0.78 }},
         { selector: 'node.label-detailed[kind != "site"][kind != "protocol-domain"]', style: {
@@ -2241,62 +2249,119 @@
     ];
 
     // The All-Devices view, grouped by SITE: every device in its site's
-    // coloured oval, tiered inside (border devices facing the middle where
-    // the inter-site links cross), the ovals laid in a grid and separated
-    // so none overlap. This is the whole estate read the way the site
-    // overview reads — one glance tells you which devices are which site —
-    // rather than the control-plane tint, which now lives only in the
-    // dedicated OSPF and BGP views.
+    // coloured oval, tiered inside. The sites that talk to each other are
+    // drawn CLOSE together (a force pass over the ovals, weighted by how
+    // many links run between them), so the wires stay short and local
+    // instead of crossing the whole map; the links that still leave a site
+    // are faded so the eye follows the grouping. Each oval also carries the
+    // OSPF area / BGP AS its devices sit in, so the control-plane is legible
+    // here too — per site, not as the estate-wide tint that used to smear.
     function renderSiteOvalsGrid() {
       const memberOf = siteView.membership || {};
       const siteLabel = {};
       (siteView.sites || []).forEach(s => { siteLabel[s.site_id] = s.label; });
       const groups = new Map();
+      const siteOf = {};
       cy.nodes().forEach(n => {
         const k = n.data('kind');
         if (k === 'site' || k === 'sitehull' || k === 'protocol-domain') { return; }
         const sid = memberOf[n.data('id')] || '__none__';
+        siteOf[n.id()] = sid;
         if (!groups.has(sid)) { groups.set(sid, []); }
         groups.get(sid).push(n);
       });
       const siteIds = [...groups.keys()].sort();
-      const cols = Math.max(1, Math.round(Math.sqrt(siteIds.length * 1.7)));
-      const rows = Math.ceil(siteIds.length / cols);
-      const CELL = 780;
-      const gcx = (cols - 1) / 2, gcy = (rows - 1) / 2;
-      const blocks = [];
-      siteIds.forEach((sid, idx) => {
-        const devices = groups.get(sid);
-        if (!devices.length) { return; }
-        const gx = idx % cols, gy = Math.floor(idx / cols);
-        // Border devices face the middle of the grid, where the links to
-        // other sites cross; a lone site just faces down.
-        const dir = { dx: gcx - gx, dy: gcy - gy };
-        if (dir.dx === 0 && dir.dy === 0) { dir.dy = 1; }
-        const { local, blockW, blockH } =
-          computeIntraLayout(devices, memberOf, () => dir);
-        const rx = (blockW / 2 + 76) * 1.45, ry = (blockH / 2 + 50) * 1.45;
-        blocks.push({
-          sid, devices, local, fixed: false,
-          cx: gx * CELL, cy: gy * CELL, rx, ry,
-          hw: rx + 20, hh: ry + 20,
-          colour: HULL_PALETTE[idx % HULL_PALETTE.length],
-        });
+      const n = siteIds.length;
+      const index = {};
+      siteIds.forEach((s, i) => { index[s] = i; });
+      // How many links run between each pair of sites, and fade those that
+      // leave a site (they are drawn thin/light by the .cross-site style).
+      const W = siteIds.map(() => ({}));
+      cy.edges().forEach(e => {
+        const a = siteOf[e.source().id()], b = siteOf[e.target().id()];
+        if (a == null || b == null || a === b) { return; }
+        e.addClass('cross-site');
+        const i = index[a], j = index[b];
+        W[i][j] = (W[i][j] || 0) + 1; W[j][i] = (W[j][i] || 0) + 1;
       });
-      // Separate ovals so none overlap (same min-translation pass).
-      for (let pass = 0; pass < 80; pass++) {
+      // Seed the ovals on a circle, then size each one. The border devices
+      // face inward (toward the middle, where the hubs settle and the
+      // inter-site links converge).
+      const R0 = Math.max(700, 150 * n);
+      const blocks = siteIds.map((sid, idx) => {
+        const devices = groups.get(sid);
+        const ang = -Math.PI / 2 + 2 * Math.PI * idx / n;
+        const seedX = Math.cos(ang), seedY = Math.sin(ang);
+        const { local, blockW, blockH } = computeIntraLayout(
+          devices, memberOf, () => ({ dx: -seedX, dy: -seedY }));
+        // The ellipse must pass outside the device LABELS (a label is ~69px
+        // to each side of its node and reaches ~46px below it), so the
+        // padding here is what keeps them inside the curve. This is the
+        // tightest that still fully clears every corner.
+        const rx = (blockW / 2 + 76) * 1.45, ry = (blockH / 2 + 50) * 1.45;
+        // OSPF areas / BGP AS this site's devices sit in (real values only).
+        const areas = new Set(), ases = new Set();
+        devices.forEach(d => {
+          (d.data('ospf_memberships') || []).forEach(m => {
+            if (m.area_id && m.area_id !== 'unobserved') { areas.add(m.area_id); }
+          });
+          (d.data('bgp_memberships') || []).forEach(m => {
+            if (m.local_as) { ases.add(m.local_as); }
+          });
+        });
+        return {
+          sid, idx, devices, local, rx, ry,
+          hw: rx + 16, hh: ry + 16,
+          cx: seedX * R0, cy: seedY * R0,
+          areas: [...areas], ases: [...ases],
+          colour: HULL_PALETTE[idx % HULL_PALETTE.length],
+        };
+      });
+      // Force pass (Fruchterman–Reingold with weighted attraction): connected
+      // sites pull together, all sites repel, cooling to a stop. Seeded from
+      // the circle, so it is deterministic — no randomness.
+      let k = 0; blocks.forEach(b => { k += Math.max(b.rx, b.ry); });
+      k = (k / Math.max(1, n)) * 2.4;
+      let temp = k * 2.2;
+      for (let it = 0; it < 260 && n > 1; it++) {
+        const dx = new Array(n).fill(0), dy = new Array(n).fill(0);
+        for (let i = 0; i < n; i++) {
+          for (let j = i + 1; j < n; j++) {
+            let vx = blocks[j].cx - blocks[i].cx, vy = blocks[j].cy - blocks[i].cy;
+            let d = Math.hypot(vx, vy) || 0.01; const ux = vx / d, uy = vy / d;
+            const rep = (k * k) / d;                 // repel everyone
+            dx[i] -= ux * rep; dy[i] -= uy * rep;
+            dx[j] += ux * rep; dy[j] += uy * rep;
+            const w = W[i][blocks[j].idx] || 0;
+            if (w) {                                 // attract the connected
+              const att = (d * d / k) * Math.log2(2 + w);
+              dx[i] += ux * att; dy[i] += uy * att;
+              dx[j] -= ux * att; dy[j] -= uy * att;
+            }
+          }
+        }
+        for (let i = 0; i < n; i++) {
+          const dl = Math.hypot(dx[i], dy[i]) || 1;
+          const lim = Math.min(dl, temp);
+          blocks[i].cx += dx[i] / dl * lim; blocks[i].cy += dy[i] / dl * lim;
+        }
+        temp *= 0.972;
+      }
+      // Now push any overlapping ovals apart (min-translation), keeping the
+      // force pass's clustering but guaranteeing no oval covers another.
+      for (let pass = 0; pass < 120; pass++) {
         let moved = false;
         for (let a = 0; a < blocks.length; a++) {
           for (let b = a + 1; b < blocks.length; b++) {
             const A = blocks[a], B = blocks[b];
-            const dx = B.cx - A.cx, dy = B.cy - A.cy;
-            const ox = (A.hw + B.hw) - Math.abs(dx);
-            const oy = (A.hh + B.hh) - Math.abs(dy);
+            const vx = B.cx - A.cx, vy = B.cy - A.cy;
+            const ox = (A.hw + B.hw) - Math.abs(vx);
+            const oy = (A.hh + B.hh) - Math.abs(vy);
             if (ox <= 0 || oy <= 0) { continue; }
             moved = true;
             let sx = 0, sy = 0;
-            if (ox < oy) { sx = (dx < 0 ? -1 : 1) * ox; }
-            else { sy = (dy < 0 ? -1 : 1) * oy; }
+            if (ox < oy) { sx = (vx < 0 ? -1 : 1) * ox; }
+            else { sy = (vy < 0 ? -1 : 1) * oy; }
             A.cx -= sx / 2; A.cy -= sy / 2;
             B.cx += sx / 2; B.cy += sy / 2;
           }
@@ -2309,12 +2374,24 @@
           const p = b.local.get(node.id()) || { x: 0, y: 0 };
           node.position({ x: b.cx + p.x, y: b.cy + p.y });
         });
+        const name = b.sid === '__none__'
+          ? 'Site not identified' : (siteLabel[b.sid] || b.sid);
+        const proto = [];
+        if (b.areas.length) {
+          proto.push(b.areas.length <= 2
+            ? 'OSPF ' + b.areas.sort().join(', ')
+            : 'OSPF · ' + b.areas.length + ' areas');
+        }
+        if (b.ases.length) {
+          proto.push(b.ases.length <= 2
+            ? 'AS ' + b.ases.sort((x, y) => x - y).join(', ')
+            : b.ases.length + ' AS');
+        }
         hulls.push({
           group: 'nodes',
           data: {
             id: 'sitehull:' + b.sid, kind: 'sitehull',
-            label: b.sid === '__none__'
-              ? 'Site not identified' : (siteLabel[b.sid] || b.sid),
+            label: proto.length ? name + '\n' + proto.join(' · ') : name,
             hullColor: b.colour.fill, hullBorder: b.colour.line,
             w: 2 * b.rx, h: 2 * b.ry,
           },
