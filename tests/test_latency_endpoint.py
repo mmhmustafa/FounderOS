@@ -101,5 +101,15 @@ class MeasureLatencyEndpointTests(unittest.TestCase):
             self.assertEqual(409, response.status_code)
 
 
+class WizardOptInSurfaceTests(unittest.TestCase):
+    def test_wizard_offers_the_opt_in_and_discovery_shows_the_row(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            _service, client = build_world(Path(tmp))
+            wizard = client.get("/discovery/wizard").get_data(as_text=True)
+            self.assertIn('name="measure_latency"', wizard)
+            page = client.get("/discovery").get_data(as_text=True)
+            self.assertIn('id="summary-latency-row"', page)
+
+
 if __name__ == "__main__":
     unittest.main()

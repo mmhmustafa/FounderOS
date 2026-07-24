@@ -101,6 +101,11 @@ class DiscoveryJob:
     error: str | None = None
     warning: str | None = None
     summary: dict[str, Any] | None = None
+    # An opt-in the operator set in the wizard: after this read-only
+    # discovery finishes, measure link latency (an ACTIVE, console-gated
+    # pass). It rides on the job only so the completed run can tell the
+    # browser to trigger the measurement; the pass itself never runs here.
+    measure_latency: bool = False
     cancel_requested: bool = False
     log: list[str] = field(default_factory=list)
     _seen_hosts: set[str] = field(default_factory=set)
@@ -151,6 +156,7 @@ class DiscoveryJob:
             "warning": self.warning,
             "cancel_requested": self.cancel_requested,
             "summary": self.summary,
+            "measure_latency": self.measure_latency,
             "events": list(self.log[-12:]),
             "percent": percent,
             "progress_basis": "stages",  # stage-based, never false precision
@@ -210,12 +216,18 @@ class DiscoveryJobManager:
 
     # -- public API -----------------------------------------------------------
 
-    def start(self, profile_name: str) -> tuple[DiscoveryJob, bool]:
+    def start(
+        self, profile_name: str, *, measure_latency: bool = False
+    ) -> tuple[DiscoveryJob, bool]:
         """Start (or join) a discovery job for a saved profile.
 
         Returns ``(job, created)``; ``created`` is False when the profile
         already has a queued/running job — the existing job is returned so
         double-clicks and concurrent tabs can never duplicate a discovery.
+
+        ``measure_latency`` carries the wizard's opt-in through to the
+        completed job, where the browser reads it to run the active
+        latency pass; a join returns the in-flight job unchanged.
         """
 
         profile = self._profiles.get_profile(profile_name)
@@ -231,6 +243,7 @@ class DiscoveryJobManager:
                 management_ip=profile.management_ip,
                 created_at=self._now(),
                 message="Preparing discovery",
+                measure_latency=bool(measure_latency),
             )
             self._jobs[job.job_id] = job
             self._order.append(job.job_id)
@@ -519,6 +532,7 @@ class DiscoveryJobManager:
                 error=entry.get("error"),
                 warning=entry.get("warning"),
                 summary=entry.get("summary"),
+                measure_latency=bool(entry.get("measure_latency")),
             )
             job._elapsed_seconds = entry.get("elapsed_seconds")
             if job.status in _ACTIVE_STATUSES:

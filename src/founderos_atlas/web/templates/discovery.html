@@ -91,6 +91,7 @@
       <li><span>Protocol peers observed</span><span id="summary-peers">{{ job.summary.protocol_peers if job and job.summary and job.summary.protocol_peers is not none else '—' }}</span></li>
       <li><span>Unresolved peer identities</span><span id="summary-unresolved">{{ job.summary.unresolved_peers if job and job.summary and job.summary.unresolved_peers is not none else '—' }}</span></li>
       <li><span>Duration</span><span id="summary-duration">{% if job and job.summary %}{{ job.summary.duration_seconds }} seconds{% endif %}</span></li>
+      <li id="summary-latency-row" {% if not (job and job.measure_latency) %}hidden{% endif %}><span>Link latency</span><span id="summary-latency">{% if job and job.measure_latency %}measuring after discovery — keep this page open{% else %}—{% endif %}</span></li>
     </ul>
     <div class="flash flash-error" id="job-warning" {% if not (job and job.warning) %}hidden{% endif %}>{{ job.warning if job else '' }}</div>
     <div class="actions" id="job-actions">

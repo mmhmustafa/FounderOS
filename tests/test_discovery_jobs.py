@@ -496,6 +496,58 @@ class JobManagerRestartTests(unittest.TestCase):
             self.assertEqual("interrupted", statuses["aaa111"])
 
 
+class MeasureLatencyOptInTests(unittest.TestCase):
+    """The wizard's 'measure link latency after discovery' opt-in.
+
+    The flag rides on the JOB so the completed run can tell the browser to
+    trigger the active pass (the pass itself never runs in the read-only
+    pipeline). It is off unless asked, visible to the polling client, and
+    survives a restart so a reloaded completed run still knows it applied.
+    """
+
+    def test_the_opt_in_rides_on_the_job_and_is_visible(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            _service, _app, _client, manager = two_lab_world(Path(tmp))
+            job, created = manager.start("Lab A", measure_latency=True)
+            self.assertTrue(created)
+            self.assertTrue(job.measure_latency)
+            self.assertTrue(job.to_dict()["measure_latency"])
+            self.assertTrue(poll_until(lambda: not job.is_active))
+
+    def test_the_opt_in_defaults_off(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            _service, _app, _client, manager = two_lab_world(Path(tmp))
+            job, _ = manager.start("Lab B")
+            self.assertFalse(job.measure_latency)
+            self.assertFalse(job.to_dict()["measure_latency"])
+            self.assertTrue(poll_until(lambda: not job.is_active))
+
+    def test_the_opt_in_survives_a_restart(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            persist = Path(tmp) / "jobs.json"
+            persist.write_text(
+                json.dumps({"jobs": [{
+                    "job_id": "ccc333",
+                    "profile_id": "lab-c",
+                    "profile_name": "Lab C",
+                    "management_ip": "10.0.2.1",
+                    "status": "completed",
+                    "stage_number": 7,
+                    "message": "Discovery completed successfully",
+                    "summary": {"devices": 1},
+                    "measure_latency": True,
+                }]}),
+                encoding="utf-8",
+            )
+            manager = DiscoveryJobManager(
+                runner=lambda *args: {},
+                profile_service=None,
+                persist_path=persist,
+            )
+            restored = {job["job_id"]: job for job in manager.list_recent()}
+            self.assertTrue(restored["ccc333"]["measure_latency"])
+
+
 if __name__ == "__main__":
     unittest.main()
 

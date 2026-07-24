@@ -1886,8 +1886,12 @@ def register_routes(app) -> None:
         except AtlasWorkspaceError as error:
             flash(str(error), "error")
             return redirect(url_for("discovery_wizard"))
+        # An opt-in: after this read-only discovery, measure link latency
+        # (an active, console-gated pass the browser triggers on
+        # completion). Off unless the operator ticked the box.
+        measure_latency = request.form.get("measure_latency") == "yes"
         try:
-            job, _ = job_manager().start(name)
+            job, _ = job_manager().start(name, measure_latency=measure_latency)
         except AtlasWorkspaceError as error:
             flash(str(error), "error")
             return redirect(url_for("discovery_wizard"))

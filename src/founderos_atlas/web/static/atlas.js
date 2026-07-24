@@ -247,6 +247,55 @@
       .catch(function () { /* the stale table is not worth an error */ });
   }
 
+  // The opt-in active pass: once a read-only discovery finishes, and only
+  // if the operator ticked "measure link latency", ask each device to ping
+  // its neighbour over SSH. It runs from the browser (in the operator's
+  // session, host-key-verified and audited server-side) rather than in the
+  // read-only discovery pipeline, so keeping this page open is what lets it
+  // fire. Fires once per page.
+  var latencyStarted = false;
+  function maybeMeasureLatency(job) {
+    if (latencyStarted || !job) return;
+    if (job.status !== "completed" || !job.measure_latency) return;
+    latencyStarted = true;
+    var line = byId("summary-latency");
+    show("summary-latency-row", true);
+    if (line) line.textContent = "measuring… pinging each neighbour over SSH";
+    fetch("/api/topology/measure-latency?scope=" + encodeURIComponent(job.profile_id), {
+      method: "POST",
+      credentials: "same-origin"
+    })
+      .then(function (response) {
+        return response.json().then(function (body) {
+          return { status: response.status, body: body };
+        });
+      })
+      .then(function (result) {
+        if (!line) return;
+        var b = result.body || {};
+        if (result.status === 200) {
+          var span = (b.rtt_ms_min != null && b.rtt_ms_max != null)
+            ? b.rtt_ms_min + "–" + b.rtt_ms_max + " ms"
+            : "no timed replies";
+          var text = b.measured + " of " + b.considered + " links measured · " + span;
+          var missed = (b.unreachable || []).length;
+          if (missed) {
+            text += " · " + missed + " unmeasured (a device needs an accepted "
+              + "SSH host key — open its console to accept it, then re-measure)";
+          }
+          line.textContent = text;
+        } else {
+          // 409 and friends carry an operator-facing sentence; show it.
+          line.textContent = b.error || "could not measure link latency";
+        }
+      })
+      .catch(function () {
+        if (line) {
+          line.textContent = "could not reach the Atlas server to measure latency";
+        }
+      });
+  }
+
   function poll(jobId) {
     fetch("/api/discovery/jobs/" + encodeURIComponent(jobId))
       .then(function (response) { return response.json(); })
@@ -258,6 +307,7 @@
         } else {
           // Terminal: the run just finished under this page.
           refreshNetworksTable();
+          maybeMeasureLatency(payload.job);
         }
       })
       .catch(function () {
