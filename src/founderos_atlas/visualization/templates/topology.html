@@ -770,6 +770,8 @@
           'text-border-color': GRAPH_THEME.lineStrong, 'text-border-width': 1, 'text-border-opacity': 1,
           'width': 68, 'height': 76,
           'border-width': 0,
+          // Real nodes sit above the translucent site hulls (z-index 0).
+          'z-index': 1,
           // The nameplate is part of the node for pointer purposes -- moving
           // the cursor from icon to label must not fire a mouseout.
           'text-events': 'yes',
@@ -777,6 +779,25 @@
           'transition-property': 'opacity, underlay-opacity',
           'transition-duration': '0.15s',
           'transition-timing-function': 'ease-out'
+        }},
+        // A translucent oval drawn behind an opened site's devices, so the
+        // cluster reads as one site. Its colour is per-site (data(hullColor))
+        // so several open sites stay told apart; it is inert — no clicks, no
+        // drag — and sits below the real nodes (z-index 0 vs 1).
+        { selector: 'node[kind = "sitehull"]', style: {
+          'shape': 'ellipse',
+          'width': 'data(w)', 'height': 'data(h)',
+          'background-color': 'data(hullColor)', 'background-opacity': 0.5,
+          'background-image': 'none',
+          'border-width': 2, 'border-color': 'data(hullBorder)',
+          'border-opacity': 0.9,
+          'label': 'data(label)',
+          'text-valign': 'top', 'text-halign': 'center', 'text-margin-y': 6,
+          'color': '#334155', 'font-size': 13, 'font-weight': 700,
+          'text-background-color': '#ffffff', 'text-background-opacity': 0.7,
+          'text-background-shape': 'round-rectangle', 'text-background-padding': 3,
+          'min-zoomed-font-size': 8,
+          'z-index': 0, 'events': 'no',
         }},
         { selector: 'node[kind = "observed"]', style: { 'opacity': 0.78 }},
         { selector: 'node.label-detailed[kind != "site"][kind != "protocol-domain"]', style: {
@@ -2162,12 +2183,30 @@
         const HGAP = 188;   // clear of a 138px label even when a long,
                             // unbroken device name renders a little wider
         const VGAP = 90;    // node plus its two-line label beneath it
-        // First lay out each opened site as a block grown outward from its
-        // slot; then separate the blocks. One site opened this way sits
-        // clear on its own, but several — often adjacent on the ring, so all
-        // growing into the same arc of canvas — would collide. The
-        // separation pass pushes whole blocks apart, and off the closed
-        // clouds, keeping each block's internal grid intact.
+        // Each opened site is drawn inside a translucent oval, in its own
+        // light colour, so a cluster reads as one site and several open
+        // sites stay told apart. The oval is sized to enclose the block's
+        // devices AND their labels, and that same size is what the sites
+        // are separated by — so the ovals never overlap, and neither do the
+        // blocks inside them. The closed clouds are fixed obstacles.
+        const HULL_PALETTE = [
+          { fill: '#dbeafe', line: '#3b82f6' },  // blue
+          { fill: '#dcfce7', line: '#22c55e' },  // green
+          { fill: '#fef3c7', line: '#f59e0b' },  // amber
+          { fill: '#f3e8ff', line: '#a855f7' },  // purple
+          { fill: '#ffe4e6', line: '#f43f5e' },  // rose
+          { fill: '#cffafe', line: '#06b6d4' },  // cyan
+          { fill: '#ffedd5', line: '#f97316' },  // orange
+          { fill: '#e0e7ff', line: '#6366f1' },  // indigo
+        ];
+        const siteLabel = {};
+        (siteView.sites || []).forEach(s => { siteLabel[s.site_id] = s.label; });
+        // Stable colour per open site: assign by sorted id so a site keeps
+        // its colour as others open and close around it.
+        const openSorted = [...expandedSites].sort();
+        const colourOf = {};
+        openSorted.forEach((s, i) => { colourOf[s] = HULL_PALETTE[i % HULL_PALETTE.length]; });
+
         const blocks = [];
         expandedSites.forEach(siteId => {
           const slot = positions.get('site:' + siteId) || fallback;
@@ -2182,6 +2221,11 @@
           const rows = Math.ceil(m / cols);
           const blockW = (cols - 1) * HGAP;
           const blockH = (rows - 1) * VGAP;
+          // The oval that encloses the grid and its labels. An ellipse
+          // through a rectangle's corners is ~1.42x its half-extents; a
+          // little more gives the labels margin inside the curve.
+          const rx = (blockW / 2 + 76) * 1.45;
+          const ry = (blockH / 2 + 50) * 1.45;
           // Outward unit vector from the ring centre to this slot.
           let ox = slot.x - fallback.x, oy = slot.y - fallback.y;
           const mag = Math.hypot(ox, oy) || 1;
@@ -2190,23 +2234,25 @@
           const across = Math.abs(oy) * blockW + Math.abs(ox) * blockH;
           const push = 110 + along / 2 + across * 0.4;
           blocks.push({
-            devices, cols, rows, blockW, blockH, fixed: false,
+            siteId, devices, cols, rows, fixed: false,
             cx: slot.x + ox * push, cy: slot.y + oy * push,
-            // Half-extents include the label reach (a label sits below the
-            // node, up to ~138px wide) so separated blocks never kiss.
-            hw: blockW / 2 + 96, hh: blockH / 2 + 52,
+            rx, ry,
+            // Separate by the oval's own size plus a gap, so the ovals hold
+            // apart, not just the device grids inside them.
+            hw: rx + 14, hh: ry + 14,
+            colour: colourOf[siteId],
           });
         });
-        // The closed clouds are fixed obstacles the blocks must not land on.
+        // The closed clouds are fixed obstacles the ovals must not cover.
         cy.nodes('[kind = "site"]').forEach(node => {
           const p = positions.get(node.id()) || fallback;
           blocks.push({ devices: null, fixed: true, cx: p.x, cy: p.y,
-                        hw: 70, hh: 46 });
+                        hw: 78, hh: 52 });
         });
         // Minimum-translation separation: for each overlapping pair, push
         // along the axis of least penetration. A movable block yields; a
         // fixed cloud does not. A few passes settle a handful of blocks.
-        for (let pass = 0; pass < 40; pass++) {
+        for (let pass = 0; pass < 60; pass++) {
           let moved = false;
           for (let a = 0; a < blocks.length; a++) {
             for (let b = a + 1; b < blocks.length; b++) {
@@ -2230,6 +2276,7 @@
           }
           if (!moved) { break; }
         }
+        const hulls = [];
         blocks.forEach(b => {
           if (b.fixed) { return; }
           b.devices.forEach((node, i) => {
@@ -2239,7 +2286,19 @@
               y: b.cy + (row - (b.rows - 1) / 2) * VGAP,
             });
           });
+          hulls.push({
+            group: 'nodes',
+            data: {
+              id: 'sitehull:' + b.siteId, kind: 'sitehull',
+              label: siteLabel[b.siteId] || b.siteId,
+              hullColor: b.colour.fill, hullBorder: b.colour.line,
+              w: 2 * b.rx, h: 2 * b.ry,
+            },
+            position: { x: b.cx, y: b.cy },
+            selectable: false, grabbable: false, pannable: true,
+          });
         });
+        if (hulls.length) { cy.add(hulls); }
         applyReadableViewport(expandedSites.size === 0);
         finishRebuild('sites');
         return;
