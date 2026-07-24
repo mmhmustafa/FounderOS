@@ -2162,6 +2162,13 @@
         const HGAP = 188;   // clear of a 138px label even when a long,
                             // unbroken device name renders a little wider
         const VGAP = 90;    // node plus its two-line label beneath it
+        // First lay out each opened site as a block grown outward from its
+        // slot; then separate the blocks. One site opened this way sits
+        // clear on its own, but several — often adjacent on the ring, so all
+        // growing into the same arc of canvas — would collide. The
+        // separation pass pushes whole blocks apart, and off the closed
+        // clouds, keeping each block's internal grid intact.
+        const blocks = [];
         expandedSites.forEach(siteId => {
           const slot = positions.get('site:' + siteId) || fallback;
           const devices = cy.nodes().filter(
@@ -2179,22 +2186,57 @@
           let ox = slot.x - fallback.x, oy = slot.y - fallback.y;
           const mag = Math.hypot(ox, oy) || 1;
           ox /= mag; oy /= mag;
-          // Push the whole block clear of the slot along that outward
-          // direction. Clear a base margin, plus half the block's reach
-          // along the outward axis (so its near edge clears the ring), plus
-          // a share of its reach ACROSS that axis — a wide or tall block
-          // fans toward the angularly-adjacent clouds, and pushing it
-          // further out is what lifts that fan off them.
           const along = Math.abs(ox) * blockW + Math.abs(oy) * blockH;
           const across = Math.abs(oy) * blockW + Math.abs(ox) * blockH;
           const push = 110 + along / 2 + across * 0.4;
-          const bx = slot.x + ox * push;
-          const by = slot.y + oy * push;
-          devices.forEach((node, i) => {
-            const row = Math.floor(i / cols), col = i % cols;
+          blocks.push({
+            devices, cols, rows, blockW, blockH, fixed: false,
+            cx: slot.x + ox * push, cy: slot.y + oy * push,
+            // Half-extents include the label reach (a label sits below the
+            // node, up to ~138px wide) so separated blocks never kiss.
+            hw: blockW / 2 + 96, hh: blockH / 2 + 52,
+          });
+        });
+        // The closed clouds are fixed obstacles the blocks must not land on.
+        cy.nodes('[kind = "site"]').forEach(node => {
+          const p = positions.get(node.id()) || fallback;
+          blocks.push({ devices: null, fixed: true, cx: p.x, cy: p.y,
+                        hw: 70, hh: 46 });
+        });
+        // Minimum-translation separation: for each overlapping pair, push
+        // along the axis of least penetration. A movable block yields; a
+        // fixed cloud does not. A few passes settle a handful of blocks.
+        for (let pass = 0; pass < 40; pass++) {
+          let moved = false;
+          for (let a = 0; a < blocks.length; a++) {
+            for (let b = a + 1; b < blocks.length; b++) {
+              const A = blocks[a], B = blocks[b];
+              if (A.fixed && B.fixed) { continue; }
+              const dx = B.cx - A.cx, dy = B.cy - A.cy;
+              const ox2 = (A.hw + B.hw) - Math.abs(dx);
+              const oy2 = (A.hh + B.hh) - Math.abs(dy);
+              if (ox2 <= 0 || oy2 <= 0) { continue; }
+              moved = true;
+              let sx = 0, sy = 0;
+              if (ox2 < oy2) { sx = (dx < 0 ? -1 : 1) * ox2; }
+              else { sy = (dy < 0 ? -1 : 1) * oy2; }
+              if (A.fixed) { B.cx += sx; B.cy += sy; }
+              else if (B.fixed) { A.cx -= sx; A.cy -= sy; }
+              else {
+                A.cx -= sx / 2; A.cy -= sy / 2;
+                B.cx += sx / 2; B.cy += sy / 2;
+              }
+            }
+          }
+          if (!moved) { break; }
+        }
+        blocks.forEach(b => {
+          if (b.fixed) { return; }
+          b.devices.forEach((node, i) => {
+            const row = Math.floor(i / b.cols), col = i % b.cols;
             node.position({
-              x: bx + (col - (cols - 1) / 2) * HGAP,
-              y: by + (row - (rows - 1) / 2) * VGAP,
+              x: b.cx + (col - (b.cols - 1) / 2) * HGAP,
+              y: b.cy + (row - (b.rows - 1) / 2) * VGAP,
             });
           });
         });
