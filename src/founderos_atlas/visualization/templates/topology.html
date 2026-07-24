@@ -2203,15 +2203,40 @@
       const centreX = 390, centreY = 245;
       const ring = ids.filter(id => id !== centre);
       const n = ring.length;
-      const radiusX = Math.max(245, Math.min(390, 78 * n));
-      const radiusY = Math.max(165, Math.min(235, 48 * n));
+      // The ring must hold each site's cloud (about 160x114 with its label)
+      // without the clouds touching. A fixed cap crammed a large estate into
+      // an unreadable pile, so the ellipse grows with the count; and the
+      // sites are spaced by equal ARC LENGTH, not equal angle, so they no
+      // longer bunch where the ellipse curves hardest (its sides).
+      const radiusX = Math.max(390, 39 * n);
+      const radiusY = Math.max(235, 26 * n);
       const pos = new Map();
       if (centre) { pos.set(centre, { x: centreX, y: centreY }); }
+      if (!centre && n === 1) {
+        pos.set(ring[0], { x: centreX, y: centreY });
+        return { centre, positions: pos };
+      }
+      // Cumulative arc-length table around the ellipse, from the top.
+      const START = -Math.PI / 2;
+      const SAMPLES = 2048;
+      const cum = new Float64Array(SAMPLES + 1);
+      let px = centreX + radiusX * Math.cos(START);
+      let py = centreY + radiusY * Math.sin(START);
+      for (let i = 1; i <= SAMPLES; i++) {
+        const a = START + 2 * Math.PI * i / SAMPLES;
+        const qx = centreX + radiusX * Math.cos(a);
+        const qy = centreY + radiusY * Math.sin(a);
+        cum[i] = cum[i - 1] + Math.hypot(qx - px, qy - py);
+        px = qx; py = qy;
+      }
+      const total = cum[SAMPLES];
+      let j = 0;
       ring.forEach((id, i) => {
-        if (!centre && n === 1) { pos.set(id, { x: centreX, y: centreY }); return; }
-        const angle = -Math.PI / 2 + (2 * Math.PI * i / n);
-        pos.set(id, { x: centreX + radiusX * Math.cos(angle),
-                      y: centreY + radiusY * Math.sin(angle) });
+        const target = total * i / n;
+        while (j < SAMPLES && cum[j + 1] < target) { j++; }
+        const a = START + 2 * Math.PI * j / SAMPLES;
+        pos.set(id, { x: centreX + radiusX * Math.cos(a),
+                      y: centreY + radiusY * Math.sin(a) });
       });
       return { centre, positions: pos };
     }

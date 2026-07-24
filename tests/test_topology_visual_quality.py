@@ -70,11 +70,11 @@ class TopologyVisualQualityTests(unittest.TestCase):
 
     def test_sites_and_hostname_first_labels_are_the_default_density_model(self) -> None:
         self.assertIn("viewSelect.value = 'sites';", self.html)
-        # Site clouds ring around the overview — now via the shared
-        # siteRingSlots geometry rather than an inline skyline loop.
+        # Site clouds ring around the overview — via the shared
+        # siteRingSlots geometry, spaced by equal arc length from the top.
         self.assertIn("cy.nodes('[kind = \"site\"]')", self.html)
-        self.assertIn('const angle = -Math.PI / 2', self.html)
-        self.assertIn('radiusX * Math.cos(angle)', self.html)
+        self.assertIn('const START = -Math.PI / 2', self.html)
+        self.assertIn('radiusX * Math.cos(a)', self.html)
         self.assertIn("'text-valign': 'center'", self.html)
         self.assertIn('display_label: site.label', self.html)
         self.assertIn("'label': 'data(label)'", self.html)
