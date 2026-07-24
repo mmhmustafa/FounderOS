@@ -1101,8 +1101,10 @@
       ${data.site_note ? `<div class="field"><strong>How Atlas grouped this</strong>${escapeHtml(data.site_note)}</div>` : ''}
       <div class="node-actions">
         <button class="node-action node-action-primary" type="button"
+                data-topology-action="focus-site" data-site-id="${escapeHtml(data.site_id)}">Focus on this site</button>
+        <button class="node-action" type="button"
                 data-topology-action="toggle-site" data-site-id="${escapeHtml(data.site_id)}">${isOpen ? 'Collapse site' : 'Open site'}</button>
-        <span style="font-size:12px;color:#64748b;align-self:center">Tip: double-click any device inside an open site to fold it back.</span>
+        <span style="font-size:12px;color:#64748b;align-self:center">Focus shows just this site and what it connects to. Double-click a device in an open site to fold it back.</span>
       </div>
       ${editMode && data.site_id !== '__none__' ? `
       <div class="edit-panel">
@@ -1531,13 +1533,31 @@
     };
 
     cy.on('cxttap', 'node', async event => {
-      if (!servedByAtlas) { return; }
       const data = event.target.data();
-      if (data.kind === 'site') { return; }
-      const id = encodeURIComponent(data.id);
+      if (data.kind === 'sitehull') { return; }   // the oval is inert
       const pos = event.renderedPosition ||
                   (event.originalEvent && { x: event.originalEvent.offsetX, y: event.originalEvent.offsetY }) ||
                   { x: 20, y: 20 };
+      const placeMenu = () => {
+        contextMenu.style.display = 'block';
+        const wrap = document.getElementById('cy').getBoundingClientRect();
+        contextMenu.style.left = `${Math.max(8, Math.min(pos.x, wrap.width - contextMenu.offsetWidth - 8))}px`;
+        contextMenu.style.top = `${Math.max(8, Math.min(pos.y, wrap.height - contextMenu.offsetHeight - 8))}px`;
+      };
+      // A site cloud's menu is client-only (focus / open), so it works in
+      // the standalone export too — before the Atlas-served device menu.
+      if (data.kind === 'site') {
+        const sid = data.site_id;
+        const isOpen = expandedSites.has(sid);
+        let siteItems = `<div class="menu-head">${escapeHtml(data.display_label || data.label || sid)}</div>`;
+        siteItems += `<button type="button" class="menu-item" data-topology-action="focus-site" data-site-id="${escapeHtml(sid)}">Focus on this site</button>`;
+        siteItems += `<button type="button" class="menu-item" data-topology-action="toggle-site" data-site-id="${escapeHtml(sid)}">${isOpen ? 'Collapse site' : 'Open site'}</button>`;
+        contextMenu.innerHTML = siteItems;
+        placeMenu();
+        return;
+      }
+      if (!servedByAtlas) { return; }
+      const id = encodeURIComponent(data.id);
 
       let items = `<div class="menu-head">${escapeHtml(data.label || data.id)}</div>`;
       if (data.kind === 'observed') {
@@ -1911,6 +1931,10 @@
     const ospfEnabled = (routingView.ospf.groups || []).length > 0;
     const bgpEnabled = (routingView.bgp.groups || []).length > 0;
     const expandedSites = new Set();
+    // When set, the overview collapses to ONE site: its devices in detail,
+    // and only the sites/WAN/Internet it actually connects to shown around
+    // it. Null is the normal multi-site overview.
+    let focusedSite = null;
     const viewSelect = document.getElementById('view-mode');
     if (!sitesEnabled) {
       const option = viewSelect.querySelector('option[value="sites"]');
@@ -2017,6 +2041,86 @@
         }
       }
       return els;
+    }
+
+    // The focus view: one site in detail, and only what it connects to.
+    // Its own devices and their internal links are shown; every link that
+    // leaves the site becomes a stub to the OUTSIDE site's cloud, and only
+    // those clouds are drawn — the rest of the estate is set aside so the
+    // one site the operator asked about, and its real reach, is all that
+    // remains on screen.
+    function focusElements(siteId) {
+      const memberOf = siteView.membership;
+      const devices = topologyElements.nodes.filter(
+        n => memberOf[n.data.id] === siteId);
+      const devIds = new Set(devices.map(n => n.data.id));
+      const els = devices.map(n => ({ data: { ...n.data } }));
+      const connected = new Set();
+      const stubs = new Map();
+      for (const e of topologyElements.edges) {
+        const a = e.data.source, b = e.data.target;
+        const aIn = devIds.has(a), bIn = devIds.has(b);
+        if (aIn && bIn) { els.push({ data: { ...e.data } }); }
+        else if (aIn || bIn) {
+          const inside = aIn ? a : b, outside = aIn ? b : a;
+          const outSite = memberOf[outside];
+          if (!outSite || outSite === siteId) { continue; }
+          connected.add(outSite);
+          const key = inside + '~' + outSite;
+          const stub = stubs.get(key) ||
+            { id: 'stub:' + key, source: inside, target: 'site:' + outSite,
+              kind: 'aggregate', relationship: e.data.relationship, count: 0 };
+          stub.count += 1;
+          stub.display_label = stub.count + ' link' + (stub.count === 1 ? '' : 's');
+          stubs.set(key, stub);
+        }
+      }
+      for (const site of siteView.sites) {
+        if (connected.has(site.site_id)) {
+          els.push({ data: { ...site, accent: '#2563eb', role_label: 'Site',
+                             display_label: site.label } });
+        }
+      }
+      for (const stub of stubs.values()) { els.push({ data: stub }); }
+      return els;
+    }
+
+    // Place the focused site's devices in a grid at the origin, inside its
+    // oval, with the connected clouds in a column to the right — a small,
+    // legible picture of one site and its neighbours.
+    function layoutFocus(siteId) {
+      const memberOf = siteView.membership;
+      const HGAP = 188, VGAP = 90;
+      const devices = cy.nodes().filter(n => {
+        const k = n.data('kind');
+        return k !== 'site' && k !== 'sitehull'
+          && memberOf[n.data('id')] === siteId;
+      });
+      const m = devices.length || 1;
+      const cols = Math.min(m, Math.max(2, Math.round(Math.sqrt(m * 1.4))));
+      const rows = Math.ceil(m / cols);
+      const blockW = (cols - 1) * HGAP, blockH = (rows - 1) * VGAP;
+      devices.forEach((n, i) => {
+        const row = Math.floor(i / cols), col = i % cols;
+        n.position({ x: (col - (cols - 1) / 2) * HGAP,
+                     y: (row - (rows - 1) / 2) * VGAP });
+      });
+      const rx = (blockW / 2 + 76) * 1.45, ry = (blockH / 2 + 50) * 1.45;
+      const clouds = cy.nodes('[kind = "site"]');
+      const cn = clouds.length;
+      const cloudX = rx + 320;
+      clouds.forEach((c, i) => {
+        c.position({ x: cloudX, y: (i - (cn - 1) / 2) * 168 });
+      });
+      const siteLabel = {};
+      (siteView.sites || []).forEach(s => { siteLabel[s.site_id] = s.label; });
+      cy.add({ group: 'nodes',
+        data: { id: 'sitehull:' + siteId, kind: 'sitehull',
+                label: siteLabel[siteId] || siteId,
+                hullColor: '#dbeafe', hullBorder: '#3b82f6',
+                w: 2 * rx, h: 2 * ry },
+        position: { x: 0, y: 0 }, selectable: false, grabbable: false });
+      applyReadableViewport(false);
     }
 
     // A force layout scatters DISCONNECTED domain groups across a huge
@@ -2137,6 +2241,18 @@
       document.getElementById('legend-site').style.display = mode === 'sites' ? '' : 'none';
       document.getElementById('legend-ospf').style.display = 'none';
       document.getElementById('legend-bgp').style.display = 'none';
+      // Focus short-circuits the overview: render one site and its reach.
+      if (focusedSite && mode === 'sites') {
+        if (!siteView.membership ||
+            !Object.values(siteView.membership).includes(focusedSite)) {
+          focusedSite = null;   // the site vanished (rescope); fall through
+        } else {
+          cy.add(focusElements(focusedSite));
+          layoutFocus(focusedSite);
+          finishRebuild('sites');
+          return;
+        }
+      }
       cy.add(full ? [...topologyElements.nodes, ...topologyElements.edges]
                   : siteElements());
       // The overview is a WAN-style relationship diagram, not a hierarchy:
@@ -2345,9 +2461,35 @@
       rebuildView();
     };
 
+    // Focus isolates one site (see focusElements). It forces the site view,
+    // since that is the only view where a site is a thing to focus on.
+    window.focusSite = siteId => {
+      if (!siteId) { return; }
+      focusedSite = siteId;
+      if (viewSelect && viewSelect.value !== 'sites') {
+        viewSelect.value = 'sites';
+      }
+      rebuildView();
+    };
+    window.exitFocus = () => {
+      if (focusedSite === null) { return; }
+      focusedSite = null;
+      rebuildView();
+    };
+
     function syncOpenSiteChips() {
       const bar = document.getElementById('open-sites');
       if (!bar) { return; }
+      // In focus, the bar carries the way back rather than the open-site set.
+      if (focusedSite) {
+        const s = siteView.sites.find(x => x.site_id === focusedSite);
+        bar.innerHTML = `<span class="site-chip site-chip-all">` +
+          `Focused on ${escapeHtml(s ? s.label : focusedSite)}` +
+          `<button type="button" style="width:auto;padding:0 8px;border-radius:6px"` +
+          ` title="Return to the full overview"` +
+          ` data-topology-action="exit-focus">← Back to overview</button></span>`;
+        return;
+      }
       const full = !sitesEnabled || (viewSelect && viewSelect.value === 'full');
       if (full || expandedSites.size === 0) { bar.innerHTML = ''; return; }
       const name = id => {
@@ -2380,6 +2522,10 @@
         window.toggleSite(button.getAttribute('data-site-id'));
       } else if (action === 'close-all-sites') {
         window.closeAllSites();
+      } else if (action === 'focus-site') {
+        window.focusSite(button.getAttribute('data-site-id'));
+      } else if (action === 'exit-focus') {
+        window.exitFocus();
       } else if (action === 'save-site-type') {
         window.saveSiteType();
       } else if (action === 'save-selected-site') {

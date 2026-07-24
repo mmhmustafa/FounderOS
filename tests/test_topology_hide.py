@@ -108,12 +108,16 @@ class ViewerContractTests(unittest.TestCase):
         self.assertIn("YOUR view only", self.viewer)
 
     def test_unresolved_peers_get_a_menu(self) -> None:
-        # Only sites stay menu-less; observed "?" peers offer the hide
-        # action instead of silently ignoring the right-click.
+        # Observed "?" peers offer the hide action instead of silently
+        # ignoring the right-click.
         self.assertNotIn(
             "data.kind === 'observed' || data.kind === 'site'", self.viewer
         )
-        self.assertIn("if (data.kind === 'site') { return; }", self.viewer)
+        self.assertIn("if (data.kind === 'observed')", self.viewer)
+        # A site cloud now offers its own client-only menu (focus / open) —
+        # it used to return early and stay menu-less.
+        self.assertIn('data-topology-action="focus-site"', self.viewer)
+        self.assertIn('data-topology-action="toggle-site"', self.viewer)
 
     def test_summary_and_panel_stay_honest(self) -> None:
         self.assertIn("hidden by you", self.viewer)
