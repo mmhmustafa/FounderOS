@@ -2085,25 +2085,131 @@
       return els;
     }
 
-    // Place the focused site's devices in a grid at the origin, inside its
-    // oval, with the connected clouds in a column to the right — a small,
-    // legible picture of one site and its neighbours.
+    // Lay one site's devices out as TIERS. The devices whose links leave
+    // the site sit on the edge FACING those links (the "border"); the
+    // internal devices tier back from them by hop distance. External links
+    // then exit straight off that edge instead of crossing the cluster, and
+    // internal links stay short — a clean, readable, minimal-crossing
+    // picture. Returns each device's local position (relative to the block
+    // centre) and the block's width and height.
+    //
+    // ``targetDirOf(node)`` gives the direction {dx,dy} from the site toward
+    // one external neighbour, so the caller decides where "outside" is (the
+    // ring centre in the overview, the cloud column in focus).
+    function computeIntraLayout(devices, memberOf, targetDirOf) {
+      const HGAP = 188, VGAP = 90;
+      const idSet = new Set(devices.map(d => d.id()));
+      const adj = new Map(devices.map(d => [d.id(), new Set()]));
+      const extDir = new Map();
+      const border = new Set();
+      devices.forEach(d => {
+        d.connectedEdges().forEach(e => {
+          const other = e.source().id() === d.id() ? e.target() : e.source();
+          const oid = other.id();
+          if (idSet.has(oid)) { adj.get(d.id()).add(oid); return; }
+          border.add(d.id());
+          const dir = targetDirOf(other);
+          if (!dir) { return; }
+          const cur = extDir.get(d.id()) || { x: 0, y: 0 };
+          cur.x += dir.dx; cur.y += dir.dy;
+          extDir.set(d.id(), cur);
+        });
+      });
+      const gridLayout = () => {
+        const m = devices.length || 1;
+        const cols = Math.min(m, Math.max(2, Math.round(Math.sqrt(m * 1.4))));
+        const rows = Math.ceil(m / cols);
+        const local = new Map();
+        devices.forEach((d, i) => {
+          const r = Math.floor(i / cols), c = i % cols;
+          local.set(d.id(), { x: (c - (cols - 1) / 2) * HGAP,
+                              y: (r - (rows - 1) / 2) * VGAP });
+        });
+        return { local, blockW: (cols - 1) * HGAP, blockH: (rows - 1) * VGAP };
+      };
+      if (border.size === 0) { return gridLayout(); }   // no outside world
+      // Overall direction the external links leave in decides the axis: if
+      // they exit sideways the tiers are columns; if up/down, rows.
+      let ex = 0, ey = 0;
+      extDir.forEach(v => { ex += v.x; ey += v.y; });
+      const axisCol = Math.abs(ex) >= Math.abs(ey);
+      const sign = axisCol ? (ex >= 0 ? 1 : -1) : (ey >= 0 ? 1 : -1);
+      // Tier by hop distance from the border set.
+      const layer = new Map();
+      let frontier = [...border];
+      frontier.forEach(id => layer.set(id, 0));
+      let depth = 0;
+      while (frontier.length) {
+        const next = [];
+        frontier.forEach(id => adj.get(id).forEach(nb => {
+          if (!layer.has(nb)) { layer.set(nb, depth + 1); next.push(nb); }
+        }));
+        frontier = next; depth++;
+      }
+      devices.forEach(d => { if (!layer.has(d.id())) { layer.set(d.id(), depth); } });
+      let maxLayer = 0; layer.forEach(L => { if (L > maxLayer) { maxLayer = L; } });
+      const tiers = [];
+      for (let L = 0; L <= maxLayer; L++) { tiers.push([]); }
+      devices.forEach(d => tiers[layer.get(d.id())].push(d));
+      // Order the border tier by where its links point (so they fan out
+      // without crossing), then each deeper tier by the average position of
+      // its already-placed neighbours (so internal links stay short).
+      const perpExt = id => {
+        const v = extDir.get(id); if (!v) { return 0; }
+        return axisCol ? v.y : v.x;
+      };
+      tiers[0].sort((a, b) => perpExt(a.id()) - perpExt(b.id()));
+      const order = new Map();
+      tiers[0].forEach((d, i) => order.set(d.id(), i));
+      for (let L = 1; L <= maxLayer; L++) {
+        const bary = d => {
+          let sum = 0, cnt = 0;
+          adj.get(d.id()).forEach(nb => {
+            if (order.has(nb) && layer.get(nb) === L - 1) {
+              sum += order.get(nb); cnt++;
+            }
+          });
+          return cnt ? sum / cnt : 0;
+        };
+        tiers[L].sort((a, b) => bary(a) - bary(b));
+        tiers[L].forEach((d, i) => order.set(d.id(), i));
+      }
+      const numTiers = maxLayer + 1;
+      let maxTier = 1; tiers.forEach(t => { if (t.length > maxTier) { maxTier = t.length; } });
+      const local = new Map();
+      tiers.forEach((tier, L) => {
+        const size = tier.length;
+        tier.forEach((d, i) => {
+          const along = sign * ((numTiers - 1) / 2 - L);  // border (L=0) at the exit edge
+          const perp = i - (size - 1) / 2;
+          local.set(d.id(), {
+            x: axisCol ? along * HGAP : perp * HGAP,
+            y: axisCol ? perp * VGAP : along * VGAP,
+          });
+        });
+      });
+      return {
+        local,
+        blockW: axisCol ? (numTiers - 1) * HGAP : (maxTier - 1) * HGAP,
+        blockH: axisCol ? (maxTier - 1) * VGAP : (numTiers - 1) * VGAP,
+      };
+    }
+
+    // The focused site's devices, tiered with their border facing the
+    // connected clouds (which sit in a column to the right), inside the oval.
     function layoutFocus(siteId) {
       const memberOf = siteView.membership;
-      const HGAP = 188, VGAP = 90;
       const devices = cy.nodes().filter(n => {
         const k = n.data('kind');
         return k !== 'site' && k !== 'sitehull'
           && memberOf[n.data('id')] === siteId;
       });
-      const m = devices.length || 1;
-      const cols = Math.min(m, Math.max(2, Math.round(Math.sqrt(m * 1.4))));
-      const rows = Math.ceil(m / cols);
-      const blockW = (cols - 1) * HGAP, blockH = (rows - 1) * VGAP;
-      devices.forEach((n, i) => {
-        const row = Math.floor(i / cols), col = i % cols;
-        n.position({ x: (col - (cols - 1) / 2) * HGAP,
-                     y: (row - (rows - 1) / 2) * VGAP });
+      // In focus every external link goes to the cloud column on the right.
+      const { local, blockW, blockH } =
+        computeIntraLayout(devices, memberOf, () => ({ dx: 1, dy: 0 }));
+      devices.forEach(n => {
+        const p = local.get(n.id()) || { x: 0, y: 0 };
+        n.position({ x: p.x, y: p.y });
       });
       const rx = (blockW / 2 + 76) * 1.45, ry = (blockH / 2 + 50) * 1.45;
       const clouds = cy.nodes('[kind = "site"]');
@@ -2313,17 +2419,13 @@
           node.position({ x: p.x, y: p.y });
         });
 
-        // Opened sites: their devices laid out in a clear, label-aware
-        // block that grows OUTWARD from the ring into the open canvas. The
+        // Opened sites: their devices tiered by computeIntraLayout (border
+        // devices on the edge facing the ring, internals behind), in a block
+        // that grows OUTWARD from the ring into the open canvas. The
         // neighbouring clouds sit ON the ring, nearer the centre; the space
         // outside it is empty, so growing a site outward there stops its
-        // devices piling onto its neighbours — or onto each other's labels,
-        // which are up to text-max-width (138px) wide and sit below each
-        // node. Spacing accounts for both.
+        // devices piling onto its neighbours.
         const memberOf = siteView.membership;
-        const HGAP = 188;   // clear of a 138px label even when a long,
-                            // unbroken device name renders a little wider
-        const VGAP = 90;    // node plus its two-line label beneath it
         // Each opened site is drawn inside a translucent oval, in its own
         // light colour, so a cluster reads as one site and several open
         // sites stay told apart. The oval is sized to enclose the block's
@@ -2356,13 +2458,20 @@
               && memberOf[n.data('id')] === siteId);
           const m = devices.length;
           if (!m) { return; }
-          // A roughly square block, but never one device wide — a single
-          // column would tower. Grows in rows for bigger sites.
-          const cols = Math.min(m, Math.max(2, Math.round(Math.sqrt(m * 1.4))));
-          const rows = Math.ceil(m / cols);
-          const blockW = (cols - 1) * HGAP;
-          const blockH = (rows - 1) * VGAP;
-          // The oval that encloses the grid and its labels. An ellipse
+          // Where "outside" is for each external neighbour: the closed
+          // cloud's placed position, or the other open site's ring slot.
+          const targetDirOf = other => {
+            let tp;
+            if (other.data('kind') === 'site') { tp = other.position(); }
+            else {
+              const os = memberOf[other.id()];
+              tp = positions.get('site:' + os) || fallback;
+            }
+            return { dx: tp.x - slot.x, dy: tp.y - slot.y };
+          };
+          const { local, blockW, blockH } =
+            computeIntraLayout(devices, memberOf, targetDirOf);
+          // The oval that encloses the tiers and their labels. An ellipse
           // through a rectangle's corners is ~1.42x its half-extents; a
           // little more gives the labels margin inside the curve.
           const rx = (blockW / 2 + 76) * 1.45;
@@ -2375,7 +2484,7 @@
           const across = Math.abs(oy) * blockW + Math.abs(ox) * blockH;
           const push = 110 + along / 2 + across * 0.4;
           blocks.push({
-            siteId, devices, cols, rows, fixed: false,
+            siteId, devices, local, fixed: false,
             cx: slot.x + ox * push, cy: slot.y + oy * push,
             rx, ry,
             // Separate by the oval's own size plus a gap, so the ovals hold
@@ -2420,12 +2529,9 @@
         const hulls = [];
         blocks.forEach(b => {
           if (b.fixed) { return; }
-          b.devices.forEach((node, i) => {
-            const row = Math.floor(i / b.cols), col = i % b.cols;
-            node.position({
-              x: b.cx + (col - (b.cols - 1) / 2) * HGAP,
-              y: b.cy + (row - (b.rows - 1) / 2) * VGAP,
-            });
+          b.devices.forEach(node => {
+            const p = b.local.get(node.id()) || { x: 0, y: 0 };
+            node.position({ x: b.cx + p.x, y: b.cy + p.y });
           });
           hulls.push({
             group: 'nodes',
