@@ -2151,9 +2151,17 @@
           node.position({ x: p.x, y: p.y });
         });
 
-        // Opened sites: their devices packed into a tight block centred on
-        // the site's own slot, so the cluster reads as that site.
+        // Opened sites: their devices laid out in a clear, label-aware
+        // block that grows OUTWARD from the ring into the open canvas. The
+        // neighbouring clouds sit ON the ring, nearer the centre; the space
+        // outside it is empty, so growing a site outward there stops its
+        // devices piling onto its neighbours — or onto each other's labels,
+        // which are up to text-max-width (138px) wide and sit below each
+        // node. Spacing accounts for both.
         const memberOf = siteView.membership;
+        const HGAP = 188;   // clear of a 138px label even when a long,
+                            // unbroken device name renders a little wider
+        const VGAP = 90;    // node plus its two-line label beneath it
         expandedSites.forEach(siteId => {
           const slot = positions.get('site:' + siteId) || fallback;
           const devices = cy.nodes().filter(
@@ -2161,13 +2169,32 @@
               && memberOf[n.data('id')] === siteId);
           const m = devices.length;
           if (!m) { return; }
-          const cols = Math.ceil(Math.sqrt(m));
-          const gap = 66;
+          // A roughly square block, but never one device wide — a single
+          // column would tower. Grows in rows for bigger sites.
+          const cols = Math.min(m, Math.max(2, Math.round(Math.sqrt(m * 1.4))));
+          const rows = Math.ceil(m / cols);
+          const blockW = (cols - 1) * HGAP;
+          const blockH = (rows - 1) * VGAP;
+          // Outward unit vector from the ring centre to this slot.
+          let ox = slot.x - fallback.x, oy = slot.y - fallback.y;
+          const mag = Math.hypot(ox, oy) || 1;
+          ox /= mag; oy /= mag;
+          // Push the whole block clear of the slot along that outward
+          // direction. Clear a base margin, plus half the block's reach
+          // along the outward axis (so its near edge clears the ring), plus
+          // a share of its reach ACROSS that axis — a wide or tall block
+          // fans toward the angularly-adjacent clouds, and pushing it
+          // further out is what lifts that fan off them.
+          const along = Math.abs(ox) * blockW + Math.abs(oy) * blockH;
+          const across = Math.abs(oy) * blockW + Math.abs(ox) * blockH;
+          const push = 110 + along / 2 + across * 0.4;
+          const bx = slot.x + ox * push;
+          const by = slot.y + oy * push;
           devices.forEach((node, i) => {
             const row = Math.floor(i / cols), col = i % cols;
             node.position({
-              x: slot.x + (col - (cols - 1) / 2) * gap,
-              y: slot.y + (row - (Math.ceil(m / cols) - 1) / 2) * gap,
+              x: bx + (col - (cols - 1) / 2) * HGAP,
+              y: by + (row - (rows - 1) / 2) * VGAP,
             });
           });
         });
