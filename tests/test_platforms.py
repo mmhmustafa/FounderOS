@@ -349,6 +349,25 @@ class FRRoutingDriverTests(unittest.TestCase):
             "policy_routes_captured", discovery.result.device.metadata
         )
 
+    def test_the_local_bgp_as_is_captured_from_the_summary(self) -> None:
+        """No new command — the AS rides in the `show bgp summary` header
+        Atlas already collects. It is the evidence that a WAN mesh is one
+        routing domain, promoted to a top-level fact for site derivation."""
+
+        outputs = frr_outputs("wan-pe1", "10.255.0.1")
+        outputs["show bgp summary"] = (
+            "\nIPv4 Unicast Summary (VRF default):\n"
+            "BGP router identifier 10.255.0.1, local AS number 64512 vrf-id 0\n"
+            "Neighbor        V         AS   MsgRcvd\n"
+            "10.255.0.2      4      64512        10\n"
+        )
+        discovery = FRRoutingDriver().discover(
+            StubTransport(outputs), management_ip_hint="10.255.0.1"
+        )
+        metadata = discovery.result.device.metadata
+        self.assertEqual(64512, metadata["bgp_local_as"])
+        self.assertEqual(64512, metadata["bgp_peers"]["local_as"])
+
     def test_capabilities_are_recorded_never_raised(self) -> None:
         transport = StubTransport(
             frr_outputs(

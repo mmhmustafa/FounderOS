@@ -367,6 +367,10 @@ class FRRoutingDriver(PlatformDriver):
             if bgp_peers.get("router_id"):
                 # An identity claim for the ownership index (PR-043.7).
                 metadata["bgp_router_id"] = bgp_peers["router_id"]
+            if bgp_peers.get("local_as") is not None:
+                # Promoted to a top-level fact: site derivation reads it as
+                # a device-level signal, not only from inside the peers blob.
+                metadata["bgp_local_as"] = bgp_peers["local_as"]
         ospf = tuple(
             OspfAdjacencyObservation(
                 neighbor_router_id=str(item.metadata.get("router_id")),
@@ -451,6 +455,14 @@ def _parse_bgp_peers(text: str) -> dict | None:
     )
     if router_id:
         summary["router_id"] = router_id.group(1)
+    # The device's own AS, from the same header line: "... local AS number
+    # 65040 ...". No new command — this is already-captured output. The AS
+    # is what tells a set of boxes apart as one routing domain, which is
+    # the evidence behind grouping a WAN mesh into one cloud (sites/
+    # derivation.py) rather than inferring it from names alone.
+    local_as = re.search(r"local AS number\s+(\d+)", text)
+    if local_as:
+        summary["local_as"] = int(local_as.group(1))
     return summary
 
 

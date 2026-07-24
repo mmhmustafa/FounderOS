@@ -600,13 +600,17 @@ class TopologyRenderer:
         from founderos_atlas.sites import SiteCatalog
         from founderos_atlas.sites.derivation import DerivedDevice, derive_sites
 
-        devices = [
-            DerivedDevice(
+        devices = []
+        for device in self._snapshot.devices:
+            meta = device.get("metadata") or {}
+            if not isinstance(meta, dict):
+                meta = dict(meta) if meta else {}
+            local_as = meta.get("bgp_local_as")
+            devices.append(DerivedDevice(
                 device_id=str(device.get("device_id") or ""),
                 hostname=str(device.get("hostname") or ""),
-            )
-            for device in self._snapshot.devices
-        ]
+                local_as=local_as if isinstance(local_as, int) else None,
+            ))
         try:
             result = derive_sites(
                 devices, self._snapshot.edges,
@@ -661,6 +665,13 @@ class TopologyRenderer:
         engine = SiteInferenceEngine(catalog)
         names = {site.site_id: site.name for site in catalog.sites}
         types = {site.site_id: site.site_type for site in catalog.sites}
+        # Why a derived cloud is what it is — the AS it shares, the
+        # convention it was read from. Surfaced on the cloud so the
+        # grouping is explainable, not magic.
+        descriptions = {
+            site.site_id: site.description
+            for site in catalog.sites if site.description
+        }
 
         membership: dict[str, str] = {}
         for node in elements["nodes"]:
@@ -838,6 +849,7 @@ class TopologyRenderer:
                     else "site-" + site_type
                 ),
                 "kind": "site",
+                "site_note": descriptions.get(site_id),
                 "evidence": (
                     "membership from the Site Catalog via multi-signal "
                     "inference (hostname convention, explicit assignment, "

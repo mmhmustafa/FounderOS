@@ -1077,6 +1077,7 @@
       <div class="field"><strong>Site type</strong>${escapeHtml(data.site_type || 'site')}</div>
       <div class="field"><strong>Roles</strong>${roles || 'none'}</div>
       <div class="field"><strong>Membership evidence</strong>${escapeHtml(data.evidence || '')}</div>
+      ${data.site_note ? `<div class="field"><strong>How Atlas grouped this</strong>${escapeHtml(data.site_note)}</div>` : ''}
       <div class="node-actions">
         <button class="node-action node-action-primary" type="button"
                 data-topology-action="toggle-site" data-site-id="${escapeHtml(data.site_id)}">${isOpen ? 'Collapse site' : 'Open site'}</button>

@@ -135,6 +135,52 @@ class FabricTests(unittest.TestCase):
         self.assertEqual("WAN", byid["wan"].name)
         self.assertEqual("Internet", byid["inet"].name)
 
+    def test_a_shared_as_corroborates_the_grouping(self) -> None:
+        """The AS is what turns name-inference into evidence: when a
+        cloud's BGP speakers agree on one AS, it is one routing domain,
+        and the derivation says so."""
+
+        chennai, chennai_e = _cohesive_site("chennai")
+        delhi, delhi_e = _cohesive_site("delhi")
+        # A WAN pair that shares AS 64512, meshing unresolved peers.
+        wan = [DerivedDevice(f"id:wan-pe{n}", f"wan-pe{n}", local_as=64512)
+               for n in (1, 2)]
+        edges = chennai_e + delhi_e + [
+            _edge("id:wan-pe1", "10.255.0.2"),
+            _edge("id:wan-pe2", "10.255.0.1"),
+        ]
+        wan_site = next(
+            s for s in derive_sites(chennai + delhi + wan, edges).catalog.sites
+            if s.site_id == "wan"
+        )
+        self.assertIn("AS 64512", wan_site.description)
+        self.assertIn("one routing domain", wan_site.description)
+
+    def test_a_device_without_bgp_never_undoes_the_shared_as(self) -> None:
+        """A WAN cloud is confirmed by the AS its PEs share, not undone by
+        an OSPF-only member that carries no AS at all."""
+
+        wan = [
+            DerivedDevice("id:wan-pe1", "wan-pe1", local_as=64512),
+            DerivedDevice("id:wan-pe2", "wan-pe2", local_as=64512),
+            DerivedDevice("id:wan-mgmt", "wan-mgmt", local_as=None),
+        ]
+        edges = [_edge("id:wan-pe1", "10.0.0.2")]
+        site = next(s for s in derive_sites(wan, edges).catalog.sites
+                    if s.site_id == "wan")
+        self.assertIn("AS 64512", site.description)
+
+    def test_two_ases_in_one_cluster_are_not_claimed_as_one_domain(self) -> None:
+        # Disagreement is honest silence, not a made-up single AS.
+        wan = [
+            DerivedDevice("id:wan-pe1", "wan-pe1", local_as=64512),
+            DerivedDevice("id:wan-pe2", "wan-pe2", local_as=64999),
+        ]
+        edges = [_edge("id:wan-pe1", "10.0.0.2")]
+        site = next(s for s in derive_sites(wan, edges).catalog.sites
+                    if s.site_id == "wan")
+        self.assertNotIn("AS ", site.description)
+
     def test_a_fabric_device_is_not_scattered_by_adjacency(self) -> None:
         """It belongs to its OWN fabric cloud now — no per-device
         re-homing, and nothing left unidentified."""
@@ -199,6 +245,66 @@ class RendererIntegrationTests(unittest.TestCase):
             snapshot_id=sid, created_at=None,
             devices=devices, edges=edges, warnings=(), metadata={},
         )
+
+    def _fabric_snapshot(self):
+        """Two cities plus a WAN mesh whose PEs share AS 64512."""
+
+        from founderos_atlas.topology.snapshot import (
+            TopologySnapshot, content_address)
+
+        devices, edges = [], []
+        for city in ("chennai", "delhi"):
+            for role in ("core", "fw", "sw", "access"):
+                devices.append({
+                    "device_id": f"frr:{city}-branch-{role}",
+                    "hostname": f"{city}-branch-{role}",
+                    "management_ip": "10.0.0.1", "vendor": "frr",
+                    "platform": "FRRouting", "os_name": "FRRouting",
+                    "os_version": "8.4", "interfaces": [],
+                    "serial_number": None, "metadata": {},
+                })
+            for role in ("fw", "sw", "access"):
+                edges.append({
+                    "local_device_id": f"frr:{city}-branch-core",
+                    "local_interface": "eth1",
+                    "remote_hostname": f"{city}-branch-{role}",
+                    "remote_interface": "eth0", "protocol": "lldp",
+                    "remote_management_ip": None, "metadata": {},
+                })
+        for n in (1, 2, 3):
+            devices.append({
+                "device_id": f"frr:wan-pe{n}", "hostname": f"wan-pe{n}",
+                "management_ip": "10.255.0.1", "vendor": "frr",
+                "platform": "FRRouting", "os_name": "FRRouting",
+                "os_version": "8.4", "interfaces": [], "serial_number": None,
+                "metadata": {"bgp_local_as": 64512},
+            })
+            edges.append({
+                "local_device_id": f"frr:wan-pe{n}", "local_interface": "eth1",
+                "remote_hostname": "10.255.0.9", "remote_interface": "eth0",
+                "protocol": "lldp", "remote_management_ip": None,
+                "metadata": {},
+            })
+        devices, edges = tuple(devices), tuple(edges)
+        sid = content_address(created_at=None, devices=devices, edges=edges,
+                              warnings=(), metadata={})
+        return TopologySnapshot(snapshot_id=sid, created_at=None,
+                                devices=devices, edges=edges, warnings=(),
+                                metadata={})
+
+    def test_the_shared_as_reaches_the_cloud_as_evidence(self) -> None:
+        """The whole chain: captured AS -> derivation -> a WAN cloud whose
+        note says the PEs share AS 64512. The grouping is explainable, not
+        an unexplained lump."""
+
+        from founderos_atlas.visualization.renderer import TopologyRenderer
+
+        renderer = TopologyRenderer(self._fabric_snapshot(), site_catalog=None)
+        view = renderer.site_view(renderer.elements())
+        wan = next(s for s in view["sites"] if s["site_id"] == "wan")
+        self.assertEqual("WAN", s if (s := wan["label"]) else None)
+        self.assertEqual("wan", wan["site_type"])
+        self.assertIn("AS 64512", wan["site_note"])
 
     def test_uncurated_estate_draws_as_many_sites_not_one_blob(self) -> None:
         from founderos_atlas.visualization.renderer import TopologyRenderer

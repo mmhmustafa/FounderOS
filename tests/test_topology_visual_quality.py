@@ -102,6 +102,14 @@ class TopologyVisualQualityTests(unittest.TestCase):
         self.assertIn("hubDeg >= Math.ceil(others * 0.6)", hub)
         self.assertIn("hubDeg > runnerUp", hub)
 
+    def test_a_derived_cloud_shows_why_atlas_grouped_it(self) -> None:
+        """A grouping the operator did not declare must explain itself —
+        the convention it was read from, the AS its devices share — or it
+        is an unexplained lump."""
+
+        self.assertIn("How Atlas grouped this", self.html)
+        self.assertIn("data.site_note", self.html)
+
     def test_opening_a_site_grows_it_in_place_not_into_a_column(self) -> None:
         """The reported complaint: opening a site scattered its devices
         into a band wedged alphabetically between other clouds. On one ring

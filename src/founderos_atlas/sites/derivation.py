@@ -62,10 +62,18 @@ MIN_CLUSTER_SIZE = 2
 
 @dataclass(frozen=True)
 class DerivedDevice:
-    """One device as the deriver sees it: an id and a hostname."""
+    """One device as the deriver sees it.
+
+    ``local_as`` is the device's own BGP AS when it speaks BGP (None
+    otherwise). It never groups on its own — most devices have none — but
+    when a cloud's BGP speakers agree on one AS, it CORROBORATES the
+    grouping: a shared AS is a shared routing domain, the evidence behind
+    calling a WAN mesh one cloud rather than trusting the name alone.
+    """
 
     device_id: str
     hostname: str
+    local_as: int | None = None
 
 
 @dataclass(frozen=True)
@@ -180,9 +188,8 @@ def derive_sites(
             name=_fabric_name(prefix, site_type),
             hostname_patterns=(f"{prefix}-*",),
             site_type=site_type,
-            description=(
-                "Derived as shared fabric from the naming convention — "
-                "confirm, rename or retype."
+            description=_fabric_description(
+                prefix, _shared_as(by_prefix[prefix])
             ),
         ))
     derived_catalog = SiteCatalog(sites=tuple(derived))
@@ -242,12 +249,39 @@ def _fabric_name(prefix: str, site_type: str) -> str:
     return prefix.capitalize()
 
 
+def _shared_as(members: list[DerivedDevice]) -> int | None:
+    """The one AS every BGP-speaking member agrees on, or None.
+
+    Devices without an AS (OSPF-only cores, switches) are ignored — a WAN
+    cloud is confirmed by the AS its PEs share, not undone by the members
+    that never speak BGP. Disagreement yields None: two ASes in one named
+    cluster is not one routing domain, and Atlas will not claim it is.
+    """
+
+    seen = {d.local_as for d in members if d.local_as is not None}
+    return next(iter(seen)) if len(seen) == 1 else None
+
+
+def _fabric_description(prefix: str, shared_as: int | None) -> str:
+    base = ("Derived as shared fabric from the naming convention"
+            if shared_as is None
+            else f"Derived as shared fabric — the {prefix}-* devices share "
+                 f"AS {shared_as}, one routing domain")
+    return base + " — confirm, rename or retype."
+
+
 def _as_device(item: DerivedDevice | Mapping[str, str]) -> DerivedDevice:
     if isinstance(item, DerivedDevice):
         return item
+    raw_as = item.get("local_as")
+    try:
+        local_as = int(raw_as) if raw_as is not None else None
+    except (TypeError, ValueError):
+        local_as = None
     return DerivedDevice(
         device_id=str(item.get("device_id") or item.get("id") or ""),
         hostname=str(item.get("hostname") or ""),
+        local_as=local_as,
     )
 
 
