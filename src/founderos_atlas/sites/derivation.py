@@ -40,6 +40,9 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
 from .models import (
+    SITE_TYPE_INTERNET,
+    SITE_TYPE_TRANSIT,
+    SITE_TYPE_WAN,
     Site,
     SiteCatalog,
     site_id_for,
@@ -147,8 +150,17 @@ def derive_sites(
         else:
             fabric_prefixes.add(prefix)
 
-    # Derived sites: one per site-prefix Atlas has not already declared. A
+    # Derived sites: one per prefix Atlas has not already declared. A
     # declared site wins outright — the operator's word is not re-derived.
+    #
+    # A FABRIC cluster becomes a cloud too, not scattered unidentified
+    # devices: a set of boxes sharing a convention (wan-pe1..6) is one
+    # thing, even when that thing is a WAN provider rather than a premises.
+    # Its KIND is read from the name the operator chose — "wan" is a WAN
+    # cloud, "inet"/"internet" an Internet cloud — because the name is the
+    # clue, and typing it draws and counts it as estate rather than a
+    # site. Anything else stays generic transit: grouped and named, but
+    # honest that its kind is unknown.
     derived: list[Site] = []
     for prefix in sorted(site_prefixes):
         if prefix in declared_prefixes:
@@ -159,20 +171,34 @@ def derive_sites(
             hostname_patterns=(f"{prefix}-*",),
             description="Derived from hostname convention — confirm or rename.",
         ))
+    for prefix in sorted(fabric_prefixes):
+        if prefix in declared_prefixes:
+            continue
+        site_type = _fabric_type(prefix)
+        derived.append(Site(
+            site_id=site_id_for(prefix),
+            name=_fabric_name(prefix, site_type),
+            hostname_patterns=(f"{prefix}-*",),
+            site_type=site_type,
+            description=(
+                "Derived as shared fabric from the naming convention — "
+                "confirm, rename or retype."
+            ),
+        ))
     derived_catalog = SiteCatalog(sites=tuple(derived))
     derived_ids = {site.site_id for site in derived}
 
-    # Every device NOT in a site of its own is a placement candidate:
-    # fabric-cluster members, a lone shared box, a device with no
-    # convention at all. Each goes to the site its links most point at, or
-    # stays unidentified when they do not point one way.
+    # Only devices with NO cloud of their own remain to place: a lone
+    # shared box, or one with no convention at all. A device in a premises
+    # or fabric cluster already belongs to that cloud; it does not get
+    # re-homed by adjacency.
     placeable_site_ids = derived_ids | set(declared_prefixes.values())
     placements: dict[str, str] = {}
     unplaced: list[str] = []
     for device in catalog_devices:
         prefix = hostname_prefix(device.hostname)
-        if prefix in site_prefixes:
-            continue                   # belongs to its own derived site
+        if prefix in site_prefixes or prefix in fabric_prefixes:
+            continue                   # belongs to its own derived cloud
         if prefix and prefix in declared_prefixes:
             continue                   # a declared site will claim it
         home = _plurality_site(
@@ -190,6 +216,30 @@ def derive_sites(
         fabric_unplaced=tuple(sorted(unplaced)),
         diagnostics=diagnostics,
     )
+
+
+def _fabric_type(prefix: str) -> str:
+    """The kind of fabric a prefix names, read from the name itself.
+
+    "wan" is a WAN cloud, "inet"/"internet" an Internet cloud — the
+    convention IS the evidence the operator gave. Anything else stays
+    generic transit: still a cloud, but honest that its kind is unread.
+    """
+
+    token = prefix.lower()
+    if "wan" in token:
+        return SITE_TYPE_WAN
+    if token.startswith("inet") or "internet" in token:
+        return SITE_TYPE_INTERNET
+    return SITE_TYPE_TRANSIT
+
+
+def _fabric_name(prefix: str, site_type: str) -> str:
+    if site_type == SITE_TYPE_WAN:
+        return "WAN"
+    if site_type == SITE_TYPE_INTERNET:
+        return "Internet"
+    return prefix.capitalize()
 
 
 def _as_device(item: DerivedDevice | Mapping[str, str]) -> DerivedDevice:

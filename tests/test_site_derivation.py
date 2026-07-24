@@ -112,26 +112,37 @@ class FabricTests(unittest.TestCase):
         ]
         return chennai + delhi + hub + wan, edges
 
-    def test_a_hub_that_spans_sites_is_not_made_a_site(self) -> None:
-        devices, edges = self._estate()
-        derived = {s.site_id for s in derive_sites(devices, edges).catalog.sites}
-        self.assertNotIn("inet", derived)
-        self.assertEqual({"chennai", "delhi"}, derived)
+    def test_fabric_becomes_its_own_cloud_not_a_premises_site(self) -> None:
+        """A hub or a WAN mesh is not a branch — but it IS one thing, and
+        drawing its devices as a named cloud beats scattering them. The
+        distinction from a premises is the site TYPE, not whether it
+        exists."""
 
-    def test_a_mesh_with_no_internal_cohesion_is_not_a_site(self) -> None:
-        # wan-pe* never connect to each other — a premises would.
-        devices, edges = self._estate()
-        derived = {s.site_id for s in derive_sites(devices, edges).catalog.sites}
-        self.assertNotIn("wan", derived)
+        from founderos_atlas.sites.models import (
+            SITE_TYPE_INTERNET, SITE_TYPE_WAN, SITE_TYPE_SITE)
 
-    def test_an_evenly_spread_device_is_left_unidentified(self) -> None:
-        """inet-a touches chennai and delhi one link each. There is no
-        closest, so it stays unplaced rather than assigned by a coin-flip."""
+        devices, edges = self._estate()
+        byid = {s.site_id: s for s in derive_sites(devices, edges).catalog.sites}
+        self.assertEqual(SITE_TYPE_INTERNET, byid["inet"].site_type)
+        self.assertEqual(SITE_TYPE_WAN, byid["wan"].site_type)
+        # The premises stay plain sites.
+        self.assertEqual(SITE_TYPE_SITE, byid["chennai"].site_type)
+
+    def test_the_fabric_kind_is_read_from_the_name(self) -> None:
+        # "wan" -> WAN, "inet" -> Internet: the convention is the clue.
+        devices, edges = self._estate()
+        byid = {s.site_id: s for s in derive_sites(devices, edges).catalog.sites}
+        self.assertEqual("WAN", byid["wan"].name)
+        self.assertEqual("Internet", byid["inet"].name)
+
+    def test_a_fabric_device_is_not_scattered_by_adjacency(self) -> None:
+        """It belongs to its OWN fabric cloud now — no per-device
+        re-homing, and nothing left unidentified."""
 
         devices, edges = self._estate()
         result = derive_sites(devices, edges)
-        self.assertIn("id:inet-a", result.fabric_unplaced)
-        self.assertNotIn("id:inet-a", result.fabric_placements)
+        self.assertEqual((), result.fabric_unplaced)
+        self.assertEqual({}, dict(result.fabric_placements))
 
     def test_a_device_that_leans_one_way_is_placed_there(self) -> None:
         """Proximity is the real signal: a shared device whose links
