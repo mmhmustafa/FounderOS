@@ -793,19 +793,15 @@
           'border-opacity': 0.9,
           'label': 'data(label)',
           'text-valign': 'top', 'text-halign': 'center', 'text-margin-y': 6,
-          'color': '#334155', 'font-size': 13, 'font-weight': 700,
-          'text-wrap': 'wrap', 'text-max-width': 260, 'line-height': 1.25,
-          'text-background-color': '#ffffff', 'text-background-opacity': 0.7,
-          'text-background-shape': 'round-rectangle', 'text-background-padding': 3,
-          'min-zoomed-font-size': 8,
+          'color': '#334155', 'font-size': 17, 'font-weight': 700,
+          'text-wrap': 'wrap', 'text-max-width': 300, 'line-height': 1.25,
+          'text-background-color': '#ffffff', 'text-background-opacity': 0.78,
+          'text-background-shape': 'round-rectangle', 'text-background-padding': 4,
+          // The site name is the anchor of this view, so it stays on screen
+          // when the estate is zoomed right out — a bigger stamp with a low
+          // floor, and it survives the overview label cull (below).
+          'min-zoomed-font-size': 3,
           'z-index': 0, 'events': 'no',
-        }},
-        // In the All-Devices site-oval view the links that leave a site are
-        // faded to thin, light strokes, so the eye follows the site
-        // grouping rather than the web of inter-site wires. Intra-site links
-        // keep their normal weight.
-        { selector: 'edge.cross-site', style: {
-          'opacity': 0.22, 'width': 1,
         }},
         { selector: 'node[kind = "observed"]', style: { 'opacity': 0.78 }},
         { selector: 'node.label-detailed[kind != "site"][kind != "protocol-domain"]', style: {
@@ -817,6 +813,12 @@
         // label-suppressed: peers use that one on their own schedule, and
         // sharing it would let one rule clear the other's suppression.
         { selector: 'node.label-overview', style: { 'label': '' }},
+        // ...but the site titles stay — they are how you keep your bearings
+        // when the whole estate is zoomed out. Placed AFTER the cull above so
+        // it wins by source order.
+        { selector: 'node[kind = "sitehull"].label-overview', style: {
+          'label': 'data(label)',
+        }},
         // A folded site is a quiet cloud with its compact name INSIDE the
         // artwork. This stays legible at overview scale and removes the
         // floating nameplates that made the map feel diagram-generator-like.
@@ -944,6 +946,21 @@
           style: { 'line-color': '#93c5fd',
                    'source-arrow-color': '#93c5fd',
                    'target-arrow-color': '#93c5fd', 'width': 1.5 }},
+
+        // In the All-Devices site-oval view the links that leave a site are
+        // faded so the eye follows the site grouping, not the web of wires —
+        // and it is PHYSICAL-first: a physical inter-site link stays a light,
+        // readable stroke, while the routing/OSPF/BGP overlay that criss-
+        // crosses the estate is dropped almost to nothing (the Layers panel
+        // still turns those overlays fully off). Placed AFTER the
+        // relationship rules so it wins by source order; intra-site links,
+        // untagged, keep their normal weight.
+        { selector: 'edge.xsite-phys', style: {
+          'opacity': 0.34, 'width': 1.3,
+        }},
+        { selector: 'edge.xsite-routing', style: {
+          'opacity': 0.06, 'width': 1,
+        }},
 
         // Hover lift (#5): the focused device grows and its links brighten;
         // everything else fades so the neighbourhood stands out.
@@ -2280,7 +2297,10 @@
       cy.edges().forEach(e => {
         const a = siteOf[e.source().id()], b = siteOf[e.target().id()];
         if (a == null || b == null || a === b) { return; }
-        e.addClass('cross-site');
+        // Physical cabling stays visible-but-light; the routing overlay
+        // (verified-routed, OSPF adjacency, BGP, layer-3) drops away.
+        e.addClass(e.data('relationship') === 'physical'
+          ? 'xsite-phys' : 'xsite-routing');
         const i = index[a], j = index[b];
         W[i][j] = (W[i][j] || 0) + 1; W[j][i] = (W[j][i] || 0) + 1;
       });
@@ -3990,6 +4010,111 @@
         });
       }
       draw();
+    })();
+
+    // -- Hover magnifier (fisheye lens) -------------------------------------
+    // Zoomed out to take in a whole estate, the names and icons shrink past
+    // reading. Rather than force a zoom-and-pan hunt, a lens follows the
+    // pointer: it magnifies most at the exact point and eases back to 1x at
+    // its rim, so the detail under the cursor pops while its surroundings
+    // stay in context. It samples a cached snapshot of the map (rebuilt only
+    // when the map itself moves), so tracking the mouse stays cheap; it only
+    // arms when the view is actually zoomed out, and never when a name is
+    // already legible.
+    (function hoverMagnifier() {
+      if (typeof cy === 'undefined') { return; }
+      const container = cy.container();
+      if (!container || !window.requestAnimationFrame) { return; }
+      const LR = 132;          // lens radius (CSS px)
+      const D = 3.2;           // distortion — centre magnifies by ~D+1
+      const ARM_ZOOM = 0.85;   // only when zoomed out past this
+      const snap = document.createElement('canvas');
+      let sctx;
+      try { sctx = snap.getContext('2d', { willReadFrequently: true }); }
+      catch (e) { sctx = snap.getContext('2d'); }
+      let snapData = null, dirty = true, sw = 0, sh = 0;
+
+      const lens = document.createElement('canvas');
+      lens.id = 'magnifier-lens';
+      lens.width = LR * 2; lens.height = LR * 2;
+      Object.assign(lens.style, {
+        position: 'absolute', width: (LR * 2) + 'px', height: (LR * 2) + 'px',
+        borderRadius: '50%', pointerEvents: 'none', display: 'none',
+        border: '2px solid rgba(255,255,255,0.95)',
+        boxShadow: '0 3px 14px rgba(15,23,42,0.4)', zIndex: 28,
+      });
+      container.appendChild(lens);
+      const lctx = lens.getContext('2d');
+      const lensImg = lctx.createImageData(LR * 2, LR * 2);
+
+      function rebuildSnap() {
+        const r = container.getBoundingClientRect();
+        sw = Math.max(1, Math.round(r.width));
+        sh = Math.max(1, Math.round(r.height));
+        if (snap.width !== sw || snap.height !== sh) { snap.width = sw; snap.height = sh; }
+        sctx.fillStyle = '#ffffff'; sctx.fillRect(0, 0, sw, sh);
+        const canvases = container.querySelectorAll('canvas');
+        for (let i = 0; i < canvases.length; i++) {
+          if (canvases[i] === lens) { continue; }   // never sample ourselves
+          try { sctx.drawImage(canvases[i], 0, 0, sw, sh); } catch (e) { /* ignore */ }
+        }
+        try { snapData = sctx.getImageData(0, 0, sw, sh); }
+        catch (e) { snapData = null; }              // tainted canvas → no lens
+        dirty = false;
+      }
+      cy.on('render pan zoom', () => { dirty = true; });
+
+      function drawLens(cx, cy0) {
+        if (dirty || !snapData) { rebuildSnap(); }
+        if (!snapData) { return; }
+        const sd = snapData.data, out = lensImg.data, size = LR * 2;
+        for (let ly = 0; ly < size; ly++) {
+          for (let lx = 0; lx < size; lx++) {
+            const ddx = lx - LR, ddy = ly - LR;
+            const p = Math.sqrt(ddx * ddx + ddy * ddy);
+            const oi = (ly * size + lx) * 4;
+            if (p > LR) { out[oi + 3] = 0; continue; }   // outside the disc
+            let sx, sy;
+            if (p < 0.001) { sx = cx; sy = cy0; }
+            else {
+              const u = p / LR;
+              const v = u / ((D + 1) - D * u);           // fisheye falloff
+              const dist = v * LR;
+              sx = cx + ddx / p * dist; sy = cy0 + ddy / p * dist;
+            }
+            const ix = sx | 0, iy = sy | 0;
+            if (ix < 0 || iy < 0 || ix >= sw || iy >= sh) {
+              out[oi] = 255; out[oi + 1] = 255; out[oi + 2] = 255; out[oi + 3] = 255;
+              continue;
+            }
+            const si = (iy * sw + ix) * 4;
+            out[oi] = sd[si]; out[oi + 1] = sd[si + 1];
+            out[oi + 2] = sd[si + 2]; out[oi + 3] = 255;
+          }
+        }
+        lctx.putImageData(lensImg, 0, 0);
+        lens.style.left = (cx - LR) + 'px';
+        lens.style.top = (cy0 - LR) + 'px';
+        lens.style.display = 'block';
+      }
+
+      let raf = null, mx = 0, my = 0, active = false;
+      container.addEventListener('mousemove', ev => {
+        if ((cy.zoom() || 1) > ARM_ZOOM) {
+          if (active) { active = false; lens.style.display = 'none'; }
+          return;
+        }
+        const r = container.getBoundingClientRect();
+        mx = ev.clientX - r.left; my = ev.clientY - r.top; active = true;
+        if (!raf) {
+          raf = window.requestAnimationFrame(() => {
+            raf = null; if (active) { drawLens(mx, my); }
+          });
+        }
+      });
+      container.addEventListener('mouseleave', () => {
+        active = false; lens.style.display = 'none';
+      });
     })();
 
     // -- Per-user hidden devices --------------------------------------------
