@@ -309,6 +309,32 @@ class PingProbeTests(unittest.TestCase):
         self.assertEqual("unknown", unknown)
         self.assertIn("no output", evidence)
 
+    def test_the_average_rtt_is_read_from_the_summary(self) -> None:
+        """Latency is what makes proximity a MEASURED fact rather than a
+        topological guess. The average sits in the ping summary, one of two
+        slash-shapes across the CLIs."""
+
+        from founderos_atlas.console.probe import parse_ping_rtt
+
+        self.assertEqual(0.166, parse_ping_rtt(
+            "round-trip min/avg/max = 0.061/0.166/0.367 ms"))
+        self.assertEqual(0.312, parse_ping_rtt(
+            "rtt min/avg/max/mdev = 0.045/0.312/0.501/0.123 ms"))
+        self.assertEqual(2.0, parse_ping_rtt(
+            "Success rate is 100 percent, round-trip min/avg/max = 1/2/4 ms"))
+
+    def test_an_unmeasured_ping_yields_no_rtt_not_a_fake_zero(self) -> None:
+        """100% loss, no output, or a reply with no timing line is an
+        ABSENT measurement — None, never a 0 that reads as instant."""
+
+        from founderos_atlas.console.probe import parse_ping_rtt
+
+        self.assertIsNone(parse_ping_rtt(
+            "3 packets transmitted, 0 received, 100% packet loss"))
+        self.assertIsNone(parse_ping_rtt(
+            "64 bytes from 10.0.0.1: icmp_seq=1 ttl=64 time=0.2 ms"))
+        self.assertIsNone(parse_ping_rtt(""))
+
     def test_a_bare_ping_is_stopped_once_it_has_answered(self) -> None:
         """vtysh's ping runs until stopped; two replies is enough."""
 

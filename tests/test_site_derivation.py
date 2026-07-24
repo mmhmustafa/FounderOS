@@ -190,6 +190,38 @@ class FabricTests(unittest.TestCase):
         self.assertEqual((), result.fabric_unplaced)
         self.assertEqual({}, dict(result.fabric_placements))
 
+    def test_measured_latency_places_a_device_over_mere_connection_count(self) -> None:
+        """When latency was captured, it wins: a shared device sits with
+        the site it reaches FASTEST, even if it has more links to another.
+        Measured proximity beats topological proximity."""
+
+        chennai, chennai_e = _cohesive_site("chennai")
+        delhi, delhi_e = _cohesive_site("delhi")
+        hub = [DerivedDevice("id:hub", "hub-1")]
+        edges = chennai_e + delhi_e + [
+            # TWO links to chennai but SLOW; one link to delhi but FAST.
+            dict(_edge("id:hub", "chennai-branch-core"), rtt_ms=40.0),
+            dict(_edge("id:hub", "chennai-branch-fw"), rtt_ms=42.0),
+            dict(_edge("id:hub", "delhi-branch-core"), rtt_ms=1.2),
+        ]
+        result = derive_sites(chennai + delhi + hub, edges)
+        # Count says chennai (2 links); latency says delhi (1.2ms). Latency
+        # wins.
+        self.assertEqual("delhi", result.fabric_placements.get("id:hub"))
+
+    def test_without_latency_connection_count_still_decides(self) -> None:
+        # No rtt_ms on the edges -> fall back to most-connected, unchanged.
+        chennai, chennai_e = _cohesive_site("chennai")
+        delhi, delhi_e = _cohesive_site("delhi")
+        hub = [DerivedDevice("id:hub", "hub-1")]
+        edges = chennai_e + delhi_e + [
+            _edge("id:hub", "chennai-branch-core"),
+            _edge("id:hub", "chennai-branch-fw"),
+            _edge("id:hub", "delhi-branch-core"),
+        ]
+        result = derive_sites(chennai + delhi + hub, edges)
+        self.assertEqual("chennai", result.fabric_placements.get("id:hub"))
+
     def test_a_device_that_leans_one_way_is_placed_there(self) -> None:
         """Proximity is the real signal: a shared device whose links
         clearly favour one site takes it."""

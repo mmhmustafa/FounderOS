@@ -128,6 +128,12 @@ def derive_sites(
     declared_prefixes = _declared_prefixes(declared)
 
     id_to_name = {d.device_id: d.hostname for d in catalog_devices}
+    edge_list = list(edges)
+    # Per device, the lowest measured RTT to each neighbouring prefix. Only
+    # present when latency was actively measured (opt-in); absent, placement
+    # falls back to "most connected", which is topological proximity rather
+    # than the real thing.
+    rtt_to_prefix = _neighbour_rtt(edge_list, id_to_name)
     by_prefix: dict[str, list[DerivedDevice]] = defaultdict(list)
     for device in catalog_devices:
         prefix = hostname_prefix(device.hostname)
@@ -138,7 +144,6 @@ def derive_sites(
     # (edges of any kind, including to unresolved peers). The degree is what
     # tells "no adjacency evidence at all" — trust the name — apart from
     # "has links, but none internal" — a core that only faces outward.
-    edge_list = list(edges)
     neighbours = _neighbour_prefixes(edge_list, id_to_name)
     raw_degree = _raw_degree(edge_list, id_to_name)
 
@@ -208,7 +213,13 @@ def derive_sites(
             continue                   # belongs to its own derived cloud
         if prefix and prefix in declared_prefixes:
             continue                   # a declared site will claim it
-        home = _plurality_site(
+        # Proximity decides, and MEASURED proximity wins. Latency, when it
+        # was captured, is the real "which site is this near" — the site
+        # holding the neighbour this device reaches fastest. Without it,
+        # "most connected" stands in as topological closeness.
+        home = _nearest_site_by_rtt(
+            rtt_to_prefix.get(device.device_id, {}), site_prefixes,
+        ) or _plurality_site(
             neighbours.get(device.device_id, Counter()), site_prefixes,
         )
         site_id = site_id_for(home) if home else None
@@ -385,6 +396,68 @@ def _raw_degree(
         if remote_id:
             degree[remote_id] += 1
     return degree
+
+
+def _neighbour_rtt(
+    edges: Iterable[Mapping[str, object]], id_to_name: Mapping[str, str]
+) -> dict[str, dict[str, float]]:
+    """Per device, the LOWEST measured RTT to each neighbouring prefix.
+
+    Built undirected and keyed by prefix, so a device's closeness to a
+    site is the fastest link it has into that site. Only edges that carry
+    a numeric ``rtt_ms`` (an actively measured link) contribute; a link
+    with no measurement leaves no entry, which is what lets placement fall
+    back to topology rather than treat "unmeasured" as "instant".
+    """
+
+    name_to_id = {name: did for did, name in id_to_name.items()}
+    result: dict[str, dict[str, float]] = defaultdict(dict)
+
+    def record(device_id: str | None, other_name: str | None, rtt: float):
+        if not device_id or device_id not in id_to_name:
+            return
+        prefix = hostname_prefix(other_name)
+        if not prefix:
+            return
+        table = result[device_id]
+        if prefix not in table or rtt < table[prefix]:
+            table[prefix] = rtt
+
+    for edge in edges:
+        # Tolerate the measurement at the edge top level or in its
+        # metadata sub-dict — whichever the capture pass writes.
+        raw = edge.get("rtt_ms")
+        if raw is None:
+            meta = edge.get("metadata")
+            if isinstance(meta, Mapping):
+                raw = meta.get("rtt_ms")
+        if not isinstance(raw, (int, float)) or isinstance(raw, bool):
+            continue
+        rtt = float(raw)
+        local_id = str(edge.get("local_device_id") or "")
+        remote_name = str(edge.get("remote_hostname") or "")
+        record(local_id, remote_name, rtt)
+        record(name_to_id.get(remote_name), id_to_name.get(local_id), rtt)
+    return result
+
+
+def _nearest_site_by_rtt(
+    prefix_rtt: Mapping[str, float], site_prefixes: set[str]
+) -> str | None:
+    """The site prefix this device reaches fastest, or None.
+
+    None when no measured neighbour is a real site — a device whose only
+    timed links are to fabric or unresolved peers has no measured premises
+    to sit in, and placement falls back to topology rather than guess.
+    """
+
+    among_sites = {
+        prefix: rtt for prefix, rtt in prefix_rtt.items()
+        if prefix in site_prefixes
+    }
+    if not among_sites:
+        return None
+    return min(among_sites, key=among_sites.get)
 
 
 def _plurality_site(

@@ -331,6 +331,36 @@ def parse_ping(text: str) -> tuple[str, str]:
     return PING_UNKNOWN, text.strip().splitlines()[-1][:200]
 
 
+# The average RTT sits in the ping SUMMARY, one of two shapes across the
+# CLIs here — Linux "round-trip min/avg/max = 0.061/0.166/0.367 ms" and
+# the iputils "rtt min/avg/max/mdev = .../avg/... ms". Both put the average
+# in the SECOND slash-field; a device that answered but printed no summary
+# (a single "bytes from ..." line) has no average to read, and None says
+# so rather than inventing 0.
+_RTT_SUMMARY = re.compile(
+    r"(?:round-trip|rtt)\s+min/avg/max(?:/\w+)?\s*=\s*"
+    r"[\d.]+/([\d.]+)/[\d.]+",
+    re.IGNORECASE,
+)
+
+
+def parse_ping_rtt(text: str) -> float | None:
+    """The average round-trip time in milliseconds, or None.
+
+    Read only from a ping that actually returned a summary. 100% loss, no
+    output, or a reply with no timing line all yield None — an absent
+    measurement, never a zero that would read as "instant".
+    """
+
+    match = _RTT_SUMMARY.search(text or "")
+    if not match:
+        return None
+    try:
+        return float(match.group(1))
+    except ValueError:
+        return None
+
+
 def service_probe(
     destination_address: str, port: Any, *, family: str = FAMILY_UNKNOWN
 ) -> Probe:
