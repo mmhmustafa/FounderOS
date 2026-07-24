@@ -2229,6 +2229,103 @@
       applyReadableViewport(false);
     }
 
+    const HULL_PALETTE = [
+      { fill: '#dbeafe', line: '#3b82f6' },  // blue
+      { fill: '#dcfce7', line: '#22c55e' },  // green
+      { fill: '#fef3c7', line: '#f59e0b' },  // amber
+      { fill: '#f3e8ff', line: '#a855f7' },  // purple
+      { fill: '#ffe4e6', line: '#f43f5e' },  // rose
+      { fill: '#cffafe', line: '#06b6d4' },  // cyan
+      { fill: '#ffedd5', line: '#f97316' },  // orange
+      { fill: '#e0e7ff', line: '#6366f1' },  // indigo
+    ];
+
+    // The All-Devices view, grouped by SITE: every device in its site's
+    // coloured oval, tiered inside (border devices facing the middle where
+    // the inter-site links cross), the ovals laid in a grid and separated
+    // so none overlap. This is the whole estate read the way the site
+    // overview reads — one glance tells you which devices are which site —
+    // rather than the control-plane tint, which now lives only in the
+    // dedicated OSPF and BGP views.
+    function renderSiteOvalsGrid() {
+      const memberOf = siteView.membership || {};
+      const siteLabel = {};
+      (siteView.sites || []).forEach(s => { siteLabel[s.site_id] = s.label; });
+      const groups = new Map();
+      cy.nodes().forEach(n => {
+        const k = n.data('kind');
+        if (k === 'site' || k === 'sitehull' || k === 'protocol-domain') { return; }
+        const sid = memberOf[n.data('id')] || '__none__';
+        if (!groups.has(sid)) { groups.set(sid, []); }
+        groups.get(sid).push(n);
+      });
+      const siteIds = [...groups.keys()].sort();
+      const cols = Math.max(1, Math.round(Math.sqrt(siteIds.length * 1.7)));
+      const rows = Math.ceil(siteIds.length / cols);
+      const CELL = 780;
+      const gcx = (cols - 1) / 2, gcy = (rows - 1) / 2;
+      const blocks = [];
+      siteIds.forEach((sid, idx) => {
+        const devices = groups.get(sid);
+        if (!devices.length) { return; }
+        const gx = idx % cols, gy = Math.floor(idx / cols);
+        // Border devices face the middle of the grid, where the links to
+        // other sites cross; a lone site just faces down.
+        const dir = { dx: gcx - gx, dy: gcy - gy };
+        if (dir.dx === 0 && dir.dy === 0) { dir.dy = 1; }
+        const { local, blockW, blockH } =
+          computeIntraLayout(devices, memberOf, () => dir);
+        const rx = (blockW / 2 + 76) * 1.45, ry = (blockH / 2 + 50) * 1.45;
+        blocks.push({
+          sid, devices, local, fixed: false,
+          cx: gx * CELL, cy: gy * CELL, rx, ry,
+          hw: rx + 20, hh: ry + 20,
+          colour: HULL_PALETTE[idx % HULL_PALETTE.length],
+        });
+      });
+      // Separate ovals so none overlap (same min-translation pass).
+      for (let pass = 0; pass < 80; pass++) {
+        let moved = false;
+        for (let a = 0; a < blocks.length; a++) {
+          for (let b = a + 1; b < blocks.length; b++) {
+            const A = blocks[a], B = blocks[b];
+            const dx = B.cx - A.cx, dy = B.cy - A.cy;
+            const ox = (A.hw + B.hw) - Math.abs(dx);
+            const oy = (A.hh + B.hh) - Math.abs(dy);
+            if (ox <= 0 || oy <= 0) { continue; }
+            moved = true;
+            let sx = 0, sy = 0;
+            if (ox < oy) { sx = (dx < 0 ? -1 : 1) * ox; }
+            else { sy = (dy < 0 ? -1 : 1) * oy; }
+            A.cx -= sx / 2; A.cy -= sy / 2;
+            B.cx += sx / 2; B.cy += sy / 2;
+          }
+        }
+        if (!moved) { break; }
+      }
+      const hulls = [];
+      blocks.forEach(b => {
+        b.devices.forEach(node => {
+          const p = b.local.get(node.id()) || { x: 0, y: 0 };
+          node.position({ x: b.cx + p.x, y: b.cy + p.y });
+        });
+        hulls.push({
+          group: 'nodes',
+          data: {
+            id: 'sitehull:' + b.sid, kind: 'sitehull',
+            label: b.sid === '__none__'
+              ? 'Site not identified' : (siteLabel[b.sid] || b.sid),
+            hullColor: b.colour.fill, hullBorder: b.colour.line,
+            w: 2 * b.rx, h: 2 * b.ry,
+          },
+          position: { x: b.cx, y: b.cy },
+          selectable: false, grabbable: false, pannable: true,
+        });
+      });
+      if (hulls.length) { cy.add(hulls); }
+      applyReadableViewport(false);
+    }
+
     // A force layout scatters DISCONNECTED domain groups across a huge
     // canvas (one lonely stub per single-router area), so fitting the
     // result shrinks every icon to specks around empty space. Shelf-pack
@@ -2396,7 +2493,10 @@
       if (full) {
         if (wantLogical) {
           cy.layout({ name: 'preset', animate: false, fit: false }).run();
-          runLogicalLayout();
+          // With sites known, group the whole estate into coloured site
+          // ovals; without them, fall back to the tiered logical bands.
+          if (sitesEnabled) { renderSiteOvalsGrid(); }
+          else { runLogicalLayout(); }
           finishRebuild('full');
           return;
         }
@@ -2432,20 +2532,10 @@
         // devices AND their labels, and that same size is what the sites
         // are separated by — so the ovals never overlap, and neither do the
         // blocks inside them. The closed clouds are fixed obstacles.
-        const HULL_PALETTE = [
-          { fill: '#dbeafe', line: '#3b82f6' },  // blue
-          { fill: '#dcfce7', line: '#22c55e' },  // green
-          { fill: '#fef3c7', line: '#f59e0b' },  // amber
-          { fill: '#f3e8ff', line: '#a855f7' },  // purple
-          { fill: '#ffe4e6', line: '#f43f5e' },  // rose
-          { fill: '#cffafe', line: '#06b6d4' },  // cyan
-          { fill: '#ffedd5', line: '#f97316' },  // orange
-          { fill: '#e0e7ff', line: '#6366f1' },  // indigo
-        ];
         const siteLabel = {};
         (siteView.sites || []).forEach(s => { siteLabel[s.site_id] = s.label; });
         // Stable colour per open site: assign by sorted id so a site keeps
-        // its colour as others open and close around it.
+        // its colour as others open and close around it (shared HULL_PALETTE).
         const openSorted = [...expandedSites].sort();
         const colourOf = {};
         openSorted.forEach((s, i) => { colourOf[s] = HULL_PALETTE[i % HULL_PALETTE.length]; });
@@ -3768,7 +3858,11 @@
       // the viewport framed exactly as it wants the output framed.
       function renderTo(ctx) {
         var mode = (viewSelect && viewSelect.value) || 'full';
-        if (mode !== 'full' || !regionsEnabled()) { return false; }
+        // The All-Devices view now groups by coloured site ovals; the
+        // control-plane tint would only fight them, so it is suppressed
+        // there and kept for the dedicated OSPF/BGP views. It still draws
+        // when there are no sites to group by (the logical-bands fallback).
+        if (mode !== 'full' || sitesEnabled || !regionsEnabled()) { return false; }
 
         // OSPF areas are self-contained regions; BGP is a peering
         // fabric. Same tint, two questions — see each helper.

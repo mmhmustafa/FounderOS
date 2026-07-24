@@ -205,9 +205,13 @@ class ScopeTests(unittest.TestCase):
     def test_regions_are_drawn_only_on_the_whole_estate_view(self) -> None:
         """The OSPF and BGP views already draw these domains as boxes and
         the site view has its own; tinting there would double the same
-        statement in two visual languages."""
+        statement in two visual languages. And when the All-Devices view
+        groups the estate into coloured site ovals (sitesEnabled), the tint
+        is suppressed there too — it would only fight the ovals."""
 
-        self.assertIn("if (mode !== 'full' || !regionsEnabled())", BLOCK)
+        self.assertIn(
+            "if (mode !== 'full' || sitesEnabled || !regionsEnabled())", BLOCK
+        )
 
     def test_the_canvas_is_cleared_before_the_scope_check(self) -> None:
         """Leaving the previous view's tint on screen after switching is
