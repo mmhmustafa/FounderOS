@@ -966,7 +966,7 @@
           'opacity': 0.55, 'width': 1.6,
         }},
         { selector: 'edge.xsite-routing', style: {
-          'opacity': 0.16, 'width': 1,
+          'opacity': 0.28, 'width': 1.1,
         }},
 
         // Hover lift (#5): the focused device grows and its links brighten;
@@ -2707,7 +2707,7 @@
           }));
         }
         // Control points -> (weight, distance) on the source->target chord,
-        // kept in path order (a detour may fold back along the chord).
+        // kept in path order.
         const dx = t.x - s.x, dy = t.y - s.y;
         const len2 = dx * dx + dy * dy || 1;
         const ln = Math.sqrt(len2);
@@ -2717,6 +2717,21 @@
           W.push(((p.x - s.x) * dx + (p.y - s.y) * dy) / len2);
           D.push((p.x - s.x) * nx + (p.y - s.y) * ny);
         });
+        // Sanity: a route whose control points fold back along the chord,
+        // or swing wider than the wire is long, renders as a hairpin LOOP —
+        // the one shape worse than any crossing. A straight line passing
+        // quietly under an oval beats a lasso, so such routes are refused.
+        let sane = true;
+        for (let i = 0; i < W.length; i++) {
+          if (W[i] < -0.25 || W[i] > 1.25) { sane = false; break; }
+          if (Math.abs(D[i]) > Math.max(420, ln * 1.1)) { sane = false; break; }
+          if (i > 0 && W[i] < W[i - 1] - 0.25) { sane = false; break; }
+        }
+        if (!sane) {
+          e.removeData('routeW routeD');
+          e.removeStyle('curve-style control-point-weights control-point-distances');
+          return;
+        }
         e.data('routeW', W);
         e.data('routeD', D);
         e.style({
