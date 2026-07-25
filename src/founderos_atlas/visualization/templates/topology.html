@@ -2607,6 +2607,51 @@
         }
         return pulled;
       }
+      // A wire that can clear everything with ONE gentle arc should — an
+      // S-bend of nearly the same length reads as mess where a single
+      // curve reads as intent. Try every portal as the lone through-point
+      // of a single quadratic; among the ones whose whole curve clears
+      // every oval, take the shortest. Only when no single curve exists
+      // does the multi-corner route stand.
+      function pointBlocked(x, y, exA, exB) {
+        for (const h of infl) {
+          if (h.sid === exA || h.sid === exB) { continue; }
+          if (((x - h.cx) / h.rx) ** 2 + ((y - h.cy) / h.ry) ** 2 < 1) {
+            return true;
+          }
+        }
+        return false;
+      }
+      function bestSingleBend(s, t, sSid, tSid) {
+        const dx = t.x - s.x, dy = t.y - s.y;
+        const chord = Math.hypot(dx, dy) || 1;
+        let best = null, bestLen = Infinity;
+        for (const p of portals) {
+          // Only portals near this link can shape a sensible arc for it.
+          const w = ((p.x - s.x) * dx + (p.y - s.y) * dy) / (chord * chord);
+          if (w < -0.15 || w > 1.15) { continue; }
+          const d = Math.abs((p.x - s.x) * (-dy / chord)
+                           + (p.y - s.y) * (dx / chord));
+          if (d > chord * 0.75 + 260) { continue; }
+          const c = { x: 2 * p.x - (s.x + t.x) / 2,
+                      y: 2 * p.y - (s.y + t.y) / 2 };
+          let clear = true, len = 0, px = s.x, py = s.y;
+          for (let k = 1; k <= 24 && clear; k++) {
+            const u = k / 24;
+            const qx = (1 - u) * (1 - u) * s.x + 2 * (1 - u) * u * c.x + u * u * t.x;
+            const qy = (1 - u) * (1 - u) * s.y + 2 * (1 - u) * u * c.y + u * u * t.y;
+            // The ends may sit inside their own sites' ovals; the middle
+            // of the arc must clear everything.
+            const exA = u < 0.25 ? sSid : null;
+            const exB = u > 0.75 ? tSid : null;
+            if (pointBlocked(qx, qy, exA, exB)) { clear = false; break; }
+            len += Math.hypot(qx - px, qy - py);
+            px = qx; py = qy;
+          }
+          if (clear && len < bestLen) { bestLen = len; best = p; }
+        }
+        return best ? { point: best, length: bestLen } : null;
+      }
       cy.edges('.xsite-phys, .xsite-routing').forEach(e => {
         const s = e.source().position(), t = e.target().position();
         const sSid = siteOf[e.source().id()];
@@ -2617,7 +2662,23 @@
           e.removeStyle('curve-style control-point-weights control-point-distances');
           return;
         }
-        const way = shortestRoute(s, t, sSid, tSid);
+        // Prefer the single smooth arc; keep the corner route only when no
+        // single curve clears, or when the only clear arcs swing so wide
+        // that the corners are genuinely the calmer picture.
+        let way = null;
+        const single = bestSingleBend(s, t, sSid, tSid);
+        const corners = shortestRoute(s, t, sSid, tSid);
+        if (single && corners && corners.length > 1) {
+          let polyLen = 0, prev = s;
+          corners.concat([t]).forEach(p => {
+            polyLen += Math.hypot(p.x - prev.x, p.y - prev.y); prev = p;
+          });
+          way = single.length <= polyLen * 1.45 ? [single.point] : corners;
+        } else if (single) {
+          way = [single.point];
+        } else {
+          way = corners;
+        }
         if (!way || !way.length) {
           e.removeData('routeW routeD');
           e.removeStyle('curve-style control-point-weights control-point-distances');
