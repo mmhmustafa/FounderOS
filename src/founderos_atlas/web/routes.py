@@ -1935,6 +1935,9 @@ def register_routes(app) -> None:
         result = {
             "ok": finished.status == "completed",
             "profile": name,
+            # The result links carry the discovered network's scope — without
+            # it they landed on whatever scope the session last held.
+            "profile_id": job.profile_id,
             "error": finished.error,
             "log": list(finished.log),
         }

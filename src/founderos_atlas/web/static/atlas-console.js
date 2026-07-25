@@ -82,7 +82,8 @@
   function requestToken() {
     return fetch('/console/' + encodeURIComponent(config.deviceId) + '/token', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json',
+                 'Accept': 'application/json' },
       credentials: 'same-origin',
       body: JSON.stringify({ credential_ref: chosenCredential() })
     }).then(function (response) {
@@ -125,7 +126,8 @@
     var shown = el('fp-new').textContent;
     fetch('/console/' + encodeURIComponent(config.deviceId) + '/hostkey/accept', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json',
+                 'Accept': 'application/json' },
       credentials: 'same-origin',
       body: JSON.stringify({ fingerprint: shown })
     }).then(function (response) {

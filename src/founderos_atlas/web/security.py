@@ -597,6 +597,10 @@ def register_security(app, *, auth_mode: str | None = None) -> None:
             return redirect("/")
         return render_template(
             "login.html", next=safe_redirect_target(request.args.get("next")),
+            # The full navigation shell on an unauthenticated page hands an
+            # anonymous visitor the deployment's whole feature map (Users,
+            # Credentials, Audit, search, scopes) as decorative dead links.
+            bare_chrome=True,
         )
 
     @app.route("/login", methods=["POST"], endpoint="login_submit")
@@ -620,6 +624,7 @@ def register_security(app, *, auth_mode: str | None = None) -> None:
                     error="That sign-in didn't work. Check the username "
                           "and password.",
                     next=safe_redirect_target(request.form.get("next")),
+                    bare_chrome=True,
                 ),
                 401,
             )

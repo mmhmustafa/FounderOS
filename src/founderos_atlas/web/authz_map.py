@@ -151,7 +151,11 @@ ENDPOINT_PERMISSIONS: dict[str, str] = {
     "api_revert_peer_identity": TOPOLOGY_EDIT,
     "api_undo_peer_identity": TOPOLOGY_EDIT,
     "api_update_topology_site": TOPOLOGY_EDIT,
-    "management_define": TOPOLOGY_EDIT,
+    # The write side of the device-access workflow, offered beside verify
+    # and opened on the console page — mapping it to a different permission
+    # than the page that offers it made the button silently dead for the
+    # console role.
+    "management_define": CONSOLE_USE,
 
     # -- annotations -------------------------------------------------------
     "changes_annotate": CHANGES_ANNOTATE,

@@ -29,6 +29,10 @@
 
 <section class="card">
   <h2>Investigate device-to-device connectivity</h2>
+  {% if not can('investigate.run') %}
+  <p class="muted">Your roles can review recorded investigations but not run
+  one — that requires the investigate-run permission.</p>
+  {% else %}
   <form class="form" method="post" action="/paths/run">{{ csrf_field() }}
     {% if request.args.get('case_id') %}
     <input type="hidden" name="case_id" value="{{ request.args.get('case_id') }}">
@@ -75,6 +79,7 @@
   </form>
   {% if not devices %}
   <p class="muted">No topology yet — <a href="/discovery">run a discovery</a> first.</p>
+  {% endif %}
   {% endif %}
 </section>
 

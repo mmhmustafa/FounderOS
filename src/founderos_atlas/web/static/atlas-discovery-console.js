@@ -131,9 +131,15 @@
     }
     load();
 
-    // Controls (keyboard: p pause, r resume, s stop)
+    // Controls (keyboard: p pause, r resume, s stop). This console shows a
+    // SAMPLE run, and the note must say so — "Control sent: stop" implied a
+    // live discovery had been stopped when nothing was running at all.
     var note = $("ops-control-note");
-    function control(name) { setText(note, "Control sent: " + name); }
+    function control(name) {
+      setText(note, "Sample console — '" + name
+        + "' does not act on a live run. Live discoveries are controlled "
+        + "from the Discover page.");
+    }
     ["resume","pause","stop","restart"].forEach(function (a) {
       var b = $("ops-" + a); if (b) b.addEventListener("click", function () { control(a); });
     });

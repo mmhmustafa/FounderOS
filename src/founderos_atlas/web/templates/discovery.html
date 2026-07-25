@@ -4,7 +4,8 @@
 <div class="page-head">
   <h1>Run Discovery</h1>
   <span class="actions">
-    <a class="btn" href="/discovery/console">Execution Console</a>
+    <a class="btn" href="/discovery/console"
+       title="A sample walkthrough of the operational console — not a live run">Execution Console (sample)</a>
     <a class="btn btn-primary" href="/discovery/wizard">Discovery Wizard</a>
   </span>
 </div>
@@ -37,6 +38,10 @@
 </section>
 
 <section class="card">
+  {% if not can('discovery.run') %}
+  <p class="muted">Your roles can review discovery results but not start a
+  run — that requires the discovery-run permission.</p>
+  {% else %}
   <form id="discovery-form" class="form" method="post" action="/discovery/run">{{ csrf_field() }}
     <label>Discovery profile
       <select name="profile" id="discovery-profile" required>
@@ -54,6 +59,7 @@
     <p class="muted">Discovery uses the saved profile — credentials are resolved securely on the server and are never sent to the browser. You can keep using Atlas while discovery runs.</p>
     <div class="flash flash-error" id="job-error" hidden></div>
   </form>
+  {% endif %}
 </section>
 
 {% else %}
@@ -112,11 +118,13 @@
   <h2>Discovery result — {{ result.profile }}</h2>
   {% if result.ok %}
   <div class="status-banner status-healthy"><span class="badge">Complete</span><span>Discovery finished successfully.</span></div>
+  {# Scope rides on every link: without it these landed on whatever scope
+     the session last held, not the network just discovered. #}
   <div class="actions">
-    <a class="btn" href="/">Mission</a>
-    <a class="btn" href="/topology">Topology</a>
-    <a class="btn" href="/history">History</a>
-    <a class="btn" href="/changes">Changes</a>
+    <a class="btn" href="/{% if result.profile_id %}?scope={{ result.profile_id | urlencode }}{% endif %}">Overview</a>
+    <a class="btn" href="/topology{% if result.profile_id %}?scope={{ result.profile_id | urlencode }}{% endif %}">Topology</a>
+    <a class="btn" href="/history{% if result.profile_id %}?scope={{ result.profile_id | urlencode }}{% endif %}">History</a>
+    <a class="btn" href="/changes{% if result.profile_id %}?scope={{ result.profile_id | urlencode }}{% endif %}">Changes</a>
   </div>
   {% else %}
   <div class="status-banner status-critical"><span class="badge">Failed</span><span>{{ result.error }}</span></div>

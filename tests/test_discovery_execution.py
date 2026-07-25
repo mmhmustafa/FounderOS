@@ -435,7 +435,7 @@ class ConsoleGuiTests(unittest.TestCase):
                            b"SSH reachable", b"Devices / min"):
                 self.assertIn(metric, page)
             # Completion shortcuts.
-            self.assertIn(b"Open Mission", page)
+            self.assertIn(b"Open Overview", page)
             self.assertIn(b"Enterprise Topology", page)
             # Accessibility affordances.
             self.assertIn(b'role="toolbar"', page)

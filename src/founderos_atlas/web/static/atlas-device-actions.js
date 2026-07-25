@@ -153,7 +153,8 @@
     if (!deviceId) { return; }
     fetch('/management/' + encodeURIComponent(deviceId) + '/opened', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json',
+                 'Accept': 'application/json' },
       credentials: 'same-origin',
       body: JSON.stringify({ url: url, protocol: protocol })
     }).catch(function () { /* audit is best-effort; never block the open */ });
@@ -201,7 +202,8 @@
     if (!id) { return; }
     button.disabled = true;
     fetch('/console/sessions/' + encodeURIComponent(id) + '/disconnect', {
-      method: 'POST', credentials: 'same-origin'
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'Accept': 'application/json' }
     }).then(function () {
       window.location.reload();
     }, function () {
@@ -228,11 +230,18 @@
       verify.textContent = 'Verifying…';
       fetch('/management/' + encodeURIComponent(id) + '/verify', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        /* Accept declares this caller wants JSON: without it a denial came
+           back as an HTML error page and .json() rejected, so the operator
+           saw a parser error (or nothing) instead of the real reason. */
+        headers: { 'Content-Type': 'application/json',
+                   'Accept': 'application/json' },
         credentials: 'same-origin',
         body: '{}'
       }).then(function (response) {
-        return response.json().then(function (data) {
+        return response.json().catch(function () {
+          return { error: 'Not permitted, or the session expired - '
+                        + 'reload the page and try again.' };
+        }).then(function (data) {
           return { ok: response.ok, data: data };
         });
       }).then(function (result) {
@@ -263,11 +272,15 @@
       var reason = window.prompt('Why? (optional note)', '') || '';
       fetch('/management/' + encodeURIComponent(deviceId) + '/define', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json',
+                   'Accept': 'application/json' },
         credentials: 'same-origin',
         body: JSON.stringify({ url: url, reason: reason })
       }).then(function (response) {
-        return response.json().then(function (data) {
+        return response.json().catch(function () {
+          return { error: 'Not permitted, or the session expired - '
+                        + 'reload the page and try again.' };
+        }).then(function (data) {
           return { ok: response.ok, data: data };
         });
       }).then(function (result) {
@@ -276,6 +289,10 @@
           return;
         }
         window.location.reload();
+      }).catch(function () {
+        /* The chain had no rejection handler at all: a network failure or
+           an HTML denial left the operator with silence. */
+        window.alert('Could not save the URL - Atlas could not be reached.');
       });
     }
   });

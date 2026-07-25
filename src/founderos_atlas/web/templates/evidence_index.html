@@ -178,7 +178,7 @@
   {% endif %}
 
   {% if devices %}
-  <form method="post" action="/evidence/bulk-export">{{ csrf_field() }}<input type="hidden" name="session" value="{{ session.session_id }}"><div class="form-actions"><button class="btn" type="submit">Export selected (masked)</button></div>
+  <form method="post" action="/evidence/bulk-export">{{ csrf_field() }}<input type="hidden" name="session" value="{{ session.session_id }}">{% if can('export.data') %}<div class="form-actions"><button class="btn" type="submit">Export selected (masked)</button></div>{% endif %}
   <table class="grid" data-columns="evidence-devices" data-row-select="device_ids">
     <thead>
       <tr><th data-col="select" data-col-preset="simple" data-col-label="Select"><input type="checkbox" data-select-all aria-label="Select all devices"></th>

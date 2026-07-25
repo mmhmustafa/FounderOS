@@ -12,6 +12,10 @@
 
 <section class="card">
   <h2>New investigation</h2>
+  {% if not can('investigate.run') %}
+  <p class="muted">Your roles can review existing investigations but not run
+  a new one — that requires the investigate-run permission.</p>
+  {% else %}
   <form class="form" method="post" action="/incidents/run">{{ csrf_field() }}
     {% if global_view %}
     <label>Investigate against profile
@@ -41,6 +45,7 @@
     </div>
     <p class="muted">Deterministic correlation against topology, changes, state, and history — no AI, no invention. The case opens with the report as its evidence.</p>
   </form>
+  {% endif %}
 </section>
 
 <section class="card" id="cases">
@@ -107,6 +112,7 @@
       </tbody>
     </table>
   </div>
+  {% if can('investigate.run') %}
   <div class="actions" style="margin-top:10px;">
     <label>With selected
       <select name="bulk_action" aria-label="Bulk action for the selected cases">
@@ -121,6 +127,7 @@
     <button class="btn btn-sm" type="submit">Apply to selected</button>
     <span class="muted">One audited action; every case keeps its evidence and history.</span>
   </div>
+  {% endif %}
   </form>
   {% else %}
   <p class="muted">

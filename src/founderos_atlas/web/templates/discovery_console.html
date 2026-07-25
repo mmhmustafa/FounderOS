@@ -2,9 +2,16 @@
 {% import "_icons.html" as icons %}
 {% block title %}Discovery Console{% endblock %}
 {% block content %}
+<div class="status-banner" role="note">
+  <span><strong>Sample walkthrough.</strong> This console renders a
+  representative discovery so the operational view can be seen without a
+  long-running scan — it is not one of your networks, and the controls do
+  not act on a live run. Live discoveries run and report on the
+  <a href="/discovery">Discover</a> page.</span>
+</div>
 <div class="ops-header" role="region" aria-label="Discovery status">
   <div>
-    <span class="ops-eyebrow">Enterprise Discovery</span>
+    <span class="ops-eyebrow">Enterprise Discovery — sample</span>
     <h1 id="ops-network">Delhi Lab</h1>
   </div>
   <div class="ops-status">
@@ -120,7 +127,7 @@
   <h2>Discovery complete</h2>
   <p class="muted" id="ops-complete-summary"></p>
   <div class="actions">
-    <a class="btn btn-primary" href="/?scope=all">Open Mission</a>
+    <a class="btn btn-primary" href="/?scope=all">Open Overview</a>
     <a class="btn" href="/topology?scope=all">Enterprise Topology</a>
     <a class="btn" href="/advisor">Open Advisor</a>
     <a class="btn" href="/predict?scope=all">Prediction</a>

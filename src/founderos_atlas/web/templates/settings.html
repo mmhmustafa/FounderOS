@@ -39,6 +39,17 @@ table columns. These change nothing another operator sees, and follow your accou
 
 <section class="card">
   <h2>Display and retention</h2>
+  {% if not can('settings.manage') %}
+  <p class="muted">Viewing only — changing these shared settings requires the
+  settings-manage permission.</p>
+  <ul class="kv">
+    <li><span>Timezone</span><span>{{ preferences.timezone }}</span></li>
+    <li><span>Theme</span><span>{{ preferences.theme }}</span></li>
+    <li><span>Density</span><span>{{ preferences.density }}</span></li>
+    <li><span>Retention days</span><span>{{ preferences.retention_days }}</span></li>
+    <li><span>Log level</span><span>{{ preferences.log_level }}</span></li>
+  </ul>
+  {% else %}
   <form class="form" method="post" action="/settings">{{ csrf_field() }}
     <input type="hidden" name="expected_updated_at" value="{{ preferences.updated_at or '' }}">
     <div class="form-row">
@@ -53,31 +64,51 @@ table columns. These change nothing another operator sees, and follow your accou
     </div>
     <div class="form-actions"><button class="btn btn-primary" type="submit">Save settings</button></div>
   </form>
+  {% endif %}
   <p class="muted">Retention is policy metadata in this phase; Atlas does not silently delete evidence. A future scheduled retention job must require an audited preview.</p>
 </section>
 
+{# Administrator surface: rendering a page of buttons that all answer
+   "Not permitted" tells a viewer nothing but that they should not have
+   been offered them — the sections appear only for roles that can act,
+   the same rule the sidebar and compass_plan.html already follow. #}
+{% if can('system.admin') or can('users.manage') %}
 <h2 class="settings-group">Data, backup &amp; system</h2>
 <p class="muted settings-group-note">Workspace-wide operations. Backup, restore, retention and reset are administrator actions and are audited.</p>
+{% endif %}
 
+{% if can('system.admin') %}
 <section class="card">
   <h2>Backup, restore, and diagnostics</h2>
   <div class="form-actions"><a class="btn" href="/settings/backup">Download metadata backup</a><a class="btn" href="/settings/diagnostics.json">Download diagnostics</a><button class="btn" type="button" data-copy-url="/settings/diagnostics.json">Copy diagnostics</button></div>
   <p class="muted">Backups include workspace JSON metadata and audit records. Credential-provider secrets and raw network evidence are deliberately excluded.</p>
   <details><summary>Restore metadata</summary><form class="form" method="post" action="/settings/restore" enctype="multipart/form-data">{{ csrf_field() }}<label>Atlas backup<input type="file" name="backup" accept=".zip" required></label><label>Reason<input name="reason" required></label><label>Confirmation<input name="confirm" required placeholder="RESTORE METADATA"></label><button class="btn btn-danger" type="submit">Restore metadata</button></form></details>
 </section>
+{% endif %}
 
+{% if can('system.admin') or can('users.manage') %}
 <section class="card">
   <h2>Administration</h2>
   <div class="form-actions">
+    {% if can('system.admin') %}
     <a class="btn" href="/settings/retention">Data retention…</a>
     <a class="btn" href="/settings/storage">Storage &amp; unclaimed folders…</a>
     <a class="btn" href="/system/update">Update information</a>
     <a class="btn" href="/system/integrity">Workspace integrity</a>
+    {% endif %}
+    {% if can('users.manage') %}
     <a class="btn" href="/users">Users &amp; roles</a>
+    {% endif %}
   </div>
   <p class="muted">Retention removes only old discovery history records, with a preview and typed confirmation. Update information is read-only — Atlas never installs updates on its own.</p>
 </section>
+{% endif %}
 
+{# The deployment posture (paths, bind, proxies, TLS, credential provider)
+   is what the authz table reserves for system.admin — the /system alias was
+   gated while this block rendered it to every viewer, which made that gate
+   decorative. #}
+{% if can('system.admin') %}
 <section class="card" id="system-information">
   <h2>System information</h2>
   <ul class="kv">
@@ -106,7 +137,10 @@ table columns. These change nothing another operator sees, and follow your accou
   {% if system_info.authentication_mode == 'proxy' %}<p class="muted">Atlas can report its application listener and trusted-proxy configuration, but cannot observe the reverse proxy's external bind or TLS policy. Verify those at the proxy.</p>{% endif %}
   <p class="muted">Timestamps are stored as UTC. Override display only with <code>ATLAS_DISPLAY_TIMEZONE</code> or the preference above; stored history is never rewritten.</p>
 </section>
+{% endif %}
 
+{% if can('settings.manage') %}
 <section class="card danger-zone"><h2>Reset preferences</h2><p class="muted">This resets display and retention preferences only. Evidence, profiles, credentials, topology, and audit history remain intact.</p><form class="form" method="post" action="/settings/reset">{{ csrf_field() }}<label>Reason<input name="reason" required></label><label>Confirmation<input name="confirm" required placeholder="RESET SETTINGS"></label><button class="btn btn-danger" type="submit">Reset preferences</button></form></section>
+{% endif %}
 
 {% endblock %}

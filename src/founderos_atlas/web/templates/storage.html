@@ -32,7 +32,7 @@
 {% if summary.count %}
 <section class="card">
   <h2>Unclaimed folders</h2>
-  <form method="post" action="/settings/storage/reclaim">
+  <form method="post" action="/settings/storage/reclaim">{{ csrf_field() }}
     <div class="table-scroll" role="region" aria-label="Unclaimed folders" tabindex="0">
       <table class="grid" data-row-select="scope_id">
         <thead>

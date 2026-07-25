@@ -59,6 +59,9 @@
       <td><span class="badge {{ 'badge-muted' if p.archived else '' }}">{{ p.health|title }}</span><br><span class="muted">{{ p.freshness }} · {{ 'config enabled' if p.collect_configuration else 'config disabled' }}</span></td>
       <td class="row-actions">
         <a class="btn btn-sm btn-primary" href="/discovery?profile={{ p.name | urlencode }}" aria-label="Run discovery for {{ p.name }}">Run</a>
+        {# Manage actions appear only for roles that can act — a row of
+           buttons that all answer "Not permitted" teaches nothing. #}
+        {% if can('profiles.manage') %}
         <form method="post" action="/profiles/{{ p.name | urlencode }}/test">{{ csrf_field() }}<button class="btn btn-sm" type="submit" aria-label="Test {{ p.name }} profile">Test</button></form>
         <a class="btn btn-sm" href="/profiles/{{ p.name | urlencode }}/edit" aria-label="Edit {{ p.name }}">Edit</a>
         <form method="post" action="/profiles/{{ p.name | urlencode }}/duplicate">{{ csrf_field() }}
@@ -73,6 +76,7 @@
           <input type="hidden" name="expected_revision" value="{{ profile_revision }}">
           <button class="btn btn-sm btn-danger" type="submit" aria-label="Delete {{ p.name }}">Delete</button>
         </form>
+        {% endif %}
       </td>
     </tr>
     {% endfor %}
