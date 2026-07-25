@@ -4081,32 +4081,52 @@
         g.save();
         g.beginPath(); g.arc(LR, LR, LR, 0, Math.PI * 2); g.clip();
         g.fillStyle = '#ffffff'; g.fillRect(0, 0, size, size);
-        // Everything whose icon could fall inside the disc.
-        const inRange = new Map();
+        // The site ovals first, fisheye-warped and in their real colours, so
+        // the lens looks like the map it magnifies rather than a bare cut-out.
+        cy.nodes('[kind = "sitehull"]').forEach(h => {
+          const hp = h.position(), rx = h.data('w') / 2, ry = h.data('h') / 2;
+          const cds = Math.hypot((hp.x - Mx) * zoom, (hp.y - My) * zoom);
+          const nx = (Mx - hp.x) / rx, ny = (My - hp.y) / ry;
+          const inside = nx * nx + ny * ny <= 1;
+          if (!inside && cds > LR * 3.2) { return; }
+          const N = 60;
+          g.beginPath();
+          for (let i = 0; i <= N; i++) {
+            const a = 2 * Math.PI * i / N;
+            const pl = place(hp.x + rx * Math.cos(a), hp.y + ry * Math.sin(a), Mx, My, zoom);
+            if (i === 0) { g.moveTo(pl.lx, pl.ly); } else { g.lineTo(pl.lx, pl.ly); }
+          }
+          g.closePath();
+          g.globalAlpha = 0.5; g.fillStyle = h.data('hullColor'); g.fill();
+          g.globalAlpha = 0.85; g.lineWidth = 2; g.strokeStyle = h.data('hullBorder'); g.stroke();
+          g.globalAlpha = 1;
+        });
+        // Place every device once; keep its screen distance for reach tests.
+        const nodes = new Map();
         cy.nodes().forEach(nd => {
           const k = nd.data('kind');
-          if (k === 'protocol-domain') { return; }
+          if (k === 'sitehull' || k === 'site' || k === 'protocol-domain') { return; }
           const p = nd.position();
-          if (Math.hypot((p.x - Mx) * zoom, (p.y - My) * zoom) > LR * 1.12) { return; }
-          inRange.set(nd.id(), { nd, pl: place(p.x, p.y, Mx, My, zoom) });
+          const ds = Math.hypot((p.x - Mx) * zoom, (p.y - My) * zoom);
+          nodes.set(nd.id(), { nd, ds, pl: place(p.x, p.y, Mx, My, zoom) });
         });
-        // Edges first (redrawn at full clarity, so faded/culled ones return).
+        // Edges: drawn when at least ONE end is near — so the links LEAVING
+        // the site show too, running out toward the rim in their direction.
         cy.edges().forEach(e => {
-          const a = inRange.get(e.source().id()), b = inRange.get(e.target().id());
-          if (!a || !b) { return; }
+          const a = nodes.get(e.source().id()), b = nodes.get(e.target().id());
+          if (!a || !b || Math.min(a.ds, b.ds) > LR * 1.4) { return; }
           let col = '#94a3b8';
           try { col = e.style('line-color') || col; } catch (err) { /* keep */ }
           let dashed = false;
           try { dashed = (e.style('line-style') || '') === 'dashed'; } catch (err) { /* keep */ }
-          g.strokeStyle = col; g.globalAlpha = 0.6; g.lineWidth = 1.4;
+          g.strokeStyle = col; g.globalAlpha = 0.7; g.lineWidth = 1.5;
           g.setLineDash(dashed ? [5, 4] : []);
           g.beginPath(); g.moveTo(a.pl.lx, a.pl.ly); g.lineTo(b.pl.lx, b.pl.ly); g.stroke();
         });
         g.setLineDash([]); g.globalAlpha = 1;
-        // Devices: real icon, then the name FORCED on.
-        inRange.forEach(({ nd, pl }) => {
-          const k = nd.data('kind');
-          if (k === 'sitehull' || k === 'site') { return; }
+        // Devices in range: real icon, then the name FORCED on.
+        nodes.forEach(({ nd, ds, pl }) => {
+          if (ds > LR * 1.12) { return; }
           const sz = Math.max(16, 58 * zoom * pl.mag);
           const im = iconFor(nd.data('stencil'));
           if (im && im.complete && im.naturalWidth) {
@@ -4144,9 +4164,13 @@
         lens.style.display = 'block';
       }
 
+      const viewSel = document.getElementById('view-mode');
       let raf = null, mx = 0, my = 0, active = false;
       container.addEventListener('mousemove', ev => {
-        if ((cy.zoom() || 1) > ARM_ZOOM) {
+        // Only the All-Devices view — the site overview is already legible at
+        // a glance and does not need (or benefit from) the lens.
+        const inAllDevices = !viewSel || viewSel.value === 'full';
+        if (!inAllDevices || (cy.zoom() || 1) > ARM_ZOOM) {
           if (active) { active = false; lens.style.display = 'none'; }
           return;
         }
