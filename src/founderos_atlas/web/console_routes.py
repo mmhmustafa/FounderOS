@@ -165,6 +165,21 @@ def register_console_routes(app, deps) -> None:
                 {"error": "Choose a credential set to connect.",
                  "state": "credential-required"}
             ), 409
+        # The reference is caller-supplied, and the resolver behind it scans
+        # the whole workspace — without this check a request could name a
+        # different estate's credential and have its password sent to this
+        # device. Only the refs offered for THIS scope (or the target's own)
+        # may be minted into a token.
+        offered = {
+            choice.get("credential_ref")
+            for choice in deps.credential_choices(scopes, scope_id)
+        }
+        offered.add(target.credential_ref)
+        if credential_ref not in offered:
+            return jsonify(
+                {"error": "That credential is not available for this "
+                 "device.", "state": "credential-required"}
+            ), 409
         token = deps.token_store().mint(
             device_id=device_id,
             scope_id=scope_id,
@@ -311,6 +326,16 @@ def register_console_routes(app, deps) -> None:
             return
 
         _context, scopes, scope_id = deps.scoped_context("topology")
+        # The token was minted for one scope; redeeming it under another
+        # would resolve the device (and its credential) against a different
+        # estate than the one the operator authorized.
+        if token.scope_id and token.scope_id != scope_id:
+            _send(ws, {
+                "type": "closed",
+                "reason": "This console token belongs to a different scope. "
+                          "Reopen the console from the device's own page.",
+            })
+            return
         target = deps.console_target(scopes, scope_id, device_id)
         if target is None or not target.eligible or not target.management_ip:
             _send(ws, {

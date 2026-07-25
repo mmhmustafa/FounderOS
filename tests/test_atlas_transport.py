@@ -80,6 +80,23 @@ class ReadOnlyPolicyTests(unittest.TestCase):
             "show cdp neighbors detail", ensure_read_only("show cdp neighbors detail")
         )
 
+    def test_session_presentation_commands_are_allowed(self) -> None:
+        """`terminal length/width` are exec-mode session presentation — the
+        setup commands the EOS/IOS-XE/NX-OS drivers declare. Rejecting them
+        logged a bogus warning on every discovery and left wide show output
+        wrapped. `configure terminal` stays banned: the verb is `configure`."""
+
+        self.assertEqual(
+            "terminal length 0", ensure_read_only("terminal length 0")
+        )
+        self.assertEqual(
+            "terminal width 511", ensure_read_only("terminal width 511")
+        )
+        with self.assertRaises(ReadOnlyViolationError):
+            ensure_read_only("configure terminal")
+        with self.assertRaises(ReadOnlyViolationError):
+            ensure_read_only("terminal")   # the bare word proves nothing
+
     def test_write_and_config_commands_are_rejected(self) -> None:
         for command in (
             "configure terminal",

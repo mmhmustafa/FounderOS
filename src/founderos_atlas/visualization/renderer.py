@@ -621,7 +621,19 @@ class TopologyRenderer:
         if not result.catalog.sites:
             return catalog, dict(result.fabric_placements)
         declared = tuple(catalog.sites) if catalog else ()
-        merged = SiteCatalog(sites=declared + tuple(result.catalog.sites))
+        # The declared catalog wins by IDENTITY too: derivation skips
+        # prefixes that a declared hostname pattern claims, but a site
+        # declared by CIDR or explicit device ids claims no prefix, so a
+        # derived twin can arrive with the same site_id — and SiteCatalog
+        # rejects duplicates, which crashed every page that renders the
+        # topology. Drop the twin; the declared site is the operator's.
+        taken = {site.site_id for site in declared}
+        extra = tuple(
+            site for site in result.catalog.sites if site.site_id not in taken
+        )
+        if not extra:
+            return catalog, dict(result.fabric_placements)
+        merged = SiteCatalog(sites=declared + extra)
         return merged, dict(result.fabric_placements)
 
     def site_view(self, elements) -> dict:

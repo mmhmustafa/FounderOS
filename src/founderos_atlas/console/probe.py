@@ -20,6 +20,7 @@ import re
 from time import monotonic, sleep
 from typing import Any, Callable
 
+from .hostkeys import HostKeyStoreError
 from .session import (
     ConsoleSessionError,
     ConsoleTimeoutError,
@@ -504,11 +505,15 @@ def run_probe_command(
     except ConsoleSessionError:
         _safe_close(client)
         raise
+    except HostKeyStoreError as error:
+        # An unreadable trust store is its own failure; classifying it as
+        # "could not open an SSH session" sends the operator to the device
+        # when the problem is the store file.
+        _safe_close(client)
+        raise ConsoleSessionError(str(error)) from None
     except Exception as error:  # noqa: BLE001 - classified below
         _safe_close(client)
         raise _classify(error, host) from None
-    finally:
-        password = ""
     try:
         output, ended = _execute(
             client, command, command_timeout, stop_when

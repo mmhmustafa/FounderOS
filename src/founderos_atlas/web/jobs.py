@@ -307,6 +307,13 @@ class DiscoveryJobManager:
 
     def _execute(self, job: DiscoveryJob) -> None:
         with self._run_lock:  # all discoveries serialize: correctness first
+            # A job cancelled while it sat QUEUED behind this lock must not
+            # start at all — the flag was only read inside the progress
+            # callbacks, so the pipeline connected to real devices before
+            # the first callback aborted it.
+            if job.cancel_requested:
+                self._finish_cancelled(job)
+                return
             with self._lock:
                 job.status = STATUS_RUNNING
                 job.started_at = self._now()
@@ -518,7 +525,12 @@ class DiscoveryJobManager:
                 site=entry.get("site"),
                 management_ip=str(entry.get("management_ip") or ""),
                 status=str(entry.get("status") or STATUS_FAILED),
-                stage_number=int(entry.get("stage_number") or 1),
+                # Clamped: a jobs file written by a build with a different
+                # stage count (or hand-edited) must degrade to one odd row,
+                # not an IndexError that stops the whole server booting.
+                stage_number=min(
+                    TOTAL_STAGES, max(1, int(entry.get("stage_number") or 1))
+                ),
                 message=str(entry.get("message") or ""),
                 devices_discovered=int(entry.get("devices_discovered") or 0),
                 failed_devices=int(entry.get("failed_devices") or 0),

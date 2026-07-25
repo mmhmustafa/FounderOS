@@ -30,6 +30,12 @@ _READ_ONLY_PREFIXES = (
     # one `config`-verb form allowed, as an exact presentation-only
     # prefix. `config` alone (and every other subtree) stays banned.
     "config paging ",
+    # IOS-XE / NX-OS / EOS session presentation: `terminal length 0`,
+    # `terminal width …`. Exec-mode, session-scoped, never configuration —
+    # the exact same class as `set cli`. Without it every driver-declared
+    # session_setup on these platforms was rejected and logged as a bogus
+    # warning, and wide show output stayed wrapped.
+    "terminal ",
 )
 
 
@@ -47,7 +53,8 @@ def ensure_read_only(command: str) -> str:
         raise ReadOnlyViolationError(
             f"Command rejected by the read-only transport policy: {normalized!r}. "
             "Atlas transports only run read/display commands "
-            "(show/get/display/list, or a session-presentation 'set cli')."
+            "(show/get/display/list, or session presentation such as "
+            "'set cli' / 'terminal')."
         )
     return normalized
 

@@ -10,7 +10,7 @@ so; nothing is ever invented.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 
@@ -99,12 +99,3 @@ class AdvisorResponse:
         }
 
 
-@dataclass(frozen=True)
-class ConversationEntry:
-    """One stored question/response pair (local workspace only)."""
-
-    asked_at: str
-    response: dict = field(default_factory=dict)
-
-    def to_dict(self) -> dict[str, Any]:
-        return {"asked_at": self.asked_at, "response": dict(self.response)}

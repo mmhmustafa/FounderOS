@@ -19,7 +19,7 @@ unanswered link yields no measurement — an honest gap, never a zero.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable, Mapping
 
 from .probe import (
@@ -45,8 +45,10 @@ class LinkProbe:
     host: str                 # the local device's management address
     port: int
     username: str
-    password: str
-    target_ip: str            # the neighbour's address, what we ping
+    # Never in repr: a probe that ends up in a log line or an assertion
+    # message must not print the secret (same rule as DeviceCredentials).
+    password: str = field(repr=False, default="")
+    target_ip: str = ""       # the neighbour's address, what we ping
     platform: str = ""        # vendor/os hint, to pick the ping syntax
 
 

@@ -5,13 +5,15 @@ Read-only device transports for Atlas live discovery.
 ## What this layer is
 
 The transport layer opens a session with one reachable network device,
-runs read-only `show` commands, and returns the raw text output unchanged.
+runs read-only display commands, and returns the raw text output unchanged.
 That output feeds the existing `DiscoveryEngine` exactly as fixture files
 do today — parsers, reconciliation, snapshots, and journeys are untouched.
 
 ```
 DeviceTransport (base.py)         vendor-neutral contract
-└── SSHDeviceTransport (ssh.py)   Netmiko-backed Cisco IOS/IOS-XE session
+└── SSHDeviceTransport (ssh.py)   Netmiko-backed session (IOS/IOS-XE,
+                                  NX-OS, EOS, Junos — see
+                                  SUPPORTED_DEVICE_TYPES)
 ```
 
 The transport is deliberately unaware of simulators. Cisco Modeling Labs,
@@ -33,8 +35,14 @@ runs even when a command fails.
 
 ## Read-only guarantees
 
-- Every command passes `ensure_read_only()` before reaching the wire; only
-  commands whose first word is `show` are allowed.
+- Every command passes `ensure_read_only()` before reaching the wire. The
+  allowlist is display verbs only — `show` / `get` / `display` / `list` —
+  plus the exact session-presentation prefixes (`set cli …`,
+  `config paging …`, `terminal …`) that adjust the session's pager or
+  width and can never touch configuration.
+- The one exception: the SSH transport disables paging at session setup
+  (`terminal length 0`) directly, before the allowlist applies — the same
+  presentation-only class the allowlist itself now admits.
 - The SSH transport never calls `enable()`, never opens configuration mode,
   and never sends configuration, `write`, `copy`, or `reload` commands.
 - A rejected command raises `ReadOnlyViolationError` locally — nothing is
@@ -57,10 +65,10 @@ user-facing message:
 | `AuthenticationError` | Device rejected the credentials |
 | `ConnectionTimeoutError` | Device unreachable or too slow |
 | `SSHUnavailableError` | SSH refused / no network path |
-| `UnsupportedPlatformError` | Not a Cisco IOS/IOS-XE device |
+| `UnsupportedPlatformError` | Not one of the supported device types |
 | `PermissionDeniedError` | Account lacks privilege for a command |
 | `ConnectionLostError` | Session dropped mid-collection |
-| `ReadOnlyViolationError` | Non-`show` command rejected locally |
+| `ReadOnlyViolationError` | Non-display command rejected locally |
 | `TransportDependencyError` | Netmiko is not installed |
 
 Netmiko errors are classified by exception class name rather than imported

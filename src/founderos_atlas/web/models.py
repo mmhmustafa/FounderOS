@@ -56,13 +56,6 @@ class NavGroup:
     href: str
     items: tuple[NavItem, ...]
 
-    @property
-    def has_views(self) -> bool:
-        """Whether this group is worth expanding — a single-view group is just
-        a link, and rendering a one-item sub-list would be noise."""
-
-        return len(self.items) > 1
-
 
 NAV_GROUPS: tuple[NavGroup, ...] = (
     # Five primary areas (PR: calmer navigation). Item KEYS are frozen —

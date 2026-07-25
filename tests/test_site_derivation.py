@@ -354,6 +354,63 @@ class RendererIntegrationTests(unittest.TestCase):
         self.assertNotIn("__none__", set(view["membership"].values()))
 
 
+class DeclaredIdentityTests(unittest.TestCase):
+    """A declared site owns its site_id however it was declared.
+
+    A site declared by CIDR or explicit device ids claims no hostname
+    pattern, so the prefix guard alone missed it — derivation minted a
+    twin with the same site_id, SiteCatalog rejected the duplicate, and
+    every page that renders the topology crashed. The declaration wins.
+    """
+
+    def test_a_cidr_declared_site_is_not_re_derived(self) -> None:
+        from founderos_atlas.sites import Site, SiteCatalog
+
+        declared = SiteCatalog(sites=(
+            Site(site_id="pune", name="Pune", cidrs=("10.1.0.0/16",)),
+        ))
+        devices = [
+            DerivedDevice("id:pune-core", "pune-core"),
+            DerivedDevice("id:pune-edge", "pune-edge"),
+            DerivedDevice("id:pune-fw", "pune-fw"),
+        ]
+        result = derive_sites(devices, existing_catalog=declared)
+        self.assertNotIn(
+            "pune", {s.site_id for s in result.catalog.sites}
+        )
+        # And the merged catalog the renderer builds stays constructible.
+        SiteCatalog(sites=tuple(declared.sites) + tuple(result.catalog.sites))
+
+    def test_the_renderer_merge_survives_a_derived_twin(self) -> None:
+        """Belt and braces: even if derivation proposes a duplicate id,
+        the renderer's merge drops the twin instead of crashing."""
+
+        from founderos_atlas.sites import Site, SiteCatalog
+        from founderos_atlas.topology.snapshot import TopologySnapshot, content_address
+        from founderos_atlas.visualization.renderer import TopologyRenderer
+
+        devices = tuple(
+            {"device_id": f"id:pune-{r}", "hostname": f"pune-{r}",
+             "management_ip": f"10.1.0.{i}", "vendor": "frr",
+             "platform": "FRRouting", "os_name": None, "os_version": None,
+             "serial_number": None, "interfaces": (), "metadata": {}}
+            for i, r in enumerate(("core", "edge", "fw"), start=1)
+        )
+        snapshot = TopologySnapshot(
+            snapshot_id=content_address(
+                created_at=None, devices=devices, edges=(),
+                warnings=(), metadata={},
+            ),
+            created_at=None, devices=devices, edges=(), warnings=(),
+            metadata={},
+        )
+        catalog = SiteCatalog(sites=(
+            Site(site_id="pune", name="Pune", cidrs=("10.1.0.0/16",)),
+        ))
+        html = TopologyRenderer(snapshot, site_catalog=catalog).render()
+        self.assertIn("Pune", html)
+
+
 class NoEvidenceTests(unittest.TestCase):
     def test_without_adjacency_every_cluster_is_a_site(self) -> None:
         """No edges means no evidence to call anything fabric, so a naming

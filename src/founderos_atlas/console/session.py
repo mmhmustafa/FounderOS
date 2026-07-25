@@ -27,6 +27,7 @@ from __future__ import annotations
 import threading
 from typing import Any, Callable
 
+from .hostkeys import HostKeyStoreError
 from .models import HostKeyVerdict
 
 
@@ -160,6 +161,12 @@ class ConsoleSession:
         except (ConsoleHostKeyBlocked, ConsoleHostKeyUnknown):
             self._safe_close_client(client)
             raise
+        except HostKeyStoreError as error:
+            # The trust store being unreadable is ITS OWN failure — telling
+            # the operator the device is unreachable would send them
+            # debugging the wrong thing entirely.
+            self._safe_close_client(client)
+            raise ConsoleSessionError(str(error)) from None
         except Exception as error:  # noqa: BLE001 - classified below
             self._safe_close_client(client)
             raise _classify(error, self._host) from None

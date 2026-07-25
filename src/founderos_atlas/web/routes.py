@@ -14,6 +14,8 @@ comparing one network against another.
 
 from __future__ import annotations
 
+import threading
+
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -97,6 +99,14 @@ from .models import (
     profile_row,
     timeline_activity,
 )
+
+
+# Serializes the latency pass's snapshot read-modify-write against itself
+# (two tabs polling the same finished discovery both trigger the pass).
+# The DISCOVERY-vs-latency window is closed differently: the pass re-reads
+# the snapshot inside this lock right before writing, so a discovery that
+# finished mid-pass keeps its topology and only gains the rtt annotations.
+_MEASURE_LATENCY_WRITE_LOCK = threading.Lock()
 
 
 def _viewer_has_current_visual_style(path: Path) -> bool:
@@ -5715,29 +5725,47 @@ def register_routes(app) -> None:
         # Write the readings onto their edges and re-address the snapshot.
         # The id is a content address, so a mutated snapshot needs a fresh
         # one or it would be rejected as tampered on the next read.
-        new_edges = tuple(apply_latency_to_edges(raw["edges"], measurements))
-        devices_t = tuple(devices)
-        warnings_t = tuple(raw.get("warnings") or ())
-        metadata = raw.get("metadata") or {}
-        created_at = raw.get("created_at")
-        snapshot = TopologySnapshot(
-            snapshot_id=content_address(
+        #
+        # Serialized, and RE-READ inside the lock: the pings above take
+        # minutes, and a discovery finishing in that window rewrites the
+        # snapshot — writing back the copy read before the pass would
+        # silently revert its devices and edges. The measurements key on
+        # (local_device_id, remote_hostname), which survives a rediscovery,
+        # so they land correctly on whatever snapshot is current now; a
+        # link that vanished in between simply has nowhere to land.
+        with _MEASURE_LATENCY_WRITE_LOCK:
+            fresh = load_json(scope.snapshot_path)
+            if not isinstance(fresh, dict) or not fresh.get("edges"):
+                return {
+                    "error": "The topology was rediscovered while latency "
+                    "was being measured and no longer has links to "
+                    "annotate. Run the measurement again.",
+                }, 409
+            new_edges = tuple(
+                apply_latency_to_edges(fresh["edges"], measurements)
+            )
+            devices_t = tuple(fresh.get("devices") or ())
+            warnings_t = tuple(fresh.get("warnings") or ())
+            metadata = fresh.get("metadata") or {}
+            created_at = fresh.get("created_at")
+            snapshot = TopologySnapshot(
+                snapshot_id=content_address(
+                    created_at=created_at,
+                    devices=devices_t,
+                    edges=new_edges,
+                    warnings=warnings_t,
+                    metadata=metadata,
+                ),
                 created_at=created_at,
                 devices=devices_t,
                 edges=new_edges,
                 warnings=warnings_t,
                 metadata=metadata,
-            ),
-            created_at=created_at,
-            devices=devices_t,
-            edges=new_edges,
-            warnings=warnings_t,
-            metadata=metadata,
-        )
-        scope.snapshot_path.write_text(
-            _json.dumps(snapshot.to_dict(), indent=2, sort_keys=True),
-            encoding="utf-8",
-        )
+            )
+            scope.snapshot_path.write_text(
+                _json.dumps(snapshot.to_dict(), indent=2, sort_keys=True),
+                encoding="utf-8",
+            )
         # Derivation re-reads rtt_ms on the next render; force the artifact
         # to rebuild now so the diagram reflects the readings immediately.
         refresh_scope_topology_viewer(scope, force=True)

@@ -126,6 +126,11 @@ def derive_sites(
     catalog_devices = [_as_device(item) for item in devices]
     declared = existing_catalog or SiteCatalog()
     declared_prefixes = _declared_prefixes(declared)
+    # Identity is claimed even when no pattern is: a site declared by CIDR
+    # or explicit device ids owns its site_id, and a derived twin with the
+    # same id would be rejected by SiteCatalog downstream — crashing the
+    # render instead of deferring to the operator's declaration.
+    declared_ids = {site.site_id for site in declared.sites}
 
     id_to_name = {d.device_id: d.hostname for d in catalog_devices}
     edge_list = list(edges)
@@ -178,6 +183,8 @@ def derive_sites(
     for prefix in sorted(site_prefixes):
         if prefix in declared_prefixes:
             continue
+        if site_id_for(prefix) in declared_ids:
+            continue
         derived.append(Site(
             site_id=site_id_for(prefix),
             name=prefix.capitalize(),
@@ -186,6 +193,8 @@ def derive_sites(
         ))
     for prefix in sorted(fabric_prefixes):
         if prefix in declared_prefixes:
+            continue
+        if site_id_for(prefix) in declared_ids:
             continue
         site_type = _fabric_type(prefix)
         derived.append(Site(
