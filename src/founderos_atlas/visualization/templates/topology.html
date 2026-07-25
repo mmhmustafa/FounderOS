@@ -399,6 +399,8 @@
       <output id="zoom-level" aria-live="off" title="Current zoom">100%</output>
       <button id="zoom-in" type="button" aria-label="Zoom in one step" title="Zoom in one step">+</button>
       <button id="zoom-all" type="button" title="Zoom out until the whole network fits, however large">Fit all</button>
+      <button id="magnifier-toggle" type="button" aria-pressed="true"
+              title="Magnifier lens: hover the zoomed-out map to read it (press M to toggle)">🔍 Lens</button>
     </span>
     <details id="export-panel" class="layers-menu">
       <summary aria-label="Export this topology as an image or PDF">Export</summary>
@@ -4457,13 +4459,65 @@
       }
 
       const viewSel = document.getElementById('view-mode');
+      const toggleButton = document.getElementById('magnifier-toggle');
+      const MAG_PREF_KEY = 'topology:magnifier';
+      // The lens helps most people most of the time, but it is a thing
+      // moving under the pointer, and an operator who finds it in the way
+      // must be able to shut it off as easily as it appeared: one button on
+      // the toolbar, or the M key, and the choice is remembered.
+      let enabled = true;
       let raf = null, mx = 0, my = 0, active = false;
+      const hideLens = () => { active = false; lens.style.display = 'none'; };
+      function reflectToggle() {
+        if (!toggleButton) { return; }
+        toggleButton.setAttribute('aria-pressed', String(enabled));
+        toggleButton.style.opacity = enabled ? '' : '0.55';
+        toggleButton.title = enabled
+          ? 'Magnifier lens is ON — hover the zoomed-out map to read it (M to turn off)'
+          : 'Magnifier lens is OFF (M to turn on)';
+      }
+      function setEnabled(value, persist) {
+        enabled = !!value;
+        if (!enabled) { hideLens(); }
+        reflectToggle();
+        if (!persist || !servedByAtlas) { return; }
+        try {
+          const csrf = document.cookie.match(/(?:^|; )atlas_csrf=([^;]*)/);
+          const headers = { 'Content-Type': 'application/json' };
+          if (csrf) { headers['X-Atlas-CSRF'] = decodeURIComponent(csrf[1]); }
+          fetch('/api/preferences/ui', {
+            method: 'POST', credentials: 'same-origin', headers: headers,
+            body: JSON.stringify({ key: MAG_PREF_KEY,
+                                   value: { enabled: enabled } }),
+          }).catch(() => { /* session-only if it cannot be saved */ });
+        } catch (error) { /* session-only */ }
+      }
+      if (toggleButton) {
+        toggleButton.addEventListener('click', () => setEnabled(!enabled, true));
+      }
+      document.addEventListener('keydown', ev => {
+        if (ev.key !== 'm' && ev.key !== 'M') { return; }
+        if (ev.ctrlKey || ev.metaKey || ev.altKey) { return; }
+        const t = ev.target;
+        if (t && (t.isContentEditable
+          || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) { return; }
+        setEnabled(!enabled, true);
+      });
+      if (servedByAtlas) {
+        fetch('/api/preferences/ui?key=' + encodeURIComponent(MAG_PREF_KEY), {
+          credentials: 'same-origin',
+        }).then(r => (r.ok ? r.json() : null)).then(body => {
+          const saved = body && body.value;
+          if (saved && saved.enabled === false) { setEnabled(false, false); }
+        }).catch(() => { /* default stays on */ });
+      }
+      reflectToggle();
       container.addEventListener('mousemove', ev => {
         // Only the All-Devices view — the site overview is already legible at
         // a glance and does not need (or benefit from) the lens.
         const inAllDevices = !viewSel || viewSel.value === 'full';
-        if (!inAllDevices || (cy.zoom() || 1) > ARM_ZOOM) {
-          if (active) { active = false; lens.style.display = 'none'; }
+        if (!enabled || !inAllDevices || (cy.zoom() || 1) > ARM_ZOOM) {
+          if (active) { hideLens(); }
           return;
         }
         const r = container.getBoundingClientRect();
@@ -4474,13 +4528,10 @@
           });
         }
       });
-      container.addEventListener('mouseleave', () => {
-        active = false; lens.style.display = 'none';
-      });
+      container.addEventListener('mouseleave', hideLens);
       // Wheel-zoom past the arm threshold, a pan, or a keyboard view change
       // all move the map under a parked pointer: without this the lens sat
       // frozen over the old picture until the mouse next moved a pixel.
-      const hideLens = () => { active = false; lens.style.display = 'none'; };
       cy.on('zoom pan', hideLens);
       if (viewSel) { viewSel.addEventListener('change', hideLens); }
     })();
