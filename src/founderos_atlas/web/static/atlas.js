@@ -815,6 +815,10 @@
   document.addEventListener("click", function (event) {
     var button = event.target.closest("[data-copy-url]");
     if (!button) { return; }
+    // "Copy link" buttons share the data-copy-url attribute but copy the
+    // URL itself (handler above); fetching their HTML href here would
+    // overwrite that copy with "Copy failed" and race the clipboard.
+    if (button.classList.contains("js-copy-link")) { return; }
     fetch(button.dataset.copyUrl)
       .then(function (response) { return response.json(); })
       .then(function (data) {

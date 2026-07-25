@@ -1052,7 +1052,11 @@
       `<option value="${escapeHtml(site.site_id)}"${site.site_id === selected ? ' selected' : ''}>` +
       `${escapeHtml(site.name)} · ${escapeHtml(site.site_type)}</option>`
     ).join('');
-    if (servedByAtlas && (siteView.site_options || []).length) {
+    // Edit mode needs the site view to exist: with fewer than two inferred
+    // sites the 'sites' option is removed from the View select, so the
+    // button would flip its own label and silently do nothing else.
+    if (servedByAtlas && (siteView.site_options || []).length
+        && (siteView.sites || []).length >= 2) {
       editButton.hidden = false;
       editButton.addEventListener('click', () => {
         editMode = !editMode;
@@ -2040,6 +2044,12 @@
                              display_label: site.label } });
         }
       }
+      // Only clouds actually pushed above may be stub targets: an edge to a
+      // node id that is not in the batch makes cy.add throw, and rebuildView
+      // has already emptied the graph by then — the map would die blank.
+      const cloudIds = new Set(
+        siteView.sites.filter(s => !expandedSites.has(s.site_id))
+          .map(s => 'site:' + s.site_id));
       const stubs = new Map();   // member<->closed-site links, deduplicated
       for (const e of topologyElements.edges) {
         const a = e.data.source, b = e.data.target;
@@ -2050,6 +2060,7 @@
           const outside = visibleIds.has(a) ? b : a;
           const siteId = memberOf[outside];
           if (!siteId || expandedSites.has(siteId)) { continue; }
+          if (!cloudIds.has('site:' + siteId)) { continue; }
           const key = inside + '~' + siteId;
           const stub = stubs.get(key) ||
             { id: 'stub:' + key, source: inside, target: 'site:' + siteId,
@@ -2083,6 +2094,10 @@
       const els = devices.map(n => ({ data: { ...n.data } }));
       const connected = new Set();
       const stubs = new Map();
+      // A stub may only target a cloud the loop below will actually push:
+      // an edge to a missing node id makes cy.add throw on an already-
+      // emptied graph, leaving the map blank.
+      const knownSites = new Set(siteView.sites.map(s => s.site_id));
       for (const e of topologyElements.edges) {
         const a = e.data.source, b = e.data.target;
         const aIn = devIds.has(a), bIn = devIds.has(b);
@@ -2091,6 +2106,7 @@
           const inside = aIn ? a : b, outside = aIn ? b : a;
           const outSite = memberOf[outside];
           if (!outSite || outSite === siteId) { continue; }
+          if (!knownSites.has(outSite)) { continue; }
           connected.add(outSite);
           const key = inside + '~' + outSite;
           const stub = stubs.get(key) ||
@@ -2542,12 +2558,28 @@
       return { centre, positions: pos };
     }
 
+    // The graph is emptied before any cy.add below, and this Cytoscape
+    // build throws hard on a duplicate id or a dangling edge endpoint — a
+    // single bad element would abort the handler and leave the canvas
+    // permanently blank. Guard the adds: on failure, fall back to the raw
+    // full topology (always self-consistent) rather than dying empty.
+    function safeAdd(build) {
+      try { cy.add(build()); }
+      catch (error) {
+        cy.elements().remove();
+        cy.add([...topologyElements.nodes, ...topologyElements.edges]);
+      }
+    }
+
     function rebuildView() {
       const mode = (viewSelect && viewSelect.value) || 'full';
       const full = mode === 'full';
+      // The trace's tint fade and flow animation reference elements this
+      // rebuild is about to destroy; reset them (keeping the report).
+      if (window.__atlasTraceRebuildReset) { window.__atlasTraceRebuildReset(); }
       cy.elements().remove();
       if (mode === 'ospf' || mode === 'bgp') {
-        cy.add(protocolElements(mode));
+        safeAdd(() => protocolElements(mode));
         document.getElementById('legend-site').style.display = 'none';
         document.getElementById('legend-ospf').style.display = mode === 'ospf' ? '' : 'none';
         document.getElementById('legend-bgp').style.display = mode === 'bgp' ? '' : 'none';
@@ -2573,14 +2605,15 @@
             !Object.values(siteView.membership).includes(focusedSite)) {
           focusedSite = null;   // the site vanished (rescope); fall through
         } else {
-          cy.add(focusElements(focusedSite));
+          safeAdd(() => focusElements(focusedSite));
           layoutFocus(focusedSite);
           finishRebuild('sites');
           return;
         }
       }
-      cy.add(full ? [...topologyElements.nodes, ...topologyElements.edges]
-                  : siteElements());
+      safeAdd(() => full
+        ? [...topologyElements.nodes, ...topologyElements.edges]
+        : siteElements());
       // The overview is a WAN-style relationship diagram, not a hierarchy:
       // site clouds sit on an elliptical ring with the real mesh visible.
       // Once a site is opened, an organic
@@ -2769,12 +2802,26 @@
     function finishRebuild(viewMode) {
       peerLabelsHidden = null;
       detailedLabelsShown = null;
+      overviewLabelsHidden = null;
       syncSemanticZoom();
+      // A rebuild re-creates every element, which silently discarded the
+      // operator's layer choices (the checkboxes still read unticked while
+      // everything was back on the map) and the search filter. Re-assert
+      // both against the fresh elements.
+      if (window.__atlasLayersApply) { window.__atlasLayersApply(); }
+      if (window.__atlasSearchReapply) { window.__atlasSearchReapply(); }
       if (window.syncSummary) { window.syncSummary(viewMode); }
       syncOpenSiteChips();
     }
 
     window.toggleSite = siteId => {
+      // While the map is focused on one site, the clouds around it are the
+      // sites it connects to — double-clicking one should take the focus
+      // THERE, not silently queue an open for a view that is not showing.
+      if (focusedSite !== null) {
+        if (siteId && siteId !== focusedSite) { window.focusSite(siteId); }
+        return;
+      }
       if (expandedSites.has(siteId)) { expandedSites.delete(siteId); }
       else { expandedSites.add(siteId); }
       rebuildView();
@@ -2799,8 +2846,10 @@
     function syncOpenSiteChips() {
       const bar = document.getElementById('open-sites');
       if (!bar) { return; }
-      // In focus, the bar carries the way back rather than the open-site set.
-      if (focusedSite) {
+      // In focus, the bar carries the way back rather than the open-site set
+      // — but only while the site view is actually showing the focus; the
+      // chip must never float over OSPF/BGP/All-devices.
+      if (focusedSite && viewSelect && viewSelect.value === 'sites') {
         const s = siteView.sites.find(x => x.site_id === focusedSite);
         bar.innerHTML = `<span class="site-chip site-chip-all">` +
           `Focused on ${escapeHtml(s ? s.label : focusedSite)}` +
@@ -2937,6 +2986,13 @@
     if (sitesEnabled || ospfEnabled || bgpEnabled) {
       document.getElementById('view-label').style.display = '';
       viewSelect.addEventListener('change', () => {
+        // Choosing a different view is leaving the focus: without this the
+        // focus state (and its "Back to overview" chip) lingered invisibly
+        // and re-entered the moment the operator returned to Site overview.
+        focusedSite = null;
+        // Synchronously: the OSPF/BGP layouts finish asynchronously, and the
+        // stale chip must not float over them while they settle.
+        syncOpenSiteChips();
         if (viewSelect.value !== 'sites') { setDetailsOpen(false); }
         cy.resize();
         rebuildView();
@@ -3222,7 +3278,9 @@
           }
         });
 
-        // 2. Links, with their real colour, weight, dash and opacity.
+        // 2. Links, with their real colour, weight, dash and opacity — and
+        // the label a link carries on screen ("2 links" on an aggregate),
+        // which is the one number the site overview exists to show.
         edges.forEach(function (edge) {
           var s = edge.source().position(), t = edge.target().position();
           var dash = String(styleOf(edge, 'line-style', 'solid'));
@@ -3233,6 +3291,15 @@
             + '" stroke-width="' + esc(parseFloat(styleOf(edge, 'width', 1.4)) || 1.4)
             + '" stroke-opacity="' + esc(styleOf(edge, 'opacity', 1))
             + (pattern ? '" stroke-dasharray="' + pattern : '') + '"/>');
+          var badge = String(styleOf(edge, 'label', '') || '');
+          if (badge) {
+            var mx = (s.x + t.x) / 2, my = (s.y + t.y) / 2;
+            out.push('<text x="' + mx.toFixed(1) + '" y="' + my.toFixed(1)
+              + '" font-size="12" font-weight="600" text-anchor="middle"'
+              + ' dominant-baseline="middle" paint-order="stroke"'
+              + ' stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round"'
+              + ' fill="#334155">' + esc(badge) + '</text>');
+          }
         });
 
         // 3. Devices and site clouds: the icon, then the name as real text.
@@ -3461,6 +3528,21 @@
       // the names. Returns false if the map could not be expressed as
       // vector, and printAsImage falls back to the raster sheet.
       function printAsVector() {
+        // When the protocol-region tint is on screen (whole-estate view of a
+        // scope with no sites to group by), the vector sheet cannot carry it
+        // — buildSvg has no region pass — so the raster path, which
+        // composites that canvas explicitly, must print instead. renderTo
+        // itself encodes all the gating and reports whether it drew.
+        if (window.__atlasRegionsRenderTo) {
+          var probe = document.createElement('canvas');
+          probe.width = 8; probe.height = 8;
+          var regionsDrawn = false;
+          try {
+            regionsDrawn =
+              window.__atlasRegionsRenderTo(probe.getContext('2d')) === true;
+          } catch (error) { regionsDrawn = false; }
+          if (regionsDrawn) { return false; }
+        }
         var svg = null;
         try { svg = buildSvg(); } catch (error) { svg = null; }
         if (!svg) { return false; }
@@ -3636,13 +3718,16 @@
       showLevel();
     })();
 
-    document.getElementById('search').addEventListener('input', event => {
-      const query = event.target.value.trim().toLowerCase();
+    // Highlighting split from navigation so a REBUILD can re-assert the
+    // filter on the fresh elements (the box still shows the query, so the
+    // map must still answer it) without yanking the viewport around.
+    function applySearchHighlight(query) {
       cy.nodes().removeClass('search-match search-muted');
-      if (!query) { return; }
+      if (!query) { return []; }
       const matched = [];
       cy.nodes().forEach(node => {
         const data = node.data();
+        if (data.kind === 'sitehull') { return; }   // decor, not a result
         const haystack = [data.label, (data.aliases || []).join(' '),
                           data.management_ip, data.vendor, data.platform,
                           data.os, data.search_text].join(' ').toLowerCase();
@@ -3650,6 +3735,19 @@
         node.addClass(isMatch ? 'search-match' : 'search-muted');
         if (isMatch) { matched.push(node); }
       });
+      return matched;
+    }
+    window.__atlasSearchReapply = () => {
+      const box = document.getElementById('search');
+      if (box && box.value.trim()) {
+        applySearchHighlight(box.value.trim().toLowerCase());
+      }
+    };
+
+    document.getElementById('search').addEventListener('input', event => {
+      const query = event.target.value.trim().toLowerCase();
+      const matched = applySearchHighlight(query);
+      if (!query) { return; }
       if (query.length < 2 || matched.length === 0) { return; }
       const matches = cy.collection(matched);
       if (matched.length === 1) {
@@ -3694,7 +3792,10 @@
       // is unambiguous — no element is governed by two toggles.
       var SELECTORS = {
         sites: 'node[kind = "site"]',
-        devices: 'node[kind != "site"][kind != "protocol-domain"][kind != "observed"]',
+        // sitehull excluded explicitly: != also matches an absent field, so
+        // without it unticking Devices would erase the coloured site ovals.
+        devices: 'node[kind != "site"][kind != "sitehull"]'
+          + '[kind != "protocol-domain"][kind != "observed"]',
         unresolved: 'node[kind = "observed"], edge[relationship = "observed"]',
         verified: 'edge[relationship = "physical"], edge[relationship = "verified-routed"]',
         observed: 'edge[relationship = "routing-adjacency"]',
@@ -4284,10 +4385,13 @@
           g.globalAlpha = 1;
         });
         // Place every device once; keep its screen distance for reach tests.
+        // Anything the operator hid (per-user hide, a layer toggle) stays
+        // hidden — the lens re-draws the map, it must not resurrect it.
         const nodes = new Map();
         cy.nodes().forEach(nd => {
           const k = nd.data('kind');
           if (k === 'sitehull' || k === 'site' || k === 'protocol-domain') { return; }
+          if (nd.style('display') === 'none') { return; }
           const p = nd.position();
           const ds = Math.hypot((p.x - Mx) * zoom, (p.y - My) * zoom);
           nodes.set(nd.id(), { nd, ds, pl: place(p.x, p.y, Mx, My, zoom) });
@@ -4295,6 +4399,7 @@
         // Edges: drawn when at least ONE end is near — so the links LEAVING
         // the site show too, running out toward the rim in their direction.
         cy.edges().forEach(e => {
+          if (e.style('display') === 'none') { return; }
           const a = nodes.get(e.source().id()), b = nodes.get(e.target().id());
           if (!a || !b || Math.min(a.ds, b.ds) > LR * 1.4) { return; }
           let col = '#94a3b8';
@@ -4372,6 +4477,12 @@
       container.addEventListener('mouseleave', () => {
         active = false; lens.style.display = 'none';
       });
+      // Wheel-zoom past the arm threshold, a pan, or a keyboard view change
+      // all move the map under a parked pointer: without this the lens sat
+      // frozen over the old picture until the mouse next moved a pixel.
+      const hideLens = () => { active = false; lens.style.display = 'none'; };
+      cy.on('zoom pan', hideLens);
+      if (viewSel) { viewSel.addEventListener('change', hideLens); }
     })();
 
     // -- Per-user hidden devices --------------------------------------------
@@ -5020,6 +5131,11 @@
         }
         syncRevert();
       }
+      // A rebuild destroys every element the trace painted on. Without this
+      // the region tint stayed faded for the rest of the session and the
+      // Resume-flow button animated a packet over detached nodes; the report
+      // is kept, so Replay still works after the rebuild.
+      window.__atlasTraceRebuildReset = () => clearTrace(true);
 
       function segmentEdge(fromNode, toNode) {
         var edges = fromNode.edgesWith(toNode).filter(function (edge) {
