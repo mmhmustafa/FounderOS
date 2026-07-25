@@ -4014,25 +4014,29 @@
 
     // -- Hover magnifier (fisheye lens) -------------------------------------
     // Zoomed out to take in a whole estate, the names and icons shrink past
-    // reading. Rather than force a zoom-and-pan hunt, a lens follows the
-    // pointer: it magnifies most at the exact point and eases back to 1x at
-    // its rim, so the detail under the cursor pops while its surroundings
-    // stay in context. It samples a cached snapshot of the map (rebuilt only
-    // when the map itself moves), so tracking the mouse stays cheap; it only
-    // arms when the view is actually zoomed out, and never when a name is
-    // already legible.
+    // reading — and Cytoscape culls the labels entirely. A pixel magnifier
+    // would just enlarge that blur, so this lens instead RE-DRAWS the real
+    // map under the pointer: the actual icons, edges, and names, rendered
+    // crisp at magnification, with the names FORCED on even where the map
+    // dropped them. It magnifies most at the exact point and eases to 1x at
+    // its rim (a fisheye), so the detail under the cursor pops while its
+    // surroundings stay in context. It reads live positions each frame — no
+    // pixel snapshot, no canvas read — so it is cheap and never blurs. It
+    // arms only when the view is zoomed out.
     (function hoverMagnifier() {
       if (typeof cy === 'undefined') { return; }
       const container = cy.container();
       if (!container || !window.requestAnimationFrame) { return; }
-      const LR = 132;          // lens radius (CSS px)
-      const D = 3.2;           // distortion — centre magnifies by ~D+1
+      const LR = 142;          // lens radius (CSS px)
+      const D = 3.0;           // fisheye distortion — centre magnifies ~D+1x
       const ARM_ZOOM = 0.85;   // only when zoomed out past this
-      const snap = document.createElement('canvas');
-      let sctx;
-      try { sctx = snap.getContext('2d', { willReadFrequently: true }); }
-      catch (e) { sctx = snap.getContext('2d'); }
-      let snapData = null, dirty = true, sw = 0, sh = 0;
+      const iconCache = new Map();
+      const iconFor = uri => {
+        if (!uri) { return null; }
+        if (!iconCache.has(uri)) { const im = new Image(); im.src = uri; iconCache.set(uri, im); }
+        return iconCache.get(uri);
+      };
+      cy.nodes().forEach(nd => iconFor(nd.data('stencil')));   // preload
 
       const lens = document.createElement('canvas');
       lens.id = 'magnifier-lens';
@@ -4040,59 +4044,101 @@
       Object.assign(lens.style, {
         position: 'absolute', width: (LR * 2) + 'px', height: (LR * 2) + 'px',
         borderRadius: '50%', pointerEvents: 'none', display: 'none',
-        border: '2px solid rgba(255,255,255,0.95)',
-        boxShadow: '0 3px 14px rgba(15,23,42,0.4)', zIndex: 28,
+        border: '2px solid rgba(148,163,184,0.95)', background: '#ffffff',
+        boxShadow: '0 4px 16px rgba(15,23,42,0.35)', zIndex: 28,
       });
       container.appendChild(lens);
-      const lctx = lens.getContext('2d');
-      const lensImg = lctx.createImageData(LR * 2, LR * 2);
+      const g = lens.getContext('2d');
 
-      function rebuildSnap() {
-        const r = container.getBoundingClientRect();
-        sw = Math.max(1, Math.round(r.width));
-        sh = Math.max(1, Math.round(r.height));
-        if (snap.width !== sw || snap.height !== sh) { snap.width = sw; snap.height = sh; }
-        sctx.fillStyle = '#ffffff'; sctx.fillRect(0, 0, sw, sh);
-        const canvases = container.querySelectorAll('canvas');
-        for (let i = 0; i < canvases.length; i++) {
-          if (canvases[i] === lens) { continue; }   // never sample ourselves
-          try { sctx.drawImage(canvases[i], 0, 0, sw, sh); } catch (e) { /* ignore */ }
-        }
-        try { snapData = sctx.getImageData(0, 0, sw, sh); }
-        catch (e) { snapData = null; }              // tainted canvas → no lens
-        dirty = false;
+      // A model point -> its place in the lens, plus the local magnification
+      // there. s is the point's screen distance from the cursor over the lens
+      // radius; the fisheye maps it so the centre stretches and the rim is 1x.
+      function place(px, py, Mx, My, zoom) {
+        const dx = (px - Mx) * zoom, dy = (py - My) * zoom;
+        const rs = Math.hypot(dx, dy);
+        const s = Math.min(1.25, rs / LR);
+        const u = s * (D + 1) / (1 + s * D);
+        const mag = (D + 1) / (1 + s * D);
+        const ux = rs < 1e-3 ? 0 : dx / rs, uy = rs < 1e-3 ? 0 : dy / rs;
+        return { lx: LR + ux * LR * u, ly: LR + uy * LR * u, mag };
       }
-      cy.on('render pan zoom', () => { dirty = true; });
+      function text(str, x, y, fs, color) {
+        if (!str) { return; }
+        g.font = '600 ' + fs + 'px system-ui, sans-serif';
+        g.textAlign = 'center'; g.textBaseline = 'middle';
+        g.lineWidth = Math.max(2.5, fs * 0.3); g.strokeStyle = 'rgba(255,255,255,0.95)';
+        String(str).split('\n').forEach((line, i) => {
+          const yy = y + i * fs * 1.15;
+          g.strokeText(line, x, yy); g.fillStyle = color; g.fillText(line, x, yy);
+        });
+      }
 
-      function drawLens(cx, cy0) {
-        if (dirty || !snapData) { rebuildSnap(); }
-        if (!snapData) { return; }
-        const sd = snapData.data, out = lensImg.data, size = LR * 2;
-        for (let ly = 0; ly < size; ly++) {
-          for (let lx = 0; lx < size; lx++) {
-            const ddx = lx - LR, ddy = ly - LR;
-            const p = Math.sqrt(ddx * ddx + ddy * ddy);
-            const oi = (ly * size + lx) * 4;
-            if (p > LR) { out[oi + 3] = 0; continue; }   // outside the disc
-            let sx, sy;
-            if (p < 0.001) { sx = cx; sy = cy0; }
-            else {
-              const u = p / LR;
-              const v = u / ((D + 1) - D * u);           // fisheye falloff
-              const dist = v * LR;
-              sx = cx + ddx / p * dist; sy = cy0 + ddy / p * dist;
-            }
-            const ix = sx | 0, iy = sy | 0;
-            if (ix < 0 || iy < 0 || ix >= sw || iy >= sh) {
-              out[oi] = 255; out[oi + 1] = 255; out[oi + 2] = 255; out[oi + 3] = 255;
-              continue;
-            }
-            const si = (iy * sw + ix) * 4;
-            out[oi] = sd[si]; out[oi + 1] = sd[si + 1];
-            out[oi + 2] = sd[si + 2]; out[oi + 3] = 255;
+      function draw(cx, cy0) {
+        const zoom = cy.zoom(), pan = cy.pan();
+        const Mx = (cx - pan.x) / zoom, My = (cy0 - pan.y) / zoom;
+        const size = LR * 2;
+        g.clearRect(0, 0, size, size);
+        g.save();
+        g.beginPath(); g.arc(LR, LR, LR, 0, Math.PI * 2); g.clip();
+        g.fillStyle = '#ffffff'; g.fillRect(0, 0, size, size);
+        // Everything whose icon could fall inside the disc.
+        const inRange = new Map();
+        cy.nodes().forEach(nd => {
+          const k = nd.data('kind');
+          if (k === 'protocol-domain') { return; }
+          const p = nd.position();
+          if (Math.hypot((p.x - Mx) * zoom, (p.y - My) * zoom) > LR * 1.12) { return; }
+          inRange.set(nd.id(), { nd, pl: place(p.x, p.y, Mx, My, zoom) });
+        });
+        // Edges first (redrawn at full clarity, so faded/culled ones return).
+        cy.edges().forEach(e => {
+          const a = inRange.get(e.source().id()), b = inRange.get(e.target().id());
+          if (!a || !b) { return; }
+          let col = '#94a3b8';
+          try { col = e.style('line-color') || col; } catch (err) { /* keep */ }
+          let dashed = false;
+          try { dashed = (e.style('line-style') || '') === 'dashed'; } catch (err) { /* keep */ }
+          g.strokeStyle = col; g.globalAlpha = 0.6; g.lineWidth = 1.4;
+          g.setLineDash(dashed ? [5, 4] : []);
+          g.beginPath(); g.moveTo(a.pl.lx, a.pl.ly); g.lineTo(b.pl.lx, b.pl.ly); g.stroke();
+        });
+        g.setLineDash([]); g.globalAlpha = 1;
+        // Devices: real icon, then the name FORCED on.
+        inRange.forEach(({ nd, pl }) => {
+          const k = nd.data('kind');
+          if (k === 'sitehull' || k === 'site') { return; }
+          const sz = Math.max(16, 58 * zoom * pl.mag);
+          const im = iconFor(nd.data('stencil'));
+          if (im && im.complete && im.naturalWidth) {
+            try { g.drawImage(im, pl.lx - sz / 2, pl.ly - sz * 0.62, sz, sz); } catch (err) { /* skip */ }
+          } else {
+            g.fillStyle = '#e2e8f0';
+            g.fillRect(pl.lx - sz / 2, pl.ly - sz / 2, sz, sz);
           }
+          text(nd.data('label') || '', pl.lx, pl.ly + sz * 0.52,
+               Math.max(9, 12 * zoom * pl.mag), '#0f172a');
+        });
+        g.restore();
+        // A fixed header naming the site the cursor is inside — so you always
+        // know where you are, however big the oval.
+        let here = null;
+        cy.nodes('[kind = "sitehull"]').forEach(h => {
+          const hp = h.position(), rx = h.data('w') / 2, ry = h.data('h') / 2;
+          const nx = (Mx - hp.x) / rx, ny = (My - hp.y) / ry;
+          if (nx * nx + ny * ny <= 1) { here = h.data('label'); }
+        });
+        if (here) {
+          g.save();
+          g.beginPath(); g.arc(LR, LR, LR, 0, Math.PI * 2); g.clip();
+          const first = String(here).split('\n')[0];
+          g.font = '700 14px system-ui, sans-serif';
+          const w = g.measureText(first).width + 20;
+          g.fillStyle = 'rgba(15,23,42,0.82)';
+          g.fillRect(LR - w / 2, 6, w, 24);
+          g.fillStyle = '#ffffff'; g.textAlign = 'center'; g.textBaseline = 'middle';
+          g.fillText(first, LR, 18);
+          g.restore();
         }
-        lctx.putImageData(lensImg, 0, 0);
         lens.style.left = (cx - LR) + 'px';
         lens.style.top = (cy0 - LR) + 'px';
         lens.style.display = 'block';
@@ -4108,7 +4154,7 @@
         mx = ev.clientX - r.left; my = ev.clientY - r.top; active = true;
         if (!raf) {
           raf = window.requestAnimationFrame(() => {
-            raf = null; if (active) { drawLens(mx, my); }
+            raf = null; if (active) { draw(mx, my); }
           });
         }
       });
