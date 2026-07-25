@@ -790,7 +790,11 @@
         { selector: 'node[kind = "sitehull"]', style: {
           'shape': 'ellipse',
           'width': 'data(w)', 'height': 'data(h)',
-          'background-color': 'data(hullColor)', 'background-opacity': 0.5,
+          // Slightly stronger fill: wires paint BENEATH the ovals, so a
+          // wire that must pass an oval (a site's own wire leaving home,
+          // or the rare hemmed-in link) reads as passing quietly under the
+          // site rather than drawn across it.
+          'background-color': 'data(hullColor)', 'background-opacity': 0.6,
           'background-image': 'none',
           'border-width': 2, 'border-color': 'data(hullBorder)',
           'border-opacity': 0.9,
