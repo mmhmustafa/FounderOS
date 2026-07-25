@@ -4138,27 +4138,32 @@
           text(nd.data('label') || '', pl.lx, pl.ly + sz * 0.52,
                Math.max(9, 12 * zoom * pl.mag), '#0f172a');
         });
-        g.restore();
-        // A fixed header naming the site the cursor is inside — so you always
-        // know where you are, however big the oval.
-        let here = null;
+        // Each oval's own heading, at its real place on the oval's top edge
+        // and warped like everything else, drawn on the same white stamp the
+        // map uses — so the lens shows exactly what sits behind it.
         cy.nodes('[kind = "sitehull"]').forEach(h => {
-          const hp = h.position(), rx = h.data('w') / 2, ry = h.data('h') / 2;
-          const nx = (Mx - hp.x) / rx, ny = (My - hp.y) / ry;
-          if (nx * nx + ny * ny <= 1) { here = h.data('label'); }
+          const hp = h.position(), ry = h.data('h') / 2;
+          const tx = hp.x, ty = hp.y - ry;      // the title's anchor on the map
+          const ds = Math.hypot((tx - Mx) * zoom, (ty - My) * zoom);
+          if (ds > LR * 1.2) { return; }
+          const pl = place(tx, ty, Mx, My, zoom);
+          const lines = String(h.data('label') || '').split('\n');
+          const fs = Math.max(8, 17 * zoom * pl.mag);
+          g.font = '700 ' + fs + 'px system-ui, sans-serif';
+          g.textAlign = 'center'; g.textBaseline = 'middle';
+          let wmax = 0;
+          lines.forEach(l => { wmax = Math.max(wmax, g.measureText(l).width); });
+          const padX = fs * 0.42, padY = fs * 0.3;
+          const bh = lines.length * fs * 1.25;
+          g.fillStyle = 'rgba(255,255,255,0.78)';
+          g.fillRect(pl.lx - wmax / 2 - padX, pl.ly - padY,
+                     wmax + padX * 2, bh + padY * 2);
+          g.fillStyle = '#334155';
+          lines.forEach((l, i) => {
+            g.fillText(l, pl.lx, pl.ly + padY + fs * 0.62 + i * fs * 1.25);
+          });
         });
-        if (here) {
-          g.save();
-          g.beginPath(); g.arc(LR, LR, LR, 0, Math.PI * 2); g.clip();
-          const first = String(here).split('\n')[0];
-          g.font = '700 14px system-ui, sans-serif';
-          const w = g.measureText(first).width + 20;
-          g.fillStyle = 'rgba(15,23,42,0.82)';
-          g.fillRect(LR - w / 2, 6, w, 24);
-          g.fillStyle = '#ffffff'; g.textAlign = 'center'; g.textBaseline = 'middle';
-          g.fillText(first, LR, 18);
-          g.restore();
-        }
+        g.restore();
         lens.style.left = (cx - LR) + 'px';
         lens.style.top = (cy0 - LR) + 'px';
         lens.style.display = 'block';
