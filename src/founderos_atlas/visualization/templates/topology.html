@@ -959,10 +959,10 @@
         // relationship rules so it wins by source order; intra-site links,
         // untagged, keep their normal weight.
         { selector: 'edge.xsite-phys', style: {
-          'opacity': 0.34, 'width': 1.3,
+          'opacity': 0.55, 'width': 1.6,
         }},
         { selector: 'edge.xsite-routing', style: {
-          'opacity': 0.06, 'width': 1,
+          'opacity': 0.16, 'width': 1,
         }},
 
         // Hover lift (#5): the focused device grows and its links brighten;
@@ -1983,13 +1983,60 @@
     if (!sitesEnabled) { viewSelect.value = 'full'; }
     // Deep link: ?view=<sites|full|ospf|bgp> selects the view on arrival, so
     // a copied link reopens the same picture (routing tables link here).
+    // Without a deep link, the map reopens the way this user left it — the
+    // View and Layout they last chose, remembered per user through the same
+    // preference store as the layer choices. The deep link always wins: a
+    // pasted link must show what it names, not what the reader last used.
+    let deepLinked = false;
     {
       const wantedView = new URLSearchParams(window.location.search).get('view');
       if (wantedView &&
           viewSelect.querySelector(`option[value="${CSS.escape(wantedView)}"]`)) {
         viewSelect.value = wantedView;
+        deepLinked = true;
       }
     }
+    (function rememberViewState() {
+      if (!servedByAtlas) { return; }
+      const VS_KEY = 'topology:viewstate';
+      const layoutSel = document.getElementById('layout');
+      function persistViewState() {
+        try {
+          const csrf = document.cookie.match(/(?:^|; )atlas_csrf=([^;]*)/);
+          const headers = { 'Content-Type': 'application/json' };
+          if (csrf) { headers['X-Atlas-CSRF'] = decodeURIComponent(csrf[1]); }
+          fetch('/api/preferences/ui', {
+            method: 'POST', credentials: 'same-origin', headers: headers,
+            body: JSON.stringify({ key: VS_KEY, value: {
+              view: viewSelect.value,
+              layout: layoutSel ? layoutSel.value : null,
+            } }),
+          }).catch(() => { /* session-only */ });
+        } catch (error) { /* session-only */ }
+      }
+      viewSelect.addEventListener('change', persistViewState);
+      if (layoutSel) { layoutSel.addEventListener('change', persistViewState); }
+      fetch('/api/preferences/ui?key=' + encodeURIComponent(VS_KEY), {
+        credentials: 'same-origin',
+      }).then(r => (r.ok ? r.json() : null)).then(body => {
+        const saved = body && body.value;
+        if (!saved) { return; }
+        let changed = false;
+        if (!deepLinked && saved.view && saved.view !== viewSelect.value &&
+            viewSelect.querySelector(
+              `option[value="${CSS.escape(saved.view)}"]`)) {
+          viewSelect.value = saved.view;
+          changed = true;
+        }
+        if (layoutSel && saved.layout && saved.layout !== layoutSel.value &&
+            layoutSel.querySelector(
+              `option[value="${CSS.escape(saved.layout)}"]`)) {
+          layoutSel.value = saved.layout;
+          changed = true;
+        }
+        if (changed) { rebuildView(); }
+      }).catch(() => { /* defaults stand */ });
+    })();
 
     function protocolElements(protocol) {
       const view = routingView[protocol];
@@ -2439,7 +2486,108 @@
         });
       });
       if (hulls.length) { cy.add(hulls); }
+      routeCrossSiteEdges(
+        blocks.map(b => ({ sid: b.sid, cx: b.cx, cy: b.cy, rx: b.rx, ry: b.ry })),
+        siteOf);
       applyReadableViewport(false);
+    }
+
+    // Bend each inter-site link through the gaps BETWEEN the ovals instead
+    // of straight across whatever sites lie on its way. For every foreign
+    // oval a link's straight line would cross, a bezier control point is
+    // pushed perpendicular to the line, past that oval's rim on whichever
+    // side the line already favours — so the wire reads as routed around
+    // the site, smoothly, not through its devices. A link that crosses
+    // nothing stays a straight line. The control geometry is stored on the
+    // edge (routeW/routeD) so the SVG export and the magnifier can draw
+    // the same curve the screen shows.
+    function routeCrossSiteEdges(hullGeo, siteOf) {
+      // Sample the piecewise-quadratic chain the renderer draws for a given
+      // set of bows — the same geometry the SVG export and the lens use.
+      function samplePath(s, t, bows) {
+        const pts = [];
+        if (!bows.length) {
+          for (let k = 0; k <= 40; k++) {
+            const u = k / 40;
+            pts.push({ x: s.x + u * (t.x - s.x), y: s.y + u * (t.y - s.y) });
+          }
+          return pts;
+        }
+        const dx = t.x - s.x, dy = t.y - s.y;
+        const ln = Math.hypot(dx, dy) || 1;
+        const nx = -dy / ln, ny = dx / ln;
+        const cps = bows.map(c => ({ x: s.x + c.w * dx + nx * c.d,
+                                     y: s.y + c.w * dy + ny * c.d }));
+        const anchors = [s];
+        for (let i = 0; i < cps.length - 1; i++) {
+          anchors.push({ x: (cps[i].x + cps[i + 1].x) / 2,
+                         y: (cps[i].y + cps[i + 1].y) / 2 });
+        }
+        anchors.push(t);
+        for (let seg = 0; seg < cps.length; seg++) {
+          const a = anchors[seg], c = cps[seg], b = anchors[seg + 1];
+          for (let k = 0; k <= 14; k++) {
+            const u = k / 14;
+            pts.push({
+              x: (1 - u) * (1 - u) * a.x + 2 * (1 - u) * u * c.x + u * u * b.x,
+              y: (1 - u) * (1 - u) * a.y + 2 * (1 - u) * u * c.y + u * u * b.y,
+            });
+          }
+        }
+        return pts;
+      }
+      cy.edges('.xsite-phys, .xsite-routing').forEach(e => {
+        const s = e.source().position(), t = e.target().position();
+        const sSid = siteOf[e.source().id()];
+        const tSid = siteOf[e.target().id()];
+        const dx = t.x - s.x, dy = t.y - s.y;
+        const len = Math.hypot(dx, dy) || 1;
+        const nx = -dy / len, ny = dx / len;   // unit normal to the line
+        const obstacles = hullGeo.filter(
+          h => h.sid !== sSid && h.sid !== tSid);
+        // Iterative: sample the current path, bow away from the DEEPEST
+        // oval still crossed, and re-check — because a bow that clears one
+        // oval can swing the wire into its neighbour, one pass is not
+        // enough and the fix must be measured on the curve it produced.
+        const bows = [];
+        for (let round = 0; round < 9; round++) {
+          const pts = samplePath(s, t, bows);
+          let worst = null;
+          pts.forEach((p, i) => {
+            obstacles.forEach(h => {
+              const sd = Math.hypot((p.x - h.cx) / h.rx, (p.y - h.cy) / h.ry);
+              if (sd < 1.0 && (!worst || sd < worst.sd)) {
+                worst = { h, sd, frac: i / (pts.length - 1), p };
+              }
+            });
+          });
+          if (!worst) { break; }
+          const h = worst.h;
+          const side = ((worst.p.x - h.cx) * nx + (worst.p.y - h.cy) * ny) >= 0
+            ? 1 : -1;
+          const reach = Math.hypot(h.rx * nx, h.ry * ny);
+          // The curve travels about half its control offset at the deepest
+          // point, so ask for twice the clearance still missing.
+          const add = side * 2 * ((1 - worst.sd) * reach + 60);
+          const w = Math.max(0.12, Math.min(0.88, worst.frac));
+          const near = bows.find(c => Math.abs(c.w - w) < 0.1);
+          if (near) { near.d += add; }
+          else { bows.push({ w, d: add }); bows.sort((a, b) => a.w - b.w); }
+        }
+        if (!bows.length) {
+          e.removeData('routeW routeD');
+          e.removeStyle('curve-style control-point-weights control-point-distances');
+          return;
+        }
+        const W = bows.map(c => c.w), D = bows.map(c => c.d);
+        e.data('routeW', W);
+        e.data('routeD', D);
+        e.style({
+          'curve-style': 'unbundled-bezier',
+          'control-point-weights': W,
+          'control-point-distances': D,
+        });
+      });
     }
 
     // A force layout scatters DISCONNECTED domain groups across a huge
@@ -2845,6 +2993,30 @@
       rebuildView();
     };
 
+    // One consistent way back: Esc closes whatever is "deepest" first —
+    // the right-click menu, then an open panel (Export/Layers), then a
+    // search filter, then site focus. Each press peels one layer, so
+    // however deep you are, Esc pressed enough times returns you to the
+    // plain overview without hunting for the little ×.
+    document.addEventListener('keydown', ev => {
+      if (ev.key !== 'Escape') { return; }
+      const menu = document.getElementById('context-menu');
+      if (menu && menu.style.display === 'block') {
+        menu.style.display = 'none';
+        return;
+      }
+      const openPanel = document.querySelector('details.layers-menu[open]');
+      if (openPanel) { openPanel.removeAttribute('open'); return; }
+      const search = document.getElementById('search');
+      if (search && search.value) {
+        search.value = '';
+        search.dispatchEvent(new Event('input', { bubbles: true }));
+        search.blur();
+        return;
+      }
+      if (focusedSite !== null) { window.exitFocus(); }
+    });
+
     function syncOpenSiteChips() {
       const bar = document.getElementById('open-sites');
       if (!bar) { return; }
@@ -3002,8 +3174,10 @@
     }
     if (sitesEnabled) {
       // Do not let browser form-state restoration reopen the 40-device
-      // thumbnail from a previous visit. Sites are the deliberate overview.
-      viewSelect.value = 'sites';
+      // thumbnail from a previous visit. Sites are the deliberate overview
+      // — but a ?view= deep link outranks it: a pasted link must show what
+      // it names (this reset used to swallow the deep link too).
+      if (!deepLinked) { viewSelect.value = 'sites'; }
       cy.on('dbltap', 'node[kind = "site"]',
             event => window.toggleSite(event.target.data('site_id')));
       cy.on('dbltap', 'node[kind != "site"]', event => {
@@ -3287,12 +3461,37 @@
           var s = edge.source().position(), t = edge.target().position();
           var dash = String(styleOf(edge, 'line-style', 'solid'));
           var pattern = dash === 'dashed' ? '6 4' : (dash === 'dotted' ? '2 3' : '');
-          out.push('<line x1="' + s.x.toFixed(1) + '" y1="' + s.y.toFixed(1)
-            + '" x2="' + t.x.toFixed(1) + '" y2="' + t.y.toFixed(1)
-            + '" stroke="' + esc(styleOf(edge, 'line-color', '#94a3b8'))
+          var attrs = ' stroke="' + esc(styleOf(edge, 'line-color', '#94a3b8'))
             + '" stroke-width="' + esc(parseFloat(styleOf(edge, 'width', 1.4)) || 1.4)
             + '" stroke-opacity="' + esc(styleOf(edge, 'opacity', 1))
-            + (pattern ? '" stroke-dasharray="' + pattern : '') + '"/>');
+            + (pattern ? '" stroke-dasharray="' + pattern : '') + '"';
+          // A link the screen routes around an oval (routeW/routeD) exports
+          // as the same smooth curve; everything else stays a straight line.
+          var W = edge.data('routeW'), D = edge.data('routeD');
+          if (Array.isArray(W) && W.length && Array.isArray(D)) {
+            var ddx = t.x - s.x, ddy = t.y - s.y;
+            var ln = Math.sqrt(ddx * ddx + ddy * ddy) || 1;
+            var nx = -ddy / ln, ny = ddx / ln;
+            var cps = W.map(function (w, i) {
+              return { x: s.x + w * ddx + nx * D[i],
+                       y: s.y + w * ddy + ny * D[i] };
+            });
+            var d = 'M ' + s.x.toFixed(1) + ' ' + s.y.toFixed(1);
+            for (var ci = 0; ci < cps.length - 1; ci++) {
+              var hx = (cps[ci].x + cps[ci + 1].x) / 2;
+              var hy = (cps[ci].y + cps[ci + 1].y) / 2;
+              d += ' Q ' + cps[ci].x.toFixed(1) + ' ' + cps[ci].y.toFixed(1)
+                + ' ' + hx.toFixed(1) + ' ' + hy.toFixed(1);
+            }
+            var lastCp = cps[cps.length - 1];
+            d += ' Q ' + lastCp.x.toFixed(1) + ' ' + lastCp.y.toFixed(1)
+              + ' ' + t.x.toFixed(1) + ' ' + t.y.toFixed(1);
+            out.push('<path fill="none" d="' + d + '"' + attrs + '/>');
+          } else {
+            out.push('<line x1="' + s.x.toFixed(1) + '" y1="' + s.y.toFixed(1)
+              + '" x2="' + t.x.toFixed(1) + '" y2="' + t.y.toFixed(1) + '"'
+              + attrs + '/>');
+          }
           var badge = String(styleOf(edge, 'label', '') || '');
           if (badge) {
             var mx = (s.x + t.x) / 2, my = (s.y + t.y) / 2;
@@ -3769,6 +3968,32 @@
       peerLabelsHidden = null;
       detailedLabelsShown = null;
       syncSemanticZoom();
+    });
+
+    // Jump to a site by name: press Enter on a query that names one site
+    // ("mumbai", "Delhi") and the map focuses that site directly — its
+    // devices in detail with only its real connections around it — instead
+    // of leaving the operator to pan and hunt across a 20-site estate. An
+    // exact name wins; otherwise a query that matches exactly ONE site is
+    // unambiguous and jumps too. Anything else keeps the normal highlight.
+    document.getElementById('search').addEventListener('keydown', event => {
+      if (event.key !== 'Enter' || !sitesEnabled) { return; }
+      const query = event.target.value.trim().toLowerCase();
+      if (!query) { return; }
+      const sites = siteView.sites || [];
+      let hit = sites.find(s =>
+        String(s.label || '').toLowerCase() === query ||
+        String(s.site_id || '').toLowerCase() === query);
+      if (!hit) {
+        const partial = sites.filter(s =>
+          String(s.label || '').toLowerCase().includes(query) ||
+          String(s.site_id || '').toLowerCase().includes(query));
+        if (partial.length === 1) { hit = partial[0]; }
+      }
+      if (hit) {
+        event.preventDefault();
+        window.focusSite(hit.site_id);
+      }
     });
 
     // -- Layers control -----------------------------------------------------
@@ -4410,7 +4635,29 @@
           try { dashed = (e.style('line-style') || '') === 'dashed'; } catch (err) { /* keep */ }
           g.strokeStyle = col; g.globalAlpha = 0.7; g.lineWidth = 1.5;
           g.setLineDash(dashed ? [5, 4] : []);
-          g.beginPath(); g.moveTo(a.pl.lx, a.pl.ly); g.lineTo(b.pl.lx, b.pl.ly); g.stroke();
+          g.beginPath(); g.moveTo(a.pl.lx, a.pl.ly);
+          // A routed link bends the same way it bends on the map: its
+          // control points ride through the fisheye like everything else.
+          const W = e.data('routeW'), D = e.data('routeD');
+          if (Array.isArray(W) && W.length && Array.isArray(D)) {
+            const sp = e.source().position(), tp = e.target().position();
+            const ddx = tp.x - sp.x, ddy = tp.y - sp.y;
+            const ln = Math.hypot(ddx, ddy) || 1;
+            const nnx = -ddy / ln, nny = ddx / ln;
+            const cps = W.map((w, i) => place(
+              sp.x + w * ddx + nnx * D[i], sp.y + w * ddy + nny * D[i],
+              Mx, My, zoom));
+            for (let ci = 0; ci < cps.length - 1; ci++) {
+              g.quadraticCurveTo(cps[ci].lx, cps[ci].ly,
+                (cps[ci].lx + cps[ci + 1].lx) / 2,
+                (cps[ci].ly + cps[ci + 1].ly) / 2);
+            }
+            const lastCp = cps[cps.length - 1];
+            g.quadraticCurveTo(lastCp.lx, lastCp.ly, b.pl.lx, b.pl.ly);
+          } else {
+            g.lineTo(b.pl.lx, b.pl.ly);
+          }
+          g.stroke();
         });
         g.setLineDash([]); g.globalAlpha = 1;
         // Devices in range: real icon, then the name FORCED on.
@@ -4534,6 +4781,109 @@
       // frozen over the old picture until the mouse next moved a pixel.
       cy.on('zoom pan', hideLens);
       if (viewSel) { viewSel.addEventListener('change', hideLens); }
+    })();
+
+    // -- Mini-map -----------------------------------------------------------
+    // Zoomed deep into a big estate, the viewport is a keyhole: this inset
+    // shows where that keyhole sits in the whole map — the site ovals as
+    // tinted shapes, the devices as dots, the viewport as a rectangle — and
+    // clicking (or dragging) it pans the main view there. It earns its
+    // corner only when orientation is actually in question: it appears once
+    // the viewport shows less than half the estate, and steps aside
+    // otherwise.
+    (function miniMap() {
+      if (typeof cy === 'undefined') { return; }
+      const wrap = document.querySelector('.graph-wrap');
+      if (!wrap) { return; }
+      const MW = 200, MH = 140, PAD = 8;
+      const box = document.createElement('canvas');
+      box.id = 'minimap';
+      box.width = MW; box.height = MH;
+      Object.assign(box.style, {
+        position: 'absolute', right: '14px', bottom: '14px',
+        width: MW + 'px', height: MH + 'px', display: 'none',
+        background: 'rgba(255,255,255,0.94)',
+        border: '1px solid #cbd5e1', borderRadius: '8px',
+        boxShadow: '0 2px 10px rgba(15,23,42,0.18)',
+        cursor: 'pointer', zIndex: 24,
+      });
+      box.setAttribute('aria-hidden', 'true');
+      wrap.appendChild(box);
+      const g = box.getContext('2d');
+      let fit = null;   // model -> minimap transform of the last draw
+
+      function draw() {
+        const eles = cy.elements().filter(
+          el => el.style('display') !== 'none');
+        if (!eles.length) { box.style.display = 'none'; fit = null; return; }
+        const bb = eles.boundingBox();
+        const zoom = cy.zoom() || 1, pan = cy.pan();
+        const cw = cy.width(), ch = cy.height();
+        // The whole point is orientation: show the inset only when the
+        // viewport actually covers less than half the estate.
+        const viewW = cw / zoom, viewH = ch / zoom;
+        if (viewW >= bb.w * 0.5 && viewH >= bb.h * 0.5) {
+          box.style.display = 'none'; fit = null; return;
+        }
+        const scale = Math.min((MW - PAD * 2) / Math.max(1, bb.w),
+                               (MH - PAD * 2) / Math.max(1, bb.h));
+        const offX = (MW - bb.w * scale) / 2 - bb.x1 * scale;
+        const offY = (MH - bb.h * scale) / 2 - bb.y1 * scale;
+        fit = { scale, offX, offY };
+        g.clearRect(0, 0, MW, MH);
+        cy.nodes('[kind = "sitehull"]').forEach(h => {
+          if (h.style('display') === 'none') { return; }
+          const p = h.position();
+          g.beginPath();
+          g.ellipse(p.x * scale + offX, p.y * scale + offY,
+                    Math.max(3, h.data('w') / 2 * scale),
+                    Math.max(2, h.data('h') / 2 * scale), 0, 0, Math.PI * 2);
+          g.fillStyle = h.data('hullColor') || '#dbeafe';
+          g.globalAlpha = 0.7; g.fill(); g.globalAlpha = 1;
+        });
+        g.fillStyle = '#475569';
+        cy.nodes().forEach(n => {
+          const k = n.data('kind');
+          if (k === 'sitehull' || k === 'protocol-domain') { return; }
+          if (n.style('display') === 'none') { return; }
+          const p = n.position();
+          g.fillRect(p.x * scale + offX - 1, p.y * scale + offY - 1, 2, 2);
+        });
+        // The keyhole: where the main viewport sits in the estate.
+        g.strokeStyle = '#2563eb'; g.lineWidth = 1.5;
+        g.strokeRect((0 - pan.x) / zoom * scale + offX,
+                     (0 - pan.y) / zoom * scale + offY,
+                     viewW * scale, viewH * scale);
+        box.style.display = 'block';
+      }
+
+      let last = 0, trail = null;
+      function schedule() {
+        const now = Date.now();
+        if (now - last > 90) { last = now; draw(); return; }
+        if (!trail) {
+          trail = setTimeout(() => { trail = null; last = Date.now(); draw(); }, 120);
+        }
+      }
+      cy.on('render', schedule);
+
+      function jump(ev) {
+        if (!fit) { return; }
+        const r = box.getBoundingClientRect();
+        const mxv = (ev.clientX - r.left) * (MW / r.width);
+        const myv = (ev.clientY - r.top) * (MH / r.height);
+        const modelX = (mxv - fit.offX) / fit.scale;
+        const modelY = (myv - fit.offY) / fit.scale;
+        const zoom = cy.zoom() || 1;
+        cy.pan({ x: cy.width() / 2 - modelX * zoom,
+                 y: cy.height() / 2 - modelY * zoom });
+      }
+      let dragging = false;
+      box.addEventListener('mousedown', ev => { dragging = true; jump(ev); });
+      window.addEventListener('mousemove', ev => {
+        if (dragging) { jump(ev); }
+      });
+      window.addEventListener('mouseup', () => { dragging = false; });
     })();
 
     // -- Per-user hidden devices --------------------------------------------
