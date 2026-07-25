@@ -2492,94 +2492,166 @@
       applyReadableViewport(false);
     }
 
-    // Bend each inter-site link through the gaps BETWEEN the ovals instead
-    // of straight across whatever sites lie on its way. For every foreign
-    // oval a link's straight line would cross, a bezier control point is
-    // pushed perpendicular to the line, past that oval's rim on whichever
-    // side the line already favours — so the wire reads as routed around
-    // the site, smoothly, not through its devices. A link that crosses
-    // nothing stays a straight line. The control geometry is stored on the
-    // edge (routeW/routeD) so the SVG export and the magnifier can draw
-    // the same curve the screen shows.
+    // Route each inter-site link through the gaps BETWEEN the ovals — by
+    // the SHORTEST way around, not a guessed sideways bow. A link whose
+    // straight line crosses nothing stays perfectly straight. A blocked
+    // link is routed like a person would route it: portal points ring each
+    // oval's rim, a shortest-path search (Dijkstra over the portals whose
+    // connecting segments clear every oval) finds the tightest detour, and
+    // a string-pulling pass drops every waypoint the wire can see past —
+    // so the detour is as short and as smooth as the map allows. The
+    // waypoints become bezier control points stored on the edge
+    // (routeW/routeD), so the SVG export and the magnifier draw the same
+    // curve the screen shows.
     function routeCrossSiteEdges(hullGeo, siteOf) {
-      // Sample the piecewise-quadratic chain the renderer draws for a given
-      // set of bows — the same geometry the SVG export and the lens use.
-      function samplePath(s, t, bows) {
-        const pts = [];
-        if (!bows.length) {
-          for (let k = 0; k <= 40; k++) {
-            const u = k / 40;
-            pts.push({ x: s.x + u * (t.x - s.x), y: s.y + u * (t.y - s.y) });
+      const MARGIN = 30;         // clearance a wire keeps from an oval
+      const PORTALS = 14;        // candidate waypoints per oval
+      const infl = hullGeo.map(h => ({
+        sid: h.sid, cx: h.cx, cy: h.cy,
+        rx: h.rx + MARGIN, ry: h.ry + MARGIN,
+      }));
+      // Does the segment a->b cross any inflated oval (excluding the two
+      // sites the link legitimately starts and ends inside)?
+      function segHits(ax0, ay0, bx0, by0, exA, exB) {
+        for (const h of infl) {
+          if (h.sid === exA || h.sid === exB) { continue; }
+          const ax = (ax0 - h.cx) / h.rx, ay = (ay0 - h.cy) / h.ry;
+          const bx = (bx0 - h.cx) / h.rx, by = (by0 - h.cy) / h.ry;
+          const ux = bx - ax, uy = by - ay;
+          const L2 = ux * ux + uy * uy;
+          if (!L2) { continue; }
+          let tt = -(ax * ux + ay * uy) / L2;
+          tt = Math.max(0, Math.min(1, tt));
+          if (Math.hypot(ax + tt * ux, ay + tt * uy) < 1) { return true; }
+        }
+        return false;
+      }
+      // Portal points just outside each inflated rim; drop any that sits
+      // inside ANOTHER oval (it could never be part of a clear route).
+      const portals = [];
+      infl.forEach(h => {
+        for (let i = 0; i < PORTALS; i++) {
+          const a = 2 * Math.PI * i / PORTALS;
+          const p = { x: h.cx + h.rx * 1.18 * Math.cos(a),
+                      y: h.cy + h.ry * 1.18 * Math.sin(a) };
+          if (!infl.some(o => o !== h &&
+              ((p.x - o.cx) / o.rx) ** 2 + ((p.y - o.cy) / o.ry) ** 2 < 1)) {
+            portals.push(p);
           }
-          return pts;
         }
-        const dx = t.x - s.x, dy = t.y - s.y;
-        const ln = Math.hypot(dx, dy) || 1;
-        const nx = -dy / ln, ny = dx / ln;
-        const cps = bows.map(c => ({ x: s.x + c.w * dx + nx * c.d,
-                                     y: s.y + c.w * dy + ny * c.d }));
-        const anchors = [s];
-        for (let i = 0; i < cps.length - 1; i++) {
-          anchors.push({ x: (cps[i].x + cps[i + 1].x) / 2,
-                         y: (cps[i].y + cps[i + 1].y) / 2 });
-        }
-        anchors.push(t);
-        for (let seg = 0; seg < cps.length; seg++) {
-          const a = anchors[seg], c = cps[seg], b = anchors[seg + 1];
-          for (let k = 0; k <= 14; k++) {
-            const u = k / 14;
-            pts.push({
-              x: (1 - u) * (1 - u) * a.x + 2 * (1 - u) * u * c.x + u * u * b.x,
-              y: (1 - u) * (1 - u) * a.y + 2 * (1 - u) * u * c.y + u * u * b.y,
-            });
+      });
+      // Portal-to-portal visibility, computed once and shared by every link.
+      const N = portals.length;
+      const nbr = Array.from({ length: N }, () => []);
+      for (let i = 0; i < N; i++) {
+        for (let j = i + 1; j < N; j++) {
+          const a = portals[i], b = portals[j];
+          if (!segHits(a.x, a.y, b.x, b.y, null, null)) {
+            const w = Math.hypot(a.x - b.x, a.y - b.y);
+            nbr[i].push({ j, w });
+            nbr[j].push({ j: i, w });
           }
         }
-        return pts;
+      }
+      function shortestRoute(s, t, sSid, tSid) {
+        // Dijkstra from s over the portal graph to t. Endpoint segments may
+        // pass through the endpoint's own oval (the wire must exit it).
+        const dist = new Array(N).fill(Infinity);
+        const prev = new Array(N).fill(-1);
+        const done = new Array(N).fill(false);
+        let best = Infinity, bestEnd = -1;
+        for (let i = 0; i < N; i++) {
+          if (!segHits(s.x, s.y, portals[i].x, portals[i].y, sSid, tSid)) {
+            dist[i] = Math.hypot(s.x - portals[i].x, s.y - portals[i].y);
+          }
+        }
+        for (let round = 0; round < N; round++) {
+          let u = -1, du = Infinity;
+          for (let i = 0; i < N; i++) {
+            if (!done[i] && dist[i] < du) { du = dist[i]; u = i; }
+          }
+          if (u < 0 || du >= best) { break; }
+          done[u] = true;
+          if (!segHits(portals[u].x, portals[u].y, t.x, t.y, tSid, sSid)) {
+            const total = du + Math.hypot(portals[u].x - t.x, portals[u].y - t.y);
+            if (total < best) { best = total; bestEnd = u; }
+          }
+          nbr[u].forEach(({ j, w }) => {
+            if (!done[j] && du + w < dist[j]) {
+              dist[j] = du + w; prev[j] = u;
+            }
+          });
+        }
+        if (bestEnd < 0) { return null; }
+        const way = [];
+        for (let u = bestEnd; u >= 0; u = prev[u]) { way.unshift(portals[u]); }
+        // String-pulling: from each point, skip ahead to the farthest
+        // waypoint it can see — the route keeps only the corners it needs.
+        const pulled = [];
+        let from = s, k = 0;
+        while (k < way.length) {
+          let far = k;
+          for (let m = way.length - 1; m > k; m--) {
+            if (!segHits(from.x, from.y, way[m].x, way[m].y,
+                         from === s ? sSid : null, null)) { far = m; break; }
+          }
+          pulled.push(way[far]);
+          from = way[far];
+          k = far + 1;
+        }
+        // The tail may now be able to see the target past its last corner.
+        while (pulled.length > 1 &&
+               !segHits(pulled[pulled.length - 2].x, pulled[pulled.length - 2].y,
+                        t.x, t.y, tSid, null)) {
+          pulled.pop();
+        }
+        return pulled;
       }
       cy.edges('.xsite-phys, .xsite-routing').forEach(e => {
         const s = e.source().position(), t = e.target().position();
         const sSid = siteOf[e.source().id()];
         const tSid = siteOf[e.target().id()];
-        const dx = t.x - s.x, dy = t.y - s.y;
-        const len = Math.hypot(dx, dy) || 1;
-        const nx = -dy / len, ny = dx / len;   // unit normal to the line
-        const obstacles = hullGeo.filter(
-          h => h.sid !== sSid && h.sid !== tSid);
-        // Iterative: sample the current path, bow away from the DEEPEST
-        // oval still crossed, and re-check — because a bow that clears one
-        // oval can swing the wire into its neighbour, one pass is not
-        // enough and the fix must be measured on the curve it produced.
-        const bows = [];
-        for (let round = 0; round < 9; round++) {
-          const pts = samplePath(s, t, bows);
-          let worst = null;
-          pts.forEach((p, i) => {
-            obstacles.forEach(h => {
-              const sd = Math.hypot((p.x - h.cx) / h.rx, (p.y - h.cy) / h.ry);
-              if (sd < 1.0 && (!worst || sd < worst.sd)) {
-                worst = { h, sd, frac: i / (pts.length - 1), p };
-              }
-            });
-          });
-          if (!worst) { break; }
-          const h = worst.h;
-          const side = ((worst.p.x - h.cx) * nx + (worst.p.y - h.cy) * ny) >= 0
-            ? 1 : -1;
-          const reach = Math.hypot(h.rx * nx, h.ry * ny);
-          // The curve travels about half its control offset at the deepest
-          // point, so ask for twice the clearance still missing.
-          const add = side * 2 * ((1 - worst.sd) * reach + 60);
-          const w = Math.max(0.12, Math.min(0.88, worst.frac));
-          const near = bows.find(c => Math.abs(c.w - w) < 0.1);
-          if (near) { near.d += add; }
-          else { bows.push({ w, d: add }); bows.sort((a, b) => a.w - b.w); }
-        }
-        if (!bows.length) {
+        // The common case first: nothing in the way, nothing to bend.
+        if (!segHits(s.x, s.y, t.x, t.y, sSid, tSid)) {
           e.removeData('routeW routeD');
           e.removeStyle('curve-style control-point-weights control-point-distances');
           return;
         }
-        const W = bows.map(c => c.w), D = bows.map(c => c.d);
+        const way = shortestRoute(s, t, sSid, tSid);
+        if (!way || !way.length) {
+          e.removeData('routeW routeD');
+          e.removeStyle('curve-style control-point-weights control-point-distances');
+          return;
+        }
+        // A bezier through control points CUTS their corners — it would dip
+        // back inside the very ovals the waypoints route around. Solve the
+        // control points (a few fixed-point rounds of c = 2P - (a+b)/2, the
+        // quadratic through-point formula) so the rendered curve passes
+        // THROUGH each waypoint instead.
+        let cps = way.map(p => ({ x: p.x, y: p.y }));
+        for (let it = 0; it < 4; it++) {
+          const anchors = [s];
+          for (let i = 0; i < cps.length - 1; i++) {
+            anchors.push({ x: (cps[i].x + cps[i + 1].x) / 2,
+                           y: (cps[i].y + cps[i + 1].y) / 2 });
+          }
+          anchors.push(t);
+          cps = cps.map((c, i) => ({
+            x: 2 * way[i].x - (anchors[i].x + anchors[i + 1].x) / 2,
+            y: 2 * way[i].y - (anchors[i].y + anchors[i + 1].y) / 2,
+          }));
+        }
+        // Control points -> (weight, distance) on the source->target chord,
+        // kept in path order (a detour may fold back along the chord).
+        const dx = t.x - s.x, dy = t.y - s.y;
+        const len2 = dx * dx + dy * dy || 1;
+        const ln = Math.sqrt(len2);
+        const nx = -dy / ln, ny = dx / ln;
+        const W = [], D = [];
+        cps.forEach(p => {
+          W.push(((p.x - s.x) * dx + (p.y - s.y) * dy) / len2);
+          D.push((p.x - s.x) * nx + (p.y - s.y) * ny);
+        });
         e.data('routeW', W);
         e.data('routeD', D);
         e.style({
