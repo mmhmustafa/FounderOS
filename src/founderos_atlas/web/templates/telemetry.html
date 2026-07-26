@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}Operational signals{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Operational signals</h1>
+    <p class="page-kicker">Focused evidence for investigation—not a second monitoring console.</p>
+  </div>
+</div>
+
+<section class="card">
+  <h2>Provider state</h2>
+  {% if adapter_status %}
+  <div class="table-scroll" role="region" aria-label="Telemetry provider status" tabindex="0">
+    <table class="grid">
+      <thead><tr><th>Provider</th><th>Source</th><th>State</th><th>Coverage</th><th>Last success</th><th>Last result</th><th><span class="visually-hidden">Action</span></th></tr></thead>
+      <tbody>
+      {% for name, status in adapter_status.items() %}
+      <tr>
+        <td><strong>{{ name }}</strong><div class="muted">{{ status.implementation }}</div></td>
+        <td>{{ status.source }}</td>
+        <td><span class="badge">{{ status.state }}</span>{% if status.error_code %}<div class="muted">{{ status.error_code }}</div>{% endif %}</td>
+        <td>{{ 'complete snapshot' if status.evidence_complete else 'partial observations' }}</td>
+        <td>{{ status.last_success_at | timestamp if status.last_success_at else 'Never' }}</td>
+        <td>{{ status.last_fact_count }} observation(s)</td>
+        <td>
+          {% if can('discovery.run') %}
+          <form method="post" action="/telemetry/collect">{{ csrf_field() }}
+            <input type="hidden" name="adapter" value="{{ name }}">
+            <input type="hidden" name="scope" value="{{ scope_id or active_scope_id or 'enterprise' }}">
+            <button class="btn btn-sm" type="submit">Collect now</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+    <p class="muted">No live telemetry adapter is configured. Atlas can normalize SNMP, syslog, REST, cloud, and wireless observations when an authorized provider adapter supplies them; discovery remains fully available without one.</p>
+  {% endif %}
+  <p class="muted">Adapters are explicitly registered at application startup and receive already-authorized provider clients. Atlas retains at most {{ retention_days }} days and never displays or audits provider secrets.</p>
+</section>
+
+<section class="card">
+  <form method="get" action="/telemetry" class="filter-bar" aria-label="Filter operational evidence">
+    <label>Scope <input name="scope" value="{{ scope_id }}"></label>
+    <label>Device or entity <input name="entity" value="{{ entity_id }}"></label>
+    <label>Signal
+      <select name="kind">
+        <option value="">All signal types</option>
+        {% for value in fact_kinds %}
+          <option value="{{ value }}" {% if selected_kind == value %}selected{% endif %}>{{ value | replace('-', ' ') | title }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button class="btn btn-sm" type="submit">Apply</button>
+    <a class="btn btn-sm btn-secondary" href="/telemetry">Clear</a>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Conditions needing attention</h2>
+  {% if signals %}
+    <div class="card-grid">
+    {% for signal in signals %}
+      <article class="summary-card">
+        <span class="hop-badge priority-{{ signal.severity }}">{{ signal.severity }}</span>
+        <h3>{{ signal.title }}</h3>
+        <p>{{ signal.explanation }}</p>
+        <p class="muted">{{ signal.observed_at | timestamp }}{% if signal.stale %} · stale—do not infer recovery{% endif %}</p>
+        <div class="row-actions">
+          {% if signal.device_id %}<a class="btn btn-sm" href="/devices/{{ signal.device_id | urlencode }}?scope={{ signal.scope_id | urlencode }}">Device</a>{% endif %}
+          <a class="btn btn-sm btn-secondary" href="/topology?scope={{ signal.scope_id | urlencode }}&focus={{ signal.entity_id | urlencode }}">Topology</a>
+          <a class="btn btn-sm btn-secondary" href="/paths?scope={{ signal.scope_id | urlencode }}&device={{ signal.entity_id | urlencode }}">Investigate path</a>
+          <a class="btn btn-sm btn-secondary" href="/predict?scope={{ signal.scope_id | urlencode }}&device={{ signal.entity_id | urlencode }}">Predict</a>
+          <a class="btn btn-sm btn-secondary" href="/policy?scope={{ signal.scope_id | urlencode }}&device={{ signal.entity_id | urlencode }}">Policy</a>
+          <a class="btn btn-sm btn-secondary" href="/incidents?scope={{ signal.scope_id | urlencode }}">Cases</a>
+        </div>
+      </article>
+    {% endfor %}
+    </div>
+  {% else %}
+    <p class="muted">No actionable condition is derivable from the selected observations. This is not proof that the network is healthy when evidence is absent.</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Normalized evidence</h2>
+  <p class="muted">{{ fact_total }} matching fact(s). Each row retains its collection, adapter, provider reference, source, confidence, and observation time.</p>
+  {% if facts %}
+  <div class="table-scroll" role="region" aria-label="Normalized operational evidence" tabindex="0">
+    <table class="grid"><thead><tr><th>Observed</th><th>Entity</th><th>Metric</th><th>Value</th><th>Provenance</th></tr></thead>
+    <tbody>{% for fact in facts %}<tr>
+      <td>{{ fact.observed_at | timestamp }}</td><td>{{ fact.entity_id }}</td>
+      <td>{{ fact.kind | replace('-', ' ') }}<div class="muted">{{ fact.metric }}</div></td>
+      <td>{{ fact.value }} {{ fact.unit }}</td>
+      <td>{{ fact.adapter }} · {{ fact.source }}
+        <div class="muted">{{ fact.confidence }} · {{ fact.provider_ref or 'no provider reference' }}</div>
+        <div class="muted">{{ fact.collection_id or 'legacy collection' }} · {{ fact.fact_id }}</div>
+      </td>
+    </tr>{% endfor %}</tbody></table>
+  </div>
+  {% if fact_page_count > 1 %}
+  <nav class="pagination" aria-label="Telemetry evidence pages">
+    {% if fact_page > 1 %}<a class="btn btn-sm" rel="prev" href="/telemetry?{{ filter_args | urlencode }}&page={{ fact_page - 1 }}">Previous</a>{% endif %}
+    <span>Page {{ fact_page }} of {{ fact_page_count }}</span>
+    {% if fact_page < fact_page_count %}<a class="btn btn-sm" rel="next" href="/telemetry?{{ filter_args | urlencode }}&page={{ fact_page + 1 }}">Next</a>{% endif %}
+  </nav>
+  {% endif %}
+  {% else %}<div class="empty-state"><strong>No telemetry evidence matches this view.</strong><p class="muted">Configure a provider adapter or change the filters. Atlas does not fabricate an all-clear state.</p></div>{% endif %}
+</section>
+{% endblock %}

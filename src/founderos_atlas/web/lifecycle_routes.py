@@ -20,6 +20,7 @@ def register_lifecycle_routes(app, h) -> None:
     from founderos_atlas.audit import AuditEvent, AuditLog
     from founderos_atlas.web.redirects import safe_redirect_target
     from founderos_atlas.incidents.records import (
+        CASE_TRANSITIONS,
         CASE_STATUSES,
         IncidentCaseRepository,
         IncidentConflictError,
@@ -34,6 +35,90 @@ def register_lifecycle_routes(app, h) -> None:
 
     def _correlation() -> str | None:
         return getattr(g, "correlation_id", None)
+
+    def _lines(name: str) -> tuple[str, ...]:
+        return tuple(
+            line.strip()
+            for line in str(request.form.get(name) or "").splitlines()
+            if line.strip()
+        )
+
+    def _case_link_href(case, kind: str, value: str) -> str:
+        """Resolve a stored reference into an application-relative deep link.
+
+        Compound references use ``device|record`` or ``policy|hostname``.
+        Invalid/malformed references stay display-only instead of producing a
+        misleading link.
+        """
+
+        from urllib.parse import quote, urlencode
+
+        scope = urlencode({"scope": case.scope_id})
+        if kind == "plan":
+            return "/compass/" + quote(value, safe="")
+        if kind == "path":
+            return f"/paths?{scope}&" + urlencode({"case_id": case.case_id})
+        if kind == "prediction":
+            return f"/predict?{scope}&" + urlencode({"case_id": case.case_id})
+        if kind == "action":
+            return "/inbox?" + urlencode({"notification": value})
+        if kind == "site":
+            return "/topology?" + urlencode({
+                "scope": case.scope_id, "site": value,
+            })
+        if kind == "configuration":
+            device_id = value.split("|", 1)[0].strip()
+            return (
+                "/configuration/" + quote(device_id, safe="")
+                + "?" + scope
+                if device_id else ""
+            )
+        if kind == "evidence":
+            pieces = [item.strip() for item in value.split("|", 1)]
+            if not pieces[0]:
+                return ""
+            base = "/evidence/device/" + quote(pieces[0], safe="")
+            if len(pieces) == 2 and pieces[1]:
+                base += "/record/" + quote(pieces[1], safe="")
+            return base + "?" + scope
+        if kind == "policy":
+            pieces = [item.strip() for item in value.split("|", 1)]
+            if not pieces[0]:
+                return ""
+            if len(pieces) == 2 and pieces[1]:
+                return (
+                    "/policy/result/"
+                    + quote(pieces[0], safe="")
+                    + "/"
+                    + quote(pieces[1], safe="")
+                    + "?"
+                    + scope
+                )
+            return "/policy?" + urlencode({
+                "scope": case.scope_id, "policy": pieces[0],
+            })
+        return ""
+
+    def _case_links(case) -> list[dict]:
+        names = {
+            "path": "linked_paths",
+            "prediction": "linked_predictions",
+            "plan": "linked_plans",
+            "action": "linked_actions",
+            "evidence": "linked_evidence",
+            "configuration": "linked_configurations",
+            "policy": "linked_policies",
+            "site": "affected_sites",
+        }
+        return [
+            {
+                "kind": kind,
+                "value": value,
+                "href": _case_link_href(case, kind, value),
+            }
+            for kind, field in names.items()
+            for value in getattr(case, field)
+        ]
 
     # -- async entity APIs (the pickers' backend) --------------------------
 
@@ -170,8 +255,12 @@ def register_lifecycle_routes(app, h) -> None:
             root_cause=root_cause,
             case_events=case_events,
             linked_plans=list(plans.values()),
+            linked_items=_case_links(case),
             severities=SEVERITIES,
             statuses=CASE_STATUSES,
+            allowed_transitions=sorted(
+                CASE_TRANSITIONS.get(case.status, ())
+            ),
             artifact_prefix=h.artifact_prefix(scope) if scope else "",
             **context,
         )
@@ -212,6 +301,18 @@ def register_lifecycle_routes(app, h) -> None:
                             href=f"/incidents/case/{case_id}",
                             audience=owner.strip(),
                             correlation_id=_correlation(),
+                            dedupe_key=f"incident-assignment:{case_id}",
+                            priority=(
+                                "critical"
+                                if case.severity == "critical"
+                                else "high"
+                                if case.severity == "high"
+                                else "medium"
+                            ),
+                            owner=owner.strip(),
+                            scope_id=case.scope_id,
+                            subject=case.case_id,
+                            source_refs=(f"incident:{case_id}",),
                         )
                     except OSError:
                         pass
@@ -220,16 +321,51 @@ def register_lifecycle_routes(app, h) -> None:
                 repo.annotate(case_id, text=str(request.form.get("text") or ""),
                               actor=actor, expected_revision=expected)
                 flash("Note added.", "success")
+            elif action == "participants":
+                repo.set_participants(
+                    case_id,
+                    participants=_lines("participants"),
+                    actor=actor,
+                    expected_revision=expected,
+                )
+                flash("Case participants updated.", "success")
+            elif action == "transition":
+                target = str(request.form.get("status") or "")
+                repo.transition(
+                    case_id,
+                    status=target,
+                    actor=actor,
+                    reason=str(request.form.get("reason") or ""),
+                    expected_revision=expected,
+                )
+                flash(f"Incident moved to {target}.", "success")
             elif action == "suppress":
                 repo.suppress(case_id, reason=str(request.form.get("reason") or ""),
                               actor=actor, expected_revision=expected)
                 flash("Incident suppressed — retained, hidden by default.",
                       "success")
             elif action == "resolve":
-                repo.resolve(case_id,
-                             resolution=str(request.form.get("resolution") or ""),
-                             actor=actor, expected_revision=expected)
+                repo.resolve(
+                    case_id,
+                    resolution=str(request.form.get("resolution") or ""),
+                    validation_evidence=_lines("validation_evidence"),
+                    validation_unavailable_reason=str(
+                        request.form.get("validation_unavailable_reason") or ""
+                    ),
+                    outstanding_risks=_lines("outstanding_risks"),
+                    follow_up_actions=_lines("follow_up_actions"),
+                    actor=actor,
+                    expected_revision=expected,
+                )
                 flash("Incident resolved.", "success")
+            elif action == "close":
+                repo.close(
+                    case_id,
+                    actor=actor,
+                    reason=str(request.form.get("reason") or ""),
+                    expected_revision=expected,
+                )
+                flash("Incident closed with validation recorded.", "success")
             elif action == "reopen":
                 repo.reopen(case_id, reason=str(request.form.get("reason") or ""),
                             actor=actor, expected_revision=expected)
@@ -256,6 +392,8 @@ def register_lifecycle_routes(app, h) -> None:
     @app.route("/incidents/case/<case_id>/link", methods=["POST"])
     def incident_case_link(case_id: str):
         repo = _cases()
+        raw = request.form.get("expected_revision", "")
+        expected = int(raw) if raw.strip().isdigit() else None
         try:
             repo.link(
                 case_id,
@@ -263,8 +401,11 @@ def register_lifecycle_routes(app, h) -> None:
                 value=str(request.form.get("value") or "").strip(),
                 actor=h.current_actor(),
                 correlation_id=_correlation(),
+                expected_revision=expected,
             )
             flash("Linked to the incident.", "success")
+        except IncidentConflictError as error:
+            abort(409, description=str(error))
         except ValueError as error:
             flash(str(error), "error")
         return redirect(
@@ -273,6 +414,42 @@ def register_lifecycle_routes(app, h) -> None:
                 url_for("incident_case_page", case_id=case_id),
             )
         )
+
+    @app.route("/incidents/case/<case_id>/unlink", methods=["POST"])
+    def incident_case_unlink(case_id: str):
+        from .confirmation import require_confirmation
+
+        kind = str(request.form.get("kind") or "")
+        value = str(request.form.get("value") or "")
+        confirmation = require_confirmation(
+            title="Unlink case evidence",
+            detail=f"Remove the {kind} reference {value!r} from this case?",
+            consequence=(
+                "The source record is not deleted. Only its relationship to "
+                "this case is removed, and the unlink is audited."
+            ),
+        )
+        if confirmation is not None:
+            return confirmation
+        repo = _cases()
+        raw = request.form.get("expected_revision", "")
+        expected = int(raw) if raw.strip().isdigit() else None
+        try:
+            repo.unlink(
+                case_id,
+                kind=kind,
+                value=value,
+                actor=h.current_actor(),
+                expected_revision=expected,
+            )
+        except IncidentConflictError as error:
+            abort(409, description=str(error))
+        except ValueError as error:
+            flash(str(error), "error")
+        else:
+            flash("Reference unlinked; the source record was preserved.",
+                  "success")
+        return redirect(url_for("incident_case_page", case_id=case_id))
 
     # -- compass lifecycle -------------------------------------------------
 

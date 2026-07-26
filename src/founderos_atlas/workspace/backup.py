@@ -66,11 +66,17 @@ INCLUDED_FILES: dict[str, str] = {
     "site-overrides.audit.jsonl": OPERATIONAL_METADATA,
     "identity-resolutions.json": OPERATIONAL_METADATA,
     "identity-resolutions.audit.jsonl": OPERATIONAL_METADATA,
+    "evidence-resolution-decisions.json": OPERATIONAL_METADATA,
+    "evidence-resolution-decisions.audit.jsonl": OPERATIONAL_METADATA,
     "policy-exceptions.json": OPERATIONAL_METADATA,
     "policy-trend.json": OPERATIONAL_METADATA,
+    "policy-governance.json": OPERATIONAL_METADATA,
+    "policy-posture.json": OPERATIONAL_METADATA,
     "annotations.json": OPERATIONAL_METADATA,
     "incidents.json": OPERATIONAL_METADATA,
     "notifications.jsonl": OPERATIONAL_METADATA,
+    "notification-outbox.jsonl": OPERATIONAL_METADATA,
+    "schedules.json": OPERATIONAL_METADATA,
     "audit.jsonl": OPERATIONAL_METADATA,
     "users.json": SENSITIVE_INCLUDED,               # scrypt hashes
     "workspace-schema.json": OPERATIONAL_METADATA,
@@ -78,6 +84,7 @@ INCLUDED_FILES: dict[str, str] = {
 
 EXCLUDED_SECRETS = ("credentials.enc.json",)
 EXCLUDED_SESSIONS = ("sessions.json",)
+EXCLUDED_RAW_EVIDENCE = ("telemetry.jsonl",)
 EXCLUDED_REASONS = {
     "secrets": "a backup must never contain a credential store",
     "sessions": "restoring session tokens would resurrect revoked access",
@@ -114,6 +121,7 @@ def build_manifest(
         "excluded": {
             "secrets": list(EXCLUDED_SECRETS),
             "sessions": list(EXCLUDED_SESSIONS),
+            "raw_evidence": list(EXCLUDED_RAW_EVIDENCE),
             "reasons": EXCLUDED_REASONS,
         },
     }

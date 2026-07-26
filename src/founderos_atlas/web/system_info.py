@@ -27,6 +27,16 @@ def collect_system_information(app, *, credential_provider, preferences) -> dict
     jobs = manager.list_recent(limit=100) if manager is not None else []
     active_jobs = sum(1 for item in jobs if item.get("status") in {"queued", "running"})
     update = update_information(root)
+    schedule_worker = app.config.get("ATLAS_SCHEDULE_WORKER")
+    schedule_state = (
+        "running"
+        if schedule_worker is not None and schedule_worker.running
+        else "not started in this process"
+    )
+    telemetry_registry = app.config.get("ATLAS_TELEMETRY_REGISTRY")
+    telemetry_adapters = (
+        telemetry_registry.statuses() if telemetry_registry is not None else {}
+    )
 
     if auth_mode == "password":
         session_mode = "server-side opaque sessions (SHA-256 token hashes at rest)"
@@ -40,10 +50,12 @@ def collect_system_information(app, *, credential_provider, preferences) -> dict
 
     bind_value = f"{host}:{port}" if port is not None else host
     bind_observation = (
-        "Atlas application bind; external proxy/listener binding is not observable "
-        "from this process."
+        "Configured Atlas application bind; the external proxy/listener is not "
+        "observable from this process."
         if auth_mode == "proxy"
-        else "Atlas application bind configured for this process."
+        else
+        "Configured Atlas application bind; an embedding WSGI host can override "
+        "it, and that host's effective listener is not observable from Atlas."
     )
     logger = app.config.get("ATLAS_LOGGER")
     log_level = logging.getLevelName(
@@ -68,7 +80,29 @@ def collect_system_information(app, *, credential_provider, preferences) -> dict
         "session_mode": session_mode,
         "session_expiry": session_expiry,
         "worker_model": "one process per workspace; in-process discovery threads",
-        "worker_status": f"available; {active_jobs} active discovery job(s)",
+        "worker_status": (
+            f"discovery available; {active_jobs} active job(s); "
+            f"schedule worker {schedule_state}"
+        ),
+        "schedule_worker_status": schedule_state,
+        "schedule_worker_last_tick": (
+            schedule_worker.last_tick_at if schedule_worker is not None else None
+        ),
+        "schedule_worker_last_error": (
+            schedule_worker.last_error if schedule_worker is not None else None
+        ),
+        "telemetry_provider_status": (
+            dict(telemetry_adapters)
+            if telemetry_adapters
+            else {"state": "not configured", "boundary": "external adapter"}
+        ),
+        "telemetry_retention": (
+            f"{int(app.config.get('ATLAS_TELEMETRY_RETENTION_DAYS', 30))} "
+            "days; pruned at collection"
+        ),
+        "telemetry_max_facts": int(
+            app.config.get("ATLAS_TELEMETRY_MAX_FACTS", 100_000)
+        ),
         "workspace_schema_version": applied,
         "workspace_schema_target": CURRENT_SCHEMA_VERSION,
         "logging_level": str(log_level),

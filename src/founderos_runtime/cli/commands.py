@@ -1468,13 +1468,30 @@ def atlas_web_command(
     app.config["ATLAS_HOST"] = host
     app.config["ATLAS_PORT"] = port
 
+    # The supported single-process server owns one schedule worker.  Its
+    # durable leases make a restart safe; credentials remain resolved only by
+    # the normal discovery pipeline.
+    from founderos_atlas.scheduling import ScheduleStore, ScheduleWorker
+
+    schedule_worker = ScheduleWorker(
+        store=ScheduleStore(app.config["ATLAS_WORKSPACE_ROOT"]),
+        job_manager=app.config["ATLAS_JOB_MANAGER"],
+        profile_service=app.config["ATLAS_PROFILE_SERVICE"],
+        worker_id=f"atlas-web:{port}",
+    )
+    app.config["ATLAS_SCHEDULE_WORKER"] = schedule_worker
+    schedule_worker.start()
+
     url = f"http://{host}:{port}"
     print("Atlas web UI running at:")
     print(url)
     (browser_opener or webbrowser.open)(url)
     run = server_runner or app.run
     # host is fixed to loopback; never bind to 0.0.0.0.
-    run(host=host, port=port)
+    try:
+        run(host=host, port=port)
+    finally:
+        schedule_worker.stop()
     return 0, ""
 
 

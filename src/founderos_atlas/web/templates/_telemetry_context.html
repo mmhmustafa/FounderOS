@@ -1,0 +1,15 @@
+{% macro operational_context(context, note='Operational evidence is contextual and does not replace the deterministic analysis on this page.') %}
+{% if context.facts %}
+<aside class="card operational-context" aria-label="Operational evidence context">
+  <div>
+    <h2>Live context</h2>
+    <p><strong>{{ context.signals }}</strong> condition(s) needing attention from
+      <strong>{{ context.facts }}</strong> recent observation(s).
+      {% if context.latest %}<span class="muted">Latest {{ context.latest | timestamp }}.</span>{% endif %}
+    </p>
+    <p class="muted">{{ note }}</p>
+  </div>
+  <a class="btn btn-sm btn-secondary" href="{{ context.href }}">Inspect evidence</a>
+</aside>
+{% endif %}
+{% endmacro %}

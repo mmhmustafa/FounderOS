@@ -770,7 +770,7 @@ class MultiPlatformPipelineTests(unittest.TestCase):
             )
 
             # Enterprise Graph unchanged: both labs federate together.
-            page = client.get("/topology?scope=all").data
+            page = client.get("/topology?scope=all&support=1").data
             for hostname in (b"A1", b"GW", b"delhi-r1", b"delhi-r2"):
                 self.assertIn(hostname, page)
 

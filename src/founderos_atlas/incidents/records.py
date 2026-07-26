@@ -25,15 +25,48 @@ from uuid import uuid4
 from founderos_atlas.audit import AuditEvent, AuditLog
 
 INCIDENTS_FILENAME = "incidents.json"
-INCIDENTS_SCHEMA_VERSION = "1.0.0"
+INCIDENTS_SCHEMA_VERSION = "1.1.0"
 
 STATUS_OPEN = "open"
 STATUS_ACKNOWLEDGED = "acknowledged"
+STATUS_INVESTIGATING = "investigating"
+STATUS_MITIGATING = "mitigating"
+STATUS_MONITORING = "monitoring"
 STATUS_RESOLVED = "resolved"
+STATUS_CLOSED = "closed"
 STATUS_SUPPRESSED = "suppressed"
 CASE_STATUSES = (
-    STATUS_OPEN, STATUS_ACKNOWLEDGED, STATUS_RESOLVED, STATUS_SUPPRESSED,
+    STATUS_OPEN,
+    STATUS_ACKNOWLEDGED,
+    STATUS_INVESTIGATING,
+    STATUS_MITIGATING,
+    STATUS_MONITORING,
+    STATUS_RESOLVED,
+    STATUS_CLOSED,
+    STATUS_SUPPRESSED,
 )
+
+CASE_TRANSITIONS = {
+    STATUS_OPEN: {
+        STATUS_ACKNOWLEDGED, STATUS_INVESTIGATING, STATUS_SUPPRESSED,
+    },
+    STATUS_ACKNOWLEDGED: {
+        STATUS_INVESTIGATING, STATUS_MITIGATING, STATUS_SUPPRESSED,
+    },
+    STATUS_INVESTIGATING: {
+        STATUS_MITIGATING, STATUS_MONITORING, STATUS_SUPPRESSED,
+    },
+    STATUS_MITIGATING: {
+        STATUS_MONITORING, STATUS_RESOLVED, STATUS_SUPPRESSED,
+    },
+    STATUS_MONITORING: {
+        STATUS_INVESTIGATING, STATUS_MITIGATING, STATUS_RESOLVED,
+        STATUS_SUPPRESSED,
+    },
+    STATUS_RESOLVED: {STATUS_CLOSED, STATUS_OPEN},
+    STATUS_CLOSED: {STATUS_OPEN},
+    STATUS_SUPPRESSED: {STATUS_OPEN},
+}
 
 SEVERITIES = ("critical", "high", "medium", "low")
 
@@ -86,8 +119,19 @@ class IncidentCase:
     linked_paths: tuple[str, ...] = ()        # "source→destination" labels
     linked_predictions: tuple[str, ...] = ()  # prediction summaries
     linked_plans: tuple[str, ...] = ()        # compass plan ids
+    participants: tuple[str, ...] = ()
+    affected_sites: tuple[str, ...] = ()
+    linked_actions: tuple[str, ...] = ()
+    linked_evidence: tuple[str, ...] = ()
+    linked_configurations: tuple[str, ...] = ()
+    linked_policies: tuple[str, ...] = ()
+    validation_evidence: tuple[str, ...] = ()
+    validation_unavailable_reason: str | None = None
+    outstanding_risks: tuple[str, ...] = ()
+    follow_up_actions: tuple[str, ...] = ()
     resolution: str | None = None
     resolved_at: str | None = None
+    closed_at: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -105,8 +149,19 @@ class IncidentCase:
             "linked_paths": list(self.linked_paths),
             "linked_predictions": list(self.linked_predictions),
             "linked_plans": list(self.linked_plans),
+            "participants": list(self.participants),
+            "affected_sites": list(self.affected_sites),
+            "linked_actions": list(self.linked_actions),
+            "linked_evidence": list(self.linked_evidence),
+            "linked_configurations": list(self.linked_configurations),
+            "linked_policies": list(self.linked_policies),
+            "validation_evidence": list(self.validation_evidence),
+            "validation_unavailable_reason": self.validation_unavailable_reason,
+            "outstanding_risks": list(self.outstanding_risks),
+            "follow_up_actions": list(self.follow_up_actions),
             "resolution": self.resolution,
             "resolved_at": self.resolved_at,
+            "closed_at": self.closed_at,
         }
 
     @classmethod
@@ -141,8 +196,41 @@ class IncidentCase:
             linked_plans=tuple(
                 str(item) for item in value.get("linked_plans") or ()
             ),
+            participants=tuple(
+                str(item) for item in value.get("participants") or ()
+            ),
+            affected_sites=tuple(
+                str(item) for item in value.get("affected_sites") or ()
+            ),
+            linked_actions=tuple(
+                str(item) for item in value.get("linked_actions") or ()
+            ),
+            linked_evidence=tuple(
+                str(item) for item in value.get("linked_evidence") or ()
+            ),
+            linked_configurations=tuple(
+                str(item)
+                for item in value.get("linked_configurations") or ()
+            ),
+            linked_policies=tuple(
+                str(item) for item in value.get("linked_policies") or ()
+            ),
+            validation_evidence=tuple(
+                str(item)
+                for item in value.get("validation_evidence") or ()
+            ),
+            validation_unavailable_reason=value.get(
+                "validation_unavailable_reason"
+            ),
+            outstanding_risks=tuple(
+                str(item) for item in value.get("outstanding_risks") or ()
+            ),
+            follow_up_actions=tuple(
+                str(item) for item in value.get("follow_up_actions") or ()
+            ),
             resolution=value.get("resolution"),
             resolved_at=value.get("resolved_at"),
+            closed_at=value.get("closed_at"),
         )
 
 
@@ -210,7 +298,7 @@ class IncidentCaseRepository:
             if not include_resolved:
                 cases = [
                     case for case in cases
-                    if case.status != STATUS_RESOLVED
+                    if case.status not in (STATUS_RESOLVED, STATUS_CLOSED)
                 ]
         cases.sort(key=lambda case: case.opened_at, reverse=True)
         return cases
@@ -225,7 +313,13 @@ class IncidentCaseRepository:
         wanted = str(title or "").strip().casefold()
         for case in self.list(scope_id=scope_id):
             if (
-                case.status in (STATUS_OPEN, STATUS_ACKNOWLEDGED)
+                case.status in (
+                    STATUS_OPEN,
+                    STATUS_ACKNOWLEDGED,
+                    STATUS_INVESTIGATING,
+                    STATUS_MITIGATING,
+                    STATUS_MONITORING,
+                )
                 and case.title.strip().casefold() == wanted
             ):
                 return case
@@ -332,12 +426,35 @@ class IncidentCaseRepository:
                  for case in cases],
                 self.revision() + 1,
             )
+        def audit_state(case: IncidentCase) -> dict[str, Any]:
+            return {
+                "status": case.status,
+                "severity": case.severity,
+                "owner": case.owner,
+                "participants": list(case.participants),
+                "affected_sites": list(case.affected_sites),
+                "link_counts": {
+                    "paths": len(case.linked_paths),
+                    "predictions": len(case.linked_predictions),
+                    "plans": len(case.linked_plans),
+                    "actions": len(case.linked_actions),
+                    "evidence": len(case.linked_evidence),
+                    "configurations": len(case.linked_configurations),
+                    "policies": len(case.linked_policies),
+                },
+                "has_resolution": bool(case.resolution),
+                "has_validation": bool(
+                    case.validation_evidence
+                    or case.validation_unavailable_reason
+                ),
+                "outstanding_risk_count": len(case.outstanding_risks),
+                "follow_up_count": len(case.follow_up_actions),
+            }
+
         self._audit_case(
             operation, updated, actor=actor, reason=reason,
-            before={"status": existing.status, "severity": existing.severity,
-                    "owner": existing.owner},
-            after={"status": updated.status, "severity": updated.severity,
-                   "owner": updated.owner},
+            before=audit_state(existing),
+            after=audit_state(updated),
             correlation_id=correlation_id,
         )
         return updated
@@ -350,6 +467,52 @@ class IncidentCaseRepository:
             operation="acknowledge", actor=actor,
         )
 
+    def transition(
+        self,
+        case_id: str,
+        *,
+        status: str,
+        actor: str,
+        reason: str,
+        expected_revision: int | None = None,
+    ) -> IncidentCase:
+        """Move a case through the explicit operational lifecycle."""
+
+        if status not in CASE_STATUSES:
+            raise ValueError(f"status must be one of {', '.join(CASE_STATUSES)}")
+        if not str(reason or "").strip():
+            raise ValueError("a case transition requires a reason")
+
+        def move(case: IncidentCase) -> IncidentCase:
+            if status not in CASE_TRANSITIONS.get(case.status, set()):
+                raise ValueError(
+                    f"cannot move an incident from {case.status} to {status}"
+                )
+            if status == STATUS_RESOLVED and not case.resolution:
+                raise ValueError(
+                    "record a resolution before moving the case to resolved"
+                )
+            stamp = _now()
+            return replace(
+                case,
+                status=status,
+                resolved_at=(
+                    stamp if status == STATUS_RESOLVED else case.resolved_at
+                ),
+                closed_at=(
+                    stamp if status == STATUS_CLOSED else case.closed_at
+                ),
+            )
+
+        return self._mutate(
+            case_id,
+            expected_revision,
+            move,
+            operation=f"transition-{status}",
+            actor=actor,
+            reason=reason,
+        )
+
     def assign(self, case_id: str, *, owner: str, actor: str,
                expected_revision: int | None = None) -> IncidentCase:
         if not str(owner or "").strip():
@@ -358,6 +521,28 @@ class IncidentCaseRepository:
             case_id, expected_revision,
             lambda case: replace(case, owner=owner.strip()),
             operation="assign", actor=actor,
+        )
+
+    def set_participants(
+        self,
+        case_id: str,
+        *,
+        participants,
+        actor: str,
+        expected_revision: int | None = None,
+    ) -> IncidentCase:
+        values = tuple(sorted({
+            str(item).strip()
+            for item in participants
+            if str(item).strip()
+        }, key=str.casefold))
+        return self._mutate(
+            case_id,
+            expected_revision,
+            lambda case: replace(case, participants=values),
+            operation="set-participants",
+            actor=actor,
+            reason=", ".join(values)[:200],
         )
 
     def annotate(self, case_id: str, *, text: str, actor: str,
@@ -415,15 +600,39 @@ class IncidentCaseRepository:
 
     def resolve(self, case_id: str, *, resolution: str, actor: str,
                 expected_revision: int | None = None,
-                correlation_id: str | None = None) -> IncidentCase:
+                correlation_id: str | None = None,
+                validation_evidence=(),
+                validation_unavailable_reason: str | None = None,
+                outstanding_risks=(),
+                follow_up_actions=()) -> IncidentCase:
         if not str(resolution or "").strip():
             raise ValueError("resolving an incident requires a resolution")
+        evidence = tuple(
+            str(item).strip()
+            for item in validation_evidence
+            if str(item).strip()
+        )
+        unavailable = str(validation_unavailable_reason or "").strip() or None
+        if evidence and unavailable:
+            raise ValueError(
+                "provide validation evidence or an unavailable reason, not both"
+            )
         stamp = _now()
         return self._mutate(
             case_id, expected_revision,
             lambda case: replace(
                 case, status=STATUS_RESOLVED,
                 resolution=resolution.strip(), resolved_at=stamp,
+                validation_evidence=evidence or case.validation_evidence,
+                validation_unavailable_reason=unavailable,
+                outstanding_risks=tuple(
+                    str(item).strip()
+                    for item in outstanding_risks if str(item).strip()
+                ),
+                follow_up_actions=tuple(
+                    str(item).strip()
+                    for item in follow_up_actions if str(item).strip()
+                ),
             ),
             operation="resolve", actor=actor, reason=resolution,
             correlation_id=correlation_id,
@@ -437,6 +646,7 @@ class IncidentCaseRepository:
             case_id, expected_revision,
             lambda case: replace(
                 case, status=STATUS_OPEN, resolution=None, resolved_at=None,
+                closed_at=None,
             ),
             operation="reopen", actor=actor, reason=reason,
         )
@@ -454,6 +664,7 @@ class IncidentCaseRepository:
     def link(
         self, case_id: str, *, kind: str, value: str, actor: str,
         correlation_id: str | None = None,
+        expected_revision: int | None = None,
     ) -> IncidentCase:
         """Attach a path/prediction/plan reference to the case."""
 
@@ -461,18 +672,114 @@ class IncidentCaseRepository:
             "path": "linked_paths",
             "prediction": "linked_predictions",
             "plan": "linked_plans",
+            "action": "linked_actions",
+            "evidence": "linked_evidence",
+            "configuration": "linked_configurations",
+            "policy": "linked_policies",
+            "site": "affected_sites",
         }
         if kind not in fields:
-            raise ValueError("link kind must be path, prediction, or plan")
+            raise ValueError(
+                "link kind must be path, prediction, plan, action, evidence, "
+                "configuration, policy, or site"
+            )
+        normalized = str(value or "").strip()
+        if not normalized:
+            raise ValueError("a case link requires a value")
+        if len(normalized) > 500:
+            raise ValueError("a case link must be 500 characters or fewer")
+        if any(ord(character) < 32 for character in normalized):
+            raise ValueError("a case link cannot contain control characters")
         name = fields[kind]
 
         def add(case: IncidentCase) -> IncidentCase:
             existing = getattr(case, name)
-            if value in existing:
+            if normalized in existing:
                 return case
-            return replace(case, **{name: (*existing, value)})
+            return replace(case, **{name: (*existing, normalized)})
 
         return self._mutate(
-            case_id, None, add, operation=f"link-{kind}", actor=actor,
-            reason=value, correlation_id=correlation_id,
+            case_id, expected_revision, add,
+            operation=f"link-{kind}", actor=actor,
+            reason=normalized, correlation_id=correlation_id,
+        )
+
+    def unlink(
+        self,
+        case_id: str,
+        *,
+        kind: str,
+        value: str,
+        actor: str,
+        expected_revision: int | None = None,
+    ) -> IncidentCase:
+        fields = {
+            "path": "linked_paths",
+            "prediction": "linked_predictions",
+            "plan": "linked_plans",
+            "action": "linked_actions",
+            "evidence": "linked_evidence",
+            "configuration": "linked_configurations",
+            "policy": "linked_policies",
+            "site": "affected_sites",
+        }
+        if kind not in fields:
+            raise ValueError("unknown case link kind")
+        name = fields[kind]
+        existing = self.get(case_id)
+        if existing is None:
+            raise ValueError("No such incident case exists.")
+        if value not in getattr(existing, name):
+            raise ValueError("that item is not linked to this case")
+        return self._mutate(
+            case_id,
+            expected_revision,
+            lambda case: replace(
+                case,
+                **{
+                    name: tuple(
+                        item for item in getattr(case, name) if item != value
+                    )
+                },
+            ),
+            operation=f"unlink-{kind}",
+            actor=actor,
+            reason=value,
+        )
+
+    def close(
+        self,
+        case_id: str,
+        *,
+        actor: str,
+        reason: str,
+        expected_revision: int | None = None,
+    ) -> IncidentCase:
+        """Close only a resolved and explicitly validated case."""
+
+        if not str(reason or "").strip():
+            raise ValueError("closing a case requires a reason")
+
+        def close_case(case: IncidentCase) -> IncidentCase:
+            if case.status != STATUS_RESOLVED:
+                raise ValueError("only a resolved case can be closed")
+            if not case.resolution:
+                raise ValueError("a closed case needs a resolution")
+            if (
+                not case.validation_evidence
+                and not case.validation_unavailable_reason
+            ):
+                raise ValueError(
+                    "closing requires validation evidence or an explicit "
+                    "reason validation is unavailable"
+                )
+            return replace(case, status=STATUS_CLOSED, closed_at=_now())
+
+        return self._mutate(
+            case_id,
+            expected_revision,
+            close_case,
+            operation="close",
+            actor=actor,
+            reason=reason,
         )

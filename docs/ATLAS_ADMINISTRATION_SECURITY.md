@@ -49,7 +49,33 @@ payload redaction is defense in depth; callers pass references, never values.
 `retention_days` is persisted policy metadata. Retention is manual: Atlas
 rebuilds a preview immediately before execution, protects non-history records,
 requires a typed destructive confirmation, audits the operation, and writes a
-deletion manifest. No scheduled retention worker ships.
+deletion manifest. The scheduled-discovery worker never performs retention
+deletion.
+
+## Schedules, notifications, and telemetry
+
+The supported `atlas web` process may run one durable discovery-schedule
+worker. Schedules persist timezone, recurrence, bounded retries, misfire policy,
+leases, idempotency keys, and maintenance windows; they contain profile
+references, never credential values. Action Center records and its optional
+external-delivery outbox are included in the reviewed metadata backup because
+their payloads are secret-free. Normalized telemetry is treated as raw
+operational evidence and excluded from that backup by construction.
+
+External delivery and telemetry collectors are adapter boundaries. Deployment
+code injects authorized providers; Atlas stores provider status and safe
+references only. If none is configured, Settings and the relevant page say so
+explicitly and no health conclusion is inferred.
+
+Telemetry collection requires the discovery-run permission and CSRF protection
+on the web surface. Each attempt has an opaque collection ID and an audit event
+containing counts and a safe error code, never provider exceptions or response
+bodies. Secret-shaped provider metadata is redacted again by the canonical
+fact model. Successful collection prunes the configured age window and
+reconciles Action Center conditions only inside that collection's scope;
+missing, failed, stale, partial, or retention-rejected evidence cannot be
+interpreted as recovery. Adapters default to partial coverage and must
+explicitly declare when a successful collection is a complete snapshot.
 
 ## External-provider limitations
 

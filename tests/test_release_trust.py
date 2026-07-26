@@ -99,8 +99,10 @@ class SystemInformationTests(unittest.TestCase):
                     self.assertEqual(tls, info["hsts_enabled"])
                     self.assertEqual(VERSION, info["version"])
                     self.assertIn("one process", info["worker_model"])
+                    self.assertIn(
+                        "not observable", info["bind_observation"]
+                    )
                     if mode == "proxy":
-                        self.assertIn("not observable", info["bind_observation"])
                         self.assertEqual(["127.0.0.1"], info["trusted_proxies"])
 
     def test_every_credential_provider_is_named_and_availability_is_effective(self) -> None:

@@ -529,7 +529,7 @@ class EnterpriseGuiTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             workdir = Path(tmp)
             _, client = self.build_world(workdir)
-            page = client.get("/topology?scope=all").data
+            page = client.get("/topology?scope=all&support=1").data
             # Inventory contains ALL devices; the shared gateway merged.
             for hostname in (b"A1", b"A2", b"B1", b"GW"):
                 self.assertIn(hostname, page)

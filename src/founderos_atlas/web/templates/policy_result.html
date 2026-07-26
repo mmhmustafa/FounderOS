@@ -17,11 +17,16 @@
   </span>
 </div>
 <p class="muted">
-  {{ e.policy.category | title }} · severity {{ e.policy.severity }} · {{ e.network }}
+  {{ e.policy.category | title }} · severity {{ e.policy.severity }} · {{ e.policy.intent | default('required') | title }} intent · {{ e.network }}
   · site {{ e.site }} · evidence
   {% if e.evidence_fresh is true %}fresh{% elif e.evidence_fresh is false %}stale{% else %}age unknown{% endif %}
   {% if e.owner %} · owner {{ e.owner }}{% endif %}
 </p>
+
+<div class="callout {{ 'callout-info' if e.applicability.applicable else 'callout-warning' }}">
+  <p class="callout-text"><strong>{% if e.applicability.applicable %}Applicable{% else %}Not applicable{% endif %}</strong></p>
+  <p>{{ e.applicability.explanation }}</p>
+</div>
 
 {% set conf = confidence_display(e.result.confidence, conflicting=e.result.evidence_conflicting|length > 0) %}
 <section class="card">
@@ -113,6 +118,63 @@
     {% endif %}
   </div>
 </section>
+
+{% if can('policy.manage') %}
+<section class="card" id="baseline">
+  <h2>Policy intent and applicability</h2>
+  <p class="muted">
+    Preview changes against the current estate before activation. Drafts do
+    not affect evaluation. Values accept comma-separated names or wildcards;
+    dimensions use AND, values within a dimension use OR, and exclusions win.
+  </p>
+  <form method="post" action="/policy/baselines/preview" class="form">{{ csrf_field() }}
+    <input type="hidden" name="policy_id" value="{{ e.policy.policy_id }}">
+    <input type="hidden" name="expected_revision" value="{{ baseline_revision }}">
+    <input type="hidden" name="next" value="{{ request.full_path }}">
+    {% set selector = baseline.applicability if baseline else e.policy.applicability %}
+    <div class="form-row">
+      <label>Intent
+        <select name="intent">
+          {% for value in policy_intents %}
+          <option value="{{ value }}" {{ 'selected' if (baseline.intent if baseline else e.policy.intent) == value }}>{{ value | title }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Owner
+        <input name="owner" required value="{{ baseline.owner if baseline else e.owner }}" placeholder="team or accountable person">
+      </label>
+    </div>
+    <label>Reason
+      <input name="reason" required value="{{ baseline.reason if baseline else '' }}" placeholder="why this policy belongs to this target">
+    </label>
+    <div class="form-row">
+      <label>Platforms<input name="platforms" value="{{ selector.platforms | join(', ') }}" placeholder="IOS-XE, FortiOS"></label>
+      <label>Roles<input name="roles" value="{{ selector.roles | join(', ') }}" placeholder="router, firewall"></label>
+      <label>Sites<input name="sites" value="{{ selector.sites | join(', ') }}" placeholder="Delhi, Mumbai"></label>
+      <label>Site types<input name="site_types" value="{{ selector.site_types | join(', ') }}" placeholder="branch, datacenter"></label>
+    </div>
+    <div class="form-row">
+      <label>Profile IDs<input name="profiles" value="{{ selector.profiles | join(', ') }}" placeholder="production-core"></label>
+      <label>Networks<input name="networks" value="{{ selector.networks | join(', ') }}" placeholder="Production"></label>
+      <label>Environments<input name="environments" value="{{ selector.environments | join(', ') }}" placeholder="production"></label>
+      <label>Tags<input name="tags" value="{{ selector.tags | join(', ') }}" placeholder="critical, edge"></label>
+    </div>
+    <div class="form-row">
+      <label>Explicitly include devices<input name="include_devices" value="{{ selector.include_devices | join(', ') }}" placeholder="core-*, fw-01"></label>
+      <label>Explicitly exclude devices<input name="exclude_devices" value="{{ selector.exclude_devices | join(', ') }}" placeholder="lab-*, retired-01"></label>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-primary" type="submit">Preview calibration</button>
+    </div>
+  </form>
+  {% if baseline %}
+  <p class="muted">
+    Current baseline: {{ baseline.state }} · owner {{ baseline.owner }} ·
+    updated {{ baseline.updated_at | timestamp }} by {{ baseline.updated_by }}.
+  </p>
+  {% endif %}
+</section>
+{% endif %}
 
 <section class="card" id="exception">
   <h2>Exception</h2>

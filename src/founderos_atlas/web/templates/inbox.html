@@ -1,56 +1,112 @@
 {% extends "base.html" %}
-{% block title %}Inbox{% endblock %}
+{% block title %}Action Center{% endblock %}
 {% block content %}
-<div class="page-head"><h1>Inbox</h1></div>
+<div class="page-head">
+  <div>
+    <h1>Action Center</h1>
+    <p class="page-kicker">What needs attention, who owns it, and what changed.</p>
+  </div>
+</div>
 <p class="muted">
-  Everything addressed to you or your roles: assignments, failed
-  discoveries, policy regressions, edit conflicts, and approval
-  requests. Nothing here leaves Atlas — there is no email integration
-  to configure or to leak into.
+  Atlas groups repeated conditions into one durable action item. Resolution
+  remains linked to its source and a recurrence reopens the same item.
 </p>
 
 <section class="card">
+  <form method="get" action="/inbox" class="filter-bar" aria-label="Filter action items">
+    <label>Status
+      <select name="status">
+        <option value="">Active states</option>
+        {% for value in ('unread', 'read', 'acknowledged', 'in-progress', 'snoozed', 'resolved', 'suppressed', 'done') %}
+        <option value="{{ value }}" {% if selected_status == value %}selected{% endif %}>{{ value | replace('-', ' ') | title }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Priority
+      <select name="priority">
+        <option value="">All priorities</option>
+        {% for value in ('critical', 'high', 'medium', 'low', 'informational') %}
+        <option value="{{ value }}" {% if selected_priority == value %}selected{% endif %}>{{ value | title }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Source
+      <select name="kind">
+        <option value="">All sources</option>
+        {% for value in ('incident', 'telemetry-signal', 'discovery-failed', 'policy-regression', 'stale-evidence', 'edit-conflict', 'approval-request', 'assignment') %}
+        <option value="{{ value }}" {% if selected_kind == value %}selected{% endif %}>{{ value | replace('-', ' ') | title }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="check-label">
+      <input type="checkbox" name="mine" value="1" {% if mine %}checked{% endif %}>
+      Assigned to me
+    </label>
+    <label class="check-label">
+      <input type="checkbox" name="done" value="1" {% if include_done %}checked{% endif %}>
+      Include completed
+    </label>
+    <button class="btn btn-sm" type="submit">Apply</button>
+    <a class="btn btn-sm btn-secondary" href="/inbox">Clear</a>
+  </form>
   <p class="muted" role="status" aria-live="polite">
-    {{ notifications | length }} notification(s){% if not include_done %}
-    · <a href="/inbox?done=1">include done</a>{% else %}
-    · <a href="/inbox">hide done</a>{% endif %}
+    {{ notifications | length }} action item(s)
   </p>
   {% if notifications %}
-  <div class="table-scroll" role="region" aria-label="Notifications" tabindex="0">
+  <div class="table-scroll" role="region" aria-label="Action items" tabindex="0">
     <table class="grid" data-columns="inbox">
       <thead>
-        <tr><th data-col="when" data-col-preset="simple">When</th><th data-col="kind">Kind</th><th data-col="notification" data-col-preset="simple">Notification</th><th data-col="status" data-col-preset="simple">Status</th><th data-col="actions" data-col-preset="simple" data-col-label="Actions"><span class="visually-hidden">Actions</span></th></tr>
+        <tr>
+          <th data-col="priority">Priority</th>
+          <th data-col="notification" data-col-preset="simple">Action</th>
+          <th data-col="owner">Owner</th>
+          <th data-col="status" data-col-preset="simple">State</th>
+          <th data-col="when" data-col-preset="simple">Updated</th>
+          <th data-col="actions" data-col-preset="simple" data-col-label="Actions"><span class="visually-hidden">Actions</span></th>
+        </tr>
       </thead>
       <tbody>
         {% for item in notifications %}
         <tr {% if item.status == 'unread' %}class="row-unread"{% endif %}>
-          <td>{{ item.created_at | timestamp }}</td>
-          <td><span class="hop-badge badge-muted">{{ item.kind }}</span></td>
+          <td><span class="hop-badge priority-{{ item.priority }}">{{ item.priority }}</span></td>
           <td>
             <strong>{{ item.title }}</strong>
-            {# Progressive disclosure: Simple keeps the identifying title
-               and the action; Detailed adds severity/scope/assigner;
-               Expert adds the correlation id for audit cross-reference. #}
-            {% if item.detail and display_level != 'simple' %}<div class="muted">{{ item.detail }}</div>{% endif %}
+            <div class="muted">{{ item.kind | replace('-', ' ') }}{% if item.scope_id %} · {{ item.scope_id }}{% endif %}{% if item.occurrences > 1 %} · {{ item.occurrences }} occurrences{% endif %}</div>
+            {% if item.detail and display_level != 'simple' %}<div>{{ item.detail }}</div>{% endif %}
+            {% if item.evidence_freshness %}<div class="muted">Evidence: {{ item.evidence_freshness }}</div>{% endif %}
             {% if display_level == 'expert' and item.correlation_id %}
             <div class="muted"><code>{{ item.correlation_id }}</code></div>
             {% endif %}
           </td>
-          <td>{{ item.status }}</td>
+          <td>{{ item.owner or 'Unassigned' }}</td>
+          <td>{{ item.status | replace('-', ' ') }}</td>
+          <td>{{ (item.updated_at or item.created_at) | timestamp }}</td>
           <td class="row-actions">
             {% if item.href %}
-            <a class="btn btn-sm" href="{{ item.href }}">Open</a>
+            <a class="btn btn-sm" href="{{ item.href }}">Open source</a>
             {% endif %}
-            {% if item.status == 'unread' %}
-            <form method="post" action="/inbox/{{ item.notification_id }}" style="display:inline">{{ csrf_field() }}
-              <input type="hidden" name="status" value="read">
-              <button class="btn btn-sm" type="submit">Mark read</button>
+            {% if item.status not in ('resolved', 'done', 'suppressed') %}
+            <form method="post" action="/inbox/{{ item.notification_id }}" class="inline-form">{{ csrf_field() }}
+              <input type="hidden" name="expected_revision" value="{{ item.revision }}">
+              <input type="hidden" name="owner" value="__me__">
+              <input type="hidden" name="status" value="{% if item.status in ('unread', 'read') %}acknowledged{% else %}in-progress{% endif %}">
+              <button class="btn btn-sm btn-secondary" type="submit">{% if not item.owner %}Take ownership{% else %}Start work{% endif %}</button>
             </form>
-            {% endif %}
-            {% if item.status != 'done' %}
-            <form method="post" action="/inbox/{{ item.notification_id }}" style="display:inline">{{ csrf_field() }}
-              <input type="hidden" name="status" value="done">
-              <button class="btn btn-sm" type="submit">Done</button>
+            <form method="post" action="/inbox/{{ item.notification_id }}" class="inline-form">{{ csrf_field() }}
+              <input type="hidden" name="expected_revision" value="{{ item.revision }}">
+              <input type="hidden" name="status" value="snoozed">
+              <label class="visually-hidden" for="snooze-{{ loop.index }}">Snooze duration</label>
+              <select id="snooze-{{ loop.index }}" name="snooze_minutes">
+                <option value="60">1 hour</option><option value="240">4 hours</option><option value="1440">1 day</option>
+              </select>
+              <button class="btn btn-sm btn-secondary" type="submit">Snooze</button>
+            </form>
+            <form method="post" action="/inbox/{{ item.notification_id }}" class="inline-form">{{ csrf_field() }}
+              <input type="hidden" name="expected_revision" value="{{ item.revision }}">
+              <input type="hidden" name="status" value="resolved">
+              <label class="visually-hidden" for="resolve-{{ loop.index }}">Resolution reason</label>
+              <input id="resolve-{{ loop.index }}" name="reason" required maxlength="500" placeholder="Resolution reason">
+              <button class="btn btn-sm" type="submit">Resolve</button>
             </form>
             {% endif %}
           </td>
@@ -60,7 +116,10 @@
     </table>
   </div>
   {% else %}
-  <p class="muted">Nothing needs your attention right now.</p>
+  <div class="empty-state">
+    <strong>No action items match this view.</strong>
+    <p class="muted">Clear the filters to see other work, or return when Atlas detects a condition needing attention.</p>
+  </div>
   {% endif %}
 </section>
 {% endblock %}

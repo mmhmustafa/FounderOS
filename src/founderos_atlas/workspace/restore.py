@@ -71,7 +71,11 @@ def _validate_structure(name: str, data: bytes) -> None:
             if line.strip():
                 json.loads(line)
         return
-    json.loads(text)
+    value = json.loads(text)
+    if name == "schedules.json":
+        from founderos_atlas.scheduling import validate_schedule_catalog
+
+        validate_schedule_catalog(value)
 
 
 def _validate_schema(members: dict[str, bytes]) -> None:

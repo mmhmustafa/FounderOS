@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% block title %}Scheduled operations{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Scheduled operations</h1>
+    <p class="page-kicker">Repeat discovery safely without turning Atlas into a noisy monitoring wall.</p>
+  </div>
+</div>
+
+{% if catalog_error %}
+<div class="status-banner status-critical" role="alert">
+  <span class="badge">Catalog unavailable</span>
+  <span>{{ catalog_error }}</span>
+</div>
+{% endif %}
+
+<div class="split-layout">
+  <section class="card">
+    <h2>Discovery schedules</h2>
+    {% if schedules %}
+    <div class="table-scroll" role="region" aria-label="Discovery schedules" tabindex="0">
+      <table class="grid">
+        <thead><tr><th>Name</th><th>Profile</th><th>Next run</th><th>Last result</th><th>State</th><th><span class="visually-hidden">Actions</span></th></tr></thead>
+        <tbody>
+        {% for item in schedules %}
+          <tr>
+            <td><strong>{{ item.name }}</strong><div class="muted">{{ item.recurrence }} · {{ item.timezone_name }}</div></td>
+            <td>{{ item.profile_id }}</td>
+            <td>{{ item.next_run_at | timestamp }}</td>
+            <td>{{ item.last_status or 'Not run yet' }}{% if item.last_error %}<div class="muted">{{ item.last_error }}</div>{% endif %}</td>
+            <td>{{ 'Active' if item.enabled else 'Paused' }}</td>
+            <td>{% if can('discovery.run') %}
+              <form method="post" action="/schedules/{{ item.schedule_id }}/state" class="inline-form">{{ csrf_field() }}
+                <input type="hidden" name="expected_revision" value="{{ schedule_revision }}">
+                <input type="hidden" name="enabled" value="{{ '0' if item.enabled else '1' }}">
+                <button class="btn btn-sm btn-secondary" type="submit">{{ 'Pause' if item.enabled else 'Resume' }}</button>
+              </form>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="muted">No discovery schedules yet.</p>
+    {% endif %}
+  </section>
+
+  {% if can('discovery.run') %}<section class="card">
+    <h2>Add schedule</h2>
+    <form method="post" action="/schedules" class="stack-form">{{ csrf_field() }}
+      <input type="hidden" name="expected_revision" value="{{ schedule_revision }}">
+      <label>Name <input name="name" required maxlength="120"></label>
+      <label>Profile
+        <select name="profile_id" required>
+          {% for profile in profiles %}<option value="{{ profile.profile_id }}">{{ profile.name }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>First run <input type="datetime-local" name="first_run_at" required></label>
+      <label>Timezone <input name="timezone_name" value="UTC" required></label>
+      <label>Repeat
+        <select name="recurrence">
+          <option value="once">Once</option>
+          <option value="interval" selected>At an interval</option>
+          <option value="daily">Daily</option>
+        </select>
+      </label>
+      <label>Interval minutes <input type="number" name="interval_minutes" min="1" max="525600" value="1440"></label>
+      <label>Daily local time <input type="time" name="daily_time"></label>
+      <details>
+        <summary>Failure and restart behavior</summary>
+        <label>Missed run
+          <select name="misfire_policy"><option value="run-once">Run once after restart</option><option value="skip">Skip it</option></select>
+        </label>
+        <label>Maximum retries <input type="number" name="max_retries" min="0" max="10" value="1"></label>
+        <label>Retry delay (minutes) <input type="number" name="retry_delay_minutes" min="1" max="1440" value="5"></label>
+      </details>
+      <button class="btn" type="submit">Create schedule</button>
+    </form>
+  </section>{% endif %}
+</div>
+
+<section class="card">
+  <h2>Maintenance windows</h2>
+  <p class="muted">Maintenance suppresses expected discovery-failure
+    notifications only for the selected scope when suppression is enabled.
+    Scheduled discovery and evidence collection continue normally.</p>
+  {% if maintenance_windows %}
+    <ul class="plain-list">
+    {% for item in maintenance_windows %}
+      <li><strong>{{ item.name }}</strong> · {{ item.scope_type }}{% if item.scope_id %}: {{ item.scope_id }}{% endif %} · {{ item.starts_at | timestamp }} to {{ item.ends_at | timestamp }}</li>
+    {% endfor %}
+    </ul>
+  {% endif %}
+  {% if can('settings.manage') %}<details>
+    <summary>Add maintenance window</summary>
+    <form method="post" action="/schedules/maintenance" class="stack-form">{{ csrf_field() }}
+      <input type="hidden" name="expected_revision" value="{{ schedule_revision }}">
+      <label>Name <input name="name" required maxlength="120"></label>
+      <label>Starts <input type="datetime-local" name="starts_at" required></label>
+      <label>Ends <input type="datetime-local" name="ends_at" required></label>
+      <label>Timezone <input name="timezone_name" value="UTC" required></label>
+      <label>Scope <select name="scope_type"><option value="global">All profiles</option><option value="profile">One profile</option><option value="site">One site</option></select></label>
+      <label>Profile or site identifier <input name="scope_id"></label>
+      <label class="check-label"><input type="checkbox" name="suppress_notifications" value="1" checked> Suppress expected notifications</label>
+      <label>Reason <textarea name="reason" rows="2" required></textarea></label>
+      <button class="btn" type="submit">Create window</button>
+    </form>
+  </details>{% endif %}
+</section>
+
+<section class="card">
+  <h2>Recent scheduled runs</h2>
+  {% if runs %}
+    <div class="table-scroll" role="region" aria-label="Scheduled run history" tabindex="0">
+      <table class="grid"><thead><tr><th>Due</th><th>Profile</th><th>Result</th><th>Attempt</th></tr></thead>
+      <tbody>{% for run in runs %}<tr><td>{{ run.due_at | timestamp }}</td><td>{{ run.profile_id }}</td><td>{{ run.status }}{% if run.error %}<div class="muted">{{ run.error }}</div>{% endif %}</td><td>{{ run.attempt }}</td></tr>{% endfor %}</tbody></table>
+    </div>
+  {% else %}<p class="muted">No scheduled runs yet.</p>{% endif %}
+</section>
+{% endblock %}

@@ -1013,7 +1013,9 @@ class ConsoleGuiTests(unittest.TestCase):
 
     def test_the_universal_action_renders_on_topology(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            page = self._client(Path(tmp)).get("/topology").get_data(as_text=True)
+            page = self._client(Path(tmp)).get(
+                "/topology?support=1"
+            ).get_data(as_text=True)
             # PR-052: list rows render the canonical entity menu; the SSH
             # console action (and its reason when unavailable) lives there.
             # Copy-SSH-command remains on the device and console pages.
@@ -1023,7 +1025,7 @@ class ConsoleGuiTests(unittest.TestCase):
     def test_the_universal_action_renders_on_the_enterprise_inventory(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             page = self._client(Path(tmp)).get(
-                "/topology?scope=all"
+                "/topology?scope=all&support=1"
             ).get_data(as_text=True)
             self.assertIn("/console/", page)
 
@@ -1135,7 +1137,11 @@ class ConsoleGuiTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             client = self._client(Path(tmp))
-            for url in ("/console", "/topology", "/topology?scope=all"):
+            for url in (
+                "/console",
+                "/topology?support=1",
+                "/topology?scope=all&support=1",
+            ):
                 page = client.get(url).get_data(as_text=True)
                 self.assertIn("js-copy-ssh", page, f"no copy button on {url}")
                 self.assertIn(

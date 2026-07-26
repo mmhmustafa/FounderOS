@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% from "_breadcrumbs.html" import breadcrumbs %}
+{% block title %}Policy calibration preview{% endblock %}
+{% block content %}
+{{ breadcrumbs([
+  {'label': 'Policy', 'href': scoped_url('/policy', link_scope())},
+  {'label': 'Calibration preview'},
+]) }}
+
+<div class="page-head">
+  <h1>Policy calibration preview</h1>
+  <span class="badge">{{ intent | title }} intent</span>
+</div>
+<p class="muted">
+  This is a dry evaluation over the current evidence. Nothing has been
+  activated or written.
+</p>
+
+{% if preview.broad_change %}
+<div class="callout callout-warning" role="alert">
+  <p class="callout-text"><strong>Broad applicability change</strong></p>
+  <p>
+    {{ preview.newly_applicable + preview.newly_excluded }} devices change
+    applicability. Activating this baseline requires an explicit confirmation.
+  </p>
+</div>
+{% endif %}
+
+<div class="tiles">
+  <div class="tile"><strong>Current applicable</strong><span>{{ preview.applicable_before }}</span></div>
+  <div class="tile"><strong>After change</strong><span>{{ preview.applicable_after }}</span></div>
+  <div class="tile"><strong>Newly applicable</strong><span>{{ preview.newly_applicable }}</span></div>
+  <div class="tile"><strong>Newly excluded</strong><span>{{ preview.newly_excluded }}</span></div>
+  <div class="tile"><strong>Projected failures</strong><span>{{ preview.projected_failures }}</span></div>
+</div>
+
+<section class="card">
+  <h2>Affected devices</h2>
+  {% if preview.affected %}
+  <div class="table-scroll" role="region" aria-label="Affected devices" tabindex="0">
+    <table class="grid">
+      <thead><tr><th>Device</th><th>Change</th><th>Reason</th></tr></thead>
+      <tbody>
+      {% for item in preview.affected %}
+        <tr><td>{{ item.hostname }}</td><td>{{ item.change }}</td><td>{{ item.reason }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if preview.affected_truncated %}
+  <p class="muted">{{ preview.affected_truncated }} more affected devices are omitted from this preview.</p>
+  {% endif %}
+  {% else %}
+  <p class="muted">No device changes applicability.</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Confirm baseline</h2>
+  <p class="muted">
+    Draft saves do not affect evaluation. Active baselines take effect on the
+    next Policy view and preserve the previous evaluation history.
+  </p>
+  <form method="post" action="/policy/baselines" class="form">{{ csrf_field() }}
+    <input type="hidden" name="policy_id" value="{{ preview.policy_id }}">
+    <input type="hidden" name="intent" value="{{ intent }}">
+    <input type="hidden" name="owner" value="{{ owner }}">
+    <input type="hidden" name="reason" value="{{ reason }}">
+    <input type="hidden" name="expected_revision" value="{{ expected_revision }}">
+    <input type="hidden" name="next" value="{{ next_url }}">
+    {% for name, values in applicability.items() %}
+    <input type="hidden" name="{{ name }}" value="{{ values | join(',') }}">
+    {% endfor %}
+    {% if preview.broad_change %}
+    <label class="checkbox">
+      <input type="checkbox" name="confirm_broad" value="1" required>
+      I reviewed the affected-device list and confirm this broad change.
+    </label>
+    {% endif %}
+    <div class="form-actions">
+      <button class="btn" type="submit" name="state" value="draft">Save draft</button>
+      <button class="btn btn-primary" type="submit" name="state" value="active">Activate baseline</button>
+      <a class="btn" href="{{ next_url }}">Cancel</a>
+    </div>
+  </form>
+</section>
+{% endblock %}

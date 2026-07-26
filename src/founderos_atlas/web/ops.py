@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import tempfile
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from uuid import uuid4
 
@@ -132,24 +133,107 @@ def register_ops_routes(app) -> None:
     def inbox():
         principal = _actor()
         include_done = request.args.get("done") == "1"
+        requested_status = str(request.args.get("status") or "").strip()
+        requested_priority = str(request.args.get("priority") or "").strip()
+        requested_kind = str(request.args.get("kind") or "").strip()
+        requested_notification = str(
+            request.args.get("notification") or ""
+        ).strip()
+        mine = request.args.get("mine") == "1"
         items = _notifications().for_principal(
-            principal.username, principal.roles, include_done=include_done,
+            principal.username,
+            principal.roles,
+            include_done=include_done,
+            status=requested_status or None,
+            priority=requested_priority or None,
+            kind=requested_kind or None,
+            mine=mine,
         )
+        if requested_notification:
+            items = [
+                item
+                for item in items
+                if item.notification_id == requested_notification
+            ]
         return render_template(
             "inbox.html",
-            active="inbox", active_group=nav_group_for("inbox"), notifications=items, include_done=include_done,
+            active="inbox",
+            active_group=nav_group_for("inbox"),
+            notifications=items,
+            include_done=include_done,
+            selected_status=requested_status,
+            selected_priority=requested_priority,
+            selected_kind=requested_kind,
+            mine=mine,
+            selected_notification=requested_notification,
         )
 
     @app.route("/inbox/<notification_id>", methods=["POST"])
     def inbox_update(notification_id: str):
         status = str(request.form.get("status") or "read")
+        principal = _actor()
+        visible_ids = {
+            item.notification_id
+            for item in _notifications().for_principal(
+                principal.username,
+                principal.roles,
+                include_done=True,
+            )
+        }
+        if notification_id not in visible_ids:
+            _audit().append(_audit_event(
+                category="action-center",
+                operation="transition",
+                subject=f"notification:{notification_id}",
+                outcome="denied",
+                reason="action item is not addressed to this principal",
+            ))
+            abort(404)
+        owner = request.form.get("owner")
+        if owner == "__me__":
+            owner = principal.username
+        elif owner == "":
+            owner = None
+        expected_revision = request.form.get("expected_revision")
+        reason = str(request.form.get("reason") or "").strip() or None
+        due_at = None
+        if status == "snoozed":
+            try:
+                minutes = int(request.form.get("snooze_minutes") or 60)
+            except ValueError:
+                minutes = 0
+            if minutes not in {60, 240, 1440}:
+                flash("Choose a supported snooze duration.", "error")
+                return redirect("/inbox")
+            due_at = (
+                datetime.now(timezone.utc) + timedelta(minutes=minutes)
+            ).isoformat(timespec="seconds")
+        if status == "resolved" and not reason:
+            flash("Add a short resolution reason.", "error")
+            return redirect("/inbox")
         try:
-            changed = _notifications().set_status(notification_id, status)
-        except ValueError as error:
+            changed = _notifications().set_status(
+                notification_id,
+                status,
+                expected_revision=(
+                    int(expected_revision) if expected_revision else None
+                ),
+                owner=owner,
+                reason=reason,
+                due_at=due_at,
+            )
+        except (RuntimeError, ValueError) as error:
             flash(str(error), "error")
             return redirect("/inbox")
         if changed:
-            flash(f"Notification marked {status}.", "success")
+            _audit().append(_audit_event(
+                category="action-center",
+                operation="transition",
+                subject=f"notification:{notification_id}",
+                outcome="success",
+                reason=f"status={status}; owner={owner or 'unchanged'}",
+            ))
+            flash(f"Action item moved to {status}.", "success")
         else:
             flash("That notification no longer exists.", "error")
         return redirect(safe_redirect_target(request.form.get("next"), "/inbox"))

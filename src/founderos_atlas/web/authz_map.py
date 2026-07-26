@@ -65,6 +65,8 @@ ENDPOINT_PERMISSIONS: dict[str, str] = {
     "api_health": PAGES_VIEW,
     "api_topology_curation": PAGES_VIEW,
     "history": PAGES_VIEW,
+    "network_time_travel": PAGES_VIEW,
+    "api_network_time_travel": PAGES_VIEW,
     "changes": PAGES_VIEW,
     "changes_compare": PAGES_VIEW,
     "predict_page": PAGES_VIEW,
@@ -84,6 +86,9 @@ ENDPOINT_PERMISSIONS: dict[str, str] = {
     "artifacts": PAGES_VIEW,
     "inbox": PAGES_VIEW,
     "inbox_update": PAGES_VIEW,     # operators act on their own inbox
+    "schedules_page": PAGES_VIEW,
+    "telemetry_page": PAGES_VIEW,
+    "telemetry_collect": DISCOVERY_RUN,
 
     # -- evidence ----------------------------------------------------------
     "evidence_page": EVIDENCE_VIEW,
@@ -96,6 +101,7 @@ ENDPOINT_PERMISSIONS: dict[str, str] = {
     "evidence_saved_filter_create": EVIDENCE_VIEW,
     "evidence_saved_filter_rename": EVIDENCE_VIEW,
     "evidence_saved_filter_delete": EVIDENCE_VIEW,
+    "evidence_resolution_center": EVIDENCE_VIEW,
 
     # -- exports (data leaves the system) ----------------------------------
     "evidence_record_download": EXPORT_DATA,
@@ -110,10 +116,12 @@ ENDPOINT_PERMISSIONS: dict[str, str] = {
     "changes_export": EXPORT_DATA,
     "configuration_export_redacted": EXPORT_DATA,
     "configuration_export": EXPORT_DATA,
+    "network_time_travel_export": EXPORT_DATA,
 
     # -- discovery ---------------------------------------------------------
     "discovery_wizard_draft_save": DISCOVERY_RUN,
     "discovery_wizard_draft_cancel": DISCOVERY_RUN,
+    "discovery_wizard_draft_cleanup": DISCOVERY_RUN,
     "discovery_wizard_preview": DISCOVERY_RUN,
     "discovery_wizard_start": DISCOVERY_RUN,
     "discovery_run": DISCOVERY_RUN,
@@ -139,6 +147,8 @@ ENDPOINT_PERMISSIONS: dict[str, str] = {
     "policy_exception_grant": POLICY_MANAGE,
     "policy_exception_revoke": POLICY_MANAGE,
     "policy_assign": POLICY_MANAGE,
+    "policy_baseline_preview": POLICY_MANAGE,
+    "policy_baseline_save": POLICY_MANAGE,
 
     # -- topology and identity curation ------------------------------------
     "api_assign_topology_site": TOPOLOGY_EDIT,
@@ -150,6 +160,11 @@ ENDPOINT_PERMISSIONS: dict[str, str] = {
     "api_resolve_peer_identity": TOPOLOGY_EDIT,
     "api_revert_peer_identity": TOPOLOGY_EDIT,
     "api_undo_peer_identity": TOPOLOGY_EDIT,
+    "evidence_resolution_identity_confirm": TOPOLOGY_EDIT,
+    "evidence_resolution_identity_bulk_confirm": TOPOLOGY_EDIT,
+    "evidence_resolution_decide": TOPOLOGY_EDIT,
+    "evidence_resolution_decision_undo": TOPOLOGY_EDIT,
+    "evidence_resolution_identity_undo": TOPOLOGY_EDIT,
     "api_update_topology_site": TOPOLOGY_EDIT,
     # The write side of the device-access workflow, offered beside verify
     # and opened on the console page — mapping it to a different permission
@@ -198,6 +213,7 @@ ENDPOINT_PERMISSIONS: dict[str, str] = {
     "incident_case_page": PAGES_VIEW,
     "incident_case_action": INVESTIGATE_RUN,
     "incident_case_link": INVESTIGATE_RUN,
+    "incident_case_unlink": INVESTIGATE_RUN,
     "advisor_feedback": INVESTIGATE_RUN,
     "advisor_conversation_delete": INVESTIGATE_RUN,
     "advisor_conversation_rename": INVESTIGATE_RUN,
@@ -218,6 +234,9 @@ ENDPOINT_PERMISSIONS: dict[str, str] = {
 
     # -- administration ----------------------------------------------------
     "settings_update": SETTINGS_MANAGE,
+    "schedules_create": DISCOVERY_RUN,
+    "schedules_state": DISCOVERY_RUN,
+    "maintenance_create": SETTINGS_MANAGE,
     "settings_reset": SETTINGS_MANAGE,
     "system_information": SYSTEM_ADMIN,
     "settings_diagnostics": SYSTEM_ADMIN,

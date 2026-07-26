@@ -49,6 +49,9 @@ def effective_status(
 ) -> str:
     """The investigation bucket for one engine evaluation."""
 
+    applicability = evaluation.get("applicability") or {}
+    if applicability.get("applicable") is False:
+        return "not-applicable"
     status = str(evaluation.get("status") or "unknown")
     if excepted and status in ("fail", "warning"):
         return "excepted"
@@ -96,6 +99,7 @@ class ResultFilter:
     query: str = ""
     status: str = ""
     severity: str = ""
+    intent: str = ""
     policy_id: str = ""
     site: str = ""
     device: str = ""
@@ -124,6 +128,7 @@ class ResultFilter:
             query=str(args.get("q", "") or "").strip(),
             status=str(args.get("status", "") or "").strip(),
             severity=str(args.get("severity", "") or "").strip(),
+            intent=str(args.get("intent", "") or "").strip(),
             policy_id=str(args.get("policy", "") or "").strip(),
             site=str(args.get("site", "") or "").strip(),
             device=str(args.get("device", "") or "").strip(),
@@ -141,6 +146,7 @@ class ResultFilter:
         pairs = {
             "q": self.query, "status": self.status,
             "severity": self.severity, "policy": self.policy_id,
+            "intent": self.intent,
             "site": self.site, "device": self.device,
             "platform": self.platform, "freshness": self.freshness,
             "group": self.group_by, "owner": self.owner,
@@ -188,6 +194,19 @@ def annotate_evaluations(
         row["site"] = sites.get(hostname.casefold(), "unknown")
         row["platform"] = platforms.get(hostname.casefold(), "unknown")
         row["evidence_fresh"] = fresh
+        row["intent"] = str(policy.get("intent") or "required")
+        applicability = row.get("applicability") or {}
+        row["applicability_explanation"] = str(
+            applicability.get("explanation")
+            or "No applicability explanation was recorded."
+        )
+        row["verdict_quality"] = (
+            "confirmed"
+            if row["effective_status"] in ("fail", "warning") and fresh is True
+            else "provisional"
+            if row["effective_status"] in ("fail", "warning")
+            else "not-a-failure"
+        )
         row["owner"] = owners.get(subject, "")
         assignment = assignments.get(subject) or {}
         row["assignment_correlation"] = str(
@@ -215,6 +234,8 @@ def filter_rows(
         if filters.status and row.get("effective_status") != filters.status:
             continue
         if filters.severity and str(policy.get("severity")) != filters.severity:
+            continue
+        if filters.intent and str(row.get("intent")) != filters.intent:
             continue
         if filters.policy_id and str(policy.get("policy_id")) != filters.policy_id:
             continue
@@ -262,6 +283,8 @@ def sort_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
     return sorted(rows, key=lambda row: (
         _STATUS_ORDER.get(str(row.get("effective_status")), 99),
+        -int(row.get("priority_score") or 0),
+        -int(bool(row.get("is_new_regression"))),
         str((row.get("policy") or {}).get("name") or ""),
         str(row.get("hostname") or "").casefold(),
     ))
@@ -394,6 +417,7 @@ def export_rows(rows: Sequence[Mapping[str, Any]]) -> list[dict[str, str]]:
             "policy": str(policy.get("name") or ""),
             "category": str(policy.get("category") or ""),
             "severity": str(policy.get("severity") or ""),
+            "intent": str(row.get("intent") or ""),
             "device": str(row.get("hostname") or ""),
             "site": str(row.get("site") or ""),
             "platform": str(row.get("platform") or ""),

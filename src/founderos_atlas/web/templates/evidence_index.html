@@ -5,6 +5,9 @@
 <div class="page-head">
   <h1>Evidence</h1>
   <span class="actions">
+    <a class="btn" href="/evidence/resolution-center{% if session %}?session={{ session.session_id|urlencode }}{% endif %}">
+      Improve Coverage
+    </a>
     <a class="btn" href="/timeline">Timeline</a>
     {% if session %}
     <a class="btn" href="/evidence/session/{{ session.session_id | urlencode }}/bundle"

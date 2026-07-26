@@ -2,7 +2,62 @@
 {% block title %}Discovery Wizard{% endblock %}
 {% block content %}
 <a class="back-link" href="/discovery">← Discovery</a>
-<div class="page-head"><div><h1>Discovery Wizard</h1><p class="muted">A resumable, safety-first workflow. Drafts never contain passwords.</p></div>{% if drafts %}<label>Resume draft<select data-draft-jump aria-label="Resume a saved draft"><option value="">Choose…</option>{% for id, item in drafts.items() %}<option value="{{ id }}" {{ 'selected' if id == draft_id else '' }}>{{ item.name or id }} · {{ item.updated_at }}</option>{% endfor %}</select></label>{% endif %}</div>
+<div class="page-head">
+  <div><h1>Discovery Wizard</h1><p class="muted">A resumable, safety-first workflow. Drafts never contain passwords.</p></div>
+  {% if drafts or archived_draft_count %}
+  <div class="wizard-draft-picker">
+    {% if drafts %}
+    <label>Resume draft
+      <select data-draft-jump aria-label="Resume a saved draft">
+        <option value="">Choose…</option>
+        {% for id, item in drafts.items() %}
+        <option value="{{ id }}" {{ 'selected' if id == draft_id else '' }}>
+          {{ item.name or 'Unnamed draft' }} · {{ item.updated_at | timestamp }}{% if item.archived %} · archived{% endif %}
+        </option>
+        {% endfor %}
+      </select>
+    </label>
+    {% endif %}
+    {% if show_all_drafts %}
+    <a class="btn btn-sm" href="/discovery/wizard">Recent drafts</a>
+    {% elif draft_count > 3 or archived_draft_count %}
+    <a class="btn btn-sm" href="/discovery/wizard?show_drafts=all">View all drafts ({{ draft_count + archived_draft_count }})</a>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+{% if show_all_drafts and drafts %}
+<section class="card">
+  <div class="page-head"><div><h2>Saved discovery drafts</h2><p class="muted">Recent work remains resumable. Drafts older than {{ config.ATLAS_DISCOVERY_DRAFT_RETENTION_DAYS }} days are archived, not silently deleted.</p></div></div>
+  <div class="table-scroll" role="region" aria-label="Saved discovery drafts" tabindex="0">
+    <table class="grid">
+      <thead><tr><th>Name</th><th>Last saved</th><th>State</th><th><span class="visually-hidden">Actions</span></th></tr></thead>
+      <tbody>
+        {% for id, item in drafts.items() %}
+        <tr>
+          <td>{{ item.name or 'Unnamed draft' }}</td>
+          <td>{{ item.updated_at | timestamp }}</td>
+          <td>{{ 'Archived' if item.archived else 'Ready to resume' }}</td>
+          <td class="row-actions">
+            <a class="btn btn-sm" href="/discovery/wizard?draft={{ id | urlencode }}">Resume</a>
+            <form method="post" action="/discovery/wizard/drafts/{{ id | urlencode }}/cancel">{{ csrf_field() }}
+              <button class="btn btn-sm btn-danger" type="submit">Discard</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if archived_draft_count %}
+  <form method="post" action="/discovery/wizard/drafts/cleanup">
+    {{ csrf_field() }}
+    <input type="hidden" name="current_draft_id" value="{{ draft_id or '' }}">
+    <button class="btn btn-danger" type="submit">Discard archived drafts</button>
+  </form>
+  {% endif %}
+</section>
+{% endif %}
 {% if error %}<div class="flash flash-error">{{ error }}</div>{% endif %}
 
 <ol class="wizard-progress" aria-label="Discovery setup progress">

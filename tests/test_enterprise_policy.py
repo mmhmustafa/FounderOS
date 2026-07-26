@@ -257,6 +257,32 @@ class EngineTests(unittest.TestCase):
         self.assertEqual("unknown", result.conclusion_kind)
         self.assertEqual(BAND_UNKNOWN, result.confidence.band)
 
+    def test_one_engine_gathers_a_subject_once_for_focused_questions(self) -> None:
+        class CountingProvider:
+            def __init__(self):
+                self.gather_calls = 0
+                self.gap_calls = 0
+
+            def gather(self, subject, *, as_of=None, kinds=()):
+                self.gather_calls += 1
+                return ()
+
+            def describe_gaps(self, subject, *, as_of=None, kinds=()):
+                self.gap_calls += 1
+                return ()
+
+        provider = CountingProvider()
+        engine = ReasoningEngine(
+            RuleRegistry(), (provider,), clock=lambda: FIXED_CLOCK
+        )
+        question = ReasoningQuestion(
+            kind=QUESTION_COMPLY, subject="dev-x"
+        )
+        engine.evaluate(question)
+        engine.evaluate(question)
+        self.assertEqual(1, provider.gather_calls)
+        self.assertEqual(1, provider.gap_calls)
+
 
 # -- Part: the matcher operators ---------------------------------------------
 

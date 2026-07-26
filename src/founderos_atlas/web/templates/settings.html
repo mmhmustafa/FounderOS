@@ -127,6 +127,8 @@ table columns. These change nothing another operator sees, and follow your accou
     <li><span>Session expiry</span><span>{{ system_info.session_expiry }}</span></li>
     <li><span>Worker model</span><span>{{ system_info.worker_model }}</span></li>
     <li><span>Worker status</span><span>{{ system_info.worker_status }}</span></li>
+    <li><span>Operational telemetry</span><span>{% if system_info.telemetry_provider_status.state %}{{ system_info.telemetry_provider_status.state }}{% else %}{{ system_info.telemetry_provider_status | length }} adapter(s) reported{% endif %}</span></li>
+    <li><span>Telemetry retention</span><span>{{ system_info.telemetry_retention }} · maximum {{ system_info.telemetry_max_facts }} facts</span></li>
     <li><span>Logging</span><span>{{ system_info.logging_level }}</span></li>
     <li><span>Retention</span><span>{{ system_info.retention_policy }}</span></li>
     <li><span>Update provider</span><span>{{ system_info.update_provider.state }} · {{ system_info.update_provider.detail }}</span></li>

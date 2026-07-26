@@ -236,6 +236,37 @@ class DiscoveryJobApiTests(unittest.TestCase):
 
 
 class DiscoveryJobFailureTests(unittest.TestCase):
+    def test_provider_exception_text_never_reaches_job_api_or_persistence(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workdir = Path(tmp)
+            service = make_service(workdir)
+            add_profile(service, "Lab A", "10.0.0.1")
+            canary = "ATLAS-PASSWORD-CANARY-DO-NOT-PERSIST"
+
+            def failing_runner(_profile, _line, _connect):
+                raise RuntimeError(
+                    f"provider failed; password={canary}; "
+                    "Authorization: Bearer private-token"
+                )
+
+            persist_path = workdir / ".atlas" / "jobs.json"
+            manager = DiscoveryJobManager(
+                runner=failing_runner,
+                profile_service=service,
+                persist_path=persist_path,
+            )
+            job, _created = manager.start("Lab A")
+            finished = manager.wait(job.job_id, timeout=10)
+            self.assertIsNotNone(finished)
+            serialized = json.dumps(finished.to_dict())
+            durable = persist_path.read_text(encoding="utf-8")
+            for value in (canary, "private-token", "password="):
+                self.assertNotIn(value, serialized)
+                self.assertNotIn(value, durable)
+            self.assertIn("error: discovery-failed", serialized)
+
     def test_authentication_failure_is_friendly(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             workdir = Path(tmp)

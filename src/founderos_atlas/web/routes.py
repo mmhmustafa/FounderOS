@@ -1056,6 +1056,53 @@ def register_routes(app) -> None:
             rec for rec in recommendations
             if (rec["href"], rec["text"]) not in seen_keys
         ]
+        # The Action Center is the durable ownership layer. Surface its
+        # highest-priority work on Home without replacing the deterministic
+        # health recommendations above; every item still opens its exact
+        # source rather than a generic destination page.
+        try:
+            from flask import g as _g
+            from founderos_atlas.notifications import NotificationStore
+
+            principal = getattr(_g, "principal", None)
+            action_items = NotificationStore(
+                cfg("ATLAS_WORKSPACE_ROOT")
+            ).for_principal(
+                principal.username,
+                principal.roles,
+                include_done=False,
+            )[:3]
+        except Exception:
+            action_items = []
+        action_recommendations = [
+            {
+                "severity": (
+                    "critical"
+                    if item.priority == "critical"
+                    else "warning"
+                    if item.priority in {"high", "medium"}
+                    else None
+                ),
+                "text": item.title,
+                "href": item.href or f"/inbox?action={item.notification_id}",
+                "action": "Open action",
+                "evidence": (
+                    item.evidence_freshness
+                    or f"{item.occurrences} occurrence(s)"
+                ),
+            }
+            for item in action_items
+        ]
+        action_keys = {
+            (item["href"], item["text"]) for item in action_recommendations
+        }
+        recommendations = [
+            *action_recommendations,
+            *[
+                item for item in recommendations
+                if (item["href"], item["text"]) not in action_keys
+            ],
+        ]
         freshness_ages = {
             contribution.profile_id: describe_age(contribution.observed_at, now)
             for contribution in graph.contributions
@@ -1726,7 +1773,11 @@ def register_routes(app) -> None:
     @app.route("/discovery/wizard")
     def discovery_wizard():
         drafts = AdministrationRepository(cfg("ATLAS_WORKSPACE_ROOT"))
+        drafts.archive_expired_drafts(
+            int(app.config["ATLAS_DISCOVERY_DRAFT_RETENTION_DAYS"])
+        )
         draft_id = (request.args.get("draft") or "").strip()
+        show_all_drafts = request.args.get("show_drafts") == "all"
         return render_template(
             "discovery_wizard.html",
             credential_sets=credential_service().list_sets(),
@@ -1734,24 +1785,46 @@ def register_routes(app) -> None:
             error=None,
             draft_id=draft_id,
             draft=drafts.get_draft(draft_id) if draft_id else None,
-            drafts=_drafts_newest_first(),
+            drafts=_drafts_newest_first(
+                include_archived=show_all_drafts,
+                limit=None if show_all_drafts else 3,
+            ),
+            draft_count=len([
+                value for value in drafts.drafts().values()
+                if isinstance(value, dict) and not value.get("archived")
+            ]),
+            archived_draft_count=len([
+                value for value in drafts.drafts().values()
+                if isinstance(value, dict) and value.get("archived")
+            ]),
+            show_all_drafts=show_all_drafts,
             **base_context("discovery"),
         )
 
-    def _drafts_newest_first() -> dict:
+    def _drafts_newest_first(
+        *,
+        include_archived: bool = False,
+        limit: int | None = None,
+    ) -> dict:
         """Resume picker order: most recently updated draft first."""
 
         items = AdministrationRepository(cfg("ATLAS_WORKSPACE_ROOT")).drafts()
         # updated_at has second precision; the save-order sequence breaks
         # ties, so the most recently saved draft is always first.
-        return dict(sorted(
-            items.items(),
+        ordered = sorted(
+            (
+                (identifier, value)
+                for identifier, value in items.items()
+                if include_archived
+                or not (isinstance(value, dict) and value.get("archived"))
+            ),
             key=lambda kv: (
                 str((kv[1] or {}).get("updated_at") or ""),
                 int((kv[1] or {}).get("sequence") or 0),
             ),
             reverse=True,
-        ))
+        )
+        return dict(ordered[:limit] if limit is not None else ordered)
 
     @app.route("/api/discovery/wizard/drafts", methods=["POST"])
     def discovery_wizard_draft_save():
@@ -1801,6 +1874,33 @@ def register_routes(app) -> None:
         flash("Discovery draft cancelled and removed. No discovery was started.", "success")
         return redirect(url_for("discovery_wizard"))
 
+    @app.route("/discovery/wizard/drafts/cleanup", methods=["POST"])
+    def discovery_wizard_draft_cleanup():
+        """Discard only already-archived drafts after strong confirmation."""
+
+        from .confirmation import require_confirmation
+
+        repository = AdministrationRepository(cfg("ATLAS_WORKSPACE_ROOT"))
+        archived = sum(
+            1 for value in repository.drafts().values()
+            if isinstance(value, dict) and value.get("archived")
+        )
+        confirmation = require_confirmation(
+            title="Discard archived discovery drafts",
+            detail=f"{archived} archived draft(s) will be permanently removed.",
+            consequence=(
+                "Recent and active drafts are preserved. No discovery job, "
+                "profile, credential, evidence, or result is changed."
+            ),
+        )
+        if confirmation is not None:
+            return confirmation
+        removed = repository.delete_archived_drafts(
+            except_id=(request.form.get("current_draft_id") or "").strip() or None
+        )
+        flash(f"Discarded {removed} archived discovery draft(s).", "success")
+        return redirect(url_for("discovery_wizard", show_drafts="all"))
+
     @app.route("/discovery/wizard/preview", methods=["POST"])
     def discovery_wizard_preview():
         plan, error = _wizard_plan_from_form(request.form)
@@ -1824,7 +1924,10 @@ def register_routes(app) -> None:
             error=error,
             draft_id=draft_id,
             draft=safe,
-            drafts=_drafts_newest_first(),
+            drafts=_drafts_newest_first(limit=3),
+            draft_count=len(_drafts_newest_first()),
+            archived_draft_count=0,
+            show_all_drafts=False,
             estimate_minutes=estimate,
             **base_context("discovery"),
         )
@@ -2593,7 +2696,12 @@ def register_routes(app) -> None:
     # The engine's report is deterministic over the memories it read, so
     # one in-process cache entry keyed on the memory stamps keeps the page
     # fast across the paginated/filtered requests an investigation makes.
-    _policy_report_cache: dict = {"key": None, "report": None}
+    _policy_report_cache: dict = {
+        "key": None,
+        "report": None,
+        "sites": None,
+        "platforms": None,
+    }
 
     def _policy_cache_key(scopes, scope_id) -> tuple:
         parts: list[tuple] = [("scope", scope_id)]
@@ -2612,28 +2720,86 @@ def register_routes(app) -> None:
                     parts.append((str(path), stat.st_mtime_ns, stat.st_size))
                 except OSError:
                     parts.append((str(path), None))
+        from founderos_atlas.policy.governance import (
+            PolicyGovernanceRepository,
+        )
+
+        parts.append((
+            "policy-governance",
+            PolicyGovernanceRepository(
+                cfg("ATLAS_WORKSPACE_ROOT")
+            ).revision(),
+        ))
         return tuple(parts)
 
     def _policy_report_dict(scopes, scope_id, scope_label) -> dict:
-        from founderos_atlas.policy import PolicyEngine
+        from hashlib import sha256
+
+        from founderos_atlas.policy import PolicyEngine, default_pack
+        from founderos_atlas.policy.governance import (
+            PolicyGovernanceRepository,
+            effective_pack,
+        )
 
         key = _policy_cache_key(scopes, scope_id)
         if _policy_report_cache["key"] == key:
             return _policy_report_cache["report"]
-        report = PolicyEngine().evaluate_scopes(
+        governance = PolicyGovernanceRepository(cfg("ATLAS_WORKSPACE_ROOT"))
+        pack = effective_pack(default_pack(), governance.active())
+        contexts = _policy_device_contexts()
+        # Building the canonical enterprise world is the expensive part of a
+        # cold policy render. The same contexts already contain the site and
+        # platform maps annotation needs below; retain those derivatives with
+        # the report instead of rebuilding the entire graph a second time.
+        unique_contexts = {
+            str(value.get("hostname") or "").casefold(): value
+            for value in contexts.values()
+            if value.get("hostname")
+        }
+        cached_sites = {
+            str(value.get("hostname")): str(value.get("site") or "unknown")
+            for value in unique_contexts.values()
+        }
+        cached_platforms = {
+            str(value.get("hostname")): str(
+                value.get("platform") or "unknown"
+            )
+            for value in unique_contexts.values()
+        }
+        report = PolicyEngine(pack).evaluate_scopes(
             [
-                (scope.label, memory_service(scope))
+                (
+                    scope.label,
+                    memory_service(scope),
+                    _policy_contexts_for_scope(scope, contexts),
+                )
                 for scope in memory_scopes(scopes, scope_id)
             ],
             scope_label=scope_label,
         )
         report_dict = report.to_dict()
-        _policy_report_cache.update(key=key, report=report_dict)
+        report_dict["source_revision"] = sha256(
+            repr(key).encode("utf-8")
+        ).hexdigest()
+        _policy_report_cache.update(
+            key=key,
+            report=report_dict,
+            sites=cached_sites,
+            platforms=cached_platforms,
+        )
         return report_dict
 
     def _device_maps() -> tuple[dict, dict]:
         """hostname → site and hostname → platform, from the graph."""
 
+        if (
+            _policy_report_cache.get("sites") is not None
+            and _policy_report_cache.get("platforms") is not None
+        ):
+            return (
+                dict(_policy_report_cache["sites"]),
+                dict(_policy_report_cache["platforms"]),
+            )
         graph, _snapshot = enterprise_world()
         sites: dict[str, str] = {}
         platforms: dict[str, str] = {}
@@ -2644,12 +2810,94 @@ def register_routes(app) -> None:
                 platforms[hostname] = str(row.get("platform") or "unknown")
         return sites, platforms
 
+    def _policy_device_contexts() -> dict[str, dict]:
+        """Evidence-derived device attributes used by policy selectors."""
+
+        from founderos_atlas.platforms.classify import classify_role
+
+        graph, snapshot = enterprise_world()
+        inventory = get_enterprise_inventory(graph)
+        snapshot_by_name: dict[str, dict] = {}
+        for device in (snapshot or {}).get("devices") or ():
+            if not isinstance(device, dict):
+                continue
+            for name in (
+                device.get("hostname"),
+                device.get("device_id"),
+                *(device.get("aliases") or ()),
+            ):
+                if name:
+                    snapshot_by_name[str(name).casefold()] = device
+        catalog = SiteCatalogRepository(
+            cfg("ATLAS_WORKSPACE_ROOT")
+        ).load()
+        site_types = {
+            site.site_id.casefold(): site.site_type for site in catalog.sites
+        }
+        site_types.update({
+            site.name.casefold(): site.site_type for site in catalog.sites
+        })
+        contexts: dict[str, dict] = {}
+        for row in inventory:
+            hostname = str(row.get("hostname") or "")
+            device = snapshot_by_name.get(hostname.casefold(), {})
+            role, _evidence = classify_role(device or row)
+            site = str(row.get("site") or "")
+            context = {
+                "device_id": str(row.get("enterprise_id") or ""),
+                "hostname": hostname,
+                "platform": str(row.get("platform") or ""),
+                "role": role,
+                "site": site,
+                "site_type": site_types.get(site.casefold(), ""),
+            }
+            for key in (
+                hostname,
+                row.get("enterprise_id"),
+                *(row.get("aliases") or ()),
+            ):
+                if key:
+                    contexts[str(key).casefold()] = context
+        return contexts
+
+    def _policy_contexts_for_scope(scope, contexts: dict[str, dict]):
+        profile = profile_for_scope(scope.scope_id)
+        tags = tuple(getattr(profile, "tags", ()) or ())
+        environment = str(
+            getattr(profile, "domain_hint", "") or ""
+        )
+        result: dict[str, dict] = {}
+        memory = memory_service(scope)
+        for device_id in memory.device_ids():
+            device = memory.get_device_memory(device_id)
+            hostname = device.hostname if device else device_id
+            base = dict(
+                contexts.get(str(hostname).casefold())
+                or contexts.get(str(device_id).casefold())
+                or {}
+            )
+            base.update({
+                "device_id": device_id,
+                "hostname": hostname,
+                "profile": scope.scope_id,
+                "network": scope.label,
+                "environment": environment,
+                "tags": tags,
+            })
+            result[device_id] = base
+            result[str(hostname).casefold()] = base
+        return result
+
     def _policy_rows(scopes, scope_id, scope_label):
         """Annotated, investigation-ready rows plus their supporting state."""
 
         from founderos_atlas.audit import AnnotationStore
         from founderos_atlas.policy.exceptions import PolicyExceptionRepository
         from founderos_atlas.policy.explorer import annotate_evaluations
+        from founderos_atlas.policy.prioritization import (
+            PolicyPostureHistory,
+            prioritize,
+        )
 
         report_dict = _policy_report_dict(scopes, scope_id, scope_label)
         workspace = cfg("ATLAS_WORKSPACE_ROOT")
@@ -2671,6 +2919,18 @@ def register_routes(app) -> None:
             owners_by_subject=owners,
             assignments_by_subject=assignments,
         )
+        history = PolicyPostureHistory(workspace)
+        regressions = history.compare_and_record(
+            scope_id=scope_id,
+            source_revision=str(report_dict.get("source_revision") or ""),
+            rows=rows,
+            recorded_at=str(report_dict.get("generated_at") or now),
+        )
+        rows = [
+            {**row, "is_new_regression": row.get("subject") in regressions}
+            for row in rows
+        ]
+        rows = prioritize(rows)
         return rows, report_dict, exception_repo
 
     def _resolve_identity_filters(filters):
@@ -2710,6 +2970,10 @@ def register_routes(app) -> None:
             summarize,
         )
         from founderos_atlas.policy.trend import PolicyTrend
+        from founderos_atlas.policy.governance import (
+            PolicyGovernanceRepository,
+        )
+        from founderos_atlas.policy.prioritization import priority_summary
 
         from .timefmt import format_timestamp
 
@@ -2814,6 +3078,18 @@ def register_routes(app) -> None:
             },
             key=lambda pair: pair[1].casefold(),
         )
+        governance = PolicyGovernanceRepository(
+            cfg("ATLAS_WORKSPACE_ROOT")
+        )
+        deviations = [
+            item.to_dict()
+            for item in _repo.load()
+            if item.is_active(now_iso())
+        ]
+        deviations.sort(key=lambda item: (
+            item.get("expires_at") is None,
+            str(item.get("expires_at") or ""),
+        ))
         return render_template(
             "policy.html",
             report=report_dict,
@@ -2839,7 +3115,12 @@ def register_routes(app) -> None:
                 {str((r.get("policy") or {}).get("severity")) for r in rows}
                 - {""}
             ),
+            option_intents=("required", "recommended", "informational"),
             packs=[p.to_dict() for p in list_packs()],
+            priorities=priority_summary(rows),
+            baselines=[item.to_dict() for item in governance.load()],
+            baseline_revision=governance.revision(),
+            expiring_deviations=deviations[:5],
             generated_at=format_timestamp(
                 report_dict["generated_at"], tz=display_timezone()
             ),
@@ -2878,6 +3159,14 @@ def register_routes(app) -> None:
         exception = exception_repo.find(
             result_subject(policy_id, evaluation["hostname"])
         )
+        from founderos_atlas.policy.governance import (
+            PolicyGovernanceRepository,
+        )
+
+        governance = PolicyGovernanceRepository(
+            cfg("ATLAS_WORKSPACE_ROOT")
+        )
+        baseline = governance.get(policy_id)
         return render_template(
             "policy_result.html",
             e=evaluation,
@@ -2886,6 +3175,9 @@ def register_routes(app) -> None:
                 exception.is_active(now_iso()) if exception else False
             ),
             exception_revision=exception_repo.revision(),
+            baseline=baseline.to_dict() if baseline else None,
+            baseline_revision=governance.revision(),
+            policy_intents=("required", "recommended", "informational"),
             **context,
         )
 
@@ -2913,7 +3205,8 @@ def register_routes(app) -> None:
         writer = csv.DictWriter(
             buffer,
             fieldnames=list(exported[0].keys()) if exported else [
-                "policy_id", "policy", "category", "severity", "device",
+                "policy_id", "policy", "category", "severity", "intent",
+                "device",
                 "site", "platform", "status", "owner", "evidence_fresh",
                 "conclusion", "network",
             ],
@@ -2928,6 +3221,135 @@ def register_routes(app) -> None:
                     "attachment; filename=policy-results.csv"
             },
         )
+
+    def _policy_applicability_from_form(form):
+        from founderos_atlas.policy import PolicyApplicability
+
+        return PolicyApplicability(
+            platforms=_csv(form.get("platforms")),
+            roles=_csv(form.get("roles")),
+            sites=_csv(form.get("sites")),
+            site_types=_csv(form.get("site_types")),
+            tags=_csv(form.get("tags")),
+            profiles=_csv(form.get("profiles")),
+            networks=_csv(form.get("networks")),
+            environments=_csv(form.get("environments")),
+            include_devices=_csv(form.get("include_devices")),
+            exclude_devices=_csv(form.get("exclude_devices")),
+        )
+
+    def _policy_calibration_from_request():
+        from founderos_atlas.policy.governance import calibration_preview
+
+        context, scopes, scope_id = scoped_context("policy")
+        rows, _report, _repo = _policy_rows(
+            scopes, scope_id, context["active_scope_label"]
+        )
+        policy_id = str(request.form.get("policy_id") or "").strip()
+        if not any(
+            str((row.get("policy") or {}).get("policy_id") or "")
+            == policy_id
+            for row in rows
+        ):
+            abort(404, description="The requested policy does not exist.")
+        applicability = _policy_applicability_from_form(request.form)
+        intent = str(request.form.get("intent") or "required").strip()
+        preview = calibration_preview(
+            rows,
+            policy_id=policy_id,
+            applicability=applicability,
+            intent=intent,
+        )
+        return context, applicability, intent, preview
+
+    @app.route("/policy/baselines/preview", methods=["POST"])
+    def policy_baseline_preview():
+        """Dry-run a targeting change; this endpoint never mutates state."""
+
+        context, applicability, intent, preview = (
+            _policy_calibration_from_request()
+        )
+        return render_template(
+            "policy_calibration.html",
+            preview=preview,
+            applicability=applicability.to_dict(),
+            intent=intent,
+            owner=str(request.form.get("owner") or ""),
+            reason=str(request.form.get("reason") or ""),
+            expected_revision=str(
+                request.form.get("expected_revision") or "0"
+            ),
+            next_url=safe_redirect_target(
+                request.form.get("next"),
+                scoped_url("/policy", context["active_scope_id"]),
+            ),
+            **context,
+        )
+
+    @app.route("/policy/baselines", methods=["POST"])
+    def policy_baseline_save():
+        """Create, activate, or retire an audited policy baseline."""
+
+        from founderos_atlas.policy.governance import (
+            PolicyGovernanceConflictError,
+            PolicyGovernanceRepository,
+        )
+
+        context, applicability, intent, preview = (
+            _policy_calibration_from_request()
+        )
+        state = str(request.form.get("state") or "draft").strip()
+        if (
+            state == "active"
+            and preview["broad_change"]
+            and request.form.get("confirm_broad") != "1"
+        ):
+            abort(
+                409,
+                description=(
+                    "This baseline changes applicability for "
+                    f"{preview['newly_applicable'] + preview['newly_excluded']} "
+                    "devices. Preview it and explicitly confirm the broad "
+                    "change before activation."
+                ),
+            )
+        repo = PolicyGovernanceRepository(cfg("ATLAS_WORKSPACE_ROOT"))
+        raw_revision = str(request.form.get("expected_revision") or "")
+        try:
+            expected_revision = (
+                int(raw_revision) if raw_revision != "" else None
+            )
+            item = repo.save(
+                policy_id=str(request.form.get("policy_id") or ""),
+                intent=intent,
+                applicability=applicability,
+                state=state,
+                owner=str(request.form.get("owner") or ""),
+                reason=str(request.form.get("reason") or ""),
+                actor=current_actor(),
+                expected_revision=expected_revision,
+                occurred_at=now_iso(),
+            )
+        except PolicyGovernanceConflictError as error:
+            abort(409, description=str(error))
+        except ValueError as error:
+            flash(str(error), "error")
+        else:
+            _policy_report_cache.update(
+                key=None,
+                report=None,
+                sites=None,
+                platforms=None,
+            )
+            flash(
+                f"Policy baseline for {item.policy_id} saved as "
+                f"{item.state}; the change is audited.",
+                "success",
+            )
+        return redirect(safe_redirect_target(
+            request.form.get("next"),
+            scoped_url("/policy", context["active_scope_id"]),
+        ))
 
     def _check_exception_revision(repo) -> None:
         from founderos_atlas.policy.exceptions import (
@@ -3619,6 +4041,28 @@ def register_routes(app) -> None:
     @app.route("/topology")
     def topology():
         context, scopes, scope_id = scoped_context("topology")
+        # The graph is the first-load task. Large provenance, identity and
+        # inventory tables are deliberately server-deferred until requested;
+        # a collapsed <details> would still put thousands of nodes in the DOM.
+        supporting_loaded = request.args.get("support") == "1"
+        try:
+            requested_inventory_page = max(
+                1, int(request.args.get("inventory_page", "1"))
+            )
+        except ValueError:
+            requested_inventory_page = 1
+        inventory_page_size = 50
+
+        def paged_inventory(rows):
+            from .pagination import paginate
+
+            page = paginate(
+                rows,
+                requested_page=requested_inventory_page,
+                page_size=inventory_page_size,
+            )
+            return page.items, page.total, page.number, page.page_count
+
         if scope_id == GLOBAL_SCOPE_ID:
             with_data = [
                 scope
@@ -3654,6 +4098,9 @@ def register_routes(app) -> None:
                 site_filter = request.args.get("site", "").strip()
                 if site_filter:
                     rows = [row for row in rows if row["site"] == site_filter]
+                rows, inventory_total, inventory_page, inventory_page_count = (
+                    paged_inventory(rows)
+                )
                 visible_ids = {row["enterprise_id"] for row in rows}
                 merge_rows = [
                     decision.to_dict()
@@ -3677,6 +4124,10 @@ def register_routes(app) -> None:
                     site_filter=site_filter,
                     viewers=viewers,
                     has_topology=snapshot is not None,
+                    supporting_loaded=supporting_loaded,
+                    inventory_total=inventory_total,
+                    inventory_page=inventory_page,
+                    inventory_page_count=inventory_page_count,
                     facts=facts,
                     topology_src=_current_topology_viewer_url(
                         f"/artifacts/{ENTERPRISE_ARTIFACT_PREFIX}atlas_topology.html",
@@ -3688,6 +4139,12 @@ def register_routes(app) -> None:
             inventory = device_inventory(
                 (scope.label, load_json(scope.snapshot_path)) for scope in with_data
             )
+            (
+                inventory,
+                inventory_total,
+                inventory_page,
+                inventory_page_count,
+            ) = paged_inventory(inventory)
             return render_template(
                 "topology.html",
                 global_view=True,
@@ -3695,6 +4152,10 @@ def register_routes(app) -> None:
                 inventory=inventory,
                 viewers=viewers,
                 has_topology=False,
+                supporting_loaded=supporting_loaded,
+                inventory_total=inventory_total,
+                inventory_page=inventory_page,
+                inventory_page_count=inventory_page_count,
                 **context,
             )
         scope = scopes[scope_id]
@@ -3704,6 +4165,10 @@ def register_routes(app) -> None:
             "topology.html",
             global_view=False,
             has_topology=exists,
+            supporting_loaded=supporting_loaded,
+            inventory_total=0,
+            inventory_page=1,
+            inventory_page_count=1,
             facts=_topology_operational_facts(
                 scope.output_dir,
                 workspace_root=cfg("ATLAS_WORKSPACE_ROOT"),
@@ -4047,6 +4512,25 @@ def register_routes(app) -> None:
             message="Last identity resolution change undone.",
         )
 
+    # Evidence coverage and the grouped resolution queue reuse the same
+    # scope, memory and topology adapters as the established Evidence page.
+    # Keeping its handlers in a focused module avoids growing this route file
+    # while preserving one canonical data path.
+    from .evidence_resolution_routes import (
+        register_evidence_resolution_routes,
+    )
+
+    register_evidence_resolution_routes(
+        app,
+        scoped_context=scoped_context,
+        evidence_sessions=_evidence_sessions,
+        session_scope=_session_scope,
+        memory_store=memory_store,
+        topology_facts=_topology_operational_facts,
+        current_actor=current_actor,
+        refresh_topologies=refresh_curated_topologies,
+    )
+
     @app.route("/api/topology/sites/<site_id>", methods=["PUT"])
     def api_update_topology_site(site_id: str):
         from dataclasses import replace
@@ -4201,6 +4685,14 @@ def register_routes(app) -> None:
             run=run,
             **context,
         )
+
+    from .time_travel_routes import register_time_travel_routes
+
+    register_time_travel_routes(
+        app,
+        scoped_context=scoped_context,
+        aggregation_scopes=aggregation_scopes,
+    )
 
     def _change_rows_for(scopes, scope_id):
         """Unified, annotated change rows across the visible scope(s)."""

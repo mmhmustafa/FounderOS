@@ -1,8 +1,14 @@
 {% extends "base.html" %}
 {% from "_entity_actions.html" import entity_menu %}
+{% from "_telemetry_context.html" import operational_context %}
 {% block title %}Predict{% endblock %}
 {% block content %}
 <h1>Predict a Change — {{ active_scope_label }}</h1>
+
+{{ operational_context(
+  telemetry_context(active_scope_id, request.args.get('device', '')),
+  'Live conditions are shown for context and are not silently folded into blast radius or confidence.'
+) }}
 
 {% if needs_scope %}
 <p class="muted">Pick a scope in the Scope selector above — predictions run against that scope's evidence.</p>

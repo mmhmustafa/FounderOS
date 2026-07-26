@@ -25,7 +25,8 @@ from .explorer import result_subject
 
 
 POLICY_EXCEPTIONS_FILENAME = "policy-exceptions.json"
-POLICY_EXCEPTIONS_SCHEMA_VERSION = "1.0.0"
+POLICY_EXCEPTIONS_SCHEMA_VERSION = "1.1.0"
+DEVIATION_REVIEW_STATES = ("pending", "approved", "rejected")
 
 
 @dataclass(frozen=True)
@@ -39,8 +40,12 @@ class PolicyException:
     expires_at: str | None            # ISO instant; None = until revoked
     created_at: str
     created_by: str
+    review_state: str = "approved"
+    scope: str = "device"
 
     def is_active(self, now: str) -> bool:
+        if self.review_state != "approved":
+            return False
         if not self.expires_at:
             return True
         return now <= self.expires_at
@@ -56,6 +61,8 @@ class PolicyException:
             "expires_at": self.expires_at,
             "created_at": self.created_at,
             "created_by": self.created_by,
+            "review_state": self.review_state,
+            "scope": self.scope,
         }
 
     @classmethod
@@ -74,6 +81,8 @@ class PolicyException:
             ),
             created_at=str(value["created_at"]),
             created_by=str(value.get("created_by") or "local-operator"),
+            review_state=str(value.get("review_state") or "approved"),
+            scope=str(value.get("scope") or "device"),
         )
 
 
@@ -160,11 +169,29 @@ class PolicyExceptionRepository:
         actor: str = "local-operator",
         correlation_id: str | None = None,
         occurred_at: str | None = None,
+        review_state: str = "approved",
+        scope: str = "device",
     ) -> PolicyException:
         if not str(reason or "").strip():
             raise ValueError("an exception requires a reason")
         if not str(owner or "").strip():
             raise ValueError("an exception requires an owner")
+        if review_state not in DEVIATION_REVIEW_STATES:
+            raise ValueError(
+                "review_state must be one of "
+                + ", ".join(DEVIATION_REVIEW_STATES)
+            )
+        if scope != "device":
+            raise ValueError(
+                "only device-scoped deviations are currently supported"
+            )
+        if expires_at:
+            try:
+                datetime.fromisoformat(str(expires_at))
+            except ValueError as error:
+                raise ValueError(
+                    "exception expiry must be an ISO date/time"
+                ) from error
         subject = result_subject(policy_id, hostname)
         stamp = occurred_at or datetime.now(timezone.utc).isoformat(
             timespec="seconds"
@@ -177,6 +204,8 @@ class PolicyExceptionRepository:
             expires_at=(str(expires_at).strip() or None)
             if expires_at else None,
             created_at=stamp, created_by=actor,
+            review_state=review_state,
+            scope=scope,
         )
         with self._lock:
             existing = self.find(subject)

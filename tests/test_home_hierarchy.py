@@ -72,23 +72,27 @@ class HomeHierarchyTests(unittest.TestCase):
 
 
 class TopologyCalmDefaultsTests(unittest.TestCase):
-    def test_simple_summarizes_and_collapses_facts(self) -> None:
+    def test_simple_summarizes_and_defers_facts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             _, client = build_world(Path(tmp))
             _at_level(client, "simple")
             page = client.get("/topology?scope=all").get_data(as_text=True)
-            self.assertIn("Topology facts and evidence", page)
+            self.assertIn("Load topology facts", page)
             self.assertIn("relationship(s)", page)
-            # Full tables still present, one disclosure away.
-            self.assertIn("Inter-site links", page)
+            # Full tables are fetched only on request, not merely hidden DOM.
+            self.assertNotIn("<h2>Topology Counts</h2>", page)
+            loaded = client.get(
+                "/topology?scope=all&support=1"
+            ).get_data(as_text=True)
+            self.assertIn("<h2>Topology Counts</h2>", loaded)
 
-    def test_expert_keeps_facts_inline(self) -> None:
+    def test_expert_also_defers_large_facts_until_requested(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             _, client = build_world(Path(tmp))
             _at_level(client, "expert")
             page = client.get("/topology?scope=all").get_data(as_text=True)
-            self.assertNotIn("Topology facts and evidence</summary>", page)
-            self.assertIn("Inter-site links", page)
+            self.assertIn("Load topology facts", page)
+            self.assertNotIn("<h2>Topology Counts</h2>", page)
 
 
 

@@ -8,7 +8,7 @@ without expanding the credential-store boundary.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
 from typing import Any, Mapping
@@ -137,6 +137,11 @@ class AdministrationRepository:
     def save_draft(self, draft_id: str | None, fields: Mapping[str, Any]) -> str:
         cleaned = _safe_fields(fields)
         identifier = (draft_id or f"draft-{uuid4().hex[:12]}").strip()
+        # Saving an archived draft is an explicit resumption.  Clear the
+        # archival marker rather than making the operator hunt for a hidden
+        # duplicate after the save.
+        cleaned.pop("archived", None)
+        cleaned.pop("archived_at", None)
         cleaned["updated_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
         drafts = self.drafts()
         # updated_at has second precision; the monotonic sequence breaks
@@ -165,3 +170,69 @@ class AdministrationRepository:
         if removed:
             _atomic_json(self.drafts_path, {"schema_version": "1.0.0", "drafts": drafts})
         return removed
+
+    def archive_expired_drafts(
+        self,
+        retention_days: int,
+        *,
+        now: datetime | None = None,
+    ) -> int:
+        """Archive abandoned drafts without destroying their targeting data.
+
+        Drafts are never jobs, but accepting a future ``running`` marker here
+        keeps this maintenance safe if the wizard later gains a richer
+        lifecycle.  Recently modified drafts are protected by the configured
+        retention window and malformed timestamps are left untouched.
+        """
+
+        if retention_days < 1:
+            raise ValueError("Draft retention must be at least one day.")
+        current = now or datetime.now(timezone.utc)
+        cutoff = current - timedelta(days=retention_days)
+        drafts = self.drafts()
+        changed = 0
+        for value in drafts.values():
+            if not isinstance(value, dict) or value.get("archived"):
+                continue
+            if str(value.get("status") or "").casefold() in {
+                "starting", "running", "cancelling",
+            }:
+                continue
+            raw = str(value.get("updated_at") or "")
+            try:
+                updated = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+                if updated.tzinfo is None:
+                    updated = updated.replace(tzinfo=timezone.utc)
+            except ValueError:
+                continue
+            if updated >= cutoff:
+                continue
+            value["archived"] = True
+            value["archived_at"] = current.isoformat(timespec="seconds")
+            changed += 1
+        if changed:
+            _atomic_json(
+                self.drafts_path,
+                {"schema_version": "1.0.0", "drafts": drafts},
+            )
+        return changed
+
+    def delete_archived_drafts(self, *, except_id: str | None = None) -> int:
+        """Permanently discard archived drafts, preserving the open draft."""
+
+        drafts = self.drafts()
+        removable = tuple(
+            identifier
+            for identifier, value in drafts.items()
+            if identifier != except_id
+            and isinstance(value, dict)
+            and bool(value.get("archived"))
+        )
+        for identifier in removable:
+            drafts.pop(identifier, None)
+        if removable:
+            _atomic_json(
+                self.drafts_path,
+                {"schema_version": "1.0.0", "drafts": drafts},
+            )
+        return len(removable)

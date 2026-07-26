@@ -3,9 +3,14 @@
 {% from "_entity_actions.html" import entity_menu %}
 {% import "_topology_facts.html" as topo with context %}
 {% import "_fmt.html" as fmt %}
+{% from "_telemetry_context.html" import operational_context %}
 {% block title %}Topology{% endblock %}
 {% block content_class %} content-wide content-topology{% endblock %}
 {% block content %}
+{{ operational_context(
+  telemetry_context(active_scope_id),
+  'Signals are a read-only overlay. They do not create links, infer sites, or change discovered topology.'
+) }}
 {% if global_view %}
 <div class="page-head topology-page-head">
   <h1>Topology — Enterprise</h1>
@@ -19,9 +24,10 @@
 </section>
 {% endif %}
 
-{# Simple mode: one honest headline; the full canonical fact tables
-   stay one disclosure away. Detailed/Expert keep them inline. #}
-{% if display_level == 'simple' and facts %}
+{# The graph is the initial task. Large supporting tables are generated only
+   after an explicit request: collapsed HTML would still add thousands of DOM
+   nodes and make the map pay the cost. #}
+{% if facts %}
 <p class="page-summary">
   {{ facts.counts.relationships }} relationship(s) ·
   {{ facts.counts.inter_site_links }} inter-site link(s)
@@ -29,15 +35,26 @@
   <span class="badge">{{ facts.counts.unresolved_peer_identities }} connection(s) awaiting identification</span>
   {%- endif %}
 </p>
-<details class="disclosure disclosure-advanced">
-  <summary>Topology facts and evidence</summary>
-  <div class="disclosure-body">
-{{ topo.facts_sections(facts, topology_src if has_topology else None) }}
-  </div>
-</details>
-{% else %}
-{{ topo.facts_sections(facts, topology_src if has_topology else None) }}
 {% endif %}
+{% if not has_topology and not inventory %}
+<p class="muted">No topology has been generated yet in any network. <a href="/discovery">Run a discovery</a> to build the interactive topology viewer.</p>
+{% endif %}
+{% if has_topology or inventory or facts %}
+<div class="actions topology-support-actions">
+  {% if supporting_loaded %}
+  <a class="btn btn-sm" href="?scope={{ link_scope() | urlencode }}">Hide supporting data</a>
+  {% else %}
+  <a class="btn btn-sm" href="?scope={{ link_scope() | urlencode }}&amp;support=1#topology-facts">Load topology facts</a>
+  <a class="btn btn-sm" href="?scope={{ link_scope() | urlencode }}&amp;support=1#inventory">Browse device inventory</a>
+  <span class="muted">Loaded on demand so the map remains responsive as the estate grows.</span>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if supporting_loaded %}
+<div id="topology-facts">
+{{ topo.facts_sections(facts, topology_src if has_topology else None) }}
+</div>
 
 {% if enterprise %}
 <section class="card">
@@ -80,18 +97,21 @@
 
 {% if site_options %}
 <div class="actions topology-controls">
-  <a class="btn btn-sm {{ '' if site_filter else 'btn-primary' }}" href="/topology">All sites</a>
+  <a class="btn btn-sm {{ '' if site_filter else 'btn-primary' }}" href="/topology?support=1">All sites</a>
   {% for option in site_options %}
   <a class="btn btn-sm {{ 'btn-primary' if site_filter == option else '' }}"
-     href="/topology?site={{ option | urlencode }}">{{ option }}</a>
+     href="/topology?support=1&amp;site={{ option | urlencode }}">{{ option }}</a>
   {% endfor %}
 </div>
 {% endif %}
 {% endif %}
 
 {% if inventory %}
-<section class="card">
-  <h2>{{ 'Enterprise Device Inventory' if enterprise else 'Device Inventory' }}</h2>
+<section class="card" id="inventory">
+  <div class="page-head">
+    <h2>{{ 'Enterprise Device Inventory' if enterprise else 'Device Inventory' }}</h2>
+    <span class="muted">{{ inventory_total }} device(s) · page {{ inventory_page }} of {{ inventory_page_count }}</span>
+  </div>
   <div class="table-scroll table-scroll-wide" role="region" aria-label="Device inventory" tabindex="0">
     <table class="grid">
       <thead>
@@ -140,6 +160,17 @@
       </tbody>
     </table>
   </div>
+  {% if inventory_page_count > 1 %}
+  <nav class="pagination" aria-label="Device inventory pages">
+    {% if inventory_page > 1 %}
+    <a class="btn btn-sm" href="?scope={{ link_scope() | urlencode }}&amp;support=1{% if site_filter %}&amp;site={{ site_filter | urlencode }}{% endif %}&amp;inventory_page={{ inventory_page - 1 }}#inventory">Previous</a>
+    {% endif %}
+    <span class="muted">Showing {{ ((inventory_page - 1) * 50) + 1 }}–{{ [inventory_page * 50, inventory_total] | min }} of {{ inventory_total }}</span>
+    {% if inventory_page < inventory_page_count %}
+    <a class="btn btn-sm" href="?scope={{ link_scope() | urlencode }}&amp;support=1{% if site_filter %}&amp;site={{ site_filter | urlencode }}{% endif %}&amp;inventory_page={{ inventory_page + 1 }}#inventory">Next</a>
+    {% endif %}
+  </nav>
+  {% endif %}
   {% if enterprise %}
   <p class="muted">Canonical enterprise devices with full observation provenance. Merging is strictly evidence-based: serial numbers always merge; hostname+IP merges only within a declared administrative domain; a hostname alone or an IP alone never merges. Site assignment is evidence-based and may honestly be unknown.</p>
   {% else %}
@@ -198,6 +229,7 @@
   <p class="muted">Each network also keeps its own per-profile topology viewer, exactly as its last discovery produced it.</p>
 </section>
 {% endif %}
+{% endif %}
 
 {% else %}
 <div class="page-head">
@@ -212,9 +244,7 @@
 {% else %}
 <p class="muted">No topology has been generated yet for this network. <a href="/discovery">Run a discovery</a> to build the interactive topology viewer.</p>
 {% endif %}
-{# Simple mode: one honest headline; the full canonical fact tables
-   stay one disclosure away. Detailed/Expert keep them inline. #}
-{% if display_level == 'simple' and facts %}
+{% if facts %}
 <p class="page-summary">
   {{ facts.counts.relationships }} relationship(s) ·
   {{ facts.counts.inter_site_links }} inter-site link(s)
@@ -222,14 +252,19 @@
   <span class="badge">{{ facts.counts.unresolved_peer_identities }} connection(s) awaiting identification</span>
   {%- endif %}
 </p>
-<details class="disclosure disclosure-advanced">
-  <summary>Topology facts and evidence</summary>
-  <div class="disclosure-body">
+<div class="actions topology-support-actions">
+  {% if supporting_loaded %}
+  <a class="btn btn-sm" href="?scope={{ link_scope() | urlencode }}">Hide supporting data</a>
+  {% else %}
+  <a class="btn btn-sm" href="?scope={{ link_scope() | urlencode }}&amp;support=1#topology-facts">Load topology facts and evidence</a>
+  <span class="muted">Loaded on demand so the map remains responsive.</span>
+  {% endif %}
+</div>
+{% endif %}
+{% if supporting_loaded %}
+<div id="topology-facts">
 {{ topo.facts_sections(facts, topology_src if has_topology else None) }}
-  </div>
-</details>
-{% else %}
-{{ topo.facts_sections(facts, topology_src if has_topology else None) }}
+</div>
 {% endif %}
 {% endif %}
 {% endblock %}

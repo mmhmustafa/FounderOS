@@ -285,6 +285,23 @@ textarea:focus-visible, summary:focus-visible, [tabindex]:focus-visible {
 .card-warn { border-left: 4px solid var(--amber-fill); }
 .actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
 .topology-controls { margin-bottom: 14px; }
+.topology-support-actions { margin: 10px 0 16px; align-items: center; }
+.pagination { display: flex; align-items: center; justify-content: center; gap: var(--space-3); margin-top: var(--space-3); }
+
+.operational-context {
+  align-items: center;
+  border-left: 3px solid var(--accent);
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+}
+.operational-context h2,
+.operational-context p { margin-block: 0.25rem; }
+@media (max-width: 600px) {
+  .operational-context { align-items: flex-start; flex-direction: column; }
+}
+.wizard-draft-picker { display: flex; align-items: end; gap: var(--space-2); flex-wrap: wrap; }
+.wizard-draft-picker label { margin: 0; }
 .columns { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); gap: 18px; margin-bottom: 18px; }
 
 /* -- 8. Tables ---------------------------------------------------------------
@@ -1103,4 +1120,39 @@ body[data-theme="system"] .table-scroll:focus-visible { outline-color: var(--acc
 body[data-theme="system"] .level-choice { border-color: var(--line); }
 body[data-theme="system"] .search-trigger { background: #1a2740; color: var(--topbar-ink); border-color: var(--line-strong); }
 body[data-theme="system"] .columns-panel, body[data-theme="system"] .filter-chip { background: var(--panel); border-color: var(--line); color: var(--ink); }
+}
+.progress-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  list-style: none;
+  margin: var(--space-3) 0;
+  padding: 0;
+}
+.progress-steps li {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 12px;
+  padding: 4px 9px;
+}
+.progress-steps li.is-current {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--ink);
+  font-weight: 700;
+}
+.case-reference-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.case-reference-list li {
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: space-between;
+  padding: var(--space-2) 0;
 }

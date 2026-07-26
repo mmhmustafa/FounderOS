@@ -287,6 +287,21 @@ its recovery step.
   can then be run safely. `POST /api/discovery/jobs/<id>/cancel` requests cooperative
   cancellation — the run stops between observable steps, never
   mid-write, and the job ends in an explicit `cancelled` state.
+- **Scheduled discovery**: `schedules.json` stores timezone-aware one-time,
+  interval, and daily schedules, bounded retry policy, misfire behavior,
+  leases, idempotency keys, and maintenance windows. The supported
+  `atlas web` process owns one in-process schedule worker; a second process
+  per workspace is still unsupported and refused. Running jobs persist their
+  job/run association and renew their lease; after restart Atlas reconciles
+  the restored job, or marks an expired lease failed before applying the
+  configured bounded retry policy. It never launches the same due occurrence
+  twice. Daily wall-clock schedules run once at the first occurrence during a
+  fall-back fold and at the first valid local minute after a spring-forward
+  gap. Ambiguous/nonexistent one-time values are rejected at entry.
+- **Maintenance windows**: discovery and evidence collection continue during
+  maintenance. A matching global/profile/site window suppresses the expected
+  discovery-failure inbox notification only when its suppression option is
+  enabled; it does not hide evidence, alter a run result, or pause discovery.
 - **Probes**: `/healthz` (liveness) and `/readyz` (workspace
   writability, audit log, user store, credential provider — component
   names and booleans only).
@@ -296,15 +311,53 @@ its recovery step.
   Bodies, query strings, and cookies are never logged.
 - **Retention**: `/settings/retention` builds a fresh preview and deletion
   requires the typed confirmation `DELETE OLD HISTORY`; execution is manual,
-  audited, and writes a deletion manifest. No scheduler is shipped.
+  audited, and writes a deletion manifest. Discovery scheduling does not
+  schedule retention deletion; retention remains a separate manual safeguard.
 
 ## Notifications
 
-`notifications.jsonl` is the internal inbox: assignments, failed
-discoveries, policy regressions, edit conflicts, and approval requests,
-addressed to a username or role. Ownership and status (unread → read →
-done) need no email integration; an email/webhook bridge belongs
-behind `NotificationStore` so the in-app record stays authoritative.
+The Action Center remains authoritative for assignments, discovery failures,
+policy regressions, edit conflicts, incidents, telemetry signals, and approval
+requests. Repeated conditions correlate into one durable item with priority,
+owner, occurrence count, evidence freshness, and an audited lifecycle.
+Optional email/Teams/Slack/webhook adapters use the secret-free, bounded
+`notification-outbox.jsonl`; only minimal context and a same-origin deep link
+leave Atlas. Provider credentials remain injected by the deployment and never
+enter the outbox, notification record, logs, or audit.
+
+## Operational telemetry boundary
+
+`telemetry.jsonl` stores bounded, retention-controlled normalized facts with
+source, adapter, scope, timestamp, confidence, collection ID, optional opaque
+provider reference, and content-addressed provenance. Adapters must be
+explicitly injected into `create_app(telemetry_adapters=(...))`; Settings and
+the Signals page report their registered implementation, source, availability,
+last success/failure and safe error code. Atlas does not acquire provider
+credentials in this layer: deployment code gives an SNMP, syslog, REST, cloud,
+or wireless adapter an already-authorized client.
+
+Collection is operator-triggered through the discovery-run permission (or by
+calling `TelemetryCollectionService` from an authorized deployment worker).
+It validates adapter/scope provenance, redacts secret-shaped metadata, prunes
+the configured retention window, enforces the fact-count bound, records only
+counts and opaque references in audit, and reconciles Action Center signals
+only for the successfully collected scope. `MappingTelemetryAdapter` defaults
+to partial evidence; an adapter may set `evidence_complete=True` only when one
+successful read is an authoritative full snapshot. Partial, failed, stale, or
+retention-rejected observations never auto-resolve an Action Center item.
+Provider exceptions and response bodies are never rendered or audited.
+Configure:
+
+- `ATLAS_TELEMETRY_RETENTION_DAYS` (default `30`)
+- `ATLAS_TELEMETRY_MAX_FACTS` (default `100000`, minimum `100`)
+
+Missing adapters are reported as not configured, never as a healthy network.
+Telemetry is raw operational evidence and is deliberately excluded from
+metadata backup; use an explicit evidence export when it must be retained
+externally. Device, Topology, Paths, Predict, Policy and incident-case pages
+show a compact read-only context link when evidence exists. Those observations
+do not silently create topology, change a policy verdict, alter a path result,
+or enter prediction confidence.
 
 ## Concurrency
 
@@ -338,4 +391,5 @@ to the analysed revision — any later edit returns the plan to draft.
 | SSO / OIDC / SAML | `access/providers.py` (`identify()` contract) | `ProxySSOAuth` (proxy-asserted identity) |
 | Vault / cloud secrets | `CredentialProvider` | keyring + encrypted-file |
 | External job backend | `DiscoveryJobManager` runner interface | in-process threads |
-| Email / chat delivery | `NotificationStore` | in-app inbox only |
+| Email / chat delivery | `notification_delivery.py` provider + outbox boundary | callback seams for email/Teams/Slack and signed webhook; deployment injects the sender and secret |
+| Operational telemetry | `TelemetryAdapter` + `TelemetryStore` | vendor-neutral mappings, bounded persistence, evidence-aware signals; deployment injects live providers |

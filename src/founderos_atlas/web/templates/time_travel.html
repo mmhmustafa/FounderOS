@@ -1,0 +1,314 @@
+{% extends "base.html" %}
+{% block title %}Network Time Travel{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Network Time Travel</h1>
+    <p class="muted">Compare two immutable discoveries. Atlas replays only evidence preserved
+      in those records; today's topology edits never rewrite historical facts.</p>
+  </div>
+  <span class="actions">
+    <a class="btn" href="/history">Discovery History</a>
+    <a class="btn" href="/changes">Current Changes</a>
+  </span>
+</div>
+
+{% if not selected_network %}
+<section class="card">
+  <div class="status-banner status-unknown">
+    <span class="badge">No history</span>
+    <span>Atlas needs at least one archived discovery before it can replay the network.</span>
+  </div>
+  <a class="btn btn-primary" href="/discovery">Run Discovery</a>
+</section>
+{% else %}
+
+{% if network_options|length > 1 %}
+<section class="card">
+  <form class="form" method="get" action="/history/time-travel">
+    <input type="hidden" name="scope" value="{{ active_scope_id }}">
+    <label>Network
+      <select name="network" data-autosubmit>
+        {% for network in network_options %}
+        <option value="{{ network.scope_id }}" {{ 'selected' if network.scope_id == selected_network.scope_id else '' }}>
+          {{ network.label }} — {{ network.records }} archived run(s)
+        </option>
+        {% endfor %}
+      </select>
+    </label>
+    <noscript><button class="btn" type="submit">Show network</button></noscript>
+  </form>
+</section>
+{% endif %}
+
+<section class="card" aria-labelledby="snapshot-selection">
+  <h2 id="snapshot-selection">Choose two discoveries — {{ selected_network.label }}</h2>
+  <form class="form" method="get" action="/history/time-travel">
+    <input type="hidden" name="scope" value="{{ active_scope_id }}">
+    <input type="hidden" name="network" value="{{ selected_network.scope_id }}">
+    <div class="form-row">
+      <label>From
+        <select name="from" required>
+          <option value="">Choose earlier discovery</option>
+          {% for record in records %}
+          <option value="{{ record.record_id }}"
+                  {{ 'selected' if selection.from == record.record_id else '' }}
+                  {{ 'disabled' if not record.snapshot_available else '' }}>
+            {{ record.label }}{{ ' — snapshot unavailable' if not record.snapshot_available else '' }}
+          </option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>To
+        <select name="to" required>
+          <option value="">Choose later discovery</option>
+          {% for record in records %}
+          <option value="{{ record.record_id }}"
+                  {{ 'selected' if selection.to == record.record_id else '' }}
+                  {{ 'disabled' if not record.snapshot_available else '' }}>
+            {{ record.label }}{{ ' — snapshot unavailable' if not record.snapshot_available else '' }}
+          </option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-primary" type="submit">Compare discoveries</button>
+      {% if records|length < 2 %}
+      <span class="muted">A second discovery is required for comparison.</span>
+      {% endif %}
+    </div>
+  </form>
+</section>
+
+{% if comparison %}
+{% set before = comparison.previous_facts %}
+{% set after = comparison.current_facts %}
+<section class="card root-cause">
+  <div class="page-head">
+    <div>
+      <h2>Evidence comparison</h2>
+      <p class="muted">
+        From <code>{{ comparison.previous_record_id }}</code>
+        (snapshot <code>{{ comparison.previous_snapshot_id }}</code>,
+        {{ comparison.previous_created_at|timestamp }})
+        to <code>{{ comparison.current_record_id }}</code>
+        (snapshot <code>{{ comparison.current_snapshot_id }}</code>,
+        {{ comparison.current_created_at|timestamp }}).
+      </p>
+    </div>
+    <span class="actions">
+      {% if viewers.from %}<a class="btn btn-sm" href="{{ viewers.from }}" target="_blank" rel="noopener">Open From map</a>{% endif %}
+      {% if viewers.to %}<a class="btn btn-sm" href="{{ viewers.to }}" target="_blank" rel="noopener">Open To map</a>{% endif %}
+      {% if can('export.data') %}<a class="btn btn-sm" href="/history/time-travel/export.json?{{ query_string }}">Export comparison</a>{% endif %}
+    </span>
+  </div>
+
+  {% if comparison.warnings %}
+  <div class="status-banner status-warning">
+    <span class="badge">Evidence limits</span>
+    <ul>{% for warning in comparison.warnings %}<li>{{ warning }}</li>{% endfor %}</ul>
+  </div>
+  {% endif %}
+
+  <div class="table-scroll" role="region" aria-label="Topology before and after summary" tabindex="0">
+    <table class="grid">
+      <thead><tr><th>Fact</th><th>From</th><th>To</th><th>Change</th></tr></thead>
+      <tbody>
+        {% for key, label in (
+          ('devices', 'Devices'),
+          ('relationships', 'Relationships'),
+          ('physical_links', 'Physical links'),
+          ('logical_adjacencies', 'Logical adjacencies'),
+          ('inter_site_links', 'Inter-site links'),
+          ('unresolved_identities', 'Unresolved identities'),
+          ('warnings', 'Discovery warnings')
+        ) %}
+        <tr>
+          <td>{{ label }}</td>
+          <td>{{ before.topology[key] }}</td>
+          <td>{{ after.topology[key] }}</td>
+          <td>{{ '%+d'|format(after.topology[key] - before.topology[key]) }}</td>
+        </tr>
+        {% endfor %}
+        <tr>
+          <td>Evidence-derived sites</td>
+          <td>{{ before.sites.count }}</td>
+          <td>{{ after.sites.count }}</td>
+          <td>{{ '%+d'|format(after.sites.count - before.sites.count) }}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="card">
+  <h2>Routing boundaries and operational evidence</h2>
+  <div class="table-scroll" role="region" aria-label="OSPF and BGP before and after" tabindex="0">
+    <table class="grid">
+      <thead><tr><th>Protocol fact</th><th>From</th><th>To</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>OSPF covered devices</td>
+          <td>{{ before.routing.ospf.covered_devices }} / {{ before.routing.ospf.total_devices }}</td>
+          <td>{{ after.routing.ospf.covered_devices }} / {{ after.routing.ospf.total_devices }}</td>
+        </tr>
+        <tr>
+          <td>OSPF adjacencies (Full / 2-Way)</td>
+          <td>{{ before.routing.ospf.adjacencies }} ({{ before.routing.ospf.adjacencies_full }} / {{ before.routing.ospf.adjacencies_two_way }})</td>
+          <td>{{ after.routing.ospf.adjacencies }} ({{ after.routing.ospf.adjacencies_full }} / {{ after.routing.ospf.adjacencies_two_way }})</td>
+        </tr>
+        <tr>
+          <td>OSPF health</td>
+          <td>{{ before.routing.ospf.health or 'unknown' }}</td>
+          <td>{{ after.routing.ospf.health or 'unknown' }}</td>
+        </tr>
+        <tr>
+          <td>BGP covered devices</td>
+          <td>{{ before.routing.bgp.covered_devices }} / {{ before.routing.bgp.total_devices }}</td>
+          <td>{{ after.routing.bgp.covered_devices }} / {{ after.routing.bgp.total_devices }}</td>
+        </tr>
+        <tr>
+          <td>BGP sessions (Established)</td>
+          <td>{{ before.routing.bgp.sessions }} ({{ before.routing.bgp.sessions_established }})</td>
+          <td>{{ after.routing.bgp.sessions }} ({{ after.routing.bgp.sessions_established }})</td>
+        </tr>
+        <tr>
+          <td>BGP health</td>
+          <td>{{ before.routing.bgp.health or 'unknown' }}</td>
+          <td>{{ after.routing.bgp.health or 'unknown' }}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <details>
+    <summary>OSPF area/group evidence</summary>
+    <div class="form-row">
+      <section>
+        <h3>From</h3>
+        {% if before.routing.ospf.groups %}<ul>{% for group in before.routing.ospf.groups %}<li>{{ group.label or group.area_id or 'OSPF group' }} — {{ group.adjacency_count or 0 }} adjacency(s), {{ group.health or 'unknown' }}</li>{% endfor %}</ul>
+        {% else %}<p class="muted">No OSPF group evidence was preserved.</p>{% endif %}
+      </section>
+      <section>
+        <h3>To</h3>
+        {% if after.routing.ospf.groups %}<ul>{% for group in after.routing.ospf.groups %}<li>{{ group.label or group.area_id or 'OSPF group' }} — {{ group.adjacency_count or 0 }} adjacency(s), {{ group.health or 'unknown' }}</li>{% endfor %}</ul>
+        {% else %}<p class="muted">No OSPF group evidence was preserved.</p>{% endif %}
+      </section>
+    </div>
+  </details>
+  <details>
+    <summary>BGP AS/group evidence</summary>
+    <div class="form-row">
+      <section>
+        <h3>From</h3>
+        {% if before.routing.bgp.groups %}<ul>{% for group in before.routing.bgp.groups %}<li>{{ group.label or ('AS ' ~ group.local_as) }} — {{ group.session_count or 0 }} session(s), {{ group.health or 'unknown' }}</li>{% endfor %}</ul>
+        {% else %}<p class="muted">No BGP group evidence was preserved.</p>{% endif %}
+      </section>
+      <section>
+        <h3>To</h3>
+        {% if after.routing.bgp.groups %}<ul>{% for group in after.routing.bgp.groups %}<li>{{ group.label or ('AS ' ~ group.local_as) }} — {{ group.session_count or 0 }} session(s), {{ group.health or 'unknown' }}</li>{% endfor %}</ul>
+        {% else %}<p class="muted">No BGP group evidence was preserved.</p>{% endif %}
+      </section>
+    </div>
+  </details>
+</section>
+
+<section class="card" id="change-replay" data-time-travel-replay>
+  <div class="page-head">
+    <div>
+      <h2>Change replay</h2>
+      <p class="muted">{{ page.total }} matching change(s) · items {{ page.start }}–{{ page.end }}.
+        Playback steps through this page; reduced-motion preferences are respected.</p>
+    </div>
+  </div>
+
+  <form class="form" method="get" action="/history/time-travel">
+    <input type="hidden" name="scope" value="{{ active_scope_id }}">
+    <input type="hidden" name="network" value="{{ selected_network.scope_id }}">
+    <input type="hidden" name="from" value="{{ selection.from }}">
+    <input type="hidden" name="to" value="{{ selection.to }}">
+    <div class="form-row">
+      <label>Search changes
+        <input type="search" name="q" value="{{ filters.q }}" placeholder="device, site, protocol or value">
+      </label>
+      <label>Category
+        <select name="category">
+          <option value="">All categories</option>
+          {% for category in categories %}
+          <option value="{{ category }}" {{ 'selected' if filters.category == category else '' }}>{{ category|replace('-', ' ')|title }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+    <div class="form-actions">
+      <button class="btn" type="submit">Filter changes</button>
+      {% if filters.q or filters.category %}<a class="btn" href="/history/time-travel?scope={{ active_scope_id|urlencode }}&network={{ selected_network.scope_id|urlencode }}&from={{ selection.from|urlencode }}&to={{ selection.to|urlencode }}">Clear</a>{% endif %}
+    </div>
+  </form>
+
+  {% if page.items %}
+  <div class="actions" role="group" aria-label="Change replay controls">
+    <button class="btn btn-sm" type="button" data-replay-previous>Previous change</button>
+    <button class="btn btn-sm btn-primary" type="button" data-replay-next>Next change</button>
+    <button class="btn btn-sm" type="button" data-replay-play>Play</button>
+    <button class="btn btn-sm" type="button" data-replay-pause disabled>Pause</button>
+    <span class="muted" data-replay-status aria-live="polite">Ready — {{ page.items|length }} changes on this page.</span>
+  </div>
+  <div class="table-scroll table-scroll-wide" role="region" aria-label="Historical changes" tabindex="0">
+    <table class="grid">
+      <thead><tr><th>#</th><th>Category</th><th>Subject</th><th>What changed</th><th>Before</th><th>After</th><th>Severity</th></tr></thead>
+      <tbody>
+        {% for change in page.items %}
+        <tr data-replay-step>
+          <td>{{ page.start + loop.index0 }}</td>
+          <td><span class="badge">{{ change.category|replace('-', ' ')|title }}</span></td>
+          <td><strong>{{ change.subject }}</strong></td>
+          <td>{{ change.description }}</td>
+          <td>{{ change.before if change.before is not none else 'Not observed' }}</td>
+          <td>{{ change.after if change.after is not none else 'Not observed' }}</td>
+          <td>{{ change.severity|title }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if page.pages > 1 %}
+  <nav class="pagination" aria-label="Historical change pages">
+    {% if page.page > 1 %}<a class="btn" href="?{{ query_string }}&page={{ page.page - 1 }}">Previous page</a>{% endif %}
+    <span class="muted">Page {{ page.page }} of {{ page.pages }}</span>
+    {% if page.page < page.pages %}<a class="btn" href="?{{ query_string }}&page={{ page.page + 1 }}">Next page</a>{% endif %}
+  </nav>
+  {% endif %}
+  {% else %}
+  <div class="status-banner status-healthy">
+    <span class="badge">No matching change</span>
+    <span>The selected snapshots contain no differences matching this view.</span>
+  </div>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Historical path comparison</h2>
+  <p class="muted">Atlas can compare a path only when a path investigation and its required
+    route/policy evidence were preserved for both selected discoveries. These history records
+    do not carry a per-run saved path investigation, so Atlas does not manufacture a historical
+    route. Run or save investigations against future snapshot-aware cases to make this adapter
+    available.</p>
+</section>
+
+<script src="{{ asset_url('atlas-time-travel.js') }}"></script>
+{% elif error %}
+<section class="card">
+  <div class="status-banner status-warning">
+    <span class="badge">Cannot compare</span><span>{{ error }}</span>
+  </div>
+</section>
+{% elif records|length < 2 %}
+<section class="card">
+  <p class="muted">Only one compatible topology snapshot is archived for this network.
+    Run Discovery again to create a second point in time.</p>
+</section>
+{% endif %}
+{% endif %}
+{% endblock %}
+

@@ -2,6 +2,7 @@
 {% from "_entity_actions.html" import entity_menu %}
 {% from "_breadcrumbs.html" import breadcrumbs %}
 {% from "_device_actions.html" import device_actions, device_ssh_state %}
+{% from "_telemetry_context.html" import operational_context %}
 {% block title %}Device Details{% endblock %}
 {% block content %}
 {{ breadcrumbs([
@@ -21,6 +22,10 @@
 </div>
 <p class="muted">canonical enterprise device</p>
 {{ device_ssh_state(ssh_target) }}
+{{ operational_context(
+  telemetry_context(None, device.hostname),
+  'Recent provider observations add live context; identity and topology remain grounded in discovery evidence.'
+) }}
 
 <div class="columns">
   <section class="card">
@@ -33,8 +38,10 @@
       <li><span>OS version</span><span>{{ device.os_version or '—' }}</span></li>
       <li><span>Serial number</span><span>{{ device.serial_number or '—' }}</span></li>
       <li><span>Site</span><span>{{ device.site.label }}</span></li>
-      <li><span>Enterprise ID</span><span><code>{{ device.enterprise_id }}</code></span></li>
-      {% if device.credential_ref %}<li><span>Credential</span><span><code>{{ device.credential_ref }}</code></span></li>{% endif %}
+      {% if display_level != 'simple' %}<li><span>Enterprise ID</span><span><code>{{ device.enterprise_id }}</code></span></li>{% endif %}
+      {% if display_level == 'expert' and can('credentials.manage') and device.credential_ref %}
+      <li><span>Credential reference</span><span><code>{{ device.credential_ref }}</code></span></li>
+      {% endif %}
     </ul>
   </section>
 
@@ -50,7 +57,7 @@
     <h2>Observations</h2>
     <ul>
       {% for obs in device.observations %}
-      <li class="muted">Observed by {{ obs.profile_name }}{% if obs.observed_at %} at {{ obs.observed_at }}{% endif %}{% if obs.run_id %} (run {{ obs.run_id }}){% endif %}{% if obs.management_ip %} via {{ obs.management_ip }}{% endif %}</li>
+      <li class="muted">Observed by {{ obs.profile_name }}{% if obs.observed_at %} at {{ obs.observed_at | timestamp }}{% endif %}{% if obs.run_id %} (run {{ obs.run_id }}){% endif %}{% if obs.management_ip %} via {{ obs.management_ip }}{% endif %}</li>
       {% endfor %}
     </ul>
   </section>

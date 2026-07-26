@@ -1,15 +1,51 @@
 # FounderOS Atlas 0.3.0a1 release report
 
-Date: 2026-07-18. Authoritative version source:
+Updated: 2026-07-26. Authoritative version source:
 `src/founderos_atlas/release.py`. Package metadata, CLI, Settings,
 diagnostics, update information, backups, evidence provenance, policy/reasoning
 results, and startup logs use that identity. Workspace schema target: v1.
 
-Final verification: **1,745 passed, 1 skipped, 436 subtests passed** in the
-complete automated suite. The final release/SSH-control gate passed another
-110 tests and 44 subtests with one intentional skip. The wheel built and
-installed as `founderos-runtime==0.3.0a1`; its CLI and installed metadata
-reported the same authoritative version.
+## Post-PR-154 completion and independent audit
+
+PR-155 through PR-162 add topology stabilization, guided evidence/identity
+resolution, policy intent and governance, an operational Action Center,
+Network Time Travel, unified investigation cases, durable scheduled
+operations, and vendor-neutral operational telemetry adapters.
+
+Final integrated verification: **2,449 passed, 2 intentional skips, and 472
+subtests passed**. The complete suite was repeated after correcting 14
+cross-feature topology/theme contracts found by the first integration run.
+Source compilation, documentation/link/UTF-8 checks, dependency auditing,
+SBOM generation, wheel build, isolated install, version/import smoke testing,
+and live-browser inspection also passed.
+
+The wheel built and installed as `founderos-runtime==0.3.0a1`; installed
+metadata, runtime, Settings, diagnostics, CLI, backups, and logs reuse the same
+authoritative version. The CycloneDX SBOM contains 80 locked components.
+
+On the operator's real 19-site evidence set, the Enterprise Policy cold render
+was reduced from 114.5 seconds to 27.4 seconds by eliminating a duplicate
+enterprise-graph build and gathering each device's evidence once per evaluation
+pass. The same-process cached render is 0.32 seconds. The cold evaluation
+remains evidence-size dependent and is an explicit performance boundary for a
+future durable derived-report cache.
+
+The only dependency finding is Paramiko 4.0.0 / PYSEC-2026-2858. It is not
+silently suppressed: the reviewed exception expires 2026-10-18 and Atlas
+disables `ssh-rsa`/SHA-1 across its SSH paths while Netmiko remains incompatible
+with Paramiko 5.
+
+One accepted architectural limitation remains: workspace state JSON and the
+dedicated audit JSONL are individually atomic and process-locked, but not one
+cross-file transaction. A host crash between those writes can leave a state
+change without its local audit event. A transactional workspace journal owns
+that future boundary.
+
+## Earlier 18 July release baseline
+
+The 18 July baseline passed **1,745 tests, 1 skipped test, and 436 subtests**.
+The final release/SSH-control gate at that time passed another 110 tests and 44
+subtests with one intentional skip.
 
 ## What this release completes
 

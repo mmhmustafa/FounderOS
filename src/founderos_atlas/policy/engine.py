@@ -30,6 +30,7 @@ from .matcher import evaluate_check
 from .models import Policy, PolicyEvaluation, PolicyPack, PolicyReport
 from .packs import default_pack
 from .rule import PolicyRule
+from .applicability import PolicyContext
 
 
 def _utc_now_iso() -> str:
@@ -72,6 +73,7 @@ class PolicyEngine:
         *,
         scope_label: str = "",
         as_of: str | None = None,
+        device_contexts=None,
     ) -> PolicyReport:
         """Evaluate every policy against every device in ``memory``."""
 
@@ -83,6 +85,17 @@ class PolicyEngine:
             device = memory.get_device_memory(device_id)
             hostname = device.hostname if device else device_id
             network = device.network if device else scope_label
+            supplied_context = (
+                (device_contexts or {}).get(device_id)
+                or (device_contexts or {}).get(hostname)
+                or (device_contexts or {}).get(str(hostname).casefold())
+            )
+            context = PolicyContext.from_mapping(
+                supplied_context,
+                device_id=device_id,
+                hostname=hostname,
+                network=network,
+            )
             for policy in self._pack.policies:
                 question = ReasoningQuestion(
                     kind=QUESTION_COMPLY,
@@ -101,6 +114,8 @@ class PolicyEngine:
                         network=network,
                         result=result,
                         config_snippet=self._snippet(policy, result),
+                        applicability=policy.applicability.decide(context),
+                        device_context=context.to_dict(),
                     )
                 )
 
@@ -126,8 +141,23 @@ class PolicyEngine:
 
         generated_at = self._clock()
         evaluations: list[PolicyEvaluation] = []
-        for label, memory in memories:
-            report = self.evaluate(memory, scope_label=label, as_of=as_of)
+        for item in memories:
+            if len(item) == 2:
+                label, memory = item
+                device_contexts = None
+            elif len(item) == 3:
+                label, memory, device_contexts = item
+            else:
+                raise ValueError(
+                    "each scope must be (label, memory) or "
+                    "(label, memory, device_contexts)"
+                )
+            report = self.evaluate(
+                memory,
+                scope_label=label,
+                as_of=as_of,
+                device_contexts=device_contexts,
+            )
             evaluations.extend(report.evaluations)
         evaluations.sort(key=_evaluation_sort_key)
         return PolicyReport(
@@ -145,6 +175,7 @@ class PolicyEngine:
         *,
         scope_label: str = "",
         as_of: str | None = None,
+        device_context=None,
     ) -> PolicyEvaluation:
         """Evaluate a single policy against a single device — for detail views
         and targeted tests."""
@@ -153,6 +184,12 @@ class PolicyEngine:
         device = memory.get_device_memory(device_id)
         hostname = device.hostname if device else device_id
         network = device.network if device else scope_label
+        context = PolicyContext.from_mapping(
+            device_context,
+            device_id=device_id,
+            hostname=hostname,
+            network=network,
+        )
         question = ReasoningQuestion(
             kind=QUESTION_COMPLY,
             subject=device_id,
@@ -169,6 +206,8 @@ class PolicyEngine:
             network=network,
             result=result,
             config_snippet=self._snippet(policy, result),
+            applicability=policy.applicability.decide(context),
+            device_context=context.to_dict(),
         )
 
     # -- helpers -----------------------------------------------------------

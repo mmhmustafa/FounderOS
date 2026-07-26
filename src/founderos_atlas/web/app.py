@@ -59,6 +59,7 @@ def create_app(
     workspace_root: str | Path | None = None,
     job_manager: DiscoveryJobManager | None = None,
     auth_mode: str | None = None,
+    telemetry_adapters=(),
 ):
     """Build the Atlas Flask app with injectable backend services.
 
@@ -109,12 +110,24 @@ def create_app(
         ATLAS_HOST=os.environ.get("ATLAS_HOST", DEFAULT_HOST),
         ATLAS_PORT=int(os.environ.get("ATLAS_PORT", DEFAULT_PORT)),
         ATLAS_LOG_LEVEL=os.environ.get("ATLAS_LOG_LEVEL", "INFO"),
+        # Wizard drafts are operational metadata, never credentials.  Old
+        # abandoned drafts are archived (not deleted) after this interval;
+        # operators can review them or explicitly discard the archive.
+        ATLAS_DISCOVERY_DRAFT_RETENTION_DAYS=max(
+            1, int(os.environ.get("ATLAS_DISCOVERY_DRAFT_RETENTION_DAYS", 30))
+        ),
         # Display only. Every stored timestamp stays UTC; this decides the
         # zone the GUI renders them in. "auto" = the local operator's own
         # system clock; "UTC" or an IANA name (e.g. "Asia/Kolkata")
         # overrides it — NOC teams often standardise on UTC to correlate
         # against device syslog.
         ATLAS_DISPLAY_TIMEZONE=os.environ.get("ATLAS_DISPLAY_TIMEZONE", AUTO),
+        ATLAS_TELEMETRY_RETENTION_DAYS=max(
+            1, int(os.environ.get("ATLAS_TELEMETRY_RETENTION_DAYS", 30))
+        ),
+        ATLAS_TELEMETRY_MAX_FACTS=max(
+            100, int(os.environ.get("ATLAS_TELEMETRY_MAX_FACTS", 100_000))
+        ),
     )
 
     # PR-044A (CONSOLE). Interactive SSH is the one place the GUI stops being
@@ -206,14 +219,39 @@ def create_app(
                 KIND_DISCOVERY_FAILED,
                 NotificationStore,
             )
+            from founderos_atlas.scheduling import ScheduleStore
+
+            try:
+                quiet = ScheduleStore(resolved_workspace).active_maintenance(
+                    now=(
+                        clock() if clock is not None
+                        else datetime.now().astimezone()
+                    ),
+                    profile_id=job.profile_id,
+                    site_id=getattr(job, "site", None),
+                )
+            except (OSError, TypeError, ValueError):
+                # Corrupt optional quiet-window metadata must not suppress a
+                # real failure notification. Integrity diagnostics report the
+                # catalog separately.
+                quiet = ()
+            if any(window.suppress_notifications for window in quiet):
+                return
 
             NotificationStore(resolved_workspace).notify(
                 kind=KIND_DISCOVERY_FAILED,
                 title=f"Discovery failed for {job.profile_name}",
-                detail=str(job.error or "See the job log."),
-                href="/discovery",
+                detail=(
+                    "Open the discovery result for the safe failure summary "
+                    "and collection gaps."
+                ),
+                href=f"/discovery?job={job.job_id}",
                 audience="role:network-operator",
                 dedupe_key=f"discovery-failed:{job.profile_id}",
+                priority="high",
+                scope_id=job.profile_id,
+                subject=f"discovery-job:{job.job_id}",
+                source_refs=(f"discovery-job:{job.job_id}",),
             )
 
         job_manager = DiscoveryJobManager(
@@ -238,6 +276,29 @@ def create_app(
     from founderos_atlas.workspace.migrations import migrate_workspace
 
     migrate_workspace(resolved_workspace)
+
+    # Operational providers are injected explicitly.  The registry and
+    # collection service never resolve credentials themselves; each adapter
+    # receives an already-authorized client at the composition boundary.
+    from founderos_atlas.telemetry import (
+        TelemetryAdapterRegistry,
+        TelemetryCollectionService,
+        TelemetryStore,
+    )
+
+    telemetry_registry = TelemetryAdapterRegistry(telemetry_adapters)
+    telemetry_store = TelemetryStore(
+        resolved_workspace,
+        max_facts=app.config["ATLAS_TELEMETRY_MAX_FACTS"],
+        retention_days=app.config["ATLAS_TELEMETRY_RETENTION_DAYS"],
+    )
+    app.config.update(
+        ATLAS_TELEMETRY_REGISTRY=telemetry_registry,
+        ATLAS_TELEMETRY_STORE=telemetry_store,
+        ATLAS_TELEMETRY_COLLECTION_SERVICE=TelemetryCollectionService(
+            resolved_workspace, telemetry_registry, store=telemetry_store,
+        ),
+    )
 
     from .models import NAV_GROUPS
 
@@ -309,9 +370,13 @@ def create_app(
     # safe error pages, health probes, and structured request logging.
     from .observability import register_observability
     from .ops import register_ops_routes
+    from .schedule_routes import register_schedule_routes
+    from .telemetry_routes import register_telemetry_routes
     from .security import register_security
 
     register_security(app, auth_mode=auth_mode)
     register_ops_routes(app)
+    register_schedule_routes(app)
+    register_telemetry_routes(app)
     register_observability(app)
     return app

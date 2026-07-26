@@ -149,7 +149,10 @@
 {%- macro identity_workflow(facts) -%}
 {% set identity = facts.identity %}
 <section class="card" id="identity">
-  <h2>Unresolved Peer Identities</h2>
+  <div class="page-head">
+    <h2>Unresolved Peer Identities</h2>
+    <a class="btn btn-sm" href="/evidence/resolution-center?kind=identity">Open Resolution Center</a>
+  </div>
   {% if identity.unresolved %}
   <p class="muted">Endpoints observed through protocol evidence that no discovered
     device owns. Atlas suggests candidates with the evidence for each — it never

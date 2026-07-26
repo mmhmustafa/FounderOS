@@ -60,7 +60,9 @@ class ResponsiveShellTests(unittest.TestCase):
     def test_tables_scroll_in_labelled_regions(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             _, client = build_world(Path(tmp))
-            page = client.get("/topology?scope=all").data.decode("utf-8")
+            page = client.get(
+                "/topology?scope=all&support=1"
+            ).data.decode("utf-8")
             self.assertIn('class="table-scroll" role="region"', page)
             self.assertIn('aria-label="Device inventory"', page)
             self.assertIn('tabindex="0"', page)
@@ -119,7 +121,9 @@ class FormattingTests(unittest.TestCase):
     def test_templates_render_time_elements_with_precise_tooltips(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             _, client = build_world(Path(tmp))
-            page = client.get("/topology?scope=all").data.decode("utf-8")
+            page = client.get(
+                "/topology?scope=all&support=1"
+            ).data.decode("utf-8")
             match = re.search(r'<time datetime="([^"]+)" title="\1">([^<]+)</time>', page)
             self.assertIsNotNone(match, "topology should render <time> with a precise tooltip")
             self.assertIn("-", match.group(2))  # DD-Mon-YYYY display format

@@ -4,6 +4,10 @@
 {% block content %}
 <h1>Discoveries — {{ active_scope_label }}</h1>
 
+<div class="actions">
+  <a class="btn btn-sm" href="{{ scoped_url('/history/time-travel', link_scope()) }}">Network Time Travel</a>
+</div>
+
 {% if run %}
 <section class="card root-cause" id="run-{{ run.record_id }}">
   <h2>Discovery Run — {{ run.profile }} · {{ run.started_display }}</h2>
@@ -56,6 +60,9 @@
     {% if run.previous_record_id %}
     <a class="btn btn-sm" href="{{ scoped_url('/changes/compare', run.scope_id, left=run.previous_record_id, right=run.record_id) }}"
        aria-label="Compare this run against the previous run">Compare with previous run</a>
+    <a class="btn btn-sm"
+       href="/history/time-travel?scope={{ run.scope_id|urlencode }}&amp;from={{ run.previous_record_id|urlencode }}&amp;to={{ run.record_id|urlencode }}"
+       aria-label="Replay changes from the previous discovery to this run">Replay in Time Travel</a>
     {% else %}
     <button class="btn btn-sm" disabled title="This is the oldest archived run for this scope — nothing earlier to compare against.">Compare with previous run</button>
     {% endif %}

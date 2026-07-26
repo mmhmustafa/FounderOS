@@ -66,18 +66,33 @@ class ReasoningEngine:
         self._rule_set_version = rule_set_version
         self._atlas_version = atlas_version
         self._engine_version = engine_version
+        # A focused policy pack asks several questions about the same device.
+        # Evidence providers may read and shape a large retained memory, so
+        # gathering it again for every rule makes cold policy evaluation grow
+        # with policies × evidence size. An engine represents one immutable
+        # evaluation pass; safely reuse the exact gather within that pass.
+        self._evidence_cache: dict[
+            tuple[str, str | None, tuple[str, ...]],
+            tuple[tuple[Evidence, ...], tuple[EvidenceGap, ...]],
+        ] = {}
 
     # -- evidence gathering (step 1; rules never do this) ------------------
 
     def _gather(
         self, subject: str, as_of: str | None, kinds: tuple[str, ...]
     ) -> tuple[tuple[Evidence, ...], tuple[EvidenceGap, ...]]:
+        key = (subject, as_of, kinds)
+        cached = self._evidence_cache.get(key)
+        if cached is not None:
+            return cached
         evidence: list[Evidence] = []
         gaps: list[EvidenceGap] = []
         for provider in self._providers:
             evidence.extend(provider.gather(subject, as_of=as_of, kinds=kinds))
             gaps.extend(provider.describe_gaps(subject, as_of=as_of, kinds=kinds))
-        return tuple(evidence), tuple(gaps)
+        gathered = (tuple(evidence), tuple(gaps))
+        self._evidence_cache[key] = gathered
+        return gathered
 
     # -- evaluation --------------------------------------------------------
 

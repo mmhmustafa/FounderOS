@@ -68,6 +68,8 @@
     /* The one control that should take the slack; everything else is
        sized by its own content. */
     header #search { flex: 1 1 200px; }
+    .toolbar-secondary { display: contents; }
+    #toolbar-more-toggle { display: none; }
     main { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 280px; }
     main.details-collapsed { grid-template-columns: minmax(0, 1fr); }
     main.details-collapsed aside { display: none; }
@@ -235,11 +237,33 @@
         box-shadow: 0 8px 24px rgba(15,23,42,.14);
       }
     }
-    @media (max-width: 720px) {
-      header { display: grid; grid-template-columns: 1fr 1fr; }
-      header h1, #search, .summary { grid-column: 1 / -1; }
-      .layout-label { min-width: 0; }
-      .layout-label select { width: 100%; }
+    @media (max-width: 900px) {
+      header { gap: 7px; padding: 8px 10px; }
+      header h1 { flex: 1 1 auto; font-size: 16px; }
+      header #search { order: 2; flex: 1 0 100%; max-width: none; }
+      #view-label { order: 3; }
+      #fit { order: 4; }
+      #details-toggle { order: 5; }
+      #toolbar-more-toggle { display: inline-flex; order: 6; align-items: center; }
+      .toolbar-secondary {
+        display: none; order: 7; flex: 1 0 100%; align-items: center;
+        flex-wrap: wrap; gap: 7px; padding: 9px 0 2px;
+        border-top: 1px solid #334155;
+      }
+      .toolbar-secondary.is-open { display: flex; }
+      .toolbar-secondary .layout-label { min-width: 0; }
+      .summary { order: 8; }
+    }
+    @media (max-width: 480px) {
+      header { align-items: stretch; }
+      #view-label { flex: 1 1 100%; justify-content: space-between; }
+      #view-label select { flex: 1 1 auto; min-width: 0; }
+      #fit, #details-toggle, #toolbar-more-toggle {
+        flex: 1 1 30%; justify-content: center; padding-inline: 6px;
+      }
+      .toolbar-secondary > .layout-label { flex: 1 0 100%; }
+      .toolbar-secondary > .layout-label select { flex: 1 1 auto; width: auto; }
+      .zoom-controls { flex-wrap: wrap; }
       #legend { display: none; }
     }
     /* Keyboard alternative to pointer interaction on the canvas. */
@@ -309,6 +333,7 @@
          nobody can press. */
       header #search, header .layout-label, header #fit,
       header .zoom-controls, header #details-toggle, header #edit-mode,
+      header #toolbar-more-toggle,
       #layers-panel, #export-panel, #trace-panel, #context-menu,
       #details-panel, #viewport-hint, #open-sites, #legend, #node-list {
         display: none !important;
@@ -377,6 +402,11 @@
         <option value="bgp">BGP autonomous systems</option>
       </select>
     </label>
+    <button id="fit" type="button" title="Reset at a scale where labels remain readable">Reset view</button>
+    <button id="details-toggle" type="button" aria-controls="details" aria-expanded="true">Details</button>
+    <button id="toolbar-more-toggle" type="button" aria-controls="toolbar-secondary"
+            aria-expanded="false">More tools</button>
+    <div class="toolbar-secondary" id="toolbar-secondary">
     <label class="layout-label">Layout
       <select id="layout" aria-label="Graph layout">
         <option value="logical" selected>Logical (sites & tiers)</option>
@@ -387,7 +417,6 @@
         <option value="grid">Grid</option>
       </select>
     </label>
-    <button id="fit" type="button" title="Reset at a scale where labels remain readable">Reset view</button>
     <!--
       Stepped zoom. The wheel alone gave no way to land on a chosen scale,
       and no way to know which scale you were on. Each press is one fixed
@@ -435,7 +464,7 @@
       </div>
     </details>
     <button id="edit-mode" type="button" aria-pressed="false" title="Curate persistent site membership" hidden>Edit topology</button>
-    <button id="details-toggle" type="button" aria-controls="details" aria-expanded="true">Details</button>
+    </div>
     <span class="summary" id="summary"></span>
     <!--
       Print only. A topology diagram in a change record has to say which
@@ -683,6 +712,28 @@
     // as an overlay and open automatically after a selection.
     const viewerMain = document.getElementById('viewer-main');
     const detailsToggle = document.getElementById('details-toggle');
+    const toolbarMoreToggle = document.getElementById('toolbar-more-toggle');
+    const toolbarSecondary = document.getElementById('toolbar-secondary');
+    const compactToolbar = window.matchMedia('(max-width: 900px)');
+    const setMoreToolsOpen = open => {
+      toolbarSecondary.classList.toggle('is-open', open);
+      toolbarMoreToggle.setAttribute('aria-expanded', String(open));
+      toolbarMoreToggle.textContent = open ? 'Fewer tools' : 'More tools';
+    };
+    toolbarMoreToggle.addEventListener('click', () => {
+      setMoreToolsOpen(
+        !toolbarSecondary.classList.contains('is-open')
+      );
+    });
+    const syncToolbarMode = () => {
+      if (!compactToolbar.matches) { setMoreToolsOpen(false); }
+    };
+    if (compactToolbar.addEventListener) {
+      compactToolbar.addEventListener('change', syncToolbarMode);
+    } else {
+      compactToolbar.addListener(syncToolbarMode);
+    }
+    syncToolbarMode();
     const compactViewer = window.matchMedia('(max-width: 1050px)');
     const setDetailsOpen = open => {
       viewerMain.classList.toggle('details-collapsed', !open);
@@ -723,19 +774,26 @@
     // one question a map is for. Readability is the default, not a cage.
     const MIN_ZOOM = 0.05;
 
+    const graphContainer = document.getElementById('cy');
+    // Cytoscape installs DOM observers during construction.  Refuse to
+    // construct against a detached or non-element target: browsers otherwise
+    // surface a cryptic MutationObserver.observe() error and leave a blank
+    // canvas.  This also makes an accidental template-order regression fail
+    // with an actionable message.
+    if (!(graphContainer instanceof HTMLElement) || !graphContainer.isConnected) {
+      throw new Error('Atlas topology container is not attached to the document.');
+    }
     const cy = cytoscape({
-      container: document.getElementById('cy'),
+      container: graphContainer,
       elements: [...topologyElements.nodes, ...topologyElements.edges],
       // The real layout is selected below after the site model is known.
       // A preset avoids flashing a briefly auto-fitted miniature graph.
       layout: { name: 'preset', fit: false },
       minZoom: MIN_ZOOM,
       maxZoom: 3,
-      // The default wheel step is far too coarse over a range this wide:
-      // one notch jumped most of the way from readable to unreadable, so
-      // there was no way to sit at a chosen scale. Smaller steps make the
-      // whole range reachable a little at a time.
-      wheelSensitivity: 0.15,
+      // Keep Cytoscape's tested wheel/touchpad handling. Precise, predictable
+      // changes remain available through the stepped zoom controls; custom
+      // wheelSensitivity values are explicitly warned as hardware-dependent.
       pixelRatio: RENDER_PIXEL_RATIO,
       textureOnViewport: false,
       motionBlur: false,

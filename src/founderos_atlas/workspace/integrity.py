@@ -24,8 +24,12 @@ KNOWN_JSON_FILES = (
     "sites.json",
     "site-overrides.json",
     "identity-resolutions.json",
+    "evidence-resolution-decisions.json",
     "policy-exceptions.json",
     "policy-trend.json",
+    "policy-governance.json",
+    "policy-posture.json",
+    "schedules.json",
     "annotations.json",
     "incidents.json",
     "users.json",
@@ -36,7 +40,10 @@ KNOWN_JSONL_FILES = (
     "audit.jsonl",
     "site-overrides.audit.jsonl",
     "identity-resolutions.audit.jsonl",
+    "evidence-resolution-decisions.audit.jsonl",
     "notifications.jsonl",
+    "notification-outbox.jsonl",
+    "telemetry.jsonl",
 )
 
 
@@ -49,12 +56,16 @@ class FileStatus:
 
 def _check_json(path: Path) -> FileStatus:
     try:
-        json.loads(path.read_text(encoding="utf-8"))
+        value = json.loads(path.read_text(encoding="utf-8"))
+        if path.name == "schedules.json":
+            from founderos_atlas.scheduling import validate_schedule_catalog
+
+            validate_schedule_catalog(value)
         return FileStatus(name=path.name, state="ok")
-    except (OSError, ValueError) as error:
+    except (KeyError, OSError, TypeError, ValueError) as error:
         return FileStatus(
             name=path.name, state="corrupt",
-            detail=f"{type(error).__name__}: the file does not parse as JSON. "
+            detail=f"{type(error).__name__}: the file is not valid Atlas metadata. "
                    "Restore it from a metadata backup, or remove it to "
                    "start that record fresh.",
         )

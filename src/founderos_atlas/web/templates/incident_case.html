@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% from "_entity_actions.html" import entity_menu %}
 {% import "_fmt.html" as fmt %}
+{% from "_telemetry_context.html" import operational_context %}
 {% block title %}Incident {{ case.title }}{% endblock %}
 {% block content %}
 <nav class="breadcrumbs" aria-label="Breadcrumb">
@@ -23,18 +24,28 @@
   {% if case.report_generated_at %} · evidence gathered {{ fmt.when(case.report_generated_at) }}{% endif %}
 </p>
 {% if case.description %}<p>{{ case.description }}</p>{% endif %}
+{{ operational_context(
+  telemetry_context(case.scope_id),
+  'This is current scope context. Link exact telemetry evidence below before using it as resolution validation.'
+) }}
+{% if case.participants %}
+<p><strong>Participants:</strong> {{ case.participants | join(', ') }}</p>
+{% endif %}
 
 {% if can('investigate.run') %}
 <section class="card">
-  <h2>Case actions</h2>
+  <h2>Case ownership and lifecycle</h2>
+  <p class="muted">
+    Lifecycle changes require a reason and are checked on the server. Every
+    mutation uses revision {{ case_revision }} so a stale page cannot overwrite
+    another investigator's work.
+  </p>
+  <ol class="progress-steps" aria-label="Incident lifecycle">
+    {% for step in ('open', 'acknowledged', 'investigating', 'mitigating', 'monitoring', 'resolved', 'closed') %}
+    <li class="{{ 'is-current' if step == case.status }}">{{ step | title }}</li>
+    {% endfor %}
+  </ol>
   <div class="filter-bar">
-    {% if case.status == 'open' %}
-    <form method="post" action="/incidents/case/{{ case.case_id }}/action">{{ csrf_field() }}
-      <input type="hidden" name="expected_revision" value="{{ case_revision }}">
-      <input type="hidden" name="action" value="acknowledge">
-      <button class="btn btn-sm btn-primary" type="submit">Acknowledge</button>
-    </form>
-    {% endif %}
     <form method="post" action="/incidents/case/{{ case.case_id }}/action" class="filter-bar" style="padding:0;border:0;">{{ csrf_field() }}
       <input type="hidden" name="expected_revision" value="{{ case_revision }}">
       <input type="hidden" name="action" value="assign">
@@ -53,28 +64,96 @@
       </label>
       <button class="btn btn-sm" type="submit">Set</button>
     </form>
-    {% if case.status != 'resolved' %}
-    <form method="post" action="/incidents/case/{{ case.case_id }}/action" class="filter-bar" style="padding:0;border:0;">{{ csrf_field() }}
+  </div>
+
+  <form method="post" action="/incidents/case/{{ case.case_id }}/action" class="form">{{ csrf_field() }}
+    <input type="hidden" name="expected_revision" value="{{ case_revision }}">
+    <input type="hidden" name="action" value="participants">
+    <label>Participants and watchers
+      <textarea name="participants" rows="3" placeholder="one username or team per line">{% for item in case.participants %}{{ item }}
+{% endfor %}</textarea>
+    </label>
+    <button class="btn btn-sm" type="submit">Update participants</button>
+  </form>
+
+  {% if allowed_transitions %}
+  <form method="post" action="/incidents/case/{{ case.case_id }}/action" class="filter-bar">{{ csrf_field() }}
+    <input type="hidden" name="expected_revision" value="{{ case_revision }}">
+    <input type="hidden" name="action" value="transition">
+    <label>Move to
+      <select name="status">
+        {% for option in allowed_transitions %}
+        {% if option not in ('resolved', 'closed') %}
+        <option value="{{ option }}">{{ option | title }}</option>
+        {% endif %}
+        {% endfor %}
+      </select>
+    </label>
+    <label>Reason <input name="reason" required placeholder="what changed and why"></label>
+    <button class="btn btn-sm btn-primary" type="submit">Move case</button>
+  </form>
+  {% endif %}
+
+  {% if case.status not in ('resolved', 'closed', 'suppressed') %}
+  <details class="disclosure">
+    <summary>Resolve with validation</summary>
+    <p class="muted">
+      Record validation evidence, or explicitly explain why validation is
+      unavailable. Closing is blocked until one of those is present.
+    </p>
+    <form method="post" action="/incidents/case/{{ case.case_id }}/action" class="form">{{ csrf_field() }}
       <input type="hidden" name="expected_revision" value="{{ case_revision }}">
       <input type="hidden" name="action" value="resolve">
-      <label>Resolution <input name="resolution" placeholder="what fixed it" required></label>
-      <button class="btn btn-sm" type="submit">Resolve</button>
+      <label>Resolution
+        <textarea name="resolution" rows="3" placeholder="what fixed or mitigated the issue" required></textarea>
+      </label>
+      <div class="form-row">
+        <label>Validation evidence
+          <textarea name="validation_evidence" rows="4" placeholder="one evidence reference or verification result per line"></textarea>
+        </label>
+        <label>Validation unavailable reason
+          <textarea name="validation_unavailable_reason" rows="4" placeholder="use only when validation genuinely cannot be performed"></textarea>
+        </label>
+      </div>
+      <div class="form-row">
+        <label>Outstanding risks
+          <textarea name="outstanding_risks" rows="3" placeholder="one risk per line"></textarea>
+        </label>
+        <label>Follow-up actions
+          <textarea name="follow_up_actions" rows="3" placeholder="one accountable follow-up per line"></textarea>
+        </label>
+      </div>
+      <button class="btn btn-sm btn-primary" type="submit">Resolve case</button>
     </form>
+  </details>
+
+  <details class="disclosure">
+    <summary>Suppress case</summary>
     <form method="post" action="/incidents/case/{{ case.case_id }}/action" class="filter-bar" style="padding:0;border:0;">{{ csrf_field() }}
       <input type="hidden" name="expected_revision" value="{{ case_revision }}">
       <input type="hidden" name="action" value="suppress">
       <label>Suppress (reason) <input name="reason" placeholder="why" required></label>
       <button class="btn btn-sm" type="submit">Suppress</button>
     </form>
-    {% else %}
+  </details>
+  {% elif case.status == 'resolved' %}
+    <form method="post" action="/incidents/case/{{ case.case_id }}/action" class="filter-bar">{{ csrf_field() }}
+      <input type="hidden" name="expected_revision" value="{{ case_revision }}">
+      <input type="hidden" name="action" value="close">
+      <label>Closure reason <input name="reason" required placeholder="why monitoring and follow-up are sufficient"></label>
+      <button class="btn btn-sm btn-primary" type="submit">Close case</button>
+    </form>
+  {% endif %}
+
+  {% if case.status in ('resolved', 'closed', 'suppressed') %}
     <form method="post" action="/incidents/case/{{ case.case_id }}/action" class="filter-bar" style="padding:0;border:0;">{{ csrf_field() }}
       <input type="hidden" name="expected_revision" value="{{ case_revision }}">
       <input type="hidden" name="action" value="reopen">
       <label>Reopen (reason) <input name="reason" placeholder="why" required></label>
       <button class="btn btn-sm" type="submit">Reopen</button>
     </form>
-    {% endif %}
-  </div>
+  {% endif %}
+
   <form method="post" action="/incidents/case/{{ case.case_id }}/action" class="form">{{ csrf_field() }}
     <input type="hidden" name="expected_revision" value="{{ case_revision }}">
     <input type="hidden" name="action" value="annotate">
@@ -85,6 +164,20 @@
   </form>
   {% if case.resolution %}
   <p><strong>Resolution:</strong> {{ case.resolution }} <span class="muted">({{ fmt.when(case.resolved_at) }})</span></p>
+  {% if case.validation_evidence %}
+  <h3>Validation evidence</h3>
+  <ul>{% for item in case.validation_evidence %}<li>{{ item }}</li>{% endfor %}</ul>
+  {% elif case.validation_unavailable_reason %}
+  <p><strong>Validation unavailable:</strong> {{ case.validation_unavailable_reason }}</p>
+  {% endif %}
+  {% if case.outstanding_risks %}
+  <h3>Outstanding risks</h3>
+  <ul>{% for item in case.outstanding_risks %}<li>{{ item }}</li>{% endfor %}</ul>
+  {% endif %}
+  {% if case.follow_up_actions %}
+  <h3>Follow-up actions</h3>
+  <ul>{% for item in case.follow_up_actions %}<li>{{ item }}</li>{% endfor %}</ul>
+  {% endif %}
   {% endif %}
 </section>
 {% endif %}
@@ -114,16 +207,53 @@
     {% endif %}
   </p>
   {% endif %}
-  {% if case.linked_paths or case.linked_predictions or linked_plans %}
-  <h3>Linked so far</h3>
-  <ul>
-    {% for item in case.linked_paths %}<li>Path investigation: {{ item }} — <a href="{{ scoped_url('/paths', case.scope_id) }}">open</a></li>{% endfor %}
-    {% for item in case.linked_predictions %}<li>Prediction: {{ item }} — <a href="{{ scoped_url('/predict', case.scope_id) }}">open</a></li>{% endfor %}
-    {% for plan in linked_plans %}
-    <li>Compass plan: <a href="/compass/{{ plan.plan_id }}">{{ plan.title }}</a>
-      <span class="badge hop-badge">{{ plan.status }}</span></li>
+  <h3>Linked case material</h3>
+  {% if linked_items %}
+  <ul class="case-reference-list">
+    {% for item in linked_items %}
+    <li>
+      <span><span class="badge hop-badge">{{ item.kind | title }}</span>
+        {% if item.href %}<a href="{{ item.href }}">{{ item.value }}</a>{% else %}<code>{{ item.value }}</code>{% endif %}
+      </span>
+      {% if can('investigate.run') %}
+      <form method="post" action="/incidents/case/{{ case.case_id }}/unlink">{{ csrf_field() }}
+        <input type="hidden" name="expected_revision" value="{{ case_revision }}">
+        <input type="hidden" name="kind" value="{{ item.kind }}">
+        <input type="hidden" name="value" value="{{ item.value }}">
+        <button class="btn btn-sm btn-danger" type="submit" aria-label="Unlink {{ item.kind }} {{ item.value }} from this case">Unlink</button>
+      </form>
+      {% endif %}
+    </li>
     {% endfor %}
   </ul>
+  {% else %}
+  <p class="muted">No investigation artifact has been linked yet.</p>
+  {% endif %}
+
+  {% if can('investigate.run') %}
+  <details class="disclosure">
+    <summary>Link an existing Atlas record</summary>
+    <p class="muted">
+      Use canonical references: evidence <code>device-id|record-sha</code>,
+      configuration <code>device-id|version-sha</code>, policy
+      <code>policy-id|hostname</code>, or the exact action/plan/site identifier.
+    </p>
+    <form method="post" action="/incidents/case/{{ case.case_id }}/link" class="filter-bar">{{ csrf_field() }}
+      <input type="hidden" name="expected_revision" value="{{ case_revision }}">
+      <input type="hidden" name="next" value="{{ request.path }}">
+      <label>Record type
+        <select name="kind">
+          {% for kind in ('action', 'evidence', 'configuration', 'policy', 'site', 'path', 'prediction', 'plan') %}
+          <option value="{{ kind }}">{{ kind | title }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Canonical reference
+        <input name="value" required maxlength="500" placeholder="exact record identifier">
+      </label>
+      <button class="btn btn-sm" type="submit">Link record</button>
+    </form>
+  </details>
   {% endif %}
 </section>
 

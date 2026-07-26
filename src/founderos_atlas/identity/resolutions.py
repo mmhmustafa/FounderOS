@@ -284,6 +284,80 @@ class PeerResolutionRepository:
             self._commit(catalog, event)
             return catalog, event
 
+    def resolve_many(
+        self,
+        resolutions: tuple[Mapping[str, Any], ...] | list[Mapping[str, Any]],
+        *,
+        actor: str = "local-operator",
+        reason: str | None = None,
+        expected_revision: int | None = None,
+        occurred_at: str | None = None,
+    ) -> tuple[PeerResolutionCatalog, tuple[PeerResolutionEvent, ...]]:
+        """Resolve an evidence-identical batch in one atomic catalog write.
+
+        Validation of whether proposals are unambiguous belongs to the
+        evidence-resolution service.  This storage method guarantees that a
+        validated batch is all-or-nothing and that every subject still has an
+        individual append-only audit event.
+        """
+
+        supplied = [dict(item) for item in resolutions]
+        if not supplied:
+            raise ValueError("at least one identity resolution is required")
+        subjects = [peer_subject_key(str(item.get("peer_label") or "")) for item in supplied]
+        if len(subjects) != len(set(subjects)):
+            raise ValueError("a peer may appear only once in a resolution batch")
+        for item in supplied:
+            if not _clean(item.get("resolved_hostname")):
+                raise ValueError("resolved_hostname is required")
+        with self._lock:
+            current = self.load()
+            self._check_revision(current, expected_revision)
+            stamp = occurred_at or datetime.now(timezone.utc).isoformat(
+                timespec="seconds"
+            )
+            active = {item.subject_key: item for item in current.resolutions}
+            events: list[PeerResolutionEvent] = []
+            revision = current.revision
+            for item, subject_key in zip(supplied, subjects):
+                revision += 1
+                existing = active.get(subject_key)
+                resolution = PeerIdentityResolution(
+                    subject_key=subject_key,
+                    peer_label=str(item.get("peer_label") or "").strip(),
+                    resolved_hostname=str(
+                        item.get("resolved_hostname") or ""
+                    ).strip(),
+                    resolved_device_id=_clean(item.get("resolved_device_id")),
+                    reason=_clean(item.get("reason") or reason),
+                    created_at=stamp,
+                    created_by=actor,
+                    revision=revision,
+                )
+                active[subject_key] = resolution
+                events.append(PeerResolutionEvent(
+                    event_id=f"identity-event:{uuid4().hex}",
+                    action="resolve",
+                    subject_key=subject_key,
+                    peer_label=resolution.peer_label,
+                    before_hostname=(
+                        existing.resolved_hostname if existing else None
+                    ),
+                    after_hostname=resolution.resolved_hostname,
+                    actor=actor,
+                    reason=resolution.reason,
+                    occurred_at=stamp,
+                    revision=revision,
+                ))
+            catalog = PeerResolutionCatalog(
+                revision=revision,
+                resolutions=tuple(
+                    sorted(active.values(), key=lambda item: item.subject_key)
+                ),
+            )
+            self._commit_many(catalog, tuple(events))
+            return catalog, tuple(events)
+
     def revert(
         self,
         *,
@@ -394,6 +468,13 @@ class PeerResolutionRepository:
     def _commit(
         self, catalog: PeerResolutionCatalog, event: PeerResolutionEvent
     ) -> None:
+        self._commit_many(catalog, (event,))
+
+    def _commit_many(
+        self,
+        catalog: PeerResolutionCatalog,
+        events: tuple[PeerResolutionEvent, ...],
+    ) -> None:
         self._root.mkdir(parents=True, exist_ok=True)
         temporary = self.path.with_name(f".{self.path.name}.{uuid4().hex}.writing")
         audit_temporary = self.audit_path.with_name(
@@ -411,8 +492,13 @@ class PeerResolutionRepository:
             )
             audit_temporary.write_text(
                 existing_audit
-                + json.dumps(event.to_dict(), sort_keys=True, ensure_ascii=False)
-                + "\n",
+                + "".join(
+                    json.dumps(
+                        event.to_dict(), sort_keys=True, ensure_ascii=False
+                    )
+                    + "\n"
+                    for event in events
+                ),
                 encoding="utf-8",
             )
             temporary.replace(self.path)

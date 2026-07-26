@@ -460,7 +460,7 @@ class EnterpriseScenarioTests(unittest.TestCase):
             )
             app.config.update(TESTING=True)
             client = app.test_client()
-            page = client.get("/topology?scope=all").data
+            page = client.get("/topology?scope=all&support=1").data
             for expected in (
                 b"Enterprise Device Inventory",
                 b"<td>R1</td>", b"<td>SW1</td>", b"<td>R11",
@@ -477,11 +477,17 @@ class EnterpriseScenarioTests(unittest.TestCase):
             self.assertIn(b"Merge Decisions", page)
             self.assertIn(b"Hyderabad Lab, Secunderabad Lab", page)
             # Site filter, including honest unknown handling.
-            page = client.get("/topology?scope=all&site=secunderabad").data
+            page = client.get(
+                "/topology?scope=all&support=1&site=secunderabad"
+            ).data
             self.assertIn(b"<td>R11</td>", page)
             self.assertNotIn(b"<td>R1</td>", page)
             # No secret anywhere in GUI output.
-            for path in ("/topology?scope=all", "/credentials", "/profiles"):
+            for path in (
+                "/topology?scope=all&support=1",
+                "/credentials",
+                "/profiles",
+            ):
                 body = client.get(path).data
                 self.assertNotIn(PASSWORD.encode(), body)
                 self.assertNotIn(WAN_PASSWORD.encode(), body)

@@ -9,6 +9,12 @@ from .models import (
     DiscoveryRecord,
 )
 from .repository import DEFAULT_HISTORY_ROOT, HistoryIndex, HistoryRepository
+from .replay import (
+    ReplayChange,
+    ReplayComparison,
+    ReplayUnavailableError,
+    TopologyReplayService,
+)
 from .storage import HistoryStorage, folder_name_for
 from .timeline import generate_timeline
 
@@ -23,6 +29,10 @@ __all__ = [
     "HistoryIndex",
     "HistoryRepository",
     "HistoryStorage",
+    "ReplayChange",
+    "ReplayComparison",
+    "ReplayUnavailableError",
+    "TopologyReplayService",
     "folder_name_for",
     "generate_timeline",
 ]

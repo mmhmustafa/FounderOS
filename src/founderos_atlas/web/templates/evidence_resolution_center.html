@@ -1,0 +1,325 @@
+{% extends "base.html" %}
+{% block title %}Evidence Resolution Center{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Evidence &amp; Identity Resolution</h1>
+    <p class="muted">Improve what Atlas can prove. Observations remain immutable; suggestions
+      are deterministic; every operator decision is persistent, audited and undoable.</p>
+  </div>
+  <span class="actions">
+    <a class="btn" href="/evidence{% if session %}?session={{ session.session_id|urlencode }}{% endif %}">Evidence Explorer</a>
+    <a class="btn" href="/topology">Topology</a>
+  </span>
+</div>
+
+{% if not session %}
+<section class="card">
+  <div class="status-banner status-unknown">
+    <span class="badge">No evidence</span>
+    <span>Run Discovery before Atlas can assess coverage or propose resolutions.</span>
+  </div>
+  <a class="btn btn-primary" href="/discovery">Run Discovery</a>
+</section>
+{% else %}
+
+<section class="card">
+  <div class="form-row">
+    <form method="get" action="/evidence/resolution-center" class="form">
+      <label>Discovery evidence
+        <select name="session" data-autosubmit>
+          {% for candidate in sessions %}
+          <option value="{{ candidate.session_id }}" {{ 'selected' if candidate.session_id == session.session_id else '' }}>
+            {{ candidate.started_at|timestamp }} — {{ candidate.network or candidate.profile_name }} ({{ candidate.status }})
+          </option>
+          {% endfor %}
+        </select>
+      </label>
+      <noscript><button class="btn" type="submit">Show</button></noscript>
+    </form>
+  </div>
+</section>
+
+<section class="card" aria-labelledby="coverage-heading">
+  <h2 id="coverage-heading">Coverage — separate measurements, not one misleading score</h2>
+  <p class="muted">Unknown means Atlas does not have a defensible denominator. It never means
+    zero, and it is never silently folded into another percentage.</p>
+  <div class="table-scroll" role="region" aria-label="Evidence coverage dimensions" tabindex="0">
+    <table class="grid">
+      <thead>
+        <tr><th>Dimension</th><th>Coverage</th><th>What this measures</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for dimension in coverage %}
+        <tr>
+          <td><strong>{{ dimension.label }}</strong></td>
+          <td>
+            {% if dimension.percent is not none %}
+            <progress value="{{ dimension.observed }}" max="{{ dimension.total }}"
+                      aria-label="{{ dimension.label }} {{ dimension.percent }} percent">{{ dimension.percent }}%</progress>
+            <div>{{ dimension.observed }} / {{ dimension.total }} ({{ dimension.percent }}%)</div>
+            {% elif dimension.observed is not none %}
+            <span class="badge">{{ dimension.observed }} observed · denominator unavailable</span>
+            {% else %}
+            <span class="badge">Unknown</span>
+            {% endif %}
+          </td>
+          <td class="muted">{{ dimension.explanation }}</td>
+          <td>{% if dimension.href %}<a class="btn btn-sm" href="{{ dimension.href }}">Inspect</a>{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="card" aria-labelledby="queue-heading">
+  <div class="page-head">
+    <div>
+      <h2 id="queue-heading">Resolution Queue</h2>
+      <p class="muted">{{ counts.open }} open · {{ counts.deferred }} deferred ·
+        {{ counts.rejected }} rejected · {{ counts.total }} total grouped item(s)</p>
+    </div>
+  </div>
+
+  <form method="get" action="/evidence/resolution-center" class="form">
+    <input type="hidden" name="session" value="{{ session.session_id }}">
+    <div class="form-row">
+      <label>Search
+        <input type="search" name="q" value="{{ filters.q }}"
+               placeholder="peer, command, platform or device">
+      </label>
+      <label>Kind
+        <select name="kind">
+          <option value="">All kinds</option>
+          {% for value, label in kinds %}
+          <option value="{{ value }}" {{ 'selected' if filters.kind == value else '' }}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Status
+        <select name="status">
+          <option value="">All states</option>
+          {% for value in ('open', 'deferred', 'rejected') %}
+          <option value="{{ value }}" {{ 'selected' if filters.status == value else '' }}>{{ value|title }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-primary" type="submit">Filter</button>
+      {% if filters.q or filters.kind or filters.status %}
+      <a class="btn" href="/evidence/resolution-center?session={{ session.session_id|urlencode }}">Clear</a>
+      {% endif %}
+    </div>
+  </form>
+
+  {% if can('topology.edit') %}
+  <form id="bulk-confirm" method="post" action="/evidence/resolution-center/identity/bulk-confirm">{{ csrf_field() }}
+    <input type="hidden" name="session" value="{{ session.session_id }}">
+    <input type="hidden" name="expected_identity_revision" value="{{ identity_revision }}">
+    <input type="hidden" name="next" value="/evidence/resolution-center?{{ query_string }}">
+    <label><input type="checkbox" name="confirm" value="yes" required>
+      I reviewed the selected exact matches and their topology impact.</label>
+    <button class="btn" type="submit">Confirm selected exact matches</button>
+    <span class="muted">Available only for a single address-ownership candidate; mixed evidence rules are refused.</span>
+  </form>
+  {% else %}
+  <p class="muted">You can inspect coverage and proposals. A topology editor must confirm,
+    defer, reject or undo identity decisions.</p>
+  {% endif %}
+
+  {% if items %}
+  <div class="table-scroll table-scroll-wide" role="region" aria-label="Evidence resolution queue" tabindex="0">
+    <table class="grid" data-columns="resolution-queue">
+      <thead>
+        <tr>
+          <th data-col="select"><span class="visually-hidden">Select</span></th>
+          <th data-col="kind">Kind</th>
+          <th data-col="subject">Subject</th>
+          <th data-col="evidence">Evidence and conflicts</th>
+          <th data-col="impact">Impact</th>
+          <th data-col="state">State</th>
+          <th data-col="actions"><span class="visually-hidden">Actions</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in items %}
+        <tr id="{{ item.item_key }}">
+          <td data-col="select">
+            {% if can('topology.edit') and item.kind == 'identity' and item.status == 'open' and item.proposals|length == 1 and item.proposals[0].auto_eligible %}
+            <input type="checkbox" form="bulk-confirm" name="item_keys" value="{{ item.item_key }}"
+                   aria-label="Select exact match for {{ item.title }}">
+            {% endif %}
+          </td>
+          <td data-col="kind"><span class="badge">{{ item.kind_label }}</span>
+            {% if item.occurrences > 1 %}<div class="muted">{{ item.occurrences }} occurrences</div>{% endif %}
+          </td>
+          <td data-col="subject">
+            <strong>{{ item.title }}</strong>
+            <div class="muted">{{ item.detail }}</div>
+            {% if item.devices %}
+            <details>
+              <summary>{{ item.devices|length }} affected device(s) shown</summary>
+              <ul>{% for device in item.devices %}<li><a href="/devices/{{ device|urlencode }}">{{ device }}</a></li>{% endfor %}</ul>
+            </details>
+            {% endif %}
+          </td>
+          <td data-col="evidence">
+            {% if item.proposals %}
+            <ol>
+              {% for proposal in item.proposals %}
+              <li>
+                <strong>{{ proposal.hostname }}</strong>
+                <span class="badge">{{ proposal.confidence }} confidence</span>
+                <div class="muted">{{ proposal.signal }} — {{ proposal.detail }}</div>
+              </li>
+              {% endfor %}
+            </ol>
+            {% elif item.kind == 'identity' %}
+            <span class="muted">No deterministic candidate. Atlas refuses to guess.</span>
+            {% else %}
+            <span class="muted">Collection provenance only; no identity proposal applies.</span>
+            {% endif %}
+            {% if item.conflicts %}
+            <div class="status-banner status-warning">
+              <span class="badge">Conflict</span>
+              <span>More than one candidate: {{ item.conflicts|join(', ') }}</span>
+            </div>
+            {% endif %}
+          </td>
+          <td data-col="impact" class="muted">
+            {% if item.impact.boundaries_resolved is defined %}
+            {{ item.impact.boundaries_resolved }} boundary would resolve;
+            {{ item.impact.relationships_recomputed }} relationship(s) would be recomputed.
+            {% endif %}
+            {{ item.impact.note }}
+          </td>
+          <td data-col="state">
+            <span class="badge">{{ item.status|title }}</span>
+            {% if item.decision %}
+            <div class="muted">by {{ item.decision.actor }} · {{ item.decision.updated_at|timestamp }}</div>
+            <div class="muted">{{ item.decision.reason }}</div>
+            {% endif %}
+          </td>
+          <td data-col="actions" class="row-actions">
+            <a class="btn btn-sm" href="{{ item.href }}">Source</a>
+            {% if can('topology.edit') and item.status == 'open' and item.kind == 'identity' and item.proposals %}
+            <details>
+              <summary class="btn btn-sm" role="button">Review &amp; confirm</summary>
+              <form method="post" action="/evidence/resolution-center/identity/confirm" class="form">{{ csrf_field() }}
+                <input type="hidden" name="item_key" value="{{ item.item_key }}">
+                <input type="hidden" name="session" value="{{ session.session_id }}">
+                <input type="hidden" name="expected_identity_revision" value="{{ identity_revision }}">
+                <input type="hidden" name="next" value="/evidence/resolution-center?{{ query_string }}">
+                <label>Resolve {{ item.title }} to
+                  <select name="resolved_hostname" required>
+                    <option value="" selected disabled>Choose supported candidate</option>
+                    {% for proposal in item.proposals %}
+                    <option value="{{ proposal.hostname }}">{{ proposal.hostname }} — {{ proposal.confidence }}</option>
+                    {% endfor %}
+                  </select>
+                </label>
+                <label>Reason
+                  <input name="reason" placeholder="Optional; evidence will be cited automatically">
+                </label>
+                <label><input type="checkbox" name="confirm" value="yes" required>
+                  I reviewed the evidence, conflicts and recomputation impact.</label>
+                <button class="btn btn-sm btn-primary" type="submit">Confirm resolution</button>
+              </form>
+            </details>
+            {% endif %}
+            {% if can('topology.edit') and item.status == 'open' %}
+            <details>
+              <summary class="btn btn-sm" role="button">Defer or reject</summary>
+              <form method="post" action="/evidence/resolution-center/decision" class="form">{{ csrf_field() }}
+                <input type="hidden" name="item_key" value="{{ item.item_key }}">
+                <input type="hidden" name="session" value="{{ session.session_id }}">
+                <input type="hidden" name="expected_decision_revision" value="{{ decision_revision }}">
+                <input type="hidden" name="next" value="/evidence/resolution-center?{{ query_string }}">
+                <label>Decision
+                  <select name="status" required>
+                    <option value="deferred">Defer for later</option>
+                    <option value="rejected">Reject proposal</option>
+                  </select>
+                </label>
+                <label>Reason
+                  <input name="reason" required maxlength="500">
+                </label>
+                <button class="btn btn-sm" type="submit">Save decision</button>
+              </form>
+            </details>
+            {% elif can('topology.edit') %}
+            <form method="post" action="/evidence/resolution-center/decision/undo">{{ csrf_field() }}
+              <input type="hidden" name="item_key" value="{{ item.item_key }}">
+              <input type="hidden" name="session" value="{{ session.session_id }}">
+              <input type="hidden" name="expected_decision_revision" value="{{ decision_revision }}">
+              <input type="hidden" name="next" value="/evidence/resolution-center?{{ query_string }}">
+              <button class="btn btn-sm" type="submit">Undo decision</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="status-banner status-healthy">
+    <span class="badge">Clear</span>
+    <span>No queue items match this view.</span>
+  </div>
+  {% endif %}
+
+  {% if page.pages > 1 %}
+  <nav class="pagination" aria-label="Resolution queue pages">
+    {% if page.page > 1 %}<a class="btn" href="?{{ query_string }}&page={{ page.page - 1 }}">Previous</a>{% endif %}
+    <span class="muted">Items {{ page.start }}–{{ page.end }} of {{ page.total }} · page {{ page.page }} of {{ page.pages }}</span>
+    {% if page.page < page.pages %}<a class="btn" href="?{{ query_string }}&page={{ page.page + 1 }}">Next</a>{% endif %}
+  </nav>
+  {% endif %}
+</section>
+
+{% if active_resolutions %}
+<section class="card">
+  <h2>Confirmed identity overrides</h2>
+  <p class="muted">These decisions are applied above immutable discovery evidence and persist
+    across future discoveries until reverted or undone.</p>
+  <table class="grid">
+    <thead><tr><th>Observed peer</th><th>Resolved device</th><th>Actor</th><th>Reason</th><th></th></tr></thead>
+    <tbody>
+      {% for resolution in active_resolutions %}
+      <tr>
+        <td>{{ resolution.peer_label }}</td>
+        <td>{{ resolution.resolved_hostname }}</td>
+        <td>{{ resolution.created_by }} · {{ resolution.created_at|timestamp }}</td>
+        <td class="muted">{{ resolution.reason or 'No reason recorded' }}</td>
+        <td>
+          {% if can('topology.edit') %}<form method="post" action="/evidence/resolution-center/identity/undo">{{ csrf_field() }}
+            <input type="hidden" name="subject_key" value="{{ resolution.subject_key }}">
+            <input type="hidden" name="session" value="{{ session.session_id }}">
+            <input type="hidden" name="expected_identity_revision" value="{{ identity_revision }}">
+            <input type="hidden" name="next" value="/evidence/resolution-center?{{ query_string }}">
+            <button class="btn btn-sm" type="submit">Undo latest change</button>
+          </form>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+<section class="card">
+  <h2>Safe corroboration</h2>
+  {% if corroboration_available %}
+  <p>Read-only corroboration is available through the configured transport.</p>
+  {% else %}
+  <p class="muted">No independently scoped, read-only corroboration adapter is available
+    on this deployment. Atlas will not reuse interactive console access or run an
+    undeclared probe. A future adapter must declare its commands, boundary checks,
+    cancellation and transport provenance before this control can be enabled.</p>
+  {% endif %}
+</section>
+{% endif %}
+{% endblock %}

@@ -44,9 +44,17 @@
   <ul class="mission-recs">
     {% for rec in visible_recs %}
     <li>
-      <span>{% if rec.severity %}<span class="badge {{ 'badge-danger' if rec.severity == 'critical' else 'badge-warning' }}">{{ rec.severity }}</span> {% endif %}{{ rec.text }}</span>
+      <span>
+        {% if rec.severity %}
+        <span class="badge {{ 'badge-danger' if rec.severity == 'critical' else 'badge-warning' }}"
+              aria-label="{{ 'Urgent' if rec.severity == 'critical' else 'Needs review' }}">
+          {{ 'Urgent' if rec.severity == 'critical' else 'Needs review' }}
+        </span>
+        {% endif %}
+        <a href="{{ rec.href }}">{{ rec.text }}</a>
+      </span>
       <span class="muted">Evidence: {{ rec.evidence }}</span>
-      <a class="btn btn-sm" href="{{ rec.href }}">{{ rec.action }}</a>
+      {% if not loop.first %}<a class="btn btn-sm" href="{{ rec.href }}">{{ rec.action }}</a>{% endif %}
     </li>
     {% endfor %}
   </ul>
@@ -56,7 +64,15 @@
     <ul class="mission-recs disclosure-body">
       {% for rec in recommendations[3:] %}
       <li>
-        <span>{% if rec.severity %}<span class="badge {{ 'badge-danger' if rec.severity == 'critical' else 'badge-warning' }}">{{ rec.severity }}</span> {% endif %}{{ rec.text }}</span>
+        <span>
+          {% if rec.severity %}
+          <span class="badge {{ 'badge-danger' if rec.severity == 'critical' else 'badge-warning' }}"
+                aria-label="{{ 'Urgent' if rec.severity == 'critical' else 'Needs review' }}">
+            {{ 'Urgent' if rec.severity == 'critical' else 'Needs review' }}
+          </span>
+          {% endif %}
+          <a href="{{ rec.href }}">{{ rec.text }}</a>
+        </span>
         <span class="muted">Evidence: {{ rec.evidence }}</span>
         <a class="btn btn-sm" href="{{ rec.href }}">{{ rec.action }}</a>
       </li>
@@ -94,7 +110,9 @@
     {% endfor %}
   </p>
   {% if display_level == 'simple' %}
-  <p class="muted">Stale evidence weakens every conclusion above. <a href="/discovery">Refresh discovery</a> when a scope goes stale.</p>
+  <p class="muted">Stale evidence weakens every conclusion above.
+    <a href="/discovery">Refresh discovery</a> when a scope goes stale, or
+    <a href="/evidence/resolution-center">review coverage and identity gaps</a>.</p>
   {% endif %}
 </section>
 {% endif %}
@@ -256,7 +274,7 @@
         <td>{{ network.summary.status }}</td>
         <td>{% if network.summary.health_score is not none %}{{ network.summary.health_score }}/100{% else %}—{% endif %}</td>
         <td>{{ network.summary.device_count if network.summary.device_count is not none else '—' }}</td>
-        <td>{{ network.summary.last_discovery }}</td>
+        <td>{{ network.summary.last_discovery | timestamp }}</td>
         <td class="row-actions">
           <a class="btn btn-sm" href="/?scope={{ network.scope_id | urlencode }}" aria-label="Open {{ network.label }}">Open</a>
         </td>

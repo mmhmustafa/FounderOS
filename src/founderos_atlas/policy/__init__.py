@@ -17,6 +17,15 @@ Public surface:
 from __future__ import annotations
 
 from .engine import PolicyEngine
+from .applicability import (
+    INTENT_INFORMATIONAL,
+    INTENT_RECOMMENDED,
+    INTENT_REQUIRED,
+    POLICY_INTENTS,
+    ApplicabilityDecision,
+    PolicyApplicability,
+    PolicyContext,
+)
 from .matcher import MATCH_REGEX, MATCH_SUBSTRING, OPERATORS, MatchReport, PolicyCheck
 from .models import (
     CATEGORIES,
@@ -34,6 +43,13 @@ from .rule import PolicyRule
 
 __all__ = [
     "PolicyEngine",
+    "PolicyApplicability",
+    "PolicyContext",
+    "ApplicabilityDecision",
+    "POLICY_INTENTS",
+    "INTENT_REQUIRED",
+    "INTENT_RECOMMENDED",
+    "INTENT_INFORMATIONAL",
     "Policy",
     "PolicyPack",
     "PolicyEvaluation",

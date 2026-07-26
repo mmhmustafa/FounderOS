@@ -1,7 +1,12 @@
 {% extends "base.html" %}
 {% from "_entity_actions.html" import entity_menu %}
+{% from "_telemetry_context.html" import operational_context %}
 {% block title %}Enterprise Policy{% endblock %}
 {% block content %}
+{{ operational_context(
+  telemetry_context(active_scope_id, request.args.get('device', '')),
+  'Operational conditions help prioritize review but do not alter a policy pass or failure.'
+) }}
 <div class="page-head">
   <h1>Enterprise Policy</h1>
   <span class="actions muted">{{ report.pack.name }} v{{ report.pack.version }} · {{ report.pack.policy_count }} policies</span>
@@ -12,6 +17,40 @@
   verdict is one click away on its own page. Filters live in the URL, so a
   filtered view is a shareable link.
 </p>
+
+<section class="card">
+  <div class="page-head">
+    <h2>Operational priorities</h2>
+    <a class="btn btn-sm" href="{{ scoped_url('/policy', active_scope_id, status='fail') }}#results">Review failures</a>
+  </div>
+  <div class="tiles">
+    <div class="tile"><strong>New regressions</strong><span>{{ priorities.new_regressions }}</span></div>
+    <div class="tile"><strong>Fresh confirmed findings</strong><span>{{ priorities.confirmed_failures }}</span></div>
+    <div class="tile"><strong>Verify evidence first</strong><span>{{ priorities.stale_or_unverified }}</span></div>
+    <div class="tile"><strong>Expiring deviations</strong><span>{{ expiring_deviations | length }}</span></div>
+  </div>
+  {% if priorities.top_themes %}
+  <div class="table-scroll" role="region" aria-label="Highest-risk policy themes" tabindex="0">
+    <table class="grid">
+      <thead><tr><th>Theme</th><th>Intent</th><th>Affected</th><th>Confirmed</th><th>New</th><th></th></tr></thead>
+      <tbody>
+      {% for theme in priorities.top_themes %}
+        <tr>
+          <td><strong>{{ theme.name }}</strong><br><span class="muted">{{ theme.severity }} severity</span></td>
+          <td>{{ theme.intent | title }}</td>
+          <td>{{ theme.count }}</td>
+          <td>{{ theme.confirmed }}</td>
+          <td>{{ theme.new_regressions }}</td>
+          <td><a class="btn btn-sm" href="{{ scoped_url('/policy', active_scope_id, policy=theme.policy_id, status='fail') }}#results">Review exact results</a></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No active failure or warning requires attention.</p>
+  {% endif %}
+</section>
 
 <div class="tiles">
   <div class="tile"><strong>Compliance score</strong><span>{{ posture.score }}%</span></div>
@@ -46,8 +85,8 @@
 </section>
 {% endif %}
 
-<section class="card">
-  <h2>Failure Heatmap</h2>
+<details class="card disclosure" {{ 'open' if display_level == 'expert' else '' }}>
+  <summary><strong>Full posture heatmap</strong></summary>
   <p class="muted">Every policy's posture at a glance, worst first. Numbers, never color alone.</p>
   <div class="table-scroll" role="region" aria-label="Policy failure heatmap" tabindex="0">
     <table class="grid heatmap">
@@ -66,7 +105,7 @@
       </tbody>
     </table>
   </div>
-</section>
+</details>
 
 <section class="card" id="results">
   <h2>Policy Results</h2>
@@ -119,6 +158,14 @@
         <option value="">any</option>
         {% for severity in option_severities %}
         <option value="{{ severity }}" {{ 'selected' if filters.severity == severity }}>{{ severity }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Intent
+      <select name="intent">
+        <option value="">any</option>
+        {% for intent in option_intents %}
+        <option value="{{ intent }}" {{ 'selected' if filters.intent == intent }}>{{ intent | title }}</option>
         {% endfor %}
       </select>
     </label>
@@ -242,11 +289,11 @@
               {% if filters.assignment and e.assignment_correlation == filters.assignment %}
               <span class="hop-badge badge-muted" title="Part of the assignment batch you opened">assigned</span>
               {% endif %}</td>
-            <td>{{ e.policy.name }}</td>
+            <td>{{ e.policy.name }}<br><span class="muted">{{ e.intent | title }}{% if e.is_new_regression %} · new regression{% endif %}</span></td>
             <td>{{ e.hostname }}</td>
             <td>{{ e.site }}</td>
             <td>{{ e.policy.severity }}</td>
-            <td>{% if e.evidence_fresh is true %}fresh{% elif e.evidence_fresh is false %}<span class="warn">stale</span>{% else %}—{% endif %}</td>
+            <td>{% if e.evidence_fresh is true %}fresh{% elif e.evidence_fresh is false %}<span class="warn" title="Verify current evidence before treating this as a confirmed failure">stale · verify</span>{% else %}<span class="warn">age unknown · verify</span>{% endif %}</td>
             <td>{{ e.owner or '—' }}</td>
             <td class="row-actions">
               <a class="btn btn-sm"
@@ -298,6 +345,46 @@
   </p>
   {% endif %}
 </section>
+
+{% if baselines or expiring_deviations %}
+<section class="card">
+  <h2>Governance</h2>
+  <p class="muted">
+    Active baselines control policy intent and applicability. Deviations
+    reclassify a result without changing the evidence-backed verdict.
+  </p>
+  {% if baselines %}
+  <div class="table-scroll" role="region" aria-label="Policy baselines" tabindex="0">
+    <table class="grid">
+      <thead><tr><th>Policy</th><th>State</th><th>Intent</th><th>Owner</th><th>Reason</th></tr></thead>
+      <tbody>
+      {% for item in baselines %}
+        <tr>
+          <td><a href="{{ scoped_url('/policy', active_scope_id, policy=item.policy_id) }}#results">{{ item.policy_id }}</a></td>
+          <td>{{ item.state | title }}</td>
+          <td>{{ item.intent | title }}</td>
+          <td>{{ item.owner }}</td>
+          <td>{{ item.reason }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+  {% if expiring_deviations %}
+  <h3>Active deviations with nearest expiry</h3>
+  <ul>
+    {% for item in expiring_deviations %}
+    <li>
+      <a href="{{ scoped_url('/policy/result/' + item.policy_id + '/' + (item.hostname | urlencode), active_scope_id) }}#exception">{{ item.policy_id }} on {{ item.hostname }}</a>
+      · owner {{ item.owner }}
+      {% if item.expires_at %} · expires {{ item.expires_at | timestamp }}{% else %} · no expiry{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</section>
+{% endif %}
 
 <section class="card">
   <h2>Installed Policy Packs</h2>

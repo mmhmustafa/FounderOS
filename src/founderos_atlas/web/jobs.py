@@ -163,27 +163,53 @@ class DiscoveryJob:
         }
 
 
-def friendly_failure(message: str, profile_name: str) -> str:
+def friendly_failure(
+    message: str,
+    profile_name: str,
+    management_ip: str | None = None,
+) -> tuple[str, str]:
     """Turn a pipeline error into guidance a normal user can act on.
 
-    Transport and workspace errors already carry human sentences; this only
-    adds the profile context a GUI user needs. Raw technical detail stays in
-    the job log, never in this string.
+    Exception text crosses an adapter boundary and can contain a password,
+    token, command output, or provider URL. Use it only to select an
+    allowlisted operator message; never return or persist it. The second
+    value is a stable, secret-free code for the durable job log.
     """
 
     text = message.strip()
     lowered = text.casefold()
     if "authentication failed" in lowered:
+        endpoint = f" for {management_ip}" if management_ip else ""
         return (
-            f"{text} Update the password saved in the "
-            f"{profile_name} profile if it changed."
+            f"Authentication failed{endpoint}. Update the credentials "
+            f"assigned to the {profile_name} profile if they changed.",
+            "authentication-failed",
         )
     if "credential store" in lowered or "secure credential" in lowered:
         return (
             "Secure credential storage is unavailable. Check Atlas Settings, or "
-            'reinstall the credential backend with: pip install "founderos-runtime[credentials]"'
+            'reinstall the credential backend with: pip install '
+            '"founderos-runtime[credentials]"',
+            "credential-provider-unavailable",
         )
-    return text
+    if "timed out" in lowered or "timeout" in lowered:
+        endpoint = f" to {management_ip}" if management_ip else ""
+        return (
+            f"Connection{endpoint} timed out. Verify the device is reachable "
+            "and the discovery boundary permits it.",
+            "connection-timeout",
+        )
+    if "host key" in lowered:
+        return (
+            "The device host key could not be verified. Review the trusted "
+            "host-key record before retrying.",
+            "host-key-verification-failed",
+        )
+    return (
+        "Discovery failed unexpectedly. Review the collection gaps and "
+        "server diagnostics, then retry.",
+        "discovery-failed",
+    )
 
 
 class DiscoveryJobManager:
@@ -383,15 +409,20 @@ class DiscoveryJobManager:
 
     def _finish_failed(self, job: DiscoveryJob, error: Exception) -> None:
         detail = str(error) or type(error).__name__
+        operator_message, diagnostic_code = friendly_failure(
+            detail,
+            job.profile_name,
+            job.management_ip,
+        )
         with self._lock:
             job.status = STATUS_FAILED
             job.completed_at = self._now()
             job._elapsed_seconds = self._elapsed(job)
-            job.error = friendly_failure(detail, job.profile_name)
+            job.error = operator_message
             job.message = "Discovery failed"
-            # Technical detail stays in the job log for troubleshooting —
-            # never a traceback in the user-facing error.
-            job.log.append(f"error: {type(error).__name__}: {detail}")
+            # A stable diagnostic category remains available for support.
+            # Persist only the allowlisted category, never raw exception text.
+            job.log.append(f"error: {diagnostic_code}")
             self._persist()
         if self._on_failure is not None:
             try:

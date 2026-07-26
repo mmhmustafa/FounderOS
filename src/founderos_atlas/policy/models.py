@@ -22,8 +22,15 @@ from founderos_atlas.reasoning import (
     CONCLUSION_WARNING,
     ReasoningResult,
 )
+from founderos_atlas.reasoning.result import SEVERITIES
 
 from .matcher import PolicyCheck
+from .applicability import (
+    INTENT_REQUIRED,
+    POLICY_INTENTS,
+    ApplicabilityDecision,
+    PolicyApplicability,
+)
 
 
 # -- categories (Part 5; open — a new category needs no redesign) ------------
@@ -85,6 +92,30 @@ class Policy:
     version: str = "1.0"
     author: str = "Atlas Starter Pack"
     base_confidence: float = 0.70
+    intent: str = INTENT_REQUIRED
+    applicability: PolicyApplicability = field(
+        default_factory=PolicyApplicability
+    )
+
+    def __post_init__(self) -> None:
+        for name in (
+            "policy_id", "name", "category", "severity", "expected_state",
+            "recommendation", "remediation",
+        ):
+            if not str(getattr(self, name) or "").strip():
+                raise ValueError(f"{name} must be a non-empty string")
+        if self.intent not in POLICY_INTENTS:
+            raise ValueError(
+                "intent must be one of " + ", ".join(POLICY_INTENTS)
+            )
+        if not isinstance(self.applicability, PolicyApplicability):
+            raise ValueError("applicability must be a PolicyApplicability")
+        if self.severity not in SEVERITIES:
+            raise ValueError(
+                "severity must be one of " + ", ".join(SEVERITIES)
+            )
+        if not 0 <= self.base_confidence <= 1:
+            raise ValueError("base_confidence must be between 0 and 1")
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -103,6 +134,8 @@ class Policy:
             "version": self.version,
             "author": self.author,
             "base_confidence": self.base_confidence,
+            "intent": self.intent,
+            "applicability": self.applicability.to_dict(),
         }
 
     @classmethod
@@ -123,6 +156,10 @@ class Policy:
             version=str(value.get("version") or "1.0"),
             author=str(value.get("author") or ""),
             base_confidence=float(value.get("base_confidence") or 0.70),
+            intent=str(value.get("intent") or INTENT_REQUIRED),
+            applicability=PolicyApplicability.from_dict(
+                value.get("applicability")
+            ),
         )
 
 
@@ -138,6 +175,16 @@ class PolicyPack:
     version: str
     author: str
     policies: tuple[Policy, ...]
+
+    def __post_init__(self) -> None:
+        for name in ("pack_id", "name", "version", "author"):
+            if not str(getattr(self, name) or "").strip():
+                raise ValueError(f"{name} must be a non-empty string")
+        if not isinstance(self.policies, tuple):
+            raise ValueError("policies must be a tuple")
+        identifiers = [policy.policy_id for policy in self.policies]
+        if len(set(identifiers)) != len(identifiers):
+            raise ValueError("policy ids must be unique within a pack")
 
     def categories(self) -> tuple[str, ...]:
         seen: dict[str, None] = {}
@@ -157,6 +204,20 @@ class PolicyPack:
             "policies": [p.to_dict() for p in self.policies],
         }
 
+    @classmethod
+    def from_dict(cls, value: dict[str, Any]) -> "PolicyPack":
+        return cls(
+            pack_id=str(value["pack_id"]),
+            name=str(value["name"]),
+            description=str(value.get("description") or ""),
+            version=str(value["version"]),
+            author=str(value["author"]),
+            policies=tuple(
+                Policy.from_dict(item)
+                for item in value.get("policies") or ()
+            ),
+        )
+
 
 @dataclass(frozen=True)
 class PolicyEvaluation:
@@ -170,6 +231,13 @@ class PolicyEvaluation:
     network: str
     result: ReasoningResult
     config_snippet: tuple[str, ...] = ()
+    applicability: ApplicabilityDecision = field(
+        default_factory=lambda: ApplicabilityDecision(
+            True,
+            "Applicable to every device; no targeting selector is configured.",
+        )
+    )
+    device_context: dict[str, Any] = field(default_factory=dict)
 
     @property
     def status(self) -> str:
@@ -192,6 +260,8 @@ class PolicyEvaluation:
             "status": self.status,
             "status_label": self.status_label,
             "config_snippet": list(self.config_snippet),
+            "applicability": self.applicability.to_dict(),
+            "device_context": dict(self.device_context),
             "result": self.result.to_dict(),
         }
 

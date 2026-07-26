@@ -616,7 +616,7 @@ class WebScopeTests(unittest.TestCase):
             page = client.get("/topology?scope=lab-b").data
             self.assertIn(b".atlas/profiles/lab-b/atlas_topology.html", page)
             self.assertNotIn(b".atlas/profiles/lab-a/", page)
-            page = client.get("/topology?scope=all").data
+            page = client.get("/topology?scope=all&support=1").data
             for hostname in (b"A1", b"A2", b"B1"):
                 self.assertIn(hostname, page)
 
@@ -789,7 +789,7 @@ class WebScopeTests(unittest.TestCase):
             self.assertTrue(
                 (scope_dir(workdir, "lab-b") / "atlas_topology.html").is_file()
             )
-            page = client.get("/topology?scope=all").data
+            page = client.get("/topology?scope=all&support=1").data
             self.assertIn(b".atlas/profiles/lab-a/atlas_topology.html", page)
             self.assertIn(b".atlas/profiles/lab-b/atlas_topology.html", page)
 
@@ -880,7 +880,7 @@ class LegacyScopePolicyTests(unittest.TestCase):
             # No Local workspace row in the networks table.
             self.assertNotIn(b'href="/?scope=default"', page)
             # Global topology inventory lists each device exactly once.
-            page = client.get("/topology?scope=all").data
+            page = client.get("/topology?scope=all&support=1").data
             self.assertEqual(1, page.count(b"<td>A1</td>"))
             self.assertEqual(1, page.count(b"<td>A2</td>"))
             self.assertEqual(1, page.count(b"<td>B1</td>"))
@@ -983,7 +983,7 @@ class LegacyScopePolicyTests(unittest.TestCase):
             page = client.get("/?scope=all").data
             self.assertIn(b"<strong>Networks</strong><span>2</span>", page)
             self.assertIn(b"<strong>Devices</strong><span>2</span>", page)
-            page = client.get("/topology?scope=all").data
+            page = client.get("/topology?scope=all&support=1").data
             # Two canonical R1 rows: never deduplicated on name alone.
             # (PR-037A: R1 appears once per inventory row; each site also
             # appears once in the contributing-profiles table.)

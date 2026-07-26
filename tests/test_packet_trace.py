@@ -337,7 +337,10 @@ class ViewerContractTests(unittest.TestCase):
         self.assertIn('id="zoom-in"', self.viewer)
         self.assertIn('id="zoom-out"', self.viewer)
         self.assertIn('id="zoom-level"', self.viewer)
-        self.assertIn("wheelSensitivity: 0.15", self.viewer)
+        # Browser wheel/touchpad acceleration is hardware dependent. Atlas
+        # leaves Cytoscape's tested default intact and offers deterministic
+        # controls for operators who need an exact scale.
+        self.assertNotIn("wheelSensitivity:", self.viewer)
         # A fixed RATIO, because zoom is multiplicative: a constant
         # increment would crawl at the wide end and leap at the close end.
         self.assertIn("var STEP = 1.25", self.viewer)

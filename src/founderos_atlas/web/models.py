@@ -64,7 +64,7 @@ NAV_GROUPS: tuple[NavGroup, ...] = (
     # untouched; only the grouping above them changed.
     NavGroup("home", "Home", "/", (
         NavItem("dashboard", "Overview", "/"),
-        NavItem("inbox", "Inbox", "/inbox"),
+        NavItem("inbox", "Action Center", "/inbox"),
         NavItem("incidents", "Incidents", "/incidents"),
     )),
     NavGroup("network", "Network", "/topology", (
@@ -83,6 +83,7 @@ NAV_GROUPS: tuple[NavGroup, ...] = (
         NavItem("paths", "Investigate", "/paths"),
         NavItem("predict", "Predict", "/predict"),
         NavItem("compass", "Compass", "/compass"),
+        NavItem("telemetry", "Signals", "/telemetry"),
     )),
     # Administration renders last and is RBAC-filtered per item, so a
     # viewer sees only what their roles can actually open.
@@ -93,6 +94,7 @@ NAV_GROUPS: tuple[NavGroup, ...] = (
         NavItem("users", "Users", "/users"),
         NavItem("audit", "Audit", "/audit"),
         NavItem("settings", "Settings", "/settings"),
+        NavItem("schedules", "Schedules", "/schedules"),
     )),
 )
 

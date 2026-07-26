@@ -1,11 +1,17 @@
 {% extends "base.html" %}
 {% from "_device_actions.html" import device_actions %}
+{% from "_telemetry_context.html" import operational_context %}
 {% block title %}Investigate{% endblock %}
 {% block content %}
 {# PR-047A: named for the question the operator is asking ("why can't A reach
    B?"), matching its navigation label. Path Intelligence remains the engine
    behind it. #}
 <h1>Investigate — {{ active_scope_label }}</h1>
+
+{{ operational_context(
+  telemetry_context(active_scope_id, request.args.get('device', '')),
+  'Operational observations help prioritize investigation; the recorded path verdict remains deterministic and cites its own evidence.'
+) }}
 
 {% if needs_scope %}
 <p class="muted">Pick a scope in the Scope selector above — path investigations run against that scope's evidence.</p>
