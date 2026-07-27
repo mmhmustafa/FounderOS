@@ -6611,9 +6611,176 @@ def register_routes(app) -> None:
             repository=advisor_repository(),
         )
 
+    def _scope_last_discovery_iso(scope):
+        """The raw completed-at of the newest discovery, or None.
+
+        The dashboard summary's ``last_discovery`` is a DISPLAY string,
+        useless for arithmetic — freshness needs the stored timestamp."""
+
+        record = HistoryRepository(scope.history_root).latest()
+        if record is not None and record.completed_at:
+            return str(record.completed_at)
+        return None
+
+    def _advisor_freshness(scopes, scope_id):
+        """The CURRENT scope's evidence freshness, for display beside an
+        answer's confidence — never blended into it. An old discovery
+        makes the evidence stale; it does not make the reasoning weaker,
+        and the two are shown as separate facts (PR-163)."""
+
+        from founderos_atlas.federation.service import STALE_AFTER_HOURS
+        from .mission import describe_age
+
+        if scope_id == GLOBAL_SCOPE_ID:
+            stamps = [
+                _scope_last_discovery_iso(scope)
+                for scope in aggregation_scopes(scopes)
+            ]
+            stamps = [stamp for stamp in stamps if stamp]
+            last = max(stamps) if stamps else None
+        else:
+            last = _scope_last_discovery_iso(scopes[scope_id])
+        now = now_iso()
+        age = describe_age(last, now)
+        warn = True
+        if last:
+            try:
+                observed = datetime.fromisoformat(last)
+                reference = datetime.fromisoformat(now)
+                hours = (reference - observed).total_seconds() / 3600
+                warn = hours > STALE_AFTER_HOURS
+            except ValueError:
+                warn = True
+        if not last:
+            note = "No discovery has completed for this scope yet."
+        elif warn:
+            note = (
+                f"Latest discovery is {age or 'of unknown age'} — older "
+                f"than the {STALE_AFTER_HOURS}-hour freshness window."
+            )
+        else:
+            note = (
+                f"Latest discovery is {age or 'recent'} — within the "
+                "freshness window."
+            )
+        return {"last_discovery": last, "age": age, "warn": warn,
+                "note": note}
+
+    def _advisor_status_cards(scopes, scope_id):
+        """Compact status cards for the Advisor page — CURRENT scope
+        status from the same canonical helpers Mission uses, so the two
+        pages can never disagree. These describe the scope right now,
+        not the context of whichever stored answer is on screen (a
+        conversation records no scope). Routing deliberately carries no
+        state badge: the health model defines no routing verdict, and
+        the card must not invent one."""
+
+        from founderos_atlas.health import (
+            DIMENSION_FRESHNESS,
+            DIMENSION_IDENTITY,
+            DIMENSION_INCIDENTS,
+            DIMENSION_POLICY,
+            aggregate_assessments,
+        )
+
+        if scope_id == GLOBAL_SCOPE_ID:
+            aggregated = aggregation_scopes(scopes)
+            summaries = [summary_for(scope) for scope in aggregated]
+            health = aggregate_assessments(
+                [
+                    health_for(scope, summary)
+                    for scope, summary in zip(aggregated, summaries)
+                ],
+                scope_id=GLOBAL_SCOPE_ID,
+                scope_label=GLOBAL_SCOPE_LABEL,
+                generated_at=now_iso(),
+            ).to_dict()
+            device_count = sum(s.device_count or 0 for s in summaries)
+            relationship_count = sum(
+                s.relationship_count or 0 for s in summaries
+            )
+            stamps = [
+                _scope_last_discovery_iso(scope) for scope in aggregated
+            ]
+            stamps = [stamp for stamp in stamps if stamp]
+            last = max(stamps) if stamps else None
+        else:
+            scope = scopes[scope_id]
+            summary = summary_for(scope)
+            health = health_for(scope, summary).to_dict()
+            device_count = summary.device_count or 0
+            relationship_count = summary.relationship_count or 0
+            last = _scope_last_discovery_iso(scope)
+        dims = {item["key"]: item for item in health.get("dimensions", [])}
+
+        def dim(key):
+            return dims.get(key) or {"state": "unknown", "summary": ""}
+
+        query = f"?scope={scope_id}"
+        return [
+            {
+                "title": "Health",
+                "state": health.get("overall", "unknown"),
+                "value": str(health.get("overall", "unknown")).capitalize(),
+                "detail": health.get("overall_detail", ""),
+                "updated": health.get("generated_at"),
+                "href": f"/{query}",
+            },
+            {
+                "title": "Discovery",
+                "state": dim(DIMENSION_FRESHNESS)["state"],
+                "value": f"{device_count} devices",
+                "detail": dim(DIMENSION_FRESHNESS)["summary"],
+                "updated": last,
+                "href": f"/history{query}",
+            },
+            {
+                "title": "Incidents",
+                "state": dim(DIMENSION_INCIDENTS)["state"],
+                "value": str(
+                    dim(DIMENSION_INCIDENTS).get("ratio") or "—"
+                ),
+                "detail": dim(DIMENSION_INCIDENTS)["summary"],
+                "updated": dim(DIMENSION_INCIDENTS).get("observed_at"),
+                "href": f"/incidents{query}",
+            },
+            {
+                "title": "Policy",
+                "state": dim(DIMENSION_POLICY)["state"],
+                "value": str(dim(DIMENSION_POLICY).get("ratio") or "—"),
+                "detail": dim(DIMENSION_POLICY)["summary"],
+                "updated": dim(DIMENSION_POLICY).get("observed_at"),
+                "href": f"/policy{query}",
+            },
+            {
+                "title": "Identity",
+                "state": dim(DIMENSION_IDENTITY)["state"],
+                "value": str(dim(DIMENSION_IDENTITY).get("ratio") or "—"),
+                "detail": dim(DIMENSION_IDENTITY)["summary"],
+                "updated": dim(DIMENSION_IDENTITY).get("observed_at"),
+                "href": "/evidence/resolution-center",
+            },
+            {
+                # Counts only: the health model defines no routing verdict,
+                # so this card shows numbers and never a state badge.
+                "title": "Routing",
+                "state": None,
+                "value": f"{relationship_count} relationships",
+                "detail": "Counts only — Atlas defines no routing health "
+                          "verdict.",
+                "updated": last,
+                "href": f"/topology{query}",
+            },
+        ]
+
     @app.route("/advisor")
     def advisor_page():
-        context, _scopes, _scope_id = scoped_context("advisor")
+        from founderos_atlas.advisor.presentation import (
+            group_conversations,
+            present_answer,
+        )
+
+        context, scopes, scope_id = scoped_context("advisor")
         conversations = advisor_repository().list_conversations()
         latest = None
         selected = request.args.get("conversation", "").strip()
@@ -6621,10 +6788,17 @@ def register_routes(app) -> None:
             latest = conversations[int(selected)].get("response")
         elif conversations:
             latest = conversations[0].get("response")
+        freshness = _advisor_freshness(scopes, scope_id)
         return render_template(
             "advisor.html",
-            conversations=conversations[:8],
+            conversation_groups=group_conversations(
+                conversations, now=now_iso()
+            ),
+            conversation_count=len(conversations),
             response=latest,
+            presented=present_answer(latest, freshness=freshness),
+            freshness=freshness,
+            status_cards=_advisor_status_cards(scopes, scope_id),
             **context,
         )
 

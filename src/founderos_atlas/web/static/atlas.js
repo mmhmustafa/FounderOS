@@ -841,6 +841,35 @@
     });
   }
 
+  // Advisor conversation search: a client-side filter over the grouped
+  // history. Rows carry their question in data-question; a group whose
+  // rows are all hidden hides its heading too, and an honest empty note
+  // appears when nothing matches. Clearing the box restores everything.
+  var convSearch = document.getElementById("advisor-conv-search");
+  if (convSearch) {
+    convSearch.addEventListener("input", function () {
+      var query = convSearch.value.trim().toLowerCase();
+      var anyVisible = false;
+      var lists = document.querySelectorAll(".advisor-conv-list");
+      Array.prototype.forEach.call(lists, function (list) {
+        var visibleInList = 0;
+        Array.prototype.forEach.call(list.querySelectorAll("li"), function (row) {
+          var text = row.getAttribute("data-question") || "";
+          var show = !query || text.indexOf(query) !== -1;
+          row.hidden = !show;
+          if (show) { visibleInList += 1; }
+        });
+        var heading = list.previousElementSibling;
+        if (heading && heading.classList.contains("advisor-conv-group")) {
+          heading.hidden = visibleInList === 0;
+        }
+        if (visibleInList > 0) { anyVisible = true; }
+      });
+      var empty = document.querySelector(".advisor-conv-empty");
+      if (empty) { empty.hidden = anyVisible || !query; }
+    });
+  }
+
   // Interactive SSH console bootstrap: configuration rides in a JSON data
   // block (never executable), read here and handed to AtlasConsole.
   var consoleConfig = document.getElementById("atlas-console-config");

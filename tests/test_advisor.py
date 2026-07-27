@@ -379,7 +379,11 @@ class AdvisorGuiTests(unittest.TestCase):
             self.assertIn(b"Continue Elsewhere", page)
             self.assertIn(b"Recent Conversations", page)
 
-    def test_ask_renders_the_fixed_structure(self) -> None:
+    def test_ask_renders_the_answer_hierarchy(self) -> None:
+        """PR-163: the conclusion first, then summary, findings, what was
+        checked, the reasoning, the evidence, confidence separated from
+        freshness, and explained recommendations — in that order."""
+
         with tempfile.TemporaryDirectory() as tmp:
             client = self.build_client(Path(tmp))
             response = client.post(
@@ -388,12 +392,24 @@ class AdvisorGuiTests(unittest.TestCase):
                 follow_redirects=True,
             )
             body = response.data
-            for section in (b"Summary", b"Evidence", b"Confidence",
-                            b"Recommended Next Action", b"Follow-up",
-                            b"How this answer was prepared"):
-                self.assertIn(section, body)
+            # Judge the ANSWER CARD, not the page chrome (the sidebar has
+            # its own "Evidence" link) — and use the heading markup so a
+            # word inside prose cannot satisfy a section check.
+            card = body[body.index(b"advisor-response"):]
+            sections = (b"Executive summary</h2>", b"Key findings</h2>",
+                        b"What Atlas checked</h2>",
+                        b"Why Atlas reached this conclusion</h2>",
+                        b"<h2>Evidence</h2>",
+                        b"Answer confidence</h3>",
+                        b"Evidence freshness</h3>",
+                        b"Atlas recommends</h2>")
+            for section in sections:
+                self.assertIn(section, card)
+            # The hierarchy is an ORDER, not a bag of headings.
+            positions = [card.index(section) for section in sections]
+            self.assertEqual(positions, sorted(positions))
             self.assertIn(b"Found GW", body)
-            self.assertIn(b"Confidence: High", body)
+            self.assertIn(b"High confidence", body)
             self.assertIn(b"/devices/", body)
             self.assertNotIn(PASSWORD.encode(), body)
 
@@ -407,8 +423,46 @@ class AdvisorGuiTests(unittest.TestCase):
             )
             # The apostrophe is HTML-escaped in the rendered page.
             self.assertIn(b"currently have enough evidence.", response.data)
-            self.assertIn(b"Confidence: Unknown", response.data)
+            self.assertIn(b"Unknown confidence", response.data)
+            self.assertIn(b"cannot determine this confidently", response.data)
             self.assertIn(b"Run Discovery", response.data)
+
+    def test_status_cards_show_current_scope_honestly(self) -> None:
+        """The card strip is CURRENT scope status (an old stored answer
+        may come from another scope), and Routing carries no invented
+        health verdict — counts only."""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = self.build_client(Path(tmp))
+            page = client.get("/advisor").data
+            self.assertIn(b"Status right now", page)
+            for card in (b"Health", b"Discovery", b"Incidents", b"Policy",
+                         b"Identity", b"Routing"):
+                self.assertIn(card, page)
+            self.assertIn(b"independent of any stored answer", page)
+            self.assertIn(b"count only", page)
+            self.assertIn(b"no routing health", page)
+
+    def test_conversations_group_pin_and_search(self) -> None:
+        """History is grouped by recency, pinnable, and searchable —
+        and every row action still addresses its TRUE stored index."""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = self.build_client(Path(tmp))
+            client.post("/advisor/ask", data={"question": "Find GW"})
+            client.post("/advisor/ask", data={"question": "What changed?"})
+            page = client.get("/advisor").data
+            # Both were asked moments ago: they group under Today.
+            self.assertIn(b"Today", page)
+            self.assertIn(b'id="advisor-conv-search"', page)
+            # Pin the older conversation (stored index 1 = "Find GW").
+            pinned = client.post(
+                "/advisor/conversations/1/pin", follow_redirects=True
+            ).data
+            self.assertIn(b"Pinned", pinned)
+            self.assertIn(b"Unpin", pinned)
+            # The pinned row still exports/acts through index 1.
+            self.assertIn(b"/advisor/conversations/1/export", pinned)
 
     def test_conversations_are_listed_and_reopenable(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -444,10 +498,6 @@ class AdvisorGuiTests(unittest.TestCase):
             self.assertIn(b'href="/?scope=all"', advisor)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class AdvisorHonestyTests(unittest.TestCase):
     """Advisor must never claim evidence Atlas does not possess."""
 
@@ -459,12 +509,16 @@ class AdvisorHonestyTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             _, client = build_world(Path(tmp))
+            # The hostname must carry NO intent keyword: the old fixture
+            # name contained "discovered", which routed the question to
+            # the discovery handler and made this test pass on a heading
+            # technicality instead of a real no-match answer.
             page = client.post("/advisor/ask", data={
-                "question": "Find device-that-was-never-discovered-xyz",
+                "question": "Find widget-node-that-was-never-seen-xyz",
             }, follow_redirects=True).data.decode("utf-8")
             # The made-up hostname must not be presented as a known device
             # with facts attached; the honest outcome is a no-match answer.
-            self.assertNotIn("device-that-was-never-discovered-xyz is",
+            self.assertNotIn("widget-node-that-was-never-seen-xyz is",
                              page.casefold())
             self.assertTrue(
                 "no match" in page.casefold()
@@ -490,6 +544,10 @@ class AdvisorHonestyTests(unittest.TestCase):
             # absence — no free-floating claims.
             self.assertIn("scope:", page.casefold())
             self.assertTrue(
-                "evidence used" in page.casefold()
+                "artifact(s) cited" in page.casefold()
                 or "no evidence supports this answer" in page.casefold()
             )
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -498,6 +498,54 @@ body[data-theme="dark"] table[data-row-select] tbody tr.row-selected { backgroun
 .advisor-steps { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; }
 .advisor-steps ol { margin: 8px 0 4px; padding-left: 20px; }
 
+/* PR-163: answer hierarchy. Token colors only, so dark/system themes and
+   the parity test need no extra rules. */
+.advisor-verdict { display: flex; align-items: baseline; gap: 10px;
+  font-size: 16px; margin: 10px 0 4px; padding: 10px 12px;
+  border-left: 4px solid var(--line-strong); border-radius: var(--radius-sm);
+  background: var(--surface-2); }
+.advisor-verdict-ok { border-left-color: var(--green); background: var(--green-soft); }
+.advisor-verdict-attention { border-left-color: var(--amber-fill); background: var(--amber-soft); }
+.advisor-verdict-unknown { border-left-color: var(--slate); }
+.advisor-verdict-info { border-left-color: var(--accent); background: var(--accent-soft); }
+.advisor-verdict-icon { font-weight: var(--weight-bold); }
+.advisor-question { margin: 0; }
+.conf-meter { display: inline-flex; gap: 2px; margin-right: 6px; vertical-align: middle; }
+.conf-seg { width: 8px; height: 8px; border-radius: 2px;
+  background: rgba(255, 255, 255, 0.35); }
+.conf-seg.on { background: currentColor; }
+.advisor-summary { margin: 6px 0; padding-left: 20px; }
+.advisor-summary li { margin: 3px 0; }
+.advisor-findings, .advisor-checked { list-style: none; margin: 6px 0; padding: 0; }
+.advisor-findings li, .advisor-checked li { margin: 4px 0; }
+.advisor-finding-icon { color: var(--green); font-weight: var(--weight-bold);
+  margin-right: 4px; }
+.advisor-conf-fresh { display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
+  gap: 14px; margin-top: 14px; padding: 12px; border: 1px solid var(--line);
+  border-radius: var(--radius); background: var(--surface-2); }
+.advisor-conf-fresh h3 { margin: 0 0 6px; }
+.advisor-conf-fresh p { margin: 4px 0; }
+.advisor-fresh-warn { color: var(--amber); font-weight: var(--weight-semibold); }
+.advisor-recommends { list-style: none; margin: 6px 0; padding: 0; }
+.advisor-recommends li { display: flex; align-items: center; gap: 10px;
+  margin: 8px 0; flex-wrap: wrap; }
+.advisor-why { font-size: 12px; }
+.advisor-feedback { margin-top: 8px; }
+.advisor-feedback-note { padding: 0; border: 0; }
+.advisor-cards .advisor-card { display: flex; flex-direction: column; gap: 4px;
+  text-decoration: none; color: inherit; }
+.advisor-cards .advisor-card:hover { border-color: var(--accent); }
+.advisor-card-meta { font-size: 11px; overflow-wrap: anywhere; }
+.advisor-cards .badge { align-self: flex-start; }
+.advisor-conv-group { margin: 12px 0 4px; text-transform: uppercase;
+  font-size: 11px; letter-spacing: 0.04em; color: var(--muted); }
+.advisor-conv-filter { margin-bottom: 6px; }
+.advisor-conv-filter input { flex: 1 1 200px; }
+.advisor-inline-form { display: inline; }
+.advisor-inline-details { display: inline-block; }
+.advisor-rename { padding: 4px; border: 0; }
+
 /* -- 16. Universal search (Ctrl+K) ------------------------------------------------ */
 .search-trigger { display: flex; align-items: center; gap: 8px; margin-left: 24px; padding: 7px 14px; min-height: var(--control-height); border: 1px solid var(--line); border-radius: var(--radius); background: #fff; color: var(--muted); font-size: 13px; font-family: inherit; cursor: pointer; min-width: 0; }
 .search-trigger-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1021,6 +1069,8 @@ body[data-density="compact"] .tiles { gap: 8px; }
 body[data-density="compact"] .tile { padding: 8px 10px; }
 body[data-density="compact"] .disclosure > summary { padding: 5px 9px; }
 body[data-density="compact"] .disclosure-body { padding: 8px; }
+body[data-density="compact"] .advisor-verdict { padding: 6px 8px; font-size: 14px; }
+body[data-density="compact"] .advisor-conf-fresh { padding: 8px; gap: 10px; }
 /* Touch targets never shrink below the accessible minimum on coarse
    pointers, whatever the density. */
 @media (pointer: coarse) {

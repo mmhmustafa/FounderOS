@@ -26,25 +26,88 @@
   </div>
 </section>
 
-{% if response %}
-<section class="card root-cause advisor-response">
-  <div class="job-head">
-    <h2 style="margin:0;">{{ response.question }}</h2>
-    <span class="badge hop-badge hop-badge-{{ 'pass' if response.confidence == 'High' else ('warning' if response.confidence == 'Medium' else ('failed' if response.confidence == 'Low' else 'unknown')) }}">Confidence: {{ response.confidence }}</span>
+{% if status_cards %}
+<section class="card" aria-label="Current status of the selected scope">
+  <h2>Status right now</h2>
+  <p class="muted">Live status of <strong>{{ active_scope_label }}</strong> —
+  independent of any stored answer below.</p>
+  <div class="tiles advisor-cards">
+    {% for card in status_cards %}
+    <a class="tile advisor-card" href="{{ card.href }}"
+       {% if card.detail %}title="{{ card.detail }}"{% endif %}>
+      <strong>{{ card.title }}</strong>
+      <span class="tile-text">{{ card.value }}</span>
+      {% if card.state %}
+      <span class="badge hop-badge health-state-{{ card.state }}">{{ card.state }}</span>
+      {% else %}
+      <span class="muted advisor-card-meta">count only</span>
+      {% endif %}
+      <span class="muted advisor-card-meta">{% if card.updated %}updated {{ card.updated | timestamp }}{% else %}not evaluated yet{% endif %}</span>
+    </a>
+    {% endfor %}
   </div>
+</section>
+{% endif %}
 
+{% if response and presented %}
+<section class="card root-cause advisor-response">
+  {# 1. The final answer — the conclusion first, never buried in prose. #}
+  <div class="job-head">
+    <h2 class="advisor-question">{{ response.question }}</h2>
+    <span class="badge hop-badge hop-badge-{{ presented.confidence.css }}"
+          aria-label="Answer confidence: {{ presented.confidence.level }}">
+      <span class="conf-meter" aria-hidden="true">{% for i in range(4) %}<span class="conf-seg{{ ' on' if i < presented.confidence.meter else '' }}"></span>{% endfor %}</span>
+      {{ presented.confidence.level }} confidence
+    </span>
+  </div>
+  <p class="advisor-verdict advisor-verdict-{{ presented.verdict.tone }}">
+    <span class="advisor-verdict-icon" aria-hidden="true">{{ presented.verdict.icon }}</span>
+    <strong>{{ presented.verdict.headline }}</strong>
+  </p>
   <p class="muted">Answered {{ response.generated_at | timestamp if response.generated_at else 'now' }}
      · scope: <strong>{{ active_scope_label }}</strong>
-     · every citation below deep-links to the exact stored artifact; evidence
-     Atlas does not hold is listed under what it cannot see, never implied.</p>
+     · every citation deep-links to the exact stored artifact; evidence Atlas
+     does not hold is listed under Limitations, never implied.</p>
 
-  <h2>Summary</h2>
-  <p>{{ response.summary }}</p>
+  {# 2. Executive summary — the engine's own words, scannable. #}
+  <h2>Executive summary</h2>
+  <ul class="advisor-summary">
+    {% for bullet in presented.summary_bullets %}<li>{{ bullet }}</li>{% endfor %}
+  </ul>
 
+  {# 3. Key findings — concise; the full citations follow under Evidence. #}
+  {% if presented.findings %}
+  <h2>Key findings</h2>
+  <ul class="advisor-findings">
+    {% for item in presented.findings %}
+    <li><span class="advisor-finding-icon" aria-hidden="true">✓</span> {{ item.label }}</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+
+  {# 4. What Atlas checked — the operations actually performed. #}
+  {% if presented.checked %}
+  <h2>What Atlas checked</h2>
+  <ul class="advisor-checked">
+    {% for step in presented.checked %}
+    <li><span class="advisor-finding-icon" aria-hidden="true">✓</span> <span class="muted">{{ step }}</span></li>
+    {% endfor %}
+  </ul>
+  <p class="muted">These are the operations Advisor actually performed against
+  the existing engines — real orchestration, never simulated reasoning.</p>
+  {% endif %}
+
+  {# 5. Why — reasoning separated from the raw evidence. #}
+  {% if presented.reasoning %}
+  <h2>Why Atlas reached this conclusion</h2>
+  <p>{{ presented.reasoning }}</p>
+  {% endif %}
+
+  {# 6. Evidence — every citation, with its artifact link. #}
   <h2>Evidence</h2>
   {% if response.evidence %}
   <details open>
-    <summary class="muted">Evidence used ({{ response.evidence | length }})</summary>
+    <summary class="muted">Evidence ({{ response.evidence | length }} artifact(s) cited)</summary>
     <ul>
       {% for item in response.evidence %}
       <li>{{ icons.icon('check', 14) }} {% if item.href %}<a href="{{ item.href }}">{{ item.label }}</a>{% else %}{{ item.label }}{% endif %} <span class="muted">— {{ item.detail }}</span></li>
@@ -55,20 +118,46 @@
   <p class="muted">No evidence supports this answer — which is exactly what the confidence says.</p>
   {% endif %}
 
-  <h2>Confidence</h2>
-  <p>{{ response.confidence }} <span class="muted">— {{ response.confidence_basis }}</span></p>
+  {# 7. Answer confidence and evidence freshness — different facts. #}
+  <div class="advisor-conf-fresh">
+    <div>
+      <h3>Answer confidence</h3>
+      <p><span class="badge hop-badge hop-badge-{{ presented.confidence.css }}">{{ presented.confidence.level }}</span></p>
+    </div>
+    <div>
+      <h3>Evidence freshness</h3>
+      {% if presented.freshness %}
+      <p class="{{ 'advisor-fresh-warn' if presented.freshness.warn else 'muted' }}">
+        {% if presented.freshness.warn %}<span aria-hidden="true">⚠</span> {% endif %}{{ presented.freshness.note }}
+      </p>
+      {% else %}
+      <p class="muted">Freshness for this scope could not be determined.</p>
+      {% endif %}
+      <p class="muted">Old evidence lowers freshness — it never quietly lowers
+      the answer's confidence.</p>
+    </div>
+  </div>
 
-  {% if response.unknowns %}
-  <h2>What Atlas Cannot See</h2>
+  {# 8. Limitations — what Atlas cannot see, stated rather than implied. #}
+  {% if presented.limitations %}
+  <h2>Limitations</h2>
   <ul>
-    {% for item in response.unknowns %}<li class="muted">{{ item }}</li>{% endfor %}
+    {% for item in presented.limitations %}<li class="muted">{{ item }}</li>{% endfor %}
   </ul>
   {% endif %}
 
-  <h2>Recommended Next Action</h2>
-  <div class="actions">
-    <a class="btn btn-primary" href="{{ response.next_action.href }}">{{ response.next_action.label }}</a>
-  </div>
+  {# 9. Recommendations — each explains why it is offered. #}
+  {% if presented.actions %}
+  <h2>Atlas recommends</h2>
+  <ul class="advisor-recommends">
+    {% for action in presented.actions %}
+    <li>
+      <a class="btn {{ 'btn-primary' if action.primary else 'btn-sm' }}" href="{{ action.href }}">{{ action.label }}</a>
+      <span class="muted advisor-why">{{ action.why }}</span>
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
 
   {# The question counts: an engineer who asks about core1 is telling Atlas
      which device they care about. Matching is still an exact hostname match
@@ -87,27 +176,24 @@
   </ul>
   {% endif %}
 
-  {% if response.followups %}
-  <h2>Follow-up</h2>
+  {# 10. Follow-up questions — only those relevant to this answer. #}
+  {% if presented.followup_questions %}
+  <h2>Ask next</h2>
   <div class="advisor-quick">
-    {% for item in response.followups %}
-    {% if item.question %}
+    {% for item in presented.followup_questions %}
     <form method="post" action="/advisor/ask">{{ csrf_field() }}<input type="hidden" name="question" value="{{ item.question }}"><button class="btn btn-sm" type="submit">{{ item.label }}</button></form>
-    {% else %}
-    <a class="btn btn-sm" href="{{ item.href }}">{{ item.label }}</a>
-    {% endif %}
     {% endfor %}
   </div>
   {% endif %}
 
   {% if can('investigate.run') %}
-  <div class="filter-bar" style="margin-top:8px;">
+  <div class="filter-bar advisor-feedback">
     <form method="post" action="/advisor/feedback">{{ csrf_field() }}
       <input type="hidden" name="question" value="{{ response.question }}">
       <input type="hidden" name="helpful" value="1">
       <button class="btn btn-sm" type="submit" aria-label="This answer and its citations were helpful">Helpful</button>
     </form>
-    <form method="post" action="/advisor/feedback" class="filter-bar" style="padding:0;border:0;">{{ csrf_field() }}
+    <form method="post" action="/advisor/feedback" class="filter-bar advisor-feedback-note">{{ csrf_field() }}
       <input type="hidden" name="question" value="{{ response.question }}">
       <input type="hidden" name="helpful" value="0">
       <label class="visually-hidden" for="advisor-feedback-note">What was wrong or unsupported</label>
@@ -116,40 +202,42 @@
     </form>
   </div>
   {% endif %}
-
-  <details class="advisor-steps">
-    <summary class="muted">How this answer was prepared ({{ response.steps | length }} step(s))</summary>
-    <ol>
-      {% for step in response.steps %}<li class="muted">{{ step }}</li>{% endfor %}
-    </ol>
-    <p class="muted">These are the operations Advisor actually performed against the existing engines — real orchestration, never simulated reasoning.</p>
-  </details>
 </section>
 {% endif %}
 
 <div class="columns">
   <section class="card">
     <h2>Recent Conversations</h2>
-    {% if conversations %}
-    <ul class="mission-list">
-      {% for entry in conversations %}
-      <li>
+    {% if conversation_groups %}
+    <div class="filter-bar advisor-conv-filter">
+      <label class="visually-hidden" for="advisor-conv-search">Search conversations</label>
+      <input type="search" id="advisor-conv-search" placeholder="Search conversations…" autocomplete="off">
+    </div>
+    {% for group in conversation_groups %}
+    <h3 class="advisor-conv-group">{{ group.title }}</h3>
+    <ul class="mission-list advisor-conv-list">
+      {% for item in group['items'] %}
+      {% set entry = item.entry %}
+      <li data-question="{{ (entry.label or entry.response.question) | lower }}">
         <span class="activity-kind">{{ entry.response.intent }}</span>
-        <a href="/advisor?conversation={{ loop.index0 }}">{{ entry.label or entry.response.question }}</a>
-        <span class="muted">{{ entry.asked_at or '' }} · {{ entry.response.confidence }}</span>
+        <a href="/advisor?conversation={{ item.index }}">{{ entry.label or entry.response.question }}</a>
+        <span class="muted">{{ entry.asked_at | timestamp if entry.asked_at else '' }} · {{ entry.response.confidence }} confidence</span>
         {% if can('investigate.run') %}
         <span class="row-actions">
-          <a class="btn btn-sm" href="/advisor/conversations/{{ loop.index0 }}/export"
+          <form method="post" action="/advisor/conversations/{{ item.index }}/pin" class="advisor-inline-form">{{ csrf_field() }}
+            <button class="btn btn-sm" type="submit" aria-label="{{ 'Unpin' if entry.pinned else 'Pin' }} this conversation">{{ 'Unpin' if entry.pinned else 'Pin' }}</button>
+          </form>
+          <a class="btn btn-sm" href="/advisor/conversations/{{ item.index }}/export"
              aria-label="Export this conversation as JSON">Export</a>
-          <details style="display:inline-block">
+          <details class="advisor-inline-details">
             <summary class="btn btn-sm" role="button">Rename</summary>
-            <form method="post" action="/advisor/conversations/{{ loop.index0 }}/rename" class="filter-bar" style="padding:4px;border:0;">{{ csrf_field() }}
-              <label class="visually-hidden" for="rename-{{ loop.index0 }}">New name</label>
-              <input id="rename-{{ loop.index0 }}" name="label" value="{{ entry.label or '' }}" placeholder="name">
+            <form method="post" action="/advisor/conversations/{{ item.index }}/rename" class="filter-bar advisor-rename">{{ csrf_field() }}
+              <label class="visually-hidden" for="rename-{{ item.index }}">New name</label>
+              <input id="rename-{{ item.index }}" name="label" value="{{ entry.label or '' }}" placeholder="name">
               <button class="btn btn-sm" type="submit">Save</button>
             </form>
           </details>
-          <form method="post" action="/advisor/conversations/{{ loop.index0 }}/delete" style="display:inline">{{ csrf_field() }}
+          <form method="post" action="/advisor/conversations/{{ item.index }}/delete" class="advisor-inline-form">{{ csrf_field() }}
             <button class="btn btn-sm" type="submit" aria-label="Delete this conversation">Delete</button>
           </form>
         </span>
@@ -157,6 +245,8 @@
       </li>
       {% endfor %}
     </ul>
+    {% endfor %}
+    <p class="muted advisor-conv-empty" hidden>No conversation matches that search.</p>
     {% else %}
     <p class="muted">No conversations yet. Try a quick action above — for example <strong>Summarize Enterprise Health</strong> — and Advisor will answer with cited evidence.</p>
     {% endif %}

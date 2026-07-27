@@ -217,6 +217,7 @@ ENDPOINT_PERMISSIONS: dict[str, str] = {
     "advisor_feedback": INVESTIGATE_RUN,
     "advisor_conversation_delete": INVESTIGATE_RUN,
     "advisor_conversation_rename": INVESTIGATE_RUN,
+    "advisor_conversation_pin": INVESTIGATE_RUN,
     "advisor_conversation_export": EXPORT_DATA,
     "paths_compare": PAGES_VIEW,
 

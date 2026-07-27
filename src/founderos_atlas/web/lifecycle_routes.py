@@ -763,6 +763,14 @@ def register_lifecycle_routes(app, h) -> None:
             flash("A non-empty name is required.", "error")
         return redirect("/advisor")
 
+    @app.route("/advisor/conversations/<int:index>/pin", methods=["POST"])
+    def advisor_conversation_pin(index: int):
+        if _conversations().toggle_pin(index):
+            flash("Conversation pin updated.", "success")
+        else:
+            flash("No such conversation.", "error")
+        return redirect("/advisor")
+
     @app.route("/advisor/conversations/<int:index>/export")
     def advisor_conversation_export(index: int):
         entry = _conversations().get(index)

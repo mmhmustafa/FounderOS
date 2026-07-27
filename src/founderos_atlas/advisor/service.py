@@ -79,6 +79,20 @@ class ConversationRepository:
         self._store(entries)
         return True
 
+    def toggle_pin(self, index: int) -> bool:
+        """Pin (or unpin) one conversation so it stays at hand.
+
+        A pin is a display flag only: the stored order — which every
+        index-addressed action depends on — never changes.
+        """
+
+        entries = self.list_conversations()
+        if not 0 <= index < len(entries):
+            return False
+        entries[index]["pinned"] = not entries[index].get("pinned", False)
+        self._store(entries)
+        return True
+
     def save(self, response: AdvisorResponse) -> None:
         entries = self.list_conversations()
         entries.insert(
