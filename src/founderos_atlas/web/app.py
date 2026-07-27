@@ -379,4 +379,13 @@ def create_app(
     register_schedule_routes(app)
     register_telemetry_routes(app)
     register_observability(app)
+
+    # Warm the Operational Intent Router at startup (PR-164.1): the
+    # lifecycle is register -> validate -> FREEZE -> runtime, and a
+    # registration problem must crash the app HERE, loudly, not 500 the
+    # first operator question. This also moves the one-time catalog
+    # build out of the first request.
+    from founderos_atlas.oir import default_router
+
+    default_router()
     return app

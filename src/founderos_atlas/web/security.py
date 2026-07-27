@@ -68,6 +68,9 @@ _RATE_LIMITS: dict[str, int] = {
     "settings_restore": 5,
     "api_advisor_ask": 30,
     "advisor_ask_route": 30,
+    # PR-164.1: the analytics beacon writes a file per hit — humane
+    # click rates never approach this, scripts do.
+    "api_advisor_workflow_choice": 60,
 }
 
 

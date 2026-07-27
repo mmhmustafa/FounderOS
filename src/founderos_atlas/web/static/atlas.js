@@ -868,10 +868,17 @@
     var link = event.target && event.target.closest
       ? event.target.closest("a[data-oir-choice]") : null;
     if (!link) { return; }
+    // sendBeacon cannot set headers, so the CSRF token rides in the
+    // JSON body (the server accepts _csrf there; the atlas_csrf cookie
+    // is deliberately readable for exactly this). Without it, every
+    // click in password mode would 403 and write a false CSRF-denial
+    // audit event.
+    var csrfMatch = document.cookie.match(/(?:^|;\s*)atlas_csrf=([^;]+)/);
     var payload = JSON.stringify({
       intent: link.getAttribute("data-oir-intent") || "",
       label: link.getAttribute("data-oir-label") || "",
       href: link.getAttribute("href") || "",
+      _csrf: csrfMatch ? decodeURIComponent(csrfMatch[1]) : "",
     });
     try {
       if (navigator.sendBeacon) {

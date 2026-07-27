@@ -193,6 +193,8 @@ ENDPOINT_PERMISSIONS: dict[str, str] = {
     # Record-only workflow analytics (PR-164): any viewer may open a
     # recommended workflow, so recording that click needs no more.
     "api_advisor_workflow_choice": PAGES_VIEW,
+    # OIR registry diagnostics (PR-164.1): administrative debugging data.
+    "api_oir_diagnostics": SYSTEM_ADMIN,
 
     # -- compass -----------------------------------------------------------
     "compass_new": PLANS_EDIT,

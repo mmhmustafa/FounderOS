@@ -16,7 +16,10 @@ from threading import RLock
 from typing import Any, Mapping
 from uuid import uuid4
 
-from founderos_atlas.web.redirects import safe_redirect_target
+# The package-neutral module (PR-164.1): importing the web layer from
+# here would drag Flask routes into every notifications consumer —
+# including the OIR capability bootstrap in headless processes.
+from founderos_atlas.redirects import safe_redirect_target
 
 NOTIFICATIONS_FILENAME = "notifications.jsonl"
 MAX_NOTIFICATIONS = 2000

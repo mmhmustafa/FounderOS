@@ -6832,9 +6832,35 @@ def register_routes(app) -> None:
         advisor_ask(question)
         return redirect(url_for("advisor_page"))
 
+    def _bounded_json_payload(max_bytes: int = 4096):
+        """The request's JSON object (or form data), or an error
+        response. Hardened (PR-164.1, Part 10): the body size is
+        checked BEFORE parsing, a non-object JSON document is a 400
+        (never an AttributeError 500), and a deeply nested body's
+        RecursionError is caught (it is not a ValueError, so
+        get_json(silent=True) does not swallow it)."""
+
+        if request.content_length and request.content_length > max_bytes:
+            return None, (jsonify(error="Request body too large."), 413)
+        try:
+            parsed = request.get_json(silent=True)
+        except RecursionError:
+            return None, (
+                jsonify(error="Request body too deeply nested."), 400,
+            )
+        if parsed is None:
+            return request.form, None
+        if not isinstance(parsed, dict):
+            return None, (
+                jsonify(error="Request body must be a JSON object."), 400,
+            )
+        return parsed, None
+
     @app.route("/api/advisor/ask", methods=["POST"])
     def api_advisor_ask():
-        payload = request.get_json(silent=True) or request.form
+        payload, error = _bounded_json_payload()
+        if error:
+            return error
         question = str(payload.get("question") or "").strip()
         if not question:
             return jsonify(error="A question is required."), 400
@@ -6847,21 +6873,61 @@ def register_routes(app) -> None:
         RECORD-ONLY analytics (PR-164, Part 10): appended to the
         workspace's oir-analytics.jsonl for the operator's own
         understanding of how Atlas is used. Never fed back into
-        routing, weighting, or any adaptive behaviour."""
+        routing, weighting, or any adaptive behaviour.
 
-        from founderos_atlas.oir import IntentAnalytics
+        Hardened (PR-164.1, Part 10): the body is size-capped and
+        type-checked before use, the endpoint is rate-limited beside
+        its siblings, and the href must be a same-site relative path
+        into a known workflow area — external URLs, scheme-relative
+        tricks, traversal, unknown intents, and oversized fields are
+        rejected outright."""
 
-        payload = request.get_json(silent=True) or request.form
+        from founderos_atlas.oir import (
+            KNOWN_WORKFLOW_AREAS,
+            IntentAnalytics,
+            default_router,
+            workflow_path,
+        )
+
+        payload, error = _bounded_json_payload()
+        if error:
+            return error
         href = str(payload.get("href") or "").strip()
+        intent = str(payload.get("intent") or "").strip()
+        label = str(payload.get("label") or "").strip()
         if not href:
             return jsonify(error="href is required."), 400
+        if len(href) > 200 or len(intent) > 80 or len(label) > 120:
+            return jsonify(error="field too long."), 400
+        path = workflow_path(href)
+        area = path.split("/")[1] if path.startswith("/") else None
+        if (not path.startswith("/") or path.startswith("//")
+                or "\\" in href or ".." in path
+                or area not in KNOWN_WORKFLOW_AREAS):
+            return jsonify(error="not a known Atlas workflow route."), 400
+        known_intents = {
+            item.name for item in default_router().intents()
+        }
+        if intent and intent not in known_intents:
+            return jsonify(error="unknown intent."), 400
         IntentAnalytics(output_dir()).record("choice", {
             "at": now_iso(),
-            "intent": str(payload.get("intent") or "").strip(),
-            "label": str(payload.get("label") or "").strip(),
+            "intent": intent,
+            "label": label,
             "href": href,
         })
         return jsonify(recorded=True)
+
+    @app.route("/api/oir/diagnostics")
+    def api_oir_diagnostics():
+        """The Operational Intent Router's administrative diagnostics
+        (PR-164.1, Part 8): registered intents, capability ownership,
+        the derived routing table, registry version, validation state,
+        startup duration. Read-only; admin-gated."""
+
+        from founderos_atlas.oir import default_router
+
+        return jsonify(default_router().diagnostics())
 
     # -- Universal search (PR-038: the front door to Atlas) -------------------
 

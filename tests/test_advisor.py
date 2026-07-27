@@ -562,5 +562,133 @@ class AdvisorHonestyTests(unittest.TestCase):
             )
 
 
+class WorkflowChoiceSecurityTests(unittest.TestCase):
+    """PR-164.1 Part 10: the analytics choice endpoint validates its
+    input — external URLs, traversal, unknown intents, and oversized
+    fields are rejected; valid clicks are recorded with the schema."""
+
+    def build_client(self, workdir: Path):
+        from founderos_atlas.web import create_app
+
+        service = build_world(workdir)
+        app = create_app(
+            profile_service=service,
+            output_dir=workdir,
+            history_root=workdir / ".atlas" / "history",
+            workspace_root=workdir / "workspace",
+        )
+        app.config.update(TESTING=True)
+        return app.test_client()
+
+    def test_valid_workflow_clicks_are_recorded(self) -> None:
+        from founderos_atlas.oir import IntentAnalytics
+
+        with tempfile.TemporaryDirectory() as tmp:
+            workdir = Path(tmp)
+            client = self.build_client(workdir)
+            response = client.post("/api/advisor/workflow-choice", json={
+                "intent": "Enterprise Health",
+                "label": "Open Topology",
+                "href": "/topology?scope=all",
+            })
+            self.assertEqual(200, response.status_code)
+            events = IntentAnalytics(workdir).entries()
+            self.assertEqual(1, len(events))
+            self.assertEqual("choice", events[0]["kind"])
+            self.assertIn("schema", events[0])
+            # Engine answers link to dynamic detail pages too.
+            deep = client.post("/api/advisor/workflow-choice", json={
+                "intent": "", "label": "Open chennai-sw2",
+                "href": "/devices/chennai-sw2",
+            })
+            self.assertEqual(200, deep.status_code)
+
+    def test_invalid_routes_and_fields_are_rejected(self) -> None:
+        from founderos_atlas.oir import IntentAnalytics
+
+        with tempfile.TemporaryDirectory() as tmp:
+            workdir = Path(tmp)
+            client = self.build_client(workdir)
+            bad_hrefs = (
+                "https://evil.example/phish",   # absolute URL
+                "//evil.example/phish",         # scheme-relative
+                "/not-an-atlas-area",           # unknown workflow area
+                "/topology/../secret",          # traversal
+                "\\\\host\\share",              # backslashes
+                "",                             # missing
+            )
+            for href in bad_hrefs:
+                with self.subTest(href=href):
+                    response = client.post(
+                        "/api/advisor/workflow-choice",
+                        json={"intent": "", "label": "x", "href": href},
+                    )
+                    self.assertEqual(400, response.status_code)
+            self.assertEqual(400, client.post(
+                "/api/advisor/workflow-choice",
+                json={"intent": "Made Up Intent", "label": "x",
+                      "href": "/topology"},
+            ).status_code)
+            self.assertEqual(400, client.post(
+                "/api/advisor/workflow-choice",
+                json={"intent": "", "label": "y" * 200,
+                      "href": "/topology"},
+            ).status_code)
+            # Nothing invalid was recorded.
+            self.assertEqual([], IntentAnalytics(workdir).entries())
+
+    def test_malformed_bodies_are_400_never_500(self) -> None:
+        """PR-164.1: a non-object JSON document must be a clean 400 —
+        the pre-hardening behaviour was an AttributeError 500 — and an
+        oversized body is refused before parsing."""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = self.build_client(Path(tmp))
+            for body in (b"true", b'"abc"', b"[1,2]", b"123"):
+                with self.subTest(body=body):
+                    response = client.post(
+                        "/api/advisor/workflow-choice", data=body,
+                        content_type="application/json",
+                    )
+                    self.assertEqual(400, response.status_code)
+            huge = json.dumps(
+                {"href": "/topology", "label": "x" * 10000}
+            ).encode()
+            self.assertEqual(413, client.post(
+                "/api/advisor/workflow-choice", data=huge,
+                content_type="application/json",
+            ).status_code)
+            # The ask API shares the same guard.
+            self.assertEqual(400, client.post(
+                "/api/advisor/ask", data=b"[1,2]",
+                content_type="application/json",
+            ).status_code)
+
+    def test_the_choice_endpoint_is_rate_limited(self) -> None:
+        from founderos_atlas.web.security import _RATE_LIMITS
+
+        self.assertIn("api_advisor_workflow_choice", _RATE_LIMITS)
+
+    def test_the_beacon_carries_the_csrf_token_in_its_body(self) -> None:
+        """sendBeacon cannot set headers, so in password mode the token
+        must ride in the JSON body or every click 403s and writes a
+        false CSRF-denial audit event."""
+
+        script = Path("src/founderos_atlas/web/static/atlas.js").read_text(
+            encoding="utf-8"
+        )
+        beacon = script.split("data-oir-choice", 1)[1][:1500]
+        self.assertIn("atlas_csrf", beacon)
+        self.assertIn("_csrf:", beacon)
+
+    def test_diagnostics_endpoint_describes_the_registry(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            client = self.build_client(Path(tmp))
+            report = client.get("/api/oir/diagnostics").get_json()
+            self.assertTrue(report["frozen"])
+            self.assertEqual("passed", report["validation"])
+            self.assertGreaterEqual(report["intent_count"], 25)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -37,11 +37,14 @@ _SEARCH_STOPWORDS = frozenset(
 def route(question: str, *, sites: Iterable[str] = ()):
     """The full OIR routing decision (intent + engine + confidence +
     why). ``sites`` are the enterprise's known site names, used only to
-    refine WITHIN a family (e.g. Site Health) — never to guess."""
+    refine WITHIN a family (e.g. Site Health) — never to guess.
 
-    from founderos_atlas.oir import detect
+    PR-164.1: goes through the STABLE public service interface
+    (:class:`OperationalIntentRouter`), never internal modules."""
 
-    return detect(question, sites=sites)
+    from founderos_atlas.oir import default_router
+
+    return default_router().route(question, sites=sites)
 
 
 def classify(question: str) -> str:
