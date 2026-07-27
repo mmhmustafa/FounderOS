@@ -190,6 +190,9 @@ ENDPOINT_PERMISSIONS: dict[str, str] = {
     "incidents_bulk": INVESTIGATE_RUN,
     "advisor_ask_route": INVESTIGATE_RUN,
     "api_advisor_ask": INVESTIGATE_RUN,
+    # Record-only workflow analytics (PR-164): any viewer may open a
+    # recommended workflow, so recording that click needs no more.
+    "api_advisor_workflow_choice": PAGES_VIEW,
 
     # -- compass -----------------------------------------------------------
     "compass_new": PLANS_EDIT,

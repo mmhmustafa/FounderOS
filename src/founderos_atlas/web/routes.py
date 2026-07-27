@@ -6596,11 +6596,15 @@ def register_routes(app) -> None:
         its answer agrees with the scoped Mission/Topology; at the
         Enterprise scope it consumes the federated graph."""
 
+        import time
+
         from founderos_atlas.advisor import ask
+        from founderos_atlas.oir import IntentAnalytics
 
         scope_id = active_scope_id(known_scopes())
         graph, snapshot, profiles = scoped_world(scope_id)
-        return ask(
+        started = time.perf_counter()
+        response = ask(
             question,
             base_output_dir=output_dir(),
             profiles=profiles,
@@ -6610,6 +6614,23 @@ def register_routes(app) -> None:
             generated_at=now_iso(),
             repository=advisor_repository(),
         )
+        # Workflow analytics (PR-164): RECORD-ONLY — what was detected,
+        # at what confidence, how long the answer took. Never read back
+        # into routing; best-effort by design.
+        oi = response.operational_intent or {}
+        IntentAnalytics(output_dir()).record("detection", {
+            "at": now_iso(),
+            "intent": oi.get("name"),
+            "intent_key": oi.get("key"),
+            "domain": oi.get("domain"),
+            "engine": response.intent,
+            "routing_confidence": oi.get("routing_confidence"),
+            "escalated": bool(oi.get("escalated")),
+            "answer_confidence": response.confidence,
+            "scope": scope_id,
+            "duration_ms": int((time.perf_counter() - started) * 1000),
+        })
+        return response
 
     def _scope_last_discovery_iso(scope):
         """The raw completed-at of the newest discovery, or None.
@@ -6818,6 +6839,29 @@ def register_routes(app) -> None:
         if not question:
             return jsonify(error="A question is required."), 400
         return jsonify(advisor_ask(question).to_dict())
+
+    @app.route("/api/advisor/workflow-choice", methods=["POST"])
+    def api_advisor_workflow_choice():
+        """Record which recommended workflow the operator opened.
+
+        RECORD-ONLY analytics (PR-164, Part 10): appended to the
+        workspace's oir-analytics.jsonl for the operator's own
+        understanding of how Atlas is used. Never fed back into
+        routing, weighting, or any adaptive behaviour."""
+
+        from founderos_atlas.oir import IntentAnalytics
+
+        payload = request.get_json(silent=True) or request.form
+        href = str(payload.get("href") or "").strip()
+        if not href:
+            return jsonify(error="href is required."), 400
+        IntentAnalytics(output_dir()).record("choice", {
+            "at": now_iso(),
+            "intent": str(payload.get("intent") or "").strip(),
+            "label": str(payload.get("label") or "").strip(),
+            "href": href,
+        })
+        return jsonify(recorded=True)
 
     # -- Universal search (PR-038: the front door to Atlas) -------------------
 

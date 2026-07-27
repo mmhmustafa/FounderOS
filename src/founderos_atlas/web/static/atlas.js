@@ -702,6 +702,23 @@
         closeNavDrawer(true);
       } else if (event.key === "Escape") {
         closeMenus(null);
+      } else if (event.key === "/" && !event.ctrlKey && !event.metaKey &&
+                 !event.altKey) {
+        // Advisor "/" shortcut (PR-164): focus the question box from
+        // anywhere on the Advisor page — unless the operator is already
+        // typing somewhere. Lives in THIS handler because the page keeps
+        // exactly one document-level keydown listener (pinned contract).
+        var advisorAsk = document.getElementById("advisor-question");
+        var slashTarget = event.target;
+        var slashTag = slashTarget && slashTarget.tagName
+          ? slashTarget.tagName.toLowerCase() : "";
+        if (advisorAsk && slashTag !== "input" && slashTag !== "textarea" &&
+            slashTag !== "select" &&
+            !(slashTarget && slashTarget.isContentEditable)) {
+          event.preventDefault();
+          advisorAsk.focus();
+          advisorAsk.select();
+        }
       }
     });
     var trigger = byId("atlas-search-trigger");
@@ -838,8 +855,38 @@
       advisorButton.disabled = true;
       advisorButton.textContent = "Asking…";
       advisorNote.hidden = false;
+      var skeleton = document.getElementById("advisor-skeleton");
+      if (skeleton) { skeleton.hidden = false; }
     });
   }
+
+  // Workflow analytics (PR-164, record-only): when the operator opens a
+  // recommended workflow, record WHICH one — data Atlas shows back to the
+  // operator, never fed into routing. Best-effort: the navigation always
+  // proceeds whether or not the beacon lands.
+  document.addEventListener("click", function (event) {
+    var link = event.target && event.target.closest
+      ? event.target.closest("a[data-oir-choice]") : null;
+    if (!link) { return; }
+    var payload = JSON.stringify({
+      intent: link.getAttribute("data-oir-intent") || "",
+      label: link.getAttribute("data-oir-label") || "",
+      href: link.getAttribute("href") || "",
+    });
+    try {
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon(
+          "/api/advisor/workflow-choice",
+          new Blob([payload], { type: "application/json" })
+        );
+      } else {
+        fetch("/api/advisor/workflow-choice", {
+          method: "POST", keepalive: true, body: payload,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+    } catch (error) { /* recording is never allowed to block the click */ }
+  });
 
   // Advisor conversation search: a client-side filter over the grouped
   // history. Rows carry their question in data-question; a group whose

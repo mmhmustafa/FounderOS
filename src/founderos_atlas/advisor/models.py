@@ -14,14 +14,19 @@ from dataclasses import dataclass
 from typing import Any
 
 
-ADVISOR_SCHEMA_VERSION = "1.0.0"
+# 1.1.0 (PR-164): ADDITIVE ONLY — the optional "operational_intent"
+# block joined the schema; no existing key was renamed or removed, so
+# every stored 1.0.0 conversation still renders.
+ADVISOR_SCHEMA_VERSION = "1.1.0"
 
 CONFIDENCE_HIGH = "High"
 CONFIDENCE_MEDIUM = "Medium"
 CONFIDENCE_LOW = "Low"
 CONFIDENCE_UNKNOWN = "Unknown"
 
-NO_EVIDENCE_MESSAGE = "I don't currently have enough evidence."
+NO_EVIDENCE_MESSAGE = (
+    "Atlas doesn't currently have enough evidence to answer this."
+)
 
 
 def confidence_from_band(band: str | None) -> str:
@@ -77,6 +82,11 @@ class AdvisorResponse:
     unknowns: tuple[str, ...] = ()
     steps: tuple[str, ...] = ()  # the REAL orchestration performed
     generated_at: str | None = None
+    # PR-164 (ADDITIVE): the Operational Intent Router's decision —
+    # intent name/domain, routing confidence, why, and the intent's
+    # declared workflows/recommendations/limitations. None for answers
+    # stored before OIR existed; presentation tolerates both.
+    operational_intent: dict | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -96,6 +106,7 @@ class AdvisorResponse:
             "unknowns": list(self.unknowns),
             "steps": list(self.steps),
             "generated_at": self.generated_at,
+            "operational_intent": self.operational_intent,
         }
 
 

@@ -46,7 +46,9 @@ class VerdictHonestyTests(unittest.TestCase):
     def test_unknown_confidence_is_an_unknown_verdict(self) -> None:
         shown = present_answer(make_response(confidence="Unknown"))
         self.assertEqual("unknown", shown["verdict"]["tone"])
-        self.assertIn("cannot determine", shown["verdict"]["headline"])
+        # PR-164 Part 6: the natural-language honest sentence.
+        self.assertIn("enough evidence to answer this",
+                      shown["verdict"]["headline"])
 
     def test_no_active_issues_is_not_read_as_a_problem(self) -> None:
         """Negated phrases must never trip the concern markers."""
@@ -170,6 +172,82 @@ class ConversationGroupingTests(unittest.TestCase):
             [self.entry("not-a-timestamp", "odd one")], now=self.NOW
         )
         self.assertEqual(["Older"], [group["title"] for group in groups])
+
+
+class OperationalIntentTests(unittest.TestCase):
+    """PR-164: the presenter shows the OIR's decision and the intent's
+    declared workflows/limitations — additively, and tolerantly for
+    conversations stored before the router existed."""
+
+    OI = {
+        "name": "Routing Investigation", "key": "routing-investigation",
+        "domain": "routing", "routing_confidence": "High",
+        "why": ["the question contains “health”",
+                "the question mentions “routing”"],
+        "escalated": False,
+        "workflows": [{
+            "label": "Open Topology (routing views)", "href": "/topology",
+            "why": "The OSPF and BGP views draw the observed adjacencies.",
+        }],
+        "recommendations": [{
+            "label": "Review Changes", "href": "/changes",
+            "why": "Routing trouble usually follows a change.",
+        }],
+        "followups": [{"label": "Show BGP", "question": "Show me BGP"}],
+        "limitations": ["Routing observations reflect discovery time."],
+    }
+
+    def test_domain_selects_the_summary_title(self) -> None:
+        shown = present_answer(make_response(operational_intent=self.OI))
+        self.assertEqual("Routing summary", shown["summary_title"])
+        # Without the block (pre-OIR conversations) the classic title holds.
+        self.assertEqual("Executive summary",
+                         present_answer(make_response())["summary_title"])
+
+    def test_intent_is_displayed_with_its_why(self) -> None:
+        shown = present_answer(make_response(operational_intent=self.OI))
+        self.assertEqual("Routing Investigation", shown["intent"]["name"])
+        self.assertEqual("High", shown["intent"]["confidence"])
+        self.assertEqual(2, len(shown["intent"]["why"]))
+        self.assertIsNone(present_answer(make_response())["intent"])
+
+    def test_intent_workflows_join_actions_with_their_whys(self) -> None:
+        shown = present_answer(make_response(operational_intent=self.OI))
+        by_href = {action["href"]: action for action in shown["actions"]}
+        self.assertIn("/topology", by_href)
+        self.assertIn("adjacencies", by_href["/topology"]["why"])
+        self.assertIn("/changes", by_href)
+        # The engine's own primary action still leads.
+        self.assertTrue(shown["actions"][0]["primary"])
+
+    def test_limitations_and_followups_merge_without_duplicates(self) -> None:
+        oi = dict(self.OI)
+        oi["limitations"] = ["2 devices refused credentials",
+                             "A standing intent limitation."]
+        oi["followups"] = [
+            {"label": "What changed?", "question": "What changed?"},
+            {"label": "Show BGP", "question": "Show me BGP"},
+        ]
+        shown = present_answer(make_response(operational_intent=oi))
+        self.assertEqual(
+            ["2 devices refused credentials",
+             "A standing intent limitation."],
+            shown["limitations"],
+        )
+        chips = [item["question"] for item in shown["followup_questions"]]
+        self.assertEqual(["What changed?", "Show me BGP"], chips)
+
+    def test_checks_get_operational_names_and_keep_raw_steps(self) -> None:
+        shown = present_answer(make_response(
+            steps=["Reading the Enterprise Knowledge Graph…",
+                   "an unmapped bespoke step"],
+        ))
+        self.assertEqual("Enterprise Graph", shown["checked"][0]["label"])
+        self.assertEqual("Reading the Enterprise Knowledge Graph…",
+                         shown["checked"][0]["step"])
+        # A step no name claims keeps its raw text — nothing invented.
+        self.assertEqual("an unmapped bespoke step",
+                         shown["checked"][1]["label"])
 
 
 if __name__ == "__main__":

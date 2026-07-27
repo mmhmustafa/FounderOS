@@ -303,8 +303,12 @@ class EvidenceAnswerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             workdir = Path(tmp)
             service = build_world(workdir)
+            # No catalog keyword anywhere in this question: since PR-164
+            # a mention of BGP/OSPF/policy ESCALATES to the matching
+            # operational intent (that path is pinned in test_oir), so
+            # the never-guess test needs a question nothing claims.
             response = ask(
-                "What is the best BGP timer configuration?",
+                "What should I cook for dinner?",
                 **advisor_kwargs(workdir, service),
             )
             self.assertEqual(INTENT_UNKNOWN, response.intent)
@@ -396,8 +400,11 @@ class AdvisorGuiTests(unittest.TestCase):
             # its own "Evidence" link) — and use the heading markup so a
             # word inside prose cannot satisfy a section check.
             card = body[body.index(b"advisor-response"):]
-            sections = (b"Executive summary</h2>", b"Key findings</h2>",
-                        b"What Atlas checked</h2>",
+            # PR-164: the summary heading is domain-aware ("Find GW"
+            # routes to Device Lookup, an inventory-domain intent) and
+            # the checks section carries operational-check names.
+            sections = (b"Inventory summary</h2>", b"Key findings</h2>",
+                        b"Operational checks performed</h2>",
                         b"Why Atlas reached this conclusion</h2>",
                         b"<h2>Evidence</h2>",
                         b"Answer confidence</h3>",
@@ -416,15 +423,21 @@ class AdvisorGuiTests(unittest.TestCase):
     def test_unknown_question_is_honest_in_the_gui(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             client = self.build_client(Path(tmp))
+            # "about the moon" carries no catalog keyword — a BGP poem
+            # would now escalate to the BGP intent (PR-164), which is a
+            # different honest path, pinned in test_oir.
             response = client.post(
                 "/advisor/ask",
-                data={"question": "Write me a poem about BGP"},
+                data={"question": "Write me a poem about the moon"},
                 follow_redirects=True,
             )
-            # The apostrophe is HTML-escaped in the rendered page.
-            self.assertIn(b"currently have enough evidence.", response.data)
+            # Substring chosen to dodge the HTML-escaped apostrophe in
+            # "Atlas doesn't currently have enough evidence…".
+            self.assertIn(b"currently have enough evidence to answer this.",
+                          response.data)
             self.assertIn(b"Unknown confidence", response.data)
-            self.assertIn(b"cannot determine this confidently", response.data)
+            # The Operational Intent Router wears its decision openly.
+            self.assertIn(b"Understood as: Unknown", response.data)
             self.assertIn(b"Run Discovery", response.data)
 
     def test_status_cards_show_current_scope_honestly(self) -> None:

@@ -14,9 +14,15 @@
            placeholder="Ask Atlas Advisor… (e.g. Explain enterprise health · Find SW2 · What changed?)" required>
     <button class="btn btn-primary" type="submit" id="advisor-ask-button">Ask</button>
   </form>
+  <p class="muted advisor-kbd-hint">Press <kbd>/</kbd> to focus the question box from anywhere on this page.</p>
   <p class="muted" id="advisor-asking" hidden aria-live="polite">Advisor is
   reading the evidence… every answer is prepared from real artifacts, so this
   can take a moment. Reload if you want to abandon the question.</p>
+  <div class="advisor-skeleton" id="advisor-skeleton" hidden aria-hidden="true">
+    <div class="advisor-skel advisor-skel-wide"></div>
+    <div class="advisor-skel"></div>
+    <div class="advisor-skel advisor-skel-short"></div>
+  </div>
   <div class="advisor-quick">
     <form method="post" action="/advisor/ask">{{ csrf_field() }}<input type="hidden" name="question" value="Investigate an issue"><button class="btn btn-sm" type="submit">{{ icons.icon('paths', 15) }} Investigate an Issue</button></form>
     <form method="post" action="/advisor/ask">{{ csrf_field() }}<input type="hidden" name="question" value="Help me plan maintenance"><button class="btn btn-sm" type="submit">{{ icons.icon('wrench', 15) }} Plan a Change</button></form>
@@ -60,6 +66,15 @@
       {{ presented.confidence.level }} confidence
     </span>
   </div>
+  {% if presented.intent %}
+  {# PR-164: the Operational Intent Router's decision, worn openly. #}
+  <p class="advisor-intent-line">
+    <span class="badge hop-badge advisor-intent-chip"
+          title="How Atlas understood the question — detected by the deterministic Operational Intent Router">
+      Understood as: {{ presented.intent.name }}</span>
+    <span class="muted">routing confidence {{ presented.intent.confidence }}{% if presented.intent.escalated %} — inferred from keywords, not a direct workflow phrase{% endif %}</span>
+  </p>
+  {% endif %}
   <p class="advisor-verdict advisor-verdict-{{ presented.verdict.tone }}">
     <span class="advisor-verdict-icon" aria-hidden="true">{{ presented.verdict.icon }}</span>
     <strong>{{ presented.verdict.headline }}</strong>
@@ -69,8 +84,8 @@
      · every citation deep-links to the exact stored artifact; evidence Atlas
      does not hold is listed under Limitations, never implied.</p>
 
-  {# 2. Executive summary — the engine's own words, scannable. #}
-  <h2>Executive summary</h2>
+  {# 2. Domain-aware summary — the engine's own words, scannable. #}
+  <h2>{{ presented.summary_title }}</h2>
   <ul class="advisor-summary">
     {% for bullet in presented.summary_bullets %}<li>{{ bullet }}</li>{% endfor %}
   </ul>
@@ -85,12 +100,13 @@
   </ul>
   {% endif %}
 
-  {# 4. What Atlas checked — the operations actually performed. #}
+  {# 4. Operational checks performed — named checks, raw steps kept. #}
   {% if presented.checked %}
-  <h2>What Atlas checked</h2>
+  <h2>Operational checks performed</h2>
   <ul class="advisor-checked">
     {% for step in presented.checked %}
-    <li><span class="advisor-finding-icon" aria-hidden="true">✓</span> <span class="muted">{{ step }}</span></li>
+    <li><span class="advisor-finding-icon" aria-hidden="true">✓</span>
+      <strong>{{ step.label }}</strong>{% if step.step and step.step != step.label %} <span class="muted">— {{ step.step }}</span>{% endif %}</li>
     {% endfor %}
   </ul>
   <p class="muted">These are the operations Advisor actually performed against
@@ -101,6 +117,14 @@
   {% if presented.reasoning %}
   <h2>Why Atlas reached this conclusion</h2>
   <p>{{ presented.reasoning }}</p>
+  {% endif %}
+  {% if presented.intent and presented.intent.why %}
+  <details class="advisor-route-why">
+    <summary class="muted">How Atlas routed this question</summary>
+    <ul>
+      {% for reason in presented.intent.why %}<li class="muted">{{ reason }}</li>{% endfor %}
+    </ul>
+  </details>
   {% endif %}
 
   {# 6. Evidence — every citation, with its artifact link. #}
@@ -115,7 +139,7 @@
     </ul>
   </details>
   {% else %}
-  <p class="muted">No evidence supports this answer — which is exactly what the confidence says.</p>
+  <p class="muted">No relevant evidence was found for this question — which is exactly what the confidence says.</p>
   {% endif %}
 
   {# 7. Answer confidence and evidence freshness — different facts. #}
@@ -152,7 +176,9 @@
   <ul class="advisor-recommends">
     {% for action in presented.actions %}
     <li>
-      <a class="btn {{ 'btn-primary' if action.primary else 'btn-sm' }}" href="{{ action.href }}">{{ action.label }}</a>
+      <a class="btn {{ 'btn-primary' if action.primary else 'btn-sm' }}" href="{{ action.href }}"
+         data-oir-choice data-oir-intent="{{ presented.intent.name if presented.intent else '' }}"
+         data-oir-label="{{ action.label }}">{{ action.label }}</a>
       <span class="muted advisor-why">{{ action.why }}</span>
     </li>
     {% endfor %}

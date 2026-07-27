@@ -49,11 +49,48 @@ class AdvisorContext:
 
 
 def answer(question: str, context: AdvisorContext) -> AdvisorResponse:
-    """One structured, evidence-cited response for one question."""
+    """One structured, evidence-cited response for one question.
 
-    intent = router.classify(question)
-    handler = _HANDLERS.get(intent, _answer_unknown)
-    return handler(question, intent, context)
+    PR-164: the Operational Intent Router decides WHICH engine answers
+    and WHAT the operator's goal is; the matching handler produces the
+    evidence-cited answer exactly as before; the route's decision —
+    intent, domain, routing confidence, why, and the intent's declared
+    workflows and limitations — is attached ADDITIVELY so presentation
+    can explain the routing without any engine recomputing anything.
+    """
+
+    from dataclasses import replace
+
+    sites = tuple(getattr(context.graph, "sites", ()) or ())
+    route = router.route(question, sites=sites)
+    handler = _HANDLERS.get(route.engine, _answer_unknown)
+    response = handler(question, route.engine, context)
+    return replace(
+        response, operational_intent=_intent_payload(route)
+    )
+
+
+def _intent_payload(route) -> dict:
+    """The stored form of one routing decision — plain JSON data, so
+    stored conversations replay it without importing OIR."""
+
+    intent = route.intent
+    return {
+        "name": intent.name,
+        "key": intent.key,
+        "domain": intent.domain,
+        "description": intent.description,
+        "routing_confidence": route.confidence,
+        "why": list(route.why),
+        "escalated": route.escalated,
+        "workflows": [item.to_dict() for item in intent.workflows],
+        "recommendations": [
+            item.to_dict() for item in intent.recommendations
+        ],
+        "followups": [item.to_dict() for item in intent.followups],
+        "limitations": list(intent.limitations),
+        "required_evidence": list(intent.required_evidence),
+    }
 
 
 # -- handlers -------------------------------------------------------------------

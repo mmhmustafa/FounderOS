@@ -67,7 +67,9 @@ _OK_MARKERS = (
 _HEADLINES = {
     TONE_OK: "All clear in what Atlas checked.",
     TONE_ATTENTION: "Atlas found concerns that need attention.",
-    TONE_UNKNOWN: "Atlas cannot determine this confidently.",
+    # PR-164 Part 6: the natural-language honest sentence, verbatim.
+    TONE_UNKNOWN: "Atlas doesn't currently have enough evidence to "
+                  "answer this.",
     TONE_INFO: "Here is what the evidence shows.",
 }
 
@@ -113,6 +115,51 @@ _WHY_BY_INTENT = {
 _WHY_DEFAULT = "The workflow this answer's evidence comes from."
 
 _MAX_SUMMARY_BULLETS = 6
+_MAX_FOLLOWUPS = 6
+
+# PR-164: domain-aware layout titles. The hierarchy is identical for
+# every domain — only the summary heading speaks the operator's domain,
+# because a routing question deserves a routing heading.
+_DOMAIN_TITLES = {
+    "health": "Health summary",
+    "routing": "Routing summary",
+    "connectivity": "Connectivity summary",
+    "configuration": "Configuration summary",
+    "policy": "Policy summary",
+    "identity": "Identity summary",
+    "timeline": "Change summary",
+    "inventory": "Inventory summary",
+    "discovery": "Discovery summary",
+    "maintenance": "Maintenance summary",
+    "incident": "Investigation summary",
+    "evidence": "Evidence summary",
+    "performance": "Performance summary",
+    "security": "Security summary",
+}
+_DEFAULT_TITLE = "Executive summary"
+
+# PR-164: operational-check naming. Each engine step is shown under the
+# operational check it performed; the raw step stays attached so the
+# name never replaces the truth. Matched by substring on the engine's
+# OWN step wording; an unmatched step keeps its raw text as the label —
+# nothing is invented.
+_CHECK_NAMES = (
+    ("enterprise knowledge graph", "Enterprise Graph"),
+    ("discovery completeness", "Discovery Coverage & Freshness"),
+    ("reading the enterprise graph", "Enterprise Graph"),
+    ("change report", "Change Report"),
+    ("discovery history", "Discovery History"),
+    ("searching the enterprise", "Evidence Index"),
+    ("connectivity investigation", "Connectivity Classification"),
+    ("path investigation", "Path Walk (hop by hop)"),
+    ("discovery failures", "Discovery Failure Check"),
+    ("change prediction", "Impact Classification"),
+    ("prediction for", "Impact Prediction"),
+    ("resolving interface", "Interface Resolution"),
+    ("maintenance plans", "Maintenance Plans"),
+    ("recent investigation", "Investigation History"),
+    ("classifying the question", "Intent Classification"),
+)
 
 
 def _clean_text(value: Any) -> str:
@@ -183,28 +230,121 @@ def _reasoning(response: Mapping[str, Any]) -> str:
     return " ".join(sentences)
 
 
-def _actions(response: Mapping[str, Any]) -> list[dict[str, Any]]:
+def _checked(steps: list) -> list[dict[str, str]]:
+    """Each engine step under its operational-check name (PR-164).
+
+    Matching reads the engine's own wording; a step no name claims
+    keeps its raw text as the label — the naming layer never invents
+    a check that was not performed."""
+
+    checked = []
+    for step in steps:
+        raw = _clean_text(step)
+        folded = raw.casefold()
+        label = next(
+            (name for marker, name in _CHECK_NAMES if marker in folded),
+            raw,
+        )
+        checked.append({"label": label, "step": raw})
+    return checked
+
+
+def _actions(
+    response: Mapping[str, Any], oi: Mapping[str, Any]
+) -> list[dict[str, Any]]:
     intent = _clean_text(response.get("intent"))
     why = _WHY_BY_INTENT.get(intent, _WHY_DEFAULT)
     actions: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    def add(label: str, href: str, item_why: str, primary: bool) -> None:
+        # Dedupe by href AND label: the engine's primary action and an
+        # intent workflow often name the same destination with different
+        # query strings ("/predict?scope=all" vs "/predict") — one
+        # "Open Predict" button is the truth, two are noise.
+        if not label or not href:
+            return
+        keys = {href.split("?")[0], label.casefold()}
+        if keys & seen:
+            return
+        seen.update(keys)
+        actions.append({"label": label, "href": href,
+                        "why": item_why, "primary": primary})
+
     next_action = response.get("next_action") or {}
-    label = _clean_text(next_action.get("label"))
-    href = _clean_text(next_action.get("href"))
-    if label and href:
-        actions.append(
-            {"label": label, "href": href, "why": why, "primary": True}
-        )
+    add(_clean_text(next_action.get("label")),
+        _clean_text(next_action.get("href")), why, True)
+    # The intent's declared workflows and recommendations — each with
+    # the WHY it registered (PR-164: context-aware recommendations).
+    for item in list(oi.get("workflows") or ()) + list(
+        oi.get("recommendations") or ()
+    ):
+        add(_clean_text((item or {}).get("label")),
+            _clean_text((item or {}).get("href")),
+            _clean_text((item or {}).get("why"))
+            or "A workflow registered for this operational intent.",
+            False)
     for item in response.get("followups") or ():
-        item_href = _clean_text((item or {}).get("href"))
-        item_label = _clean_text((item or {}).get("label"))
-        if item_href and item_label:
-            actions.append({
-                "label": item_label,
-                "href": item_href,
-                "why": "A related workflow for this answer's evidence.",
-                "primary": False,
-            })
+        add(_clean_text((item or {}).get("label")),
+            _clean_text((item or {}).get("href")),
+            "A related workflow for this answer's evidence.", False)
     return actions
+
+
+def _merged_followups(
+    response: Mapping[str, Any], oi: Mapping[str, Any]
+) -> list[dict[str, Any]]:
+    """The engine's follow-up questions plus the intent's seeds — the
+    engine's own (answer-specific) first, deduplicated, capped."""
+
+    merged: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in list(response.get("followups") or ()) + list(
+        oi.get("followups") or ()
+    ):
+        question = _clean_text((item or {}).get("question"))
+        label = _clean_text((item or {}).get("label")) or question
+        if not question:
+            continue
+        key = question.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append({"label": label, "question": question})
+        if len(merged) >= _MAX_FOLLOWUPS:
+            break
+    return merged
+
+
+def _merged_limitations(
+    response: Mapping[str, Any], oi: Mapping[str, Any]
+) -> list[str]:
+    """The answer's own unknowns plus the INTENT's declared standing
+    limitations (e.g. "no application-performance telemetry"), stated
+    rather than silently omitted. Deduplicated, order preserved."""
+
+    merged: list[str] = []
+    seen: set[str] = set()
+    for item in list(response.get("unknowns") or ()) + list(
+        oi.get("limitations") or ()
+    ):
+        text = _clean_text(item)
+        if text and text.casefold() not in seen:
+            seen.add(text.casefold())
+            merged.append(text)
+    return merged
+
+
+def _intent_display(oi: Mapping[str, Any]) -> dict[str, Any] | None:
+    name = _clean_text(oi.get("name"))
+    if not name:
+        return None
+    return {
+        "name": name,
+        "confidence": _clean_text(oi.get("routing_confidence")) or "Unknown",
+        "why": [_clean_text(item) for item in oi.get("why") or () if item],
+        "escalated": bool(oi.get("escalated")),
+    }
 
 
 def present_answer(
@@ -225,25 +365,28 @@ def present_answer(
         return None
     summary = _clean_text(response.get("summary"))
     confidence = _clean_text(response.get("confidence")) or "Unknown"
-    followup_questions = [
-        item for item in (response.get("followups") or ())
-        if _clean_text((item or {}).get("question"))
-    ]
+    oi = response.get("operational_intent") or {}
+    if not isinstance(oi, Mapping):
+        oi = {}
     return {
         "verdict": _verdict(summary, confidence),
+        "summary_title": _DOMAIN_TITLES.get(
+            _clean_text(oi.get("domain")), _DEFAULT_TITLE
+        ),
         "summary_bullets": _summary_bullets(summary),
         "findings": list(response.get("evidence") or ()),
-        "checked": list(response.get("steps") or ()),
+        "checked": _checked(list(response.get("steps") or ())),
         "reasoning": _reasoning(response),
+        "intent": _intent_display(oi),
         "confidence": {
             "level": confidence,
             "meter": _CONFIDENCE_METER.get(confidence, 0),
             "css": _CONFIDENCE_CSS.get(confidence, "unknown"),
         },
         "freshness": dict(freshness) if freshness else None,
-        "limitations": list(response.get("unknowns") or ()),
-        "actions": _actions(response),
-        "followup_questions": followup_questions,
+        "limitations": _merged_limitations(response, oi),
+        "actions": _actions(response, oi),
+        "followup_questions": _merged_followups(response, oi),
     }
 
 
