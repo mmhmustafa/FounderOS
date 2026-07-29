@@ -298,8 +298,8 @@ class QualityGateTests(unittest.TestCase):
         "/predict", "/compass", "/topology", "/policy", "/changes",
         "/timeline", "/history", "/configuration", "/evidence",
         "/discovery", "/profiles", "/credentials", "/audit", "/settings",
-        "/inbox", "/users", "/management", "/console", "/system/integrity",
-        "/healthz", "/readyz",
+        "/settings/ai", "/inbox", "/users", "/management", "/console",
+        "/system/integrity", "/healthz", "/readyz",
     )
 
     def test_no_primary_route_404s_or_500s(self) -> None:

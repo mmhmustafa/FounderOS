@@ -94,6 +94,7 @@ NAV_GROUPS: tuple[NavGroup, ...] = (
         NavItem("users", "Users", "/users"),
         NavItem("audit", "Audit", "/audit"),
         NavItem("settings", "Settings", "/settings"),
+        NavItem("ai", "AI", "/settings/ai"),
         NavItem("schedules", "Schedules", "/schedules"),
     )),
 )

@@ -326,6 +326,15 @@ class RbacHttpTests(unittest.TestCase):
          {"investigator", "operator", "policy", "admin"}, 200),
         ("POST", "/api/discovery/jobs", {"profile": "nope"},
          {"operator", "admin"}, (200, 400, 404, 409)),
+        # PR-165 (ORACLE): AI transparency is readable by everyone, but
+        # AI policy, the provider key, and the outbound connection test
+        # are administrative.
+        # Every role holds pages.view, so every role may read it.
+        ("GET", "/settings/ai", None, set(PASSWORDS), 200),
+        ("POST", "/settings/ai", {"provider_kind": "disabled"},
+         {"admin"}, 302),
+        ("POST", "/settings/ai/key", {"action": "delete"}, {"admin"}, 302),
+        ("GET", "/api/oracle/diagnostics", None, {"admin"}, 200),
     )
 
     def test_permission_matrix_enforced_server_side(self) -> None:

@@ -58,6 +58,12 @@ deliverables/*
 # Collected device configurations are sensitive material; never commit them.
 /configs/
 
+# Operational ledgers written next to the output dir, which is the CWD when
+# Atlas runs from a checkout. Local telemetry about how an operator uses
+# Atlas and its AI — noise in a diff, and nobody else's business.
+/oir-analytics.jsonl*
+/oracle-usage.jsonl*
+
 # Hand-off zips built to share one PR's work. They are a snapshot of the tree,
 # so committing one puts a second, silently ageing copy of the code in history
 # — pr-046-cortex.zip got in this way, via `git add -A`. This rule does not

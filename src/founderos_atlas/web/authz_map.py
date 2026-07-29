@@ -240,6 +240,15 @@ ENDPOINT_PERMISSIONS: dict[str, str] = {
 
     # -- administration ----------------------------------------------------
     "settings_update": SETTINGS_MANAGE,
+    # AI (PR-165 ORACLE): anyone may SEE what AI is enabled and what is
+    # redacted before sending — that transparency is the point.
+    # Changing shared AI policy needs settings-manage; the API key and
+    # the outbound connection test are deployment posture: system-admin.
+    "settings_ai": PAGES_VIEW,
+    "settings_ai_update": SETTINGS_MANAGE,
+    "settings_ai_key": SYSTEM_ADMIN,
+    "settings_ai_test": SYSTEM_ADMIN,
+    "api_oracle_diagnostics": SYSTEM_ADMIN,
     "schedules_create": DISCOVERY_RUN,
     "schedules_state": DISCOVERY_RUN,
     "maintenance_create": SETTINGS_MANAGE,

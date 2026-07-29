@@ -21,7 +21,7 @@ PAGES = (
     "/configuration", "/policy", "/changes", "/timeline", "/audit",
     "/incidents", "/paths", "/predict", "/compass", "/advisor",
     "/inbox", "/users", "/settings", "/settings/retention",
-    "/system/update", "/system/integrity", "/console",
+    "/settings/ai", "/system/update", "/system/integrity", "/console",
 )
 
 

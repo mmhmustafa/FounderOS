@@ -572,6 +572,18 @@ body[data-theme="dark"] table[data-row-select] tbody tr.row-selected { backgroun
   .advisor-skel { animation: none; }
 }
 
+/* PR-165 (ORACLE): AI settings. Token-only, so dark/system/compact
+   themes need no extra rules and the parity mirror stays balanced. */
+.ai-problems { list-style: none; margin: 6px 0; padding: 0; }
+.ai-problems li { padding: 6px 10px; margin: 4px 0; border-left: 3px solid var(--line-strong);
+  border-radius: var(--radius-sm); background: var(--surface-2); }
+.ai-problems .ai-problem { border-left-color: var(--amber-fill); background: var(--amber-soft); }
+.ai-problems .ai-warning { border-left-color: var(--accent); background: var(--accent-soft); }
+.ai-fallbacks li span:last-child { max-width: 60ch; text-align: right; }
+.ai-check { display: flex; align-items: center; gap: 8px; }
+.ai-check input { width: auto; }
+.ai-note { font-size: 11px; display: block; }
+
 /* -- 16. Universal search (Ctrl+K) ------------------------------------------------ */
 .search-trigger { display: flex; align-items: center; gap: 8px; margin-left: 24px; padding: 7px 14px; min-height: var(--control-height); border: 1px solid var(--line); border-radius: var(--radius); background: #fff; color: var(--muted); font-size: 13px; font-family: inherit; cursor: pointer; min-width: 0; }
 .search-trigger-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

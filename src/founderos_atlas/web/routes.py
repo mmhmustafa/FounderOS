@@ -7269,6 +7269,234 @@ def register_routes(app) -> None:
         }
         return render_template("settings.html", **context, **base_context("settings"))
 
+    # -- AI settings (PR-165 ORACLE) ----------------------------------------
+
+    def _oracle_service():
+        """The ORACLE service for this workspace. Consumers depend on
+        this one object; no route ever touches a provider directly."""
+
+        from founderos_atlas.oracle import OracleService
+
+        return OracleService(
+            repository=_oracle_repository(),
+            output_dir=output_dir(),
+            clock=now_iso,
+        )
+
+    def _oracle_repository():
+        from founderos_atlas.oracle import OracleConfigRepository
+
+        # The APP's credential provider, not a freshly resolved one: an
+        # Atlas instance has exactly one secure store, and resolving a
+        # second here would write AI keys into the real OS keyring even
+        # when the app was deliberately built with another provider.
+        return OracleConfigRepository(
+            cfg("ATLAS_WORKSPACE_ROOT"),
+            credential_provider=profile_service().credential_provider,
+        )
+
+    def _oracle_context(*, connection=None):
+        from founderos_atlas.oracle import (
+            DEFAULT_CAPABILITY_REGISTRY,
+            DEFAULT_PROMPT_REGISTRY,
+            DEFAULT_PROVIDER_REGISTRY,
+            MODE_CLOUD,
+            MODE_DISABLED,
+            OPTIONAL_RULE_LABELS,
+            OPTIONAL_RULES,
+            validate,
+        )
+
+        service = _oracle_service()
+        config = service.config
+        repository = _oracle_repository()
+        has_api_key = repository.has_api_key(config.provider_kind)
+        descriptor = DEFAULT_PROVIDER_REGISTRY.get(config.provider_kind)
+        mode_labels = {
+            MODE_DISABLED: "AI disabled",
+            MODE_CLOUD: "Cloud AI",
+        }
+        redaction_summary = ", ".join(
+            OPTIONAL_RULE_LABELS[rule].lower()
+            for rule in OPTIONAL_RULES if rule in config.redaction_rules
+        )
+        return {
+            "oracle": config,
+            "mode_label": mode_labels.get(config.mode, "Local AI"),
+            "provider_label": descriptor.label if descriptor else "unknown",
+            "providers": DEFAULT_PROVIDER_REGISTRY.descriptors(),
+            "capabilities": [
+                {
+                    **item.to_dict(),
+                    "enabled": config.capability_enabled(item.key),
+                    "usable": service.capability_available(item.key),
+                }
+                for item in DEFAULT_CAPABILITY_REGISTRY.all()
+            ],
+            "prompts": [
+                item.to_dict() for item in DEFAULT_PROMPT_REGISTRY.all()
+            ],
+            "redaction_options": [
+                (rule, OPTIONAL_RULE_LABELS[rule]) for rule in OPTIONAL_RULES
+            ],
+            "redaction_summary": (
+                "credentials and key material always; plus "
+                + redaction_summary if redaction_summary
+                else "credentials and key material only"
+            ),
+            "has_api_key": has_api_key,
+            "problems": validate(config, has_api_key=has_api_key),
+            "usage": service.usage_summary(),
+            "connection": connection,
+        }
+
+    @app.route("/settings/ai")
+    def settings_ai():
+        return render_template(
+            "settings_ai.html", **_oracle_context(),
+            **base_context("ai"),
+        )
+
+    @app.route("/settings/ai", methods=["POST"])
+    def settings_ai_update():
+        from dataclasses import replace as _replace
+
+        from founderos_atlas.oracle import OracleConfigError
+
+        repository = _oracle_repository()
+        before = repository.load()
+        form = request.form
+
+        def _number(name, caster, default):
+            try:
+                return caster(form.get(name, default))
+            except (TypeError, ValueError):
+                return default
+
+        try:
+            updated = _replace(
+                before,
+                enabled=bool(form.get("enabled")),
+                provider_kind=str(form.get("provider_kind") or
+                                  before.provider_kind),
+                endpoint=str(form.get("endpoint") or "").strip(),
+                model=str(form.get("model") or "").strip(),
+                organization=str(form.get("organization") or "").strip(),
+                region=str(form.get("region") or "").strip(),
+                api_version=str(form.get("api_version") or "").strip(),
+                timeout_seconds=_number("timeout_seconds", int, 30),
+                verify_tls=bool(form.get("verify_tls")),
+                retries=_number("retries", int, 1),
+                max_context_tokens=_number("max_context_tokens", int, 8192),
+                max_output_tokens=_number("max_output_tokens", int, 800),
+                temperature=_number("temperature", float, 0.2),
+                redaction_rules=tuple(form.getlist("redaction_rules")),
+                allow_cloud_providers=bool(form.get("allow_cloud_providers")),
+                allowed_models=tuple(
+                    item.strip()
+                    for item in str(form.get("allowed_models") or "").split(",")
+                    if item.strip()
+                ),
+                enabled_capabilities=tuple(
+                    form.getlist("enabled_capabilities")
+                ),
+                input_cost_per_million=_number(
+                    "input_cost_per_million", float, 0.0
+                ),
+                output_cost_per_million=_number(
+                    "output_cost_per_million", float, 0.0
+                ),
+                currency=str(form.get("currency") or "USD").strip()[:8],
+            )
+            # from_dict re-validates and clamps every bound.
+            saved = repository.save(
+                type(before).from_dict(updated.to_dict()), now=now_iso()
+            )
+            _administration_audit(
+                "ai-settings-update",
+                before=before.to_dict(), after=saved.to_dict(),
+                reason=form.get("reason") or "Operator updated AI settings",
+            )
+            flash("AI settings saved.", "success")
+        except (OracleConfigError, ValueError, OSError) as error:
+            flash(str(error), "error")
+        return redirect(url_for("settings_ai"))
+
+    @app.route("/settings/ai/key", methods=["POST"])
+    def settings_ai_key():
+        """Store or remove the provider API key.
+
+        The key goes straight into the secure credential store and is
+        never echoed, never persisted in AI metadata, and never
+        audited — only the fact that a key was set or removed."""
+
+        from founderos_atlas.oracle import OracleConfigError
+
+        repository = _oracle_repository()
+        config = repository.load()
+        action = request.form.get("action") or "save"
+        reason = request.form.get("reason") or "Operator changed the AI key"
+        try:
+            if action == "delete":
+                repository.delete_api_key(config.provider_kind)
+                _administration_audit(
+                    "ai-key-remove",
+                    before={"provider": config.provider_kind,
+                            "api_key_stored": True},
+                    after={"provider": config.provider_kind,
+                           "api_key_stored": False},
+                    reason=reason,
+                )
+                flash("Stored API key removed.", "success")
+            else:
+                api_key = str(request.form.get("api_key") or "").strip()
+                if not api_key:
+                    flash("Paste an API key first — nothing was saved.",
+                          "error")
+                    return redirect(url_for("settings_ai"))
+                repository.save_api_key(config.provider_kind, api_key)
+                _administration_audit(
+                    "ai-key-store",
+                    before={"provider": config.provider_kind,
+                            "api_key_stored": False},
+                    after={"provider": config.provider_kind,
+                           "api_key_stored": True},
+                    reason=reason,
+                )
+                flash("API key stored in the secure credential store.",
+                      "success")
+        except (OracleConfigError, OSError) as error:
+            flash(str(error), "error")
+        return redirect(url_for("settings_ai"))
+
+    @app.route("/settings/ai/test", methods=["POST"])
+    def settings_ai_test():
+        """Probe the configured provider. Sends no evidence or prompt."""
+
+        health = _oracle_service().test_connection()
+        _administration_audit(
+            "ai-connection-test",
+            before={}, after={"ok": health.ok, "detail": health.detail},
+            reason="Operator tested the AI provider connection",
+        )
+        flash(
+            f"Connection test: {'reachable' if health.ok else 'failed'} — "
+            f"{health.detail}",
+            "success" if health.ok else "error",
+        )
+        return render_template(
+            "settings_ai.html", **_oracle_context(connection=health),
+            **base_context("ai"),
+        )
+
+    @app.route("/api/oracle/diagnostics")
+    def api_oracle_diagnostics():
+        """AI diagnostics (PR-165, Part 13). ``?probe=1`` performs a
+        live provider health check; without it the report is offline."""
+
+        probe = request.args.get("probe") in ("1", "true", "yes")
+        return jsonify(_oracle_service().diagnostics(probe=probe))
+
     @app.route("/api/preferences/ui")
     def api_ui_preference_get():
         """Read ONE of the current user's namespaced UI preferences
