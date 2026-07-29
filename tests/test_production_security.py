@@ -249,6 +249,65 @@ class PasswordStorageTests(unittest.TestCase):
             self.assertNotIn("alice-password-12345", raw)
 
 
+class CredentialStoreIsolationTests(unittest.TestCase):
+    """The test suite must never write to the developer's real keyring.
+
+    ``resolve_credential_provider()`` defaults to the OS keyring, so any
+    test building a ``ProfileService`` or an app without injecting a
+    provider would persist real secrets on the machine running the
+    tests. ``tests/__init__.py`` overrides the provider at package
+    import and ``tests/conftest.py`` restores it afterwards; these tests
+    fail if either guard is removed."""
+
+    def test_the_factory_yields_the_in_memory_provider(self) -> None:
+        from founderos_atlas.workspace.credentials import (
+            InMemoryCredentialProvider,
+            resolve_credential_provider,
+        )
+
+        self.assertIsInstance(
+            resolve_credential_provider(), InMemoryCredentialProvider
+        )
+
+    def test_an_app_without_an_injected_provider_stays_isolated(self) -> None:
+        """The exact path that leaked: create_app() resolving its own."""
+
+        from founderos_atlas.web import create_app
+        from founderos_atlas.workspace.credentials import (
+            InMemoryCredentialProvider,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            app = create_app(
+                output_dir=root,
+                history_root=root / ".atlas" / "history",
+                workspace_root=root / "workspace",
+            )
+            provider = app.config["ATLAS_PROFILE_SERVICE"].credential_provider
+            self.assertIsInstance(provider, InMemoryCredentialProvider)
+
+    def test_secrets_written_during_tests_do_not_persist(self) -> None:
+        """The in-memory provider is per-instance: nothing survives the
+        process, which is the whole point of using it here."""
+
+        from founderos_atlas.workspace.credentials import (
+            resolve_credential_provider,
+        )
+        from founderos_atlas.workspace.exceptions import (
+            CredentialNotFoundError,
+        )
+
+        first = resolve_credential_provider()
+        first.save("atlas-profile:isolation-probe", "secret-value-1234")
+        self.assertEqual(
+            "secret-value-1234", first.get("atlas-profile:isolation-probe")
+        )
+        second = resolve_credential_provider()
+        with self.assertRaises(CredentialNotFoundError):
+            second.get("atlas-profile:isolation-probe")
+
+
 class RbacHttpTests(unittest.TestCase):
     """Direct requests per role. The matrix is the specification."""
 
