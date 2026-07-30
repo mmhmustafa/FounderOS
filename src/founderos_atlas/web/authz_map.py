@@ -190,6 +190,10 @@ ENDPOINT_PERMISSIONS: dict[str, str] = {
     "incidents_bulk": INVESTIGATE_RUN,
     "advisor_ask_route": INVESTIGATE_RUN,
     "api_advisor_ask": INVESTIGATE_RUN,
+    # PR-166: an explanation spends provider tokens, so it needs the
+    # same permission as asking — reading the page alone must not be
+    # able to run up a bill.
+    "api_advisor_explain": INVESTIGATE_RUN,
     # Record-only workflow analytics (PR-164): any viewer may open a
     # recommended workflow, so recording that click needs no more.
     "api_advisor_workflow_choice": PAGES_VIEW,

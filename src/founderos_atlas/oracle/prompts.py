@@ -172,36 +172,55 @@ PROMPT_TRANSLATION = "translation"
 
 def build_default_prompt_registry() -> PromptRegistry:
     registry = PromptRegistry()
+    # 1.1.0 (PR-166): audience-aware. The reader changes; the findings
+    # never do. ``limitations`` is passed explicitly so what Atlas could
+    # NOT determine travels with the finding instead of being dropped on
+    # the way to the model.
     registry.register(PromptTemplate(
-        name=PROMPT_PLAIN_ENGLISH, version="1.0.0",
-        purpose="Restate an Atlas answer in plain English for a "
-                "non-specialist, changing nothing.",
-        system="Rewrite the finding for a reader who is not a network "
-               "engineer. Keep every number and name exactly as given.",
-        user="Atlas finding:\n{finding}\n\nConfidence stated by Atlas: "
-             "{confidence}\n\nRewrite it in at most 4 short sentences.",
+        name=PROMPT_PLAIN_ENGLISH, version="1.1.0",
+        purpose="Restate an Atlas answer in plain English for a named "
+                "audience, changing nothing.",
+        system="Rewrite the finding for this reader: {audience}\n"
+               "Keep every number, hostname and interface name exactly "
+               "as given.",
+        user="Atlas finding:\n{finding}\n\n"
+             "Confidence stated by Atlas: {confidence}\n"
+             "What Atlas could not determine: {limitations}\n\n"
+             "Rewrite it in at most 4 short sentences for the reader "
+             "described above. If Atlas could not determine something, "
+             "say so in your own words — do not omit it.",
         safety_rules=(
             "Do not add causes or consequences Atlas did not state.",
             "Keep the stated confidence visible in your wording.",
+            "Never present an unknown as resolved or unimportant.",
         ),
-        fallback="Atlas finding:\n{finding}\n\nRewrite in 2 sentences. "
-                 "Confidence: {confidence}",
+        fallback="Atlas finding:\n{finding}\n\nRewrite in 2 sentences "
+                 "for: {audience}. Confidence: {confidence}. "
+                 "Unknowns: {limitations}",
     ))
     registry.register(PromptTemplate(
-        name=PROMPT_EXECUTIVE_SUMMARY, version="1.0.0",
-        purpose="Summarize several Atlas findings for a management "
-                "audience.",
-        system="Summarize for an executive audience: what is the state, "
-               "what needs attention, what is unknown.",
-        user="Atlas findings:\n{findings}\n\nScope: {scope}\n\nWrite at "
-             "most 5 bullet points. End with one line naming what Atlas "
-             "could not determine, if anything.",
+        name=PROMPT_EXECUTIVE_SUMMARY, version="1.1.0",
+        purpose="Summarize Atlas findings for a management audience, in "
+                "terms of impact and risk rather than protocol detail.",
+        system="Summarize for this reader: {audience}\n"
+               "Lead with operational impact and risk, not protocol "
+               "detail. Use technical terms only where no plain wording "
+               "exists.",
+        user="Atlas findings:\n{findings}\n\nScope: {scope}\n"
+             "Confidence stated by Atlas: {confidence}\n"
+             "What Atlas could not determine: {limitations}\n\n"
+             "Write at most 5 short bullet points covering: what the "
+             "state is, what needs attention, and what it affects. End "
+             "with one line naming what Atlas could not determine.",
         safety_rules=(
             "Never present an unknown as a low risk.",
             "Do not rank or prioritise beyond what the findings support.",
+            "Do not estimate cost, downtime or customer numbers — Atlas "
+            "does not measure them.",
         ),
         fallback="Atlas findings:\n{findings}\n\nScope: {scope}\n\n"
-                 "Write 3 bullet points.",
+                 "Write 3 bullet points for: {audience}. "
+                 "Unknowns: {limitations}",
     ))
     registry.register(PromptTemplate(
         name=PROMPT_INCIDENT_SUMMARY, version="1.0.0",

@@ -117,6 +117,29 @@ class MemoryCredentials:
         self.store.pop(ref, None)
 
 
+def plain_vars(**overrides) -> dict:
+    """The plain-english prompt's full variable set (v1.1.0 added the
+    audience and the limitations, so both must always be supplied)."""
+
+    base = {
+        "finding": "All clear.", "confidence": "High",
+        "limitations": "Atlas stated no limitations for this answer.",
+        "audience": "a network engineer",
+    }
+    base.update(overrides)
+    return base
+
+
+def executive_vars(**overrides) -> dict:
+    base = {
+        "findings": "All clear.", "scope": "all", "confidence": "High",
+        "limitations": "Atlas stated no limitations for this answer.",
+        "audience": "a senior executive",
+    }
+    base.update(overrides)
+    return base
+
+
 def build_doubles_registry():
     registry = build_provider_registry()
     for double in (RecordingProvider, FlakyProvider, ExplodingProvider):
@@ -340,11 +363,10 @@ class RedactionIsEnforcedByTheServiceTests(OracleHarness):
             service, _ = self.service(Path(tmp), self.working_config())
             result = service.enhance(
                 CAPABILITY_PLAIN_ENGLISH,
-                {
-                    "finding": "mumbai-core (10.1.2.3) rejected "
-                               "password Hunter2",
-                    "confidence": "High",
-                },
+                plain_vars(
+                    finding="mumbai-core (10.1.2.3) rejected "
+                            "password Hunter2",
+                ),
                 known_names=["mumbai-core"],
             )
             self.assertTrue(result.ok, result.reason)
@@ -360,10 +382,7 @@ class RedactionIsEnforcedByTheServiceTests(OracleHarness):
     def test_every_prompt_carries_the_safety_contract(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             service, _ = self.service(Path(tmp), self.working_config())
-            service.enhance(
-                CAPABILITY_PLAIN_ENGLISH,
-                {"finding": "All clear.", "confidence": "High"},
-            )
+            service.enhance(CAPABILITY_PLAIN_ENGLISH, plain_vars())
             system = RecordingProvider.requests[-1].messages[0].content
             self.assertIn(SAFETY_PREAMBLE, system)
             # The clauses that matter, spelled out rather than implied.
@@ -551,7 +570,7 @@ class PromptRegistryTests(unittest.TestCase):
 
     def test_the_safety_preamble_cannot_be_skipped(self) -> None:
         prompt = DEFAULT_PROMPT_REGISTRY.get("plain-english")
-        system, _ = prompt.render({"finding": "x", "confidence": "High"})
+        system, _ = prompt.render(plain_vars(finding="x"))
         self.assertTrue(system.startswith(SAFETY_PREAMBLE))
 
     def test_a_prompt_that_lies_about_its_variables_is_refused(self) -> None:
@@ -585,7 +604,7 @@ class UsageAndAuditTests(OracleHarness):
             service, _ = self.service(root, self.working_config())
             service.enhance(
                 CAPABILITY_PLAIN_ENGLISH,
-                {"finding": "secret-sauce phrase", "confidence": "High"},
+                plain_vars(finding="secret-sauce phrase"),
             )
             records = UsageLedger(root).entries()
             self.assertEqual(1, len(records))
@@ -618,9 +637,9 @@ class UsageAndAuditTests(OracleHarness):
                 root, self.working_config(input_cost_per_million=1.0),
             )
             service.enhance(CAPABILITY_PLAIN_ENGLISH,
-                            {"finding": "a", "confidence": "High"})
+                            plain_vars(finding="a"))
             service.enhance(CAPABILITY_EXECUTIVE_SUMMARY,
-                            {"findings": "b", "scope": "all"})
+                            executive_vars(findings="b"))
             summary = service.usage_summary()
             self.assertEqual(2, summary["requests"])
             self.assertEqual(1, summary["successes"])
@@ -659,15 +678,13 @@ class FallbackTests(OracleHarness):
             config = self.working_config(provider_kind="flaky", retries=1)
             service, _ = self.service(Path(tmp), config)
             recovered = service.enhance(
-                CAPABILITY_PLAIN_ENGLISH,
-                {"finding": "a", "confidence": "High"},
+                CAPABILITY_PLAIN_ENGLISH, plain_vars(finding="a")
             )
             self.assertTrue(recovered.ok, recovered.reason)
 
             FlakyProvider.failures_remaining = 5
             gave_up = service.enhance(
-                CAPABILITY_PLAIN_ENGLISH,
-                {"finding": "a", "confidence": "High"},
+                CAPABILITY_PLAIN_ENGLISH, plain_vars(finding="a")
             )
             self.assertFalse(gave_up.ok)
             self.assertIn("did not answer", gave_up.reason)

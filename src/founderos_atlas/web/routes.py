@@ -6810,6 +6810,15 @@ def register_routes(app) -> None:
         elif conversations:
             latest = conversations[0].get("response")
         freshness = _advisor_freshness(scopes, scope_id)
+        selected_index = (
+            int(selected) if selected.isdigit()
+            and int(selected) < len(conversations) else 0
+        )
+        # PR-166: the AI panel is describable before any AI runs, and
+        # absent entirely when AI is off — the page below is unchanged
+        # from PR-163 in that case.
+        from founderos_atlas.advisor.explanation import panel_context
+
         return render_template(
             "advisor.html",
             conversation_groups=group_conversations(
@@ -6820,8 +6829,85 @@ def register_routes(app) -> None:
             presented=present_answer(latest, freshness=freshness),
             freshness=freshness,
             status_cards=_advisor_status_cards(scopes, scope_id),
+            conversation_index=selected_index,
+            ai_panel=panel_context(_oracle_service()),
             **context,
         )
+
+    @app.route("/api/advisor/explain", methods=["POST"])
+    def api_advisor_explain():
+        """Explain a STORED Atlas answer for one audience and language.
+
+        Called asynchronously by the page AFTER Atlas's own answer has
+        rendered (PR-166 Part 10), so the deterministic output never
+        waits on a model. Reads a stored conversation — it cannot
+        re-run an engine or alter an answer.
+
+        Failures are NOT errors here: a disabled platform, a refused
+        policy or a dead provider all return 200 with ``ok: false``, and
+        the page keeps showing Atlas's own output (Part 8).
+        """
+
+        from founderos_atlas.advisor.explanation import explain
+
+        payload, error = _bounded_json_payload()
+        if error:
+            return error
+        conversations = advisor_repository().list_conversations()
+        try:
+            index = int(payload.get("conversation", 0))
+        except (TypeError, ValueError):
+            index = 0
+        if not conversations or not 0 <= index < len(conversations):
+            return jsonify(
+                ok=False, reason="There is no stored answer to explain."
+            )
+        stored = conversations[index].get("response")
+
+        scopes = known_scopes()
+        scope_id = active_scope_id(scopes)
+        graph, _snapshot, _profiles = scoped_world(scope_id)
+        known_names = _enterprise_names(graph)
+
+        result = explain(
+            stored,
+            service=_oracle_service(),
+            audience_key=str(payload.get("audience") or "").strip(),
+            language=str(payload.get("language") or "").strip(),
+            scope_label=scopes[scope_id].label
+            if scope_id in scopes else GLOBAL_SCOPE_LABEL,
+            known_names=known_names,
+            now=now_iso(),
+        )
+        return jsonify(result.to_dict())
+
+    def _enterprise_names(graph) -> tuple[str, ...]:
+        """Every name Atlas knows for this enterprise, for redaction.
+
+        Redaction removes KNOWN names rather than guessing at word
+        shapes, so this list is what makes hostname redaction work at
+        all (ORACLE, PR-165). It includes PROFILE names as well as
+        devices and sites: a profile is usually named after the
+        customer's own site or business unit, and an answer that
+        summarizes per profile would otherwise carry that name to a
+        third party untouched."""
+
+        names = {
+            str(device.hostname) for device in getattr(graph, "devices", ())
+            if getattr(device, "hostname", None)
+        }
+        names.update(
+            str(site) for site in getattr(graph, "sites", ()) or () if site
+        )
+        names.update(
+            str(contribution.profile_name)
+            for contribution in getattr(graph, "contributions", ()) or ()
+            if getattr(contribution, "profile_name", None)
+        )
+        return tuple(sorted(
+            (name for name in names if name.strip()),
+            key=len, reverse=True,
+        ))
 
     @app.route("/advisor/ask", methods=["POST"])
     def advisor_ask_route():

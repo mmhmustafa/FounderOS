@@ -572,6 +572,22 @@ body[data-theme="dark"] table[data-row-select] tbody tr.row-selected { backgroun
   .advisor-skel { animation: none; }
 }
 
+/* PR-166 (INSIGHT): the Advisor's optional AI explanation panel.
+   Visually subordinate to the answer above it — AI restates, Atlas
+   concludes. Token-only, like every panel since PR-163. */
+.advisor-ai { border-left: 3px solid var(--line-strong); }
+.advisor-ai-chip { background: var(--surface-2); color: var(--muted);
+  border: 1px solid var(--line); }
+.advisor-ai-controls { flex-wrap: wrap; gap: 10px; align-items: flex-end; }
+.advisor-ai-status:empty { display: none; }
+.advisor-ai-text { margin: 10px 0; padding: 12px 14px;
+  border-left: 3px solid var(--accent); border-radius: var(--radius-sm);
+  background: var(--surface-2); white-space: pre-wrap;
+  overflow-wrap: anywhere; }
+.advisor-ai-text:focus-visible { outline: 2px solid var(--accent);
+  outline-offset: 2px; }
+.advisor-ai-provenance { font-size: 12px; overflow-wrap: anywhere; }
+
 /* PR-165 (ORACLE): AI settings. Token-only, so dark/system/compact
    themes need no extra rules and the parity mirror stays balanced. */
 .ai-problems { list-style: none; margin: 6px 0; padding: 0; }
