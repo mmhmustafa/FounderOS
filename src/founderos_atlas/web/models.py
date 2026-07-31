@@ -94,7 +94,8 @@ NAV_GROUPS: tuple[NavGroup, ...] = (
         NavItem("users", "Users", "/users"),
         NavItem("audit", "Audit", "/audit"),
         NavItem("settings", "Settings", "/settings"),
-        NavItem("ai", "AI", "/settings/ai"),
+        NavItem("ai", "PRISM", "/settings/ai"),
+        NavItem("prism-playground", "PRISM Playground", "/prism/playground"),
         NavItem("schedules", "Schedules", "/schedules"),
     )),
 )

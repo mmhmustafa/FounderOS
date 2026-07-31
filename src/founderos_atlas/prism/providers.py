@@ -1,10 +1,10 @@
-"""ORACLE provider implementations and the provider registry (Part 2).
+"""PRISM provider implementations and the provider registry (Part 2).
 
 Every provider speaks the one contract in :mod:`.contract`. They are
 registered by kind, so a future provider ships as a new registration —
 no existing code changes, exactly like the OIR's intent registry.
 
-HTTP is stdlib ``urllib`` on purpose: ORACLE adds NO dependency to
+HTTP is stdlib ``urllib`` on purpose: PRISM adds NO dependency to
 Atlas, which matters because Atlas must run identically with AI
 disabled — and a disabled feature has no business dragging in a
 package. TLS verification is on by default and only a customer's own

@@ -1,4 +1,4 @@
-"""ORACLE privacy and redaction engine (PR-165, Part 8).
+"""PRISM privacy and redaction engine (PR-165, Part 8).
 
 Nothing reaches a provider without passing through here. Two tiers:
 

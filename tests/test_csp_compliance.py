@@ -39,8 +39,8 @@ PRIMARY_ROUTES = (
     "/topology", "/policy", "/changes", "/timeline", "/history",
     "/configuration", "/evidence", "/discovery", "/discovery/wizard",
     "/discovery/console", "/profiles", "/profiles/new", "/credentials",
-    "/audit", "/settings", "/settings/ai", "/inbox", "/users",
-    "/management", "/system/integrity",
+    "/audit", "/settings", "/settings/ai", "/prism/playground", "/inbox",
+    "/users", "/management", "/system/integrity",
 )
 
 

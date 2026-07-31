@@ -1,4 +1,4 @@
-"""ORACLE AI capability registry (PR-165, Parts 6 and 12).
+"""PRISM AI capability registry (PR-165, Parts 6 and 12).
 
 AI is never "on". Capabilities register individually and each is
 enabled by an administrator one at a time, so a customer can run

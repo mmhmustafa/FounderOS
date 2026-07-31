@@ -1,8 +1,8 @@
-"""ORACLE provider contract (PR-165, Part 2).
+"""PRISM provider contract (PR-165, Part 2).
 
 Every AI provider — cloud or customer-hosted — implements this one
 contract. Consumers never see a provider class: they talk to
-:class:`founderos_atlas.oracle.service.OracleService`, which talks to
+:class:`founderos_atlas.prism.service.PrismService`, which talks to
 whichever provider the configuration names. Switching providers is a
 configuration change, never a code change.
 

@@ -23,15 +23,15 @@ from founderos_atlas.advisor.explanation import (
     limitations_text,
     panel_context,
 )
-from founderos_atlas.oracle import (
+from founderos_atlas.prism import (
     CAPABILITY_EXECUTIVE_SUMMARY,
     CAPABILITY_PLAIN_ENGLISH,
     CAPABILITY_TRANSLATION,
     AIProviderError,
     AIResult,
-    OracleConfig,
-    OracleConfigRepository,
-    OracleService,
+    PrismConfig,
+    PrismConfigRepository,
+    PrismService,
     ProviderDescriptor,
     ProviderHealth,
     build_provider_registry,
@@ -121,7 +121,7 @@ class ExplanationHarness(unittest.TestCase):
 
     def service_for(self, tmp, **overrides):
         providers = registry_with_doubles()
-        config = OracleConfig(
+        config = PrismConfig(
             enabled=True, provider_kind="recording", model="local-1",
             enabled_capabilities=(
                 CAPABILITY_PLAIN_ENGLISH, CAPABILITY_EXECUTIVE_SUMMARY,
@@ -130,11 +130,11 @@ class ExplanationHarness(unittest.TestCase):
         )
         if overrides:
             config = replace(config, **overrides)
-        repository = OracleConfigRepository(
+        repository = PrismConfigRepository(
             tmp, credential_provider=MemoryCredentials(), registry=providers
         )
         repository.save(config, now="2026-07-30T00:00:00+00:00")
-        return OracleService(
+        return PrismService(
             repository=repository, output_dir=tmp, providers=providers,
             clock=lambda: "2026-07-30T09:30:00+00:00",
         )
@@ -322,7 +322,7 @@ class AuditTests(ExplanationHarness):
             service = self.service_for(root)
             explain(STORED_ANSWER, service=service, audience_key="engineer",
                     language="es")
-            from founderos_atlas.oracle import UsageLedger
+            from founderos_atlas.prism import UsageLedger
 
             records = UsageLedger(root).entries()
             # One explanation + one translation, both audited.
@@ -424,7 +424,8 @@ class AdvisorAIPageTests(unittest.TestCase):
                         follow_redirects=True)
             page = client.get("/advisor").data
             self.assertIn(b"advisor-ai-panel", page)
-            self.assertIn(b"Explain this answer", page)
+            self.assertIn(b"PRISM Views", page)
+            self.assertIn(b"Atlas determines. PRISM explains.", page)
             self.assertIn(b"source of truth", page)
             self.assertIn(b'id="advisor-ai-audience"', page)
 

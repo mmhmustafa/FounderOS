@@ -1,20 +1,20 @@
-{% extends "base.html" %}
-{% block title %}AI{% endblock %}
+﻿{% extends "base.html" %}
+{% block title %}PRISM{% endblock %}
 {% block content %}
 <div class="page-head">
   <div>
-    <h1>AI</h1>
-    <p class="muted">AI is optional. Atlas discovers, correlates, investigates and explains
-    without it — every fact on every page comes from collected evidence. AI, when you enable it,
+    <h1>PRISM</h1>
+    <p class="muted">PRISM is optional. Atlas discovers, correlates, investigates and explains
+    without it — every fact on every page comes from collected evidence. PRISM, when you enable it,
     only rephrases what Atlas already concluded. It never creates evidence, never overrides a
     conclusion, and never changes a device.</p>
   </div>
-  <span class="badge hop-badge hop-badge-{{ 'pass' if oracle.mode != 'disabled' else 'unknown' }}">{{ mode_label }}</span>
+  <span class="badge hop-badge hop-badge-{{ 'pass' if prism.mode != 'disabled' else 'unknown' }}">{{ mode_label }}</span>
 </div>
 
 {% if problems %}
 <section class="card">
-  <h2>Before AI can run</h2>
+  <h2>Before PRISM can run</h2>
   <ul class="ai-problems">
     {% for problem in problems %}
     <li class="{{ 'ai-warning' if problem.startswith('Warning:') else 'ai-problem' }}">{{ problem }}</li>
@@ -24,7 +24,7 @@
 {% endif %}
 
 <section class="card">
-  <h2>What Atlas does when AI is off</h2>
+  <h2>What Atlas does when PRISM is off</h2>
   <p class="muted">This is not a degraded mode — it is the product. Every capability below names
   the deterministic behaviour that runs when AI is unavailable, disabled, or has failed.</p>
   <ul class="kv ai-fallbacks">
@@ -41,13 +41,13 @@
 
 {% if not can('settings.manage') %}
 <section class="card">
-  <h2>Current AI configuration</h2>
-  <p class="muted">Viewing only — changing AI settings requires the settings-manage permission.
+  <h2>Current PRISM configuration</h2>
+  <p class="muted">Viewing only — changing PRISM settings requires the settings-manage permission.
   Shown so every operator can see what Atlas would send, and what is removed first.</p>
   <ul class="kv">
     <li><span>Mode</span><span>{{ mode_label }}</span></li>
     <li><span>Provider</span><span>{{ provider_label }}</span></li>
-    <li><span>Model</span><span>{{ oracle.model or 'not set' }}</span></li>
+    <li><span>Model</span><span>{{ prism.model or 'not set' }}</span></li>
     <li><span>Redacted before sending</span><span>{{ redaction_summary }}</span></li>
   </ul>
 </section>
@@ -55,7 +55,7 @@
 
 <section class="card">
   <h2>Provider</h2>
-  <p class="muted">Three modes: AI disabled (the default), a customer-hosted model on your own
+  <p class="muted">Three modes: PRISM disabled (the default), a customer-hosted model on your own
   network, or a cloud provider. Switching provider is a settings change — no part of Atlas is
   rebuilt or restarted.</p>
   <form class="form" method="post" action="/settings/ai">{{ csrf_field() }}
@@ -63,30 +63,30 @@
       <label>Provider
         <select name="provider_kind">
           {% for descriptor in providers %}
-          <option value="{{ descriptor.kind }}" {{ 'selected' if descriptor.kind == oracle.provider_kind else '' }}>{{ descriptor.label }}{% if descriptor.hosting == 'cloud' %} — cloud{% elif descriptor.hosting == 'local' %} — self-hosted{% endif %}</option>
+          <option value="{{ descriptor.kind }}" {{ 'selected' if descriptor.kind == prism.provider_kind else '' }}>{{ descriptor.label }}{% if descriptor.hosting == 'cloud' %} — cloud{% elif descriptor.hosting == 'local' %} — self-hosted{% endif %}</option>
           {% endfor %}
         </select>
       </label>
-      <label>Model<input name="model" value="{{ oracle.model }}" placeholder="model or deployment name"></label>
-      <label>Endpoint<input name="endpoint" value="{{ oracle.endpoint }}" placeholder="https://host:port/v1"></label>
+      <label>Model<input name="model" value="{{ prism.model }}" placeholder="model or deployment name"></label>
+      <label>Endpoint<input name="endpoint" value="{{ prism.endpoint }}" placeholder="https://host:port/v1"></label>
     </div>
     <div class="form-row">
-      <label>Organization<input name="organization" value="{{ oracle.organization }}" placeholder="optional"></label>
-      <label>Region<input name="region" value="{{ oracle.region }}" placeholder="optional"></label>
-      <label>API version<input name="api_version" value="{{ oracle.api_version }}" placeholder="Azure OpenAI only"></label>
+      <label>Organization<input name="organization" value="{{ prism.organization }}" placeholder="optional"></label>
+      <label>Region<input name="region" value="{{ prism.region }}" placeholder="optional"></label>
+      <label>API version<input name="api_version" value="{{ prism.api_version }}" placeholder="Azure OpenAI only"></label>
     </div>
     <div class="form-row">
-      <label>Timeout (seconds)<input type="number" min="1" max="600" name="timeout_seconds" value="{{ oracle.timeout_seconds }}"></label>
-      <label>Retries<input type="number" min="0" max="5" name="retries" value="{{ oracle.retries }}"></label>
-      <label>Maximum context (tokens)<input type="number" min="256" max="2000000" name="max_context_tokens" value="{{ oracle.max_context_tokens }}"></label>
+      <label>Timeout (seconds)<input type="number" min="1" max="600" name="timeout_seconds" value="{{ prism.timeout_seconds }}"></label>
+      <label>Retries<input type="number" min="0" max="5" name="retries" value="{{ prism.retries }}"></label>
+      <label>Maximum context (tokens)<input type="number" min="256" max="2000000" name="max_context_tokens" value="{{ prism.max_context_tokens }}"></label>
     </div>
     <div class="form-row">
-      <label>Maximum output (tokens)<input type="number" min="16" max="32000" name="max_output_tokens" value="{{ oracle.max_output_tokens }}"></label>
-      <label>Temperature<input type="number" step="0.1" min="0" max="2" name="temperature" value="{{ oracle.temperature }}"></label>
-      <label class="ai-check"><input type="checkbox" name="verify_tls" value="1" {{ 'checked' if oracle.verify_tls else '' }}> Verify TLS certificates</label>
+      <label>Maximum output (tokens)<input type="number" min="16" max="32000" name="max_output_tokens" value="{{ prism.max_output_tokens }}"></label>
+      <label>Temperature<input type="number" step="0.1" min="0" max="2" name="temperature" value="{{ prism.temperature }}"></label>
+      <label class="ai-check"><input type="checkbox" name="verify_tls" value="1" {{ 'checked' if prism.verify_tls else '' }}> Verify TLS certificates</label>
     </div>
     <div class="form-row">
-      <label class="ai-check"><input type="checkbox" name="enabled" value="1" {{ 'checked' if oracle.enabled else '' }}> Enable AI</label>
+      <label class="ai-check"><input type="checkbox" name="enabled" value="1" {{ 'checked' if prism.enabled else '' }}> Enable PRISM</label>
       <label>Change reason<input name="reason" placeholder="Why this changed"></label>
     </div>
 
@@ -94,8 +94,8 @@
     <p class="muted">Policy is part of the configuration, so it is auditable. With cloud
     providers disallowed, a cloud provider cannot be selected or used even if configured.</p>
     <div class="form-row">
-      <label class="ai-check"><input type="checkbox" name="allow_cloud_providers" value="1" {{ 'checked' if oracle.allow_cloud_providers else '' }}> Permit cloud AI providers (data leaves your network)</label>
-      <label>Permitted models<input name="allowed_models" value="{{ oracle.allowed_models | join(', ') }}" placeholder="blank = any model"></label>
+      <label class="ai-check"><input type="checkbox" name="allow_cloud_providers" value="1" {{ 'checked' if prism.allow_cloud_providers else '' }}> Permit cloud AI providers (data leaves your network)</label>
+      <label>Permitted models<input name="allowed_models" value="{{ prism.allowed_models | join(', ') }}" placeholder="blank = any model"></label>
     </div>
 
     <h3>Privacy and redaction</h3>
@@ -104,12 +104,12 @@
     switch that off. The options below add identifying detail to what is removed.</p>
     <div class="form-row">
       {% for rule, label in redaction_options %}
-      <label class="ai-check"><input type="checkbox" name="redaction_rules" value="{{ rule }}" {{ 'checked' if rule in oracle.redaction_rules else '' }}> Redact {{ label | lower }}</label>
+      <label class="ai-check"><input type="checkbox" name="redaction_rules" value="{{ rule }}" {{ 'checked' if rule in prism.redaction_rules else '' }}> Redact {{ label | lower }}</label>
       {% endfor %}
     </div>
 
     <h3>Capabilities</h3>
-    <p class="muted">AI is never switched on as a whole. Enable one capability at a time; each
+    <p class="muted">PRISM is never switched on as a whole. Enable one capability at a time; each
     keeps the fallback listed above.</p>
     <div class="form-row">
       {% for capability in capabilities %}
@@ -121,11 +121,11 @@
     <p class="muted">Atlas multiplies your configured rate by the token counts the provider
     reports. It is an estimate for your own tracking — Atlas is not a billing system.</p>
     <div class="form-row">
-      <label>Input cost per million tokens<input type="number" step="0.01" min="0" name="input_cost_per_million" value="{{ oracle.input_cost_per_million }}"></label>
-      <label>Output cost per million tokens<input type="number" step="0.01" min="0" name="output_cost_per_million" value="{{ oracle.output_cost_per_million }}"></label>
-      <label>Currency<input name="currency" value="{{ oracle.currency }}" maxlength="8"></label>
+      <label>Input cost per million tokens<input type="number" step="0.01" min="0" name="input_cost_per_million" value="{{ prism.input_cost_per_million }}"></label>
+      <label>Output cost per million tokens<input type="number" step="0.01" min="0" name="output_cost_per_million" value="{{ prism.output_cost_per_million }}"></label>
+      <label>Currency<input name="currency" value="{{ prism.currency }}" maxlength="8"></label>
     </div>
-    <div class="form-actions"><button class="btn btn-primary" type="submit">Save AI settings</button></div>
+    <div class="form-actions"><button class="btn btn-primary" type="submit">Save PRISM settings</button></div>
   </form>
 </section>
 
@@ -133,7 +133,7 @@
 <section class="card">
   <h2>API key</h2>
   <p class="muted">Stored in the same secure credential store Atlas uses for device
-  credentials — the OS keyring, or an encrypted file. It is never written to the AI
+  credentials — the OS keyring, or an encrypted file. It is never written to the PRISM
   configuration, never shown back, and never recorded in the audit trail.
   {% if has_api_key %}A key is currently stored for {{ provider_label }}.{% else %}No key is stored for {{ provider_label }}.{% endif %}</p>
   <form class="form" method="post" action="/settings/ai/key">{{ csrf_field() }}

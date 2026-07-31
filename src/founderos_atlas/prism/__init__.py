@@ -1,6 +1,6 @@
-"""ORACLE — Atlas's AI Integration Platform (PR-165).
+"""PRISM — Atlas's AI Integration Platform (PR-165).
 
-ORACLE is NOT an AI assistant. It is the platform that lets optional AI
+PRISM is NOT an AI assistant. It is the platform that lets optional AI
 capabilities exist safely inside Atlas: provider abstraction, AI
 settings, capability and prompt registries, privacy enforcement and
 redaction, cost and token accounting, model management, diagnostics,
@@ -19,7 +19,7 @@ override an Atlas conclusion, create devices or topology, execute
 changes, alter workflow routing, or hide uncertainty.
 
 Atlas functions identically with AI disabled, which is the default.
-Consumers depend on :class:`OracleService`, never on a provider.
+Consumers depend on :class:`PrismService`, never on a provider.
 """
 
 from .capabilities import (
@@ -40,11 +40,11 @@ from .config import (
     MODE_CLOUD,
     MODE_DISABLED,
     MODE_LOCAL,
-    ORACLE_FILENAME,
-    ORACLE_SCHEMA_VERSION,
-    OracleConfig,
-    OracleConfigError,
-    OracleConfigRepository,
+    PRISM_FILENAME,
+    PRISM_SCHEMA_VERSION,
+    PrismConfig,
+    PrismConfigError,
+    PrismConfigRepository,
     credential_ref_for,
     validate,
 )
@@ -91,7 +91,7 @@ from .redaction import (
     RedactionReport,
     redact,
 )
-from .service import Enhancement, OracleService
+from .service import Enhancement, PrismService
 from .usage import (
     USAGE_FILENAME,
     UsageLedger,
@@ -136,12 +136,12 @@ __all__ = [
     "MODE_LOCAL",
     "OPTIONAL_RULES",
     "OPTIONAL_RULE_LABELS",
-    "ORACLE_FILENAME",
-    "ORACLE_SCHEMA_VERSION",
-    "OracleConfig",
-    "OracleConfigError",
-    "OracleConfigRepository",
-    "OracleService",
+    "PRISM_FILENAME",
+    "PRISM_SCHEMA_VERSION",
+    "PrismConfig",
+    "PrismConfigError",
+    "PrismConfigRepository",
+    "PrismService",
     "ProviderDescriptor",
     "ProviderHealth",
     "ProviderRegistry",

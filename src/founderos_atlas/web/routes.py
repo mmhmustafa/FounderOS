@@ -6830,7 +6830,7 @@ def register_routes(app) -> None:
             freshness=freshness,
             status_cards=_advisor_status_cards(scopes, scope_id),
             conversation_index=selected_index,
-            ai_panel=panel_context(_oracle_service()),
+            ai_panel=panel_context(_prism_service()),
             **context,
         )
 
@@ -6871,7 +6871,7 @@ def register_routes(app) -> None:
 
         result = explain(
             stored,
-            service=_oracle_service(),
+            service=_prism_service(),
             audience_key=str(payload.get("audience") or "").strip(),
             language=str(payload.get("language") or "").strip(),
             scope_label=scopes[scope_id].label
@@ -6886,7 +6886,7 @@ def register_routes(app) -> None:
 
         Redaction removes KNOWN names rather than guessing at word
         shapes, so this list is what makes hostname redaction work at
-        all (ORACLE, PR-165). It includes PROFILE names as well as
+        all (PRISM, PR-165). It includes PROFILE names as well as
         devices and sites: a profile is usually named after the
         customer's own site or business unit, and an answer that
         summarizes per profile would otherwise carry that name to a
@@ -7355,34 +7355,50 @@ def register_routes(app) -> None:
         }
         return render_template("settings.html", **context, **base_context("settings"))
 
-    # -- AI settings (PR-165 ORACLE) ----------------------------------------
+    # -- AI settings (PR-165 PRISM) ----------------------------------------
 
-    def _oracle_service():
-        """The ORACLE service for this workspace. Consumers depend on
+    def _prism_service():
+        """The PRISM service for this workspace. Consumers depend on
         this one object; no route ever touches a provider directly."""
 
-        from founderos_atlas.oracle import OracleService
+        from founderos_atlas.prism import PrismService
 
-        return OracleService(
-            repository=_oracle_repository(),
+        return PrismService(
+            repository=_prism_repository(),
             output_dir=output_dir(),
             clock=now_iso,
         )
 
-    def _oracle_repository():
-        from founderos_atlas.oracle import OracleConfigRepository
+    def _prism_repository():
+        from founderos_atlas.prism import PrismConfigRepository
 
         # The APP's credential provider, not a freshly resolved one: an
         # Atlas instance has exactly one secure store, and resolving a
         # second here would write AI keys into the real OS keyring even
         # when the app was deliberately built with another provider.
-        return OracleConfigRepository(
+        return PrismConfigRepository(
             cfg("ATLAS_WORKSPACE_ROOT"),
             credential_provider=profile_service().credential_provider,
         )
 
-    def _oracle_context(*, connection=None):
-        from founderos_atlas.oracle import (
+    def _prism_mode_label(config) -> str:
+        """"PRISM disabled" / "Local AI" / "Cloud AI" — the three modes,
+        named the same way on every PRISM surface."""
+
+        from founderos_atlas.prism import MODE_CLOUD, MODE_DISABLED
+
+        return {
+            MODE_DISABLED: "PRISM disabled",
+            MODE_CLOUD: "Cloud AI",
+        }.get(config.mode, "Local AI")
+
+    def _prism_panel_context(service):
+        from founderos_atlas.advisor.explanation import panel_context
+
+        return panel_context(service)
+
+    def _prism_context(*, connection=None):
+        from founderos_atlas.prism import (
             DEFAULT_CAPABILITY_REGISTRY,
             DEFAULT_PROMPT_REGISTRY,
             DEFAULT_PROVIDER_REGISTRY,
@@ -7393,22 +7409,18 @@ def register_routes(app) -> None:
             validate,
         )
 
-        service = _oracle_service()
+        service = _prism_service()
         config = service.config
-        repository = _oracle_repository()
+        repository = _prism_repository()
         has_api_key = repository.has_api_key(config.provider_kind)
         descriptor = DEFAULT_PROVIDER_REGISTRY.get(config.provider_kind)
-        mode_labels = {
-            MODE_DISABLED: "AI disabled",
-            MODE_CLOUD: "Cloud AI",
-        }
         redaction_summary = ", ".join(
             OPTIONAL_RULE_LABELS[rule].lower()
             for rule in OPTIONAL_RULES if rule in config.redaction_rules
         )
         return {
-            "oracle": config,
-            "mode_label": mode_labels.get(config.mode, "Local AI"),
+            "prism": config,
+            "mode_label": _prism_mode_label(config),
             "provider_label": descriptor.label if descriptor else "unknown",
             "providers": DEFAULT_PROVIDER_REGISTRY.descriptors(),
             "capabilities": [
@@ -7439,7 +7451,7 @@ def register_routes(app) -> None:
     @app.route("/settings/ai")
     def settings_ai():
         return render_template(
-            "settings_ai.html", **_oracle_context(),
+            "settings_ai.html", **_prism_context(),
             **base_context("ai"),
         )
 
@@ -7447,9 +7459,9 @@ def register_routes(app) -> None:
     def settings_ai_update():
         from dataclasses import replace as _replace
 
-        from founderos_atlas.oracle import OracleConfigError
+        from founderos_atlas.prism import PrismConfigError
 
-        repository = _oracle_repository()
+        repository = _prism_repository()
         before = repository.load()
         form = request.form
 
@@ -7504,7 +7516,7 @@ def register_routes(app) -> None:
                 reason=form.get("reason") or "Operator updated AI settings",
             )
             flash("AI settings saved.", "success")
-        except (OracleConfigError, ValueError, OSError) as error:
+        except (PrismConfigError, ValueError, OSError) as error:
             flash(str(error), "error")
         return redirect(url_for("settings_ai"))
 
@@ -7516,9 +7528,9 @@ def register_routes(app) -> None:
         never echoed, never persisted in AI metadata, and never
         audited — only the fact that a key was set or removed."""
 
-        from founderos_atlas.oracle import OracleConfigError
+        from founderos_atlas.prism import PrismConfigError
 
-        repository = _oracle_repository()
+        repository = _prism_repository()
         config = repository.load()
         action = request.form.get("action") or "save"
         reason = request.form.get("reason") or "Operator changed the AI key"
@@ -7551,7 +7563,7 @@ def register_routes(app) -> None:
                 )
                 flash("API key stored in the secure credential store.",
                       "success")
-        except (OracleConfigError, OSError) as error:
+        except (PrismConfigError, OSError) as error:
             flash(str(error), "error")
         return redirect(url_for("settings_ai"))
 
@@ -7559,7 +7571,7 @@ def register_routes(app) -> None:
     def settings_ai_test():
         """Probe the configured provider. Sends no evidence or prompt."""
 
-        health = _oracle_service().test_connection()
+        health = _prism_service().test_connection()
         _administration_audit(
             "ai-connection-test",
             before={}, after={"ok": health.ok, "detail": health.detail},
@@ -7571,17 +7583,120 @@ def register_routes(app) -> None:
             "success" if health.ok else "error",
         )
         return render_template(
-            "settings_ai.html", **_oracle_context(connection=health),
+            "settings_ai.html", **_prism_context(connection=health),
             **base_context("ai"),
         )
 
-    @app.route("/api/oracle/diagnostics")
-    def api_oracle_diagnostics():
+    SAMPLE_EVIDENCE = (
+        "mumbai-core is degraded: 1 active issue. The BGP session to "
+        "chennai-edge has flapped 4 times in 2 hours; traffic is using "
+        "the backup path. Discovery is 92% complete for this scope and "
+        "the newest evidence is 30 hours old.\n\n"
+        "Evidence Atlas cited:\n"
+        "- Enterprise Graph: federated snapshot 8f2a41c9\n"
+        "- Change Report: 2 recorded changes in the last 24 hours\n"
+        "- Routing Observations: 41 BGP sessions, 1 unstable"
+    )
+
+    @app.route("/prism/playground", methods=["GET", "POST"])
+    def prism_playground():
+        """PRISM's demonstration environment (Part 8).
+
+        Deliberately evidence-FREE: it presents text the administrator
+        pasted, never the enterprise's own artifacts. That makes it safe
+        to demonstrate on any workspace, and it means a bad view here
+        cannot be mistaken for an Atlas conclusion."""
+
+        from founderos_atlas.advisor.explanation import (
+            AUDIENCES, LANGUAGES, Explanation, explain,
+        )
+        from founderos_atlas.prism import (
+            DEFAULT_PROMPT_REGISTRY, redact, validate,
+        )
+
+        service = _prism_service()
+        config = service.config
+        repository = _prism_repository()
+        panel = _prism_panel_context(service)
+
+        action = request.form.get("action", "")
+        evidence = str(request.form.get("evidence") or "").strip()
+        if action == "sample" or (request.method == "GET"):
+            evidence = evidence or SAMPLE_EVIDENCE
+        limitations = str(request.form.get("limitations") or "").strip()
+        audience_key = str(request.form.get("audience") or "").strip()
+        language = str(request.form.get("language") or "en").strip()
+        confidence = str(request.form.get("confidence") or "Medium").strip()
+
+        views: list = []
+        preview = ""
+        preview_summary = ""
+        if evidence and action in ("generate", "compare"):
+            # ONE set of known names for both the preview and the real
+            # call. They were computed separately once, and the preview
+            # showed hostnames redacted that the provider actually
+            # received in the clear — a preview that overstates
+            # protection is worse than no preview at all.
+            known_names = _enterprise_names(
+                scoped_world(active_scope_id(known_scopes()))[0]
+            )
+            safe, report = redact(
+                evidence,
+                config.redaction_policy().with_known_names(known_names),
+            )
+            preview, preview_summary = safe, report.describe()
+            wanted = (
+                [item.key for item in AUDIENCES] if action == "compare"
+                else [audience_key or panel["default_audience"]]
+            )
+            # A synthetic "stored answer": the Playground never reads a
+            # real one, so the operator's pasted text IS the finding.
+            pasted = {
+                "summary": evidence,
+                "confidence": confidence,
+                "unknowns": [limitations] if limitations else [],
+                "evidence": [],
+                "steps": [],
+                "generated_at": now_iso(),
+            }
+            for key in wanted:
+                views.append(explain(
+                    pasted, service=service, audience_key=key,
+                    language=language, scope_label=GLOBAL_SCOPE_LABEL,
+                    known_names=known_names, now=now_iso(),
+                ).to_dict())
+
+        return render_template(
+            "prism_playground.html",
+            prism=config,
+            mode_label=_prism_mode_label(config),
+            available=panel["available"],
+            problems=validate(
+                config,
+                has_api_key=repository.has_api_key(config.provider_kind),
+            ),
+            audiences=[item.to_dict() for item in AUDIENCES],
+            languages=[{"code": code, "label": label}
+                       for code, label in LANGUAGES],
+            prompts=[item.to_dict() for item in DEFAULT_PROMPT_REGISTRY.all()],
+            evidence=evidence,
+            limitations=limitations,
+            selected_audience=audience_key or panel["default_audience"],
+            selected_language=language,
+            selected_confidence=confidence,
+            redaction_preview=preview,
+            redaction_summary=preview_summary,
+            views=views,
+            **base_context("prism-playground"),
+        )
+
+    @app.route("/api/prism/diagnostics")
+    def api_prism_diagnostics():
         """AI diagnostics (PR-165, Part 13). ``?probe=1`` performs a
         live provider health check; without it the report is offline."""
 
         probe = request.args.get("probe") in ("1", "true", "yes")
-        return jsonify(_oracle_service().diagnostics(probe=probe))
+        return jsonify(_prism_service().diagnostics(probe=probe))
 
     @app.route("/api/preferences/ui")
     def api_ui_preference_get():

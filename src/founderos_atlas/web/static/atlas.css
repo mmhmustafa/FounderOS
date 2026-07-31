@@ -588,7 +588,7 @@ body[data-theme="dark"] table[data-row-select] tbody tr.row-selected { backgroun
   outline-offset: 2px; }
 .advisor-ai-provenance { font-size: 12px; overflow-wrap: anywhere; }
 
-/* PR-165 (ORACLE): AI settings. Token-only, so dark/system/compact
+/* PR-165 (PRISM): AI settings. Token-only, so dark/system/compact
    themes need no extra rules and the parity mirror stays balanced. */
 .ai-problems { list-style: none; margin: 6px 0; padding: 0; }
 .ai-problems li { padding: 6px 10px; margin: 4px 0; border-left: 3px solid var(--line-strong);

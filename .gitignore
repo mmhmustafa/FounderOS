@@ -62,7 +62,7 @@ deliverables/*
 # Atlas runs from a checkout. Local telemetry about how an operator uses
 # Atlas and its AI — noise in a diff, and nobody else's business.
 /oir-analytics.jsonl*
-/oracle-usage.jsonl*
+/prism-usage.jsonl*
 
 # Hand-off zips built to share one PR's work. They are a snapshot of the tree,
 # so committing one puts a second, silently ageing copy of the code in history

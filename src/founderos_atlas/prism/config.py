@@ -1,8 +1,8 @@
-"""ORACLE configuration and governance policy (PR-165, Parts 1, 11, 12).
+"""PRISM configuration and governance policy (PR-165, Parts 1, 11, 12).
 
 Two stores, deliberately separated:
 
-METADATA — ``oracle.json`` in the workspace root: mode, provider kind,
+METADATA — ``prism.json`` in the workspace root: mode, provider kind,
 endpoint, model, limits, redaction policy, governance restrictions and
 per-capability feature flags. Plain JSON, atomically written, and
 structurally incapable of holding a secret: :meth:`_reject_secrets`
@@ -10,8 +10,8 @@ refuses secret-named keys exactly as ``preferences.json`` does.
 
 SECRET — the API key, held in Atlas's existing
 :class:`CredentialProvider` (OS keyring, or AES-256-GCM encrypted file)
-under the ref ``atlas-oracle:<kind>``. Atlas has never had a plaintext
-secret file and ORACLE does not introduce one: if no secure store is
+under the ref ``atlas-prism:<kind>``. Atlas has never had a plaintext
+secret file and PRISM does not introduce one: if no secure store is
 available, saving a key fails loudly rather than writing it in the
 clear.
 
@@ -38,10 +38,22 @@ from .providers import (
 from .redaction import OPTIONAL_RULES, RedactionPolicy, STRICT_POLICY
 
 
-ORACLE_FILENAME = "oracle.json"
-ORACLE_SCHEMA_VERSION = "1.0.0"
+PRISM_FILENAME = "prism.json"
+PRISM_SCHEMA_VERSION = "1.0.0"
 
-CREDENTIAL_REF_PREFIX = "atlas-oracle"
+CREDENTIAL_REF_PREFIX = "atlas-prism"
+
+# This platform shipped under an earlier product name. The rename is
+# complete in code, but a workspace configured under the old name still
+# holds its settings and — in the secure store — its API key. These
+# constants exist ONLY so the rename cannot silently discard an
+# operator's configuration or orphan a credential they can no longer
+# see to delete. Read-and-migrate: nothing is ever written under them,
+# and a migrated key is removed from the old ref once the copy is
+# verified. Delete this block once no deployment predates the rename.
+LEGACY_FILENAME = "oracle.json"                    # RENAME-EXEMPT
+LEGACY_DOCUMENT_KEY = "oracle"                     # RENAME-EXEMPT
+LEGACY_CREDENTIAL_REF_PREFIX = "atlas-oracle"      # RENAME-EXEMPT
 
 MODE_DISABLED = "disabled"
 MODE_LOCAL = "local"
@@ -54,7 +66,7 @@ FORBIDDEN_KEYS = frozenset(
 )
 
 
-class OracleConfigError(ValueError):
+class PrismConfigError(ValueError):
     """An operator-readable configuration problem."""
 
 
@@ -65,7 +77,7 @@ def credential_ref_for(kind: str) -> str:
 
 
 @dataclass(frozen=True)
-class OracleConfig:
+class PrismConfig:
     """The whole AI configuration except the API key itself."""
 
     enabled: bool = False
@@ -157,7 +169,7 @@ class OracleConfig:
     def from_dict(
         cls, payload: dict[str, Any] | None,
         *, registry: ProviderRegistry = DEFAULT_PROVIDER_REGISTRY,
-    ) -> "OracleConfig":
+    ) -> "PrismConfig":
         """Tolerant of older/partial documents; validates what matters.
 
         A configuration that cannot be understood must not silently
@@ -234,11 +246,11 @@ def _bounded_float(value: Any, default: float, low: float, high: float
     return max(low, min(high, number))
 
 
-DISABLED_CONFIG = OracleConfig()
+DISABLED_CONFIG = PrismConfig()
 
 
-class OracleConfigRepository:
-    """Reads and writes ``oracle.json``; brokers the API key through
+class PrismConfigRepository:
+    """Reads and writes ``prism.json``; brokers the API key through
     the workspace credential provider."""
 
     def __init__(
@@ -251,40 +263,46 @@ class OracleConfigRepository:
         )
 
         self.root = Path(workspace_root or default_workspace_root())
-        self.path = self.root / ORACLE_FILENAME
+        self.path = self.root / PRISM_FILENAME
         self._registry = registry
         self._provider = credential_provider
 
     # -- metadata ----------------------------------------------------
 
-    def load(self) -> OracleConfig:
+    def load(self) -> PrismConfig:
         """The stored configuration, or the disabled default.
 
         A corrupt document reads as DISABLED rather than raising: a
         broken AI config must never take Atlas down, and silently
         enabling AI from garbage would be worse than either."""
 
-        if not self.path.is_file():
-            return DISABLED_CONFIG
+        path = self.path
+        if not path.is_file():
+            legacy = self.root / LEGACY_FILENAME
+            if not legacy.is_file():
+                return DISABLED_CONFIG
+            path = legacy
         try:
-            payload = json.loads(self.path.read_text(encoding="utf-8"))
+            payload = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             return DISABLED_CONFIG
         if not isinstance(payload, dict):
             return DISABLED_CONFIG
-        return OracleConfig.from_dict(
-            payload.get("oracle") or {}, registry=self._registry
-        )
+        # The document key was renamed with the product; read either.
+        block = payload.get("prism")
+        if block is None:
+            block = payload.get(LEGACY_DOCUMENT_KEY) or {}
+        return PrismConfig.from_dict(block, registry=self._registry)
 
-    def save(self, config: OracleConfig, *, now: str) -> OracleConfig:
+    def save(self, config: PrismConfig, *, now: str) -> PrismConfig:
         """Persist metadata atomically. Refuses secrets structurally."""
 
         document = config.to_dict()
         _reject_secrets(document)
         stored = replace(config, updated_at=now)
         payload = {
-            "schema_version": ORACLE_SCHEMA_VERSION,
-            "oracle": stored.to_dict(),
+            "schema_version": PRISM_SCHEMA_VERSION,
+            "prism": stored.to_dict(),
         }
         self.root.mkdir(parents=True, exist_ok=True)
         temporary = self.path.with_name(
@@ -312,6 +330,34 @@ class OracleConfigRepository:
             self._provider = resolve_credential_provider()
         return self._provider
 
+    def _migrate_legacy_key(self, kind: str) -> str:
+        """Carry a key stored under the pre-rename ref across to the
+        PRISM ref, once. Returns the secret, or "".
+
+        Without this, renaming the product would leave an operator's API
+        key in the OS keyring under a name Atlas no longer reads and the
+        settings page no longer shows — invisible, undeletable through
+        the GUI, and still a live credential. The copy is verified
+        before the old entry is removed."""
+
+        from founderos_atlas.workspace.exceptions import (
+            CredentialNotFoundError,
+            CredentialStoreUnavailableError,
+        )
+
+        legacy_ref = f"{LEGACY_CREDENTIAL_REF_PREFIX}:{kind}"
+        try:
+            provider = self._credentials()
+            secret = provider.get(legacy_ref)
+            if not secret:
+                return ""
+            provider.save(credential_ref_for(kind), secret)
+            if provider.get(credential_ref_for(kind)) == secret:
+                provider.delete(legacy_ref)  # only after a verified copy
+            return secret
+        except (CredentialNotFoundError, CredentialStoreUnavailableError):
+            return ""
+
     def has_api_key(self, kind: str) -> bool:
         """Whether a key is stored — never the key itself."""
 
@@ -324,9 +370,11 @@ class OracleConfigRepository:
             provider = self._credentials()
             if not provider.available():
                 return False
-            return bool(provider.get(credential_ref_for(kind)))
+            if provider.get(credential_ref_for(kind)):
+                return True
         except (CredentialNotFoundError, CredentialStoreUnavailableError):
-            return False
+            pass
+        return bool(self._migrate_legacy_key(kind))
 
     def save_api_key(self, kind: str, api_key: str) -> None:
         """Store the key in the secure provider. Fails loudly when no
@@ -338,7 +386,7 @@ class OracleConfigRepository:
 
         provider = self._credentials()
         if not provider.available():
-            raise OracleConfigError(
+            raise PrismConfigError(
                 "No secure credential store is available, so Atlas will "
                 "not save an API key. Configure a keyring or the "
                 "encrypted-file provider first — Atlas never writes "
@@ -347,7 +395,7 @@ class OracleConfigRepository:
         try:
             provider.save(credential_ref_for(kind), api_key)
         except CredentialStoreUnavailableError as error:
-            raise OracleConfigError(str(error)) from error
+            raise PrismConfigError(str(error)) from error
 
     def delete_api_key(self, kind: str) -> None:
         from founderos_atlas.workspace.exceptions import (
@@ -355,10 +403,15 @@ class OracleConfigRepository:
             CredentialStoreUnavailableError,
         )
 
-        try:
-            self._credentials().delete(credential_ref_for(kind))
-        except (CredentialNotFoundError, CredentialStoreUnavailableError):
-            pass
+        for ref in (credential_ref_for(kind),
+                    f"{LEGACY_CREDENTIAL_REF_PREFIX}:{kind}"):
+            # Remove BOTH refs: "remove the stored key" must leave
+            # nothing behind, including an un-migrated pre-rename entry.
+            try:
+                self._credentials().delete(ref)
+            except (CredentialNotFoundError,
+                    CredentialStoreUnavailableError):
+                continue
 
     def api_key(self, kind: str) -> str:
         """The plaintext key, for one call, held only in memory."""
@@ -372,22 +425,28 @@ class OracleConfigRepository:
             provider = self._credentials()
             if not provider.available():
                 return ""
-            return provider.get(credential_ref_for(kind)) or ""
+            existing = provider.get(credential_ref_for(kind))
+            if existing:
+                return existing
         except (CredentialNotFoundError, CredentialStoreUnavailableError):
-            return ""
+            # A missing key RAISES on the keyring provider, so the
+            # legacy lookup has to sit outside this handler or the
+            # migration would never run for the store that needs it.
+            pass
+        return self._migrate_legacy_key(kind)
 
 
 def _reject_secrets(document: dict[str, Any]) -> None:
     for key in document:
         if key.casefold() in FORBIDDEN_KEYS:
-            raise OracleConfigError(
+            raise PrismConfigError(
                 "Secret fields are not permitted in AI configuration "
                 "metadata — API keys live in the credential store."
             )
 
 
 def validate(
-    config: OracleConfig,
+    config: PrismConfig,
     *,
     registry: ProviderRegistry = DEFAULT_PROVIDER_REGISTRY,
     has_api_key: bool = False,

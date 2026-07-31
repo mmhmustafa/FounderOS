@@ -1,4 +1,4 @@
-"""ORACLE prompt registry (PR-165, Part 7).
+"""PRISM prompt registry (PR-165, Part 7).
 
 Prompts are managed DATA, not code: name, version, purpose, declared
 variables, safety rules, supported models, and a fallback. Updating a

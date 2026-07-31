@@ -1,6 +1,6 @@
 """Advisor's optional AI explanation layer (PR-166, INSIGHT).
 
-The first production consumer of ORACLE. It does exactly one thing:
+The first production consumer of PRISM. It does exactly one thing:
 take an answer Atlas has ALREADY produced and ask a model to say it
 differently — for a different reader, or in a different language.
 
@@ -25,7 +25,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Iterable, Mapping
 
-from founderos_atlas.oracle import (
+from founderos_atlas.prism import (
     CAPABILITY_EXECUTIVE_SUMMARY,
     CAPABILITY_PLAIN_ENGLISH,
     CAPABILITY_TRANSLATION,
@@ -56,6 +56,12 @@ AUDIENCES: tuple[Audience, ...] = (
         descriptor="a network engineer who knows routing protocols and "
                    "device configuration, and wants the operational "
                    "detail stated precisely",
+    ),
+    Audience(
+        key="junior", label="Junior engineer",
+        descriptor="a junior network engineer who knows the basics but "
+                   "not this estate: name the concepts involved and say "
+                   "why each finding matters, without talking down",
     ),
     Audience(
         key="soc", label="SOC analyst",
@@ -91,7 +97,7 @@ DEFAULT_AUDIENCE = AUDIENCES[0]
 
 # -- languages (Part 4) -----------------------------------------------------
 #
-# Translation is a SECOND ORACLE call over the generated explanation:
+# Translation is a SECOND PRISM call over the generated explanation:
 # Atlas's evidence is never translated, only the prose about it.
 
 LANGUAGES: tuple[tuple[str, str], ...] = (
@@ -261,7 +267,7 @@ def explain(
     text = result.text
     translated = False
     if language != DEFAULT_LANGUAGE:
-        # Part 4: translation is its own ORACLE capability, audited and
+        # Part 4: translation is its own PRISM capability, audited and
         # costed separately. A failure here keeps the untranslated
         # explanation rather than losing the whole thing.
         translation = service.enhance(

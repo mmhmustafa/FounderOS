@@ -1,4 +1,4 @@
-"""PR-165 (ORACLE): Atlas's AI integration platform.
+"""PR-165 (PRISM): Atlas's AI integration platform.
 
 The contract these tests defend is the one the architecture rests on:
 Atlas functions identically with AI disabled, no Atlas capability
@@ -14,7 +14,7 @@ import unittest
 from dataclasses import replace
 from pathlib import Path
 
-from founderos_atlas.oracle import (
+from founderos_atlas.prism import (
     CAPABILITY_EXECUTIVE_SUMMARY,
     CAPABILITY_PLAIN_ENGLISH,
     CLOUD_KINDS,
@@ -34,10 +34,10 @@ from founderos_atlas.oracle import (
     STRICT_POLICY,
     AIProviderError,
     AIResult,
-    OracleConfig,
-    OracleConfigError,
-    OracleConfigRepository,
-    OracleService,
+    PrismConfig,
+    PrismConfigError,
+    PrismConfigRepository,
+    PrismService,
     ProviderDescriptor,
     ProviderHealth,
     ProviderSettings,
@@ -49,7 +49,7 @@ from founderos_atlas.oracle import (
     redact,
     validate,
 )
-from founderos_atlas.oracle.prompts import PromptError, PromptTemplate
+from founderos_atlas.prism.prompts import PromptError, PromptTemplate
 
 
 # -- doubles ----------------------------------------------------------------
@@ -150,7 +150,7 @@ def build_doubles_registry():
     return registry
 
 
-class OracleHarness(unittest.TestCase):
+class PrismHarness(unittest.TestCase):
     """Builds a service over a temporary workspace."""
 
     def setUp(self) -> None:
@@ -159,19 +159,19 @@ class OracleHarness(unittest.TestCase):
 
     def service(self, tmp, config, *, credentials=None, providers=None):
         providers = providers or build_doubles_registry()
-        repository = OracleConfigRepository(
+        repository = PrismConfigRepository(
             tmp, credential_provider=credentials or MemoryCredentials(),
             registry=providers,
         )
         repository.save(config, now="2026-07-27T00:00:00+00:00")
-        service = OracleService(
+        service = PrismService(
             repository=repository, output_dir=tmp, providers=providers,
             clock=lambda: "2026-07-27T00:00:00+00:00",
         )
         return service, repository
 
-    def working_config(self, **overrides) -> OracleConfig:
-        base = OracleConfig(
+    def working_config(self, **overrides) -> PrismConfig:
+        base = PrismConfig(
             enabled=True, provider_kind="recording", model="local-1",
             enabled_capabilities=(CAPABILITY_PLAIN_ENGLISH,),
             redaction_rules=tuple(OPTIONAL_RULES),
@@ -207,7 +207,7 @@ class ProviderAbstractionTests(unittest.TestCase):
         """It is an aggregator, so the only differences from OpenAI are
         the endpoint, the namespaced model id, and app attribution."""
 
-        from founderos_atlas.oracle.providers import OpenRouterProvider
+        from founderos_atlas.prism.providers import OpenRouterProvider
 
         descriptor = DEFAULT_PROVIDER_REGISTRY.get(KIND_OPENROUTER)
         self.assertTrue(descriptor.needs_api_key)
@@ -247,33 +247,33 @@ class ProviderAbstractionTests(unittest.TestCase):
             ))
 
     def test_mode_is_derived_from_the_provider(self) -> None:
-        self.assertEqual(MODE_DISABLED, OracleConfig().mode)
+        self.assertEqual(MODE_DISABLED, PrismConfig().mode)
         self.assertEqual(
             MODE_DISABLED,
-            OracleConfig(enabled=True, provider_kind=KIND_DISABLED).mode,
+            PrismConfig(enabled=True, provider_kind=KIND_DISABLED).mode,
         )
         self.assertEqual(
             MODE_LOCAL,
-            OracleConfig(enabled=True, provider_kind=KIND_OLLAMA).mode,
+            PrismConfig(enabled=True, provider_kind=KIND_OLLAMA).mode,
         )
         self.assertEqual(
             MODE_CLOUD,
-            OracleConfig(enabled=True, provider_kind=KIND_OPENAI).mode,
+            PrismConfig(enabled=True, provider_kind=KIND_OPENAI).mode,
         )
 
 
 # -- Part 14 + success criteria: Atlas is identical with AI disabled --------
 
-class DisabledModeTests(OracleHarness):
+class DisabledModeTests(PrismHarness):
     def test_disabled_is_the_default(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            service = OracleService(workspace_root=tmp, output_dir=tmp)
+            service = PrismService(workspace_root=tmp, output_dir=tmp)
             self.assertFalse(service.enabled)
             self.assertEqual(MODE_DISABLED, service.config.mode)
 
     def test_a_disabled_call_refuses_and_names_the_fallback(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            service, _ = self.service(Path(tmp), OracleConfig())
+            service, _ = self.service(Path(tmp), PrismConfig())
             result = service.enhance(
                 CAPABILITY_PLAIN_ENGLISH,
                 {"finding": "All clear.", "confidence": "High"},
@@ -357,7 +357,7 @@ class RedactionTests(unittest.TestCase):
         self.assertEqual(1, report.to_dict()["total"])
 
 
-class RedactionIsEnforcedByTheServiceTests(OracleHarness):
+class RedactionIsEnforcedByTheServiceTests(PrismHarness):
     def test_nothing_reaches_a_provider_unredacted(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             service, _ = self.service(Path(tmp), self.working_config())
@@ -397,7 +397,7 @@ class RedactionIsEnforcedByTheServiceTests(OracleHarness):
 
 # -- Part 6/12: capability registry and feature flags ----------------------
 
-class CapabilityGatingTests(OracleHarness):
+class CapabilityGatingTests(PrismHarness):
     def test_capabilities_are_individually_gated(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             config = self.working_config(
@@ -431,7 +431,7 @@ class CapabilityGatingTests(OracleHarness):
 
 # -- Part 11: governance --------------------------------------------------
 
-class GovernanceTests(OracleHarness):
+class GovernanceTests(PrismHarness):
     def test_cloud_providers_are_refused_unless_permitted(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             credentials = MemoryCredentials()
@@ -472,7 +472,7 @@ class GovernanceTests(OracleHarness):
     def test_validation_warns_before_identity_leaves_the_network(
         self,
     ) -> None:
-        config = OracleConfig(
+        config = PrismConfig(
             enabled=True, provider_kind=KIND_OPENAI, model="gpt-x",
             allow_cloud_providers=True, redaction_rules=(),
         )
@@ -484,7 +484,7 @@ class GovernanceTests(OracleHarness):
 
 # -- Part 1/4: configuration and secret handling ---------------------------
 
-class ConfigurationTests(OracleHarness):
+class ConfigurationTests(PrismHarness):
     def test_the_api_key_never_lands_in_the_config_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -494,7 +494,7 @@ class ConfigurationTests(OracleHarness):
                 credentials=credentials,
             )
             repository.save_api_key(KIND_OPENAI, "sk-super-secret")
-            document = (root / "oracle.json").read_text(encoding="utf-8")
+            document = (root / "prism.json").read_text(encoding="utf-8")
             self.assertNotIn("sk-super-secret", document)
             self.assertIn(
                 "sk-super-secret",
@@ -504,31 +504,31 @@ class ConfigurationTests(OracleHarness):
 
     def test_saving_a_key_without_a_secure_store_fails_loudly(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            repository = OracleConfigRepository(
+            repository = PrismConfigRepository(
                 tmp, credential_provider=MemoryCredentials(available=False),
             )
-            with self.assertRaises(OracleConfigError) as raised:
+            with self.assertRaises(PrismConfigError) as raised:
                 repository.save_api_key(KIND_OPENAI, "sk-x")
             self.assertIn("never writes secrets in the clear",
                           str(raised.exception))
 
     def test_secret_named_fields_cannot_enter_the_metadata(self) -> None:
-        from founderos_atlas.oracle.config import _reject_secrets
+        from founderos_atlas.prism.config import _reject_secrets
 
-        with self.assertRaises(OracleConfigError):
+        with self.assertRaises(PrismConfigError):
             _reject_secrets({"api_key": "sk-x"})
 
     def test_a_corrupt_config_reads_as_disabled(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            (root / "oracle.json").write_text("{not json", encoding="utf-8")
-            repository = OracleConfigRepository(
+            (root / "prism.json").write_text("{not json", encoding="utf-8")
+            repository = PrismConfigRepository(
                 root, credential_provider=MemoryCredentials()
             )
             self.assertEqual(MODE_DISABLED, repository.load().mode)
 
     def test_values_are_clamped_to_sane_bounds(self) -> None:
-        config = OracleConfig.from_dict({
+        config = PrismConfig.from_dict({
             "timeout_seconds": 99999, "retries": 99, "temperature": 12.5,
             "max_output_tokens": -5,
         })
@@ -538,7 +538,7 @@ class ConfigurationTests(OracleHarness):
         self.assertEqual(16, config.max_output_tokens)
 
     def test_an_unknown_provider_falls_back_to_disabled(self) -> None:
-        config = OracleConfig.from_dict({"provider_kind": "not-real",
+        config = PrismConfig.from_dict({"provider_kind": "not-real",
                                          "enabled": True})
         self.assertEqual(MODE_DISABLED, config.mode)
 
@@ -574,7 +574,7 @@ class PromptRegistryTests(unittest.TestCase):
         self.assertTrue(system.startswith(SAFETY_PREAMBLE))
 
     def test_a_prompt_that_lies_about_its_variables_is_refused(self) -> None:
-        from founderos_atlas.oracle.prompts import PromptRegistry
+        from founderos_atlas.prism.prompts import PromptRegistry
 
         registry = PromptRegistry()
         with self.assertRaises(ValueError):
@@ -584,7 +584,7 @@ class PromptRegistryTests(unittest.TestCase):
             ))
 
     def test_re_registering_the_same_version_is_refused(self) -> None:
-        from founderos_atlas.oracle.prompts import PromptRegistry
+        from founderos_atlas.prism.prompts import PromptRegistry
 
         registry = PromptRegistry()
         template = PromptTemplate(
@@ -597,7 +597,7 @@ class PromptRegistryTests(unittest.TestCase):
 
 # -- Parts 9/10: cost and audit -------------------------------------------
 
-class UsageAndAuditTests(OracleHarness):
+class UsageAndAuditTests(PrismHarness):
     def test_a_successful_call_is_audited_without_content(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -649,7 +649,7 @@ class UsageAndAuditTests(OracleHarness):
     def test_a_refusal_is_audited_too(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            service, _ = self.service(root, OracleConfig())
+            service, _ = self.service(root, PrismConfig())
             service.enhance(CAPABILITY_PLAIN_ENGLISH,
                             {"finding": "a", "confidence": "High"})
             records = UsageLedger(root).entries()
@@ -658,7 +658,7 @@ class UsageAndAuditTests(OracleHarness):
 
 # -- Part 14: fallbacks ----------------------------------------------------
 
-class FallbackTests(OracleHarness):
+class FallbackTests(PrismHarness):
     def test_a_failing_provider_never_raises_into_atlas(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             config = self.working_config(provider_kind="exploding",
@@ -692,7 +692,7 @@ class FallbackTests(OracleHarness):
 
 # -- Part 13: diagnostics --------------------------------------------------
 
-class DiagnosticsTests(OracleHarness):
+class DiagnosticsTests(PrismHarness):
     def test_diagnostics_describe_the_platform_without_probing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             service, _ = self.service(Path(tmp), self.working_config())
@@ -744,9 +744,9 @@ class AISettingsPageTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             client = self.build_client(Path(tmp))
             page = client.get("/settings/ai").data
-            self.assertIn(b"AI is optional", page)
-            self.assertIn(b"What Atlas does when AI is off", page)
-            self.assertIn(b"AI disabled", page)
+            self.assertIn(b"PRISM is optional", page)
+            self.assertIn(b"What Atlas does when PRISM is off", page)
+            self.assertIn(b"PRISM disabled", page)
             # Every capability's fallback is stated on the page.
             self.assertIn(b"deterministic answer with evidence", page)
             # And the privacy promise is visible, not buried.
@@ -769,7 +769,7 @@ class AISettingsPageTests(unittest.TestCase):
                 "verify_tls": "1", "reason": "enable local AI",
             }, follow_redirects=True)
             self.assertEqual(200, response.status_code)
-            config = OracleConfigRepository(workdir / "workspace").load()
+            config = PrismConfigRepository(workdir / "workspace").load()
             self.assertEqual(MODE_LOCAL, config.mode)
             self.assertEqual("llama-3", config.model)
             self.assertIn(CAPABILITY_PLAIN_ENGLISH,
@@ -796,7 +796,7 @@ class AISettingsPageTests(unittest.TestCase):
             }, follow_redirects=True)
             page = saved.data
             self.assertNotIn(b"sk-never-show-me", page)
-            config_file = workdir / "workspace" / "oracle.json"
+            config_file = workdir / "workspace" / "prism.json"
             if config_file.is_file():
                 self.assertNotIn(
                     "sk-never-show-me",
@@ -810,7 +810,7 @@ class AISettingsPageTests(unittest.TestCase):
     def test_the_diagnostics_endpoint_describes_the_platform(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             client = self.build_client(Path(tmp))
-            report = client.get("/api/oracle/diagnostics").get_json()
+            report = client.get("/api/prism/diagnostics").get_json()
             self.assertEqual(MODE_DISABLED, report["mode"])
             self.assertFalse(report["enabled"])
             self.assertTrue(report["providers_registered"])

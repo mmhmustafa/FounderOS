@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% block title %}PRISM Playground{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>PRISM Playground</h1>
+    <p class="muted"><strong>Atlas determines. PRISM explains.</strong> Paste any Atlas finding
+    below and see how PRISM would present it to a different reader. Nothing here touches your
+    enterprise: no discovery runs, no evidence is read, and nothing is stored. It exists so you
+    can judge PRISM before enabling it anywhere operators will see it.</p>
+  </div>
+  <span class="badge hop-badge hop-badge-{{ 'pass' if prism.mode != 'disabled' else 'unknown' }}">{{ mode_label }}</span>
+</div>
+
+{% if not available %}
+<section class="card">
+  <h2>PRISM is not ready yet</h2>
+  <p class="muted">The Playground needs PRISM enabled with at least one presentation
+  capability. Atlas itself is unaffected — every page keeps working exactly as it does now.</p>
+  {% if problems %}
+  <ul class="ai-problems">
+    {% for problem in problems %}
+    <li class="{{ 'ai-warning' if problem.startswith('Warning:') else 'ai-problem' }}">{{ problem }}</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+  <div class="form-actions"><a class="btn btn-primary" href="/settings/ai">Open PRISM settings</a></div>
+</section>
+{% else %}
+
+<section class="card">
+  <h2>Atlas evidence</h2>
+  <p class="muted">Paste a finding from an Advisor answer, an incident, or a report — or use the
+  sample. PRISM receives only this text, and only after redaction removes credentials, keys and
+  (by your policy) identifying detail.</p>
+  <form class="form" method="post" action="/prism/playground" id="prism-playground-form">{{ csrf_field() }}
+    <label class="visually-hidden" for="prism-evidence">Atlas evidence to present</label>
+    <textarea id="prism-evidence" name="evidence" rows="8"
+              placeholder="Paste Atlas evidence here…">{{ evidence }}</textarea>
+    <div class="form-row">
+      <label>Audience
+        <select name="audience">
+          {% for audience in audiences %}
+          <option value="{{ audience.key }}" {{ 'selected' if audience.key == selected_audience else '' }}>{{ audience.label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Language
+        <select name="language">
+          {% for language in languages %}
+          <option value="{{ language.code }}" {{ 'selected' if language.code == selected_language else '' }}>{{ language.label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Stated confidence
+        <select name="confidence">
+          {% for level in ['High', 'Medium', 'Low', 'Unknown'] %}
+          <option value="{{ level }}" {{ 'selected' if level == selected_confidence else '' }}>{{ level }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+    <label>What Atlas could not determine
+      <input name="limitations" value="{{ limitations }}"
+             placeholder="e.g. 2 devices refused credentials, so their state is unknown">
+    </label>
+    <div class="form-actions">
+      <button class="btn btn-primary" type="submit" name="action" value="generate">Generate view</button>
+      <button class="btn" type="submit" name="action" value="compare">Compare all audiences</button>
+      <button class="btn btn-sm" type="submit" name="action" value="sample">Load sample evidence</button>
+    </div>
+  </form>
+</section>
+
+{% if redaction_preview %}
+<section class="card">
+  <h2>What PRISM would actually receive</h2>
+  <p class="muted">Redaction runs before anything leaves Atlas. This is the exact text after
+  it — inspect it before you trust a provider with production evidence.</p>
+  <blockquote class="advisor-ai-text">{{ redaction_preview }}</blockquote>
+  <p class="muted">Removed: {{ redaction_summary }}</p>
+</section>
+{% endif %}
+
+{% if views %}
+<section class="card">
+  <h2>PRISM views</h2>
+  <p class="muted">Same evidence, same confidence, same unknowns — different readers. Compare
+  them: if a view states something the evidence above does not, that is a finding worth
+  reporting, not a feature.</p>
+  {% for view in views %}
+  <article class="prism-view">
+    <div class="job-head">
+      <h3>{{ view.audience_label }}{% if view.translated %} · {{ view.language_label }}{% endif %}</h3>
+      <span class="badge hop-badge hop-badge-{{ 'pass' if view.ok else 'unknown' }}">{{ 'generated' if view.ok else 'unavailable' }}</span>
+    </div>
+    {% if view.ok %}
+    <blockquote class="advisor-ai-text">{{ view.text }}</blockquote>
+    <ul class="kv prism-view-meta">
+      <li><span>Provider</span><span>{{ view.provider }}</span></li>
+      <li><span>Model</span><span>{{ view.model }}</span></li>
+      <li><span>Prompt version</span><span>{{ view.prompt_version }}</span></li>
+      <li><span>Latency</span><span>{% if view.latency_ms is not none %}{{ view.latency_ms }} ms{% else %}—{% endif %}</span></li>
+      <li><span>Tokens</span><span>{{ view.input_tokens if view.input_tokens is not none else '—' }} in / {{ view.output_tokens if view.output_tokens is not none else '—' }} out</span></li>
+      <li><span>Estimated cost</span><span>{% if view.estimated_cost is not none %}{{ prism.currency }} {{ '%.6f' | format(view.estimated_cost) }}{% else %}not priced{% endif %}</span></li>
+      <li><span>Redacted before sending</span><span>{{ view.redaction_summary or 'nothing needed redaction' }}</span></li>
+      <li><span>Generated</span><span>{{ view.generated_at }}</span></li>
+    </ul>
+    <p class="muted">Generated by PRISM from the Atlas evidence above.</p>
+    {% else %}
+    <p class="muted">PRISM could not generate this view. The Atlas evidence above is unchanged
+    and complete — that is the fallback every Atlas surface uses.</p>
+    {% endif %}
+  </article>
+  {% endfor %}
+</section>
+{% endif %}
+
+<section class="card">
+  <h2>Registered prompts</h2>
+  <p class="muted">Every view names the prompt and version that produced it, so two runs can be
+  compared honestly. Prompts are managed data, not code.</p>
+  <ul class="kv">
+    {% for prompt in prompts %}
+    <li><span><strong>{{ prompt.name }}</strong> <span class="muted">v{{ prompt.version }}</span></span><span class="muted">{{ prompt.purpose }}</span></li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+{% endblock %}

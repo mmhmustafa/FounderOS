@@ -1,7 +1,7 @@
-"""The ORACLE service: Atlas's stable AI interface (Parts 13-15).
+"""The PRISM service: Atlas's stable AI interface (Parts 13-15).
 
 Consumers — Advisor today; REST, CLI, automation, mobile, future
-agents — depend on :class:`OracleService` and nothing else. They never
+agents — depend on :class:`PrismService` and nothing else. They never
 see a provider, a prompt, or an API key, and they never need to know
 whether AI is configured: they ask for an enhancement and get either
 the enhanced text or an honest refusal they can fall back from.
@@ -38,8 +38,8 @@ from .capabilities import (
 from .config import (
     DISABLED_CONFIG,
     MODE_DISABLED,
-    OracleConfig,
-    OracleConfigRepository,
+    PrismConfig,
+    PrismConfigRepository,
     validate,
 )
 from .contract import (
@@ -117,7 +117,7 @@ class Enhancement:
         }
 
 
-class OracleService:
+class PrismService:
     """The one AI service. Constructing it reads configuration; it
     holds no provider until a call needs one."""
 
@@ -126,15 +126,15 @@ class OracleService:
         *,
         workspace_root: str | Path | None = None,
         output_dir: str | Path | None = None,
-        config: OracleConfig | None = None,
-        repository: OracleConfigRepository | None = None,
+        config: PrismConfig | None = None,
+        repository: PrismConfigRepository | None = None,
         providers: ProviderRegistry = DEFAULT_PROVIDER_REGISTRY,
         prompts: PromptRegistry = DEFAULT_PROMPT_REGISTRY,
         capabilities: CapabilityRegistry = DEFAULT_CAPABILITY_REGISTRY,
         ledger: UsageLedger | None = None,
         clock=None,
     ) -> None:
-        self._repository = repository or OracleConfigRepository(
+        self._repository = repository or PrismConfigRepository(
             workspace_root, registry=providers
         )
         self._config = config
@@ -150,12 +150,12 @@ class OracleService:
     # -- configuration ----------------------------------------------
 
     @property
-    def config(self) -> OracleConfig:
+    def config(self) -> PrismConfig:
         if self._config is None:
             self._config = self._repository.load()
         return self._config
 
-    def reload(self) -> OracleConfig:
+    def reload(self) -> PrismConfig:
         """Re-read configuration — how a model or provider change takes
         effect without restarting Atlas (Part 5)."""
 
@@ -388,7 +388,7 @@ class OracleService:
 
     # -- providers ---------------------------------------------------
 
-    def _provider_settings(self, config: OracleConfig) -> ProviderSettings:
+    def _provider_settings(self, config: PrismConfig) -> ProviderSettings:
         return ProviderSettings(
             kind=config.provider_kind,
             endpoint=config.endpoint,
@@ -403,7 +403,7 @@ class OracleService:
             max_context_tokens=config.max_context_tokens,
         )
 
-    def _build_provider(self, config: OracleConfig):
+    def _build_provider(self, config: PrismConfig):
         descriptor = self._providers.get(config.provider_kind)
         if descriptor is None:
             descriptor = self._providers.get(KIND_DISABLED)
@@ -412,7 +412,7 @@ class OracleService:
     # -- diagnostics (Part 13) ---------------------------------------
 
     def test_connection(
-        self, config: OracleConfig | None = None
+        self, config: PrismConfig | None = None
     ) -> ProviderHealth:
         """Probe the configured provider. Used by the settings page's
         Test Connection button; never raises."""

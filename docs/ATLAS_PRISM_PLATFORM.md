@@ -1,11 +1,30 @@
-# ORACLE — Atlas Enterprise AI Integration Platform (PR-165)
+# PRISM — The Atlas Evidence Presentation Platform
 
-ORACLE is **not an AI assistant**. It is the platform that lets optional AI capabilities exist safely inside Atlas:
-provider abstraction, AI settings, capability and prompt registries, privacy enforcement and redaction, cost and
-token accounting, model management, diagnostics, governance, auditing, and feature gating.
+PRISM is **not an AI assistant**, not conversational AI, and not autonomous reasoning. It is the platform that lets
+optional presentation capabilities exist safely inside Atlas: provider abstraction, settings, capability and prompt
+registries, privacy enforcement and redaction, cost and token accounting, model management, diagnostics,
+governance, auditing, and feature gating.
 
-**Atlas functions correctly without AI, and that is the default.** AI is an optional enhancement layer; Atlas
-remains the source of truth.
+## The philosophy
+
+> **A prism never changes light. It reveals different views of the same light.**
+
+Likewise, PRISM never changes Atlas evidence. It presents the same evidence differently while preserving every
+conclusion, confidence, uncertainty and provenance.
+
+| Atlas | PRISM |
+|---|---|
+| **discovers** facts | **explains** facts |
+| **validates** facts | **summarizes** facts |
+| **proves** facts | **translates** facts |
+| | **never invents** facts |
+
+**Atlas determines. PRISM explains.** Atlas is responsible for discovery, correlation, investigation, evidence,
+confidence, workflow routing and every deterministic conclusion. PRISM is responsible only for presenting that
+evidence in forms appropriate for different audiences.
+
+**Atlas functions correctly without PRISM, and that is the default.** Disabling PRISM restores existing Atlas
+behaviour exactly — no capability anywhere in Atlas depends on it.
 
 ## Architecture
 
@@ -41,23 +60,23 @@ whenever anything is missing.
 
 | Module | Responsibility |
 |---|---|
-| `oracle/contract.py` | The provider contract: `AIRequest`, `AIResult`, `ProviderHealth`, `ProviderSettings`, `AIProviderError`. |
-| `oracle/providers.py` | Built-in providers + `ProviderRegistry`. stdlib `urllib` only — ORACLE adds **no dependency**. |
-| `oracle/config.py` | `OracleConfig`, governance policy, feature flags, and the metadata/secret split. |
-| `oracle/redaction.py` | The privacy engine: mandatory and optional redaction with a counted report. |
-| `oracle/prompts.py` | Managed, versioned prompts + the safety preamble. |
-| `oracle/capabilities.py` | The AI capability registry, each with its deterministic fallback. |
-| `oracle/usage.py` | Cost estimation and the append-only AI audit ledger. |
-| `oracle/service.py` | `OracleService` — the stable public interface, diagnostics, and fallback contract. |
+| `prism/contract.py` | The provider contract: `AIRequest`, `AIResult`, `ProviderHealth`, `ProviderSettings`, `AIProviderError`. |
+| `prism/providers.py` | Built-in providers + `ProviderRegistry`. stdlib `urllib` only — PRISM adds **no dependency**. |
+| `prism/config.py` | `PrismConfig`, governance policy, feature flags, and the metadata/secret split. |
+| `prism/redaction.py` | The privacy engine: mandatory and optional redaction with a counted report. |
+| `prism/prompts.py` | Managed, versioned prompts + the safety preamble. |
+| `prism/capabilities.py` | The AI capability registry, each with its deterministic fallback. |
+| `prism/usage.py` | Cost estimation and the append-only AI audit ledger. |
+| `prism/service.py` | `PrismService` — the stable public interface, diagnostics, and fallback contract. |
 
 ## Public interface (Part 15)
 
-Consumers depend on `OracleService` and nothing else — never a provider, a prompt, or a key:
+Consumers depend on `PrismService` and nothing else — never a provider, a prompt, or a key:
 
 ```python
-from founderos_atlas.oracle import CAPABILITY_PLAIN_ENGLISH, OracleService
+from founderos_atlas.prism import CAPABILITY_PLAIN_ENGLISH, PrismService
 
-service = OracleService(workspace_root=..., output_dir=...)
+service = PrismService(workspace_root=..., output_dir=...)
 result = service.enhance(
     CAPABILITY_PLAIN_ENGLISH,
     {"finding": answer_summary, "confidence": answer_confidence},
@@ -114,7 +133,7 @@ setting (for a self-signed local endpoint) turns it off.
 ## Model management (Part 5)
 
 Configured model, context window, temperature, maximum output, timeout, retries and TLS are all settings. The
-connection test lists the models the provider actually offers. `OracleService.reload()` re-reads configuration, so
+connection test lists the models the provider actually offers. `PrismService.reload()` re-reads configuration, so
 **changing model or provider needs no restart**.
 
 ## AI capability registry (Part 6)
@@ -172,7 +191,7 @@ the operator and recorded in the audit.
 
 ## Cost management and AI audit (Parts 9–10)
 
-One append-only ledger, `oracle-usage.jsonl`, in the workspace output directory (5 MB rotation, 3 backups). Each
+One append-only ledger, `prism-usage.jsonl`, in the workspace output directory (5 MB rotation, 3 backups). Each
 call records: timestamp, capability, provider, model, **prompt version**, outcome, redaction policy and count, input
 and output tokens, estimated cost, latency, retries, and the Atlas evidence version.
 
@@ -193,14 +212,14 @@ auditable — and it is enforced in the service's gate, not merely in the UI.
 
 ## Secret handling
 
-The API key is **never** in `oracle.json`. It goes to Atlas's existing `CredentialProvider` (OS keyring, or
-AES-256-GCM encrypted file) under `atlas-oracle:<provider-kind>`, exactly like device credentials. If no secure
-store is available, saving fails loudly — Atlas has never written a secret in the clear and ORACLE does not
+The API key is **never** in `prism.json`. It goes to Atlas's existing `CredentialProvider` (OS keyring, or
+AES-256-GCM encrypted file) under `atlas-prism:<provider-kind>`, exactly like device credentials. If no secure
+store is available, saving fails loudly — Atlas has never written a secret in the clear and PRISM does not
 introduce the first one. The metadata store additionally rejects secret-named keys structurally.
 
 ## Diagnostics (Part 13)
 
-`GET /api/oracle/diagnostics` (system-admin; add `?probe=1` for a live provider health check) reports mode,
+`GET /api/prism/diagnostics` (system-admin; add `?probe=1` for a live provider health check) reports mode,
 provider, hosting, model, endpoint, authentication state (never the key), TLS, timeout, context window, redaction
 policy, configuration problems, every registered provider/prompt/capability with its enabled and usable state, and
 the usage summary.
@@ -219,24 +238,24 @@ third-party client library must not be able to break a page.
 | `POST /settings/ai` | `settings.manage` | Save AI policy, capabilities, redaction and cost settings. |
 | `POST /settings/ai/key` | `system.admin` | Store or remove the provider API key. |
 | `POST /settings/ai/test` | `system.admin` | Connection test (no evidence, no prompt — only reachability and auth). |
-| `GET /api/oracle/diagnostics` | `system.admin` | Diagnostics JSON. |
+| `GET /api/prism/diagnostics` | `system.admin` | Diagnostics JSON. |
 
 The page is readable by every role on purpose: an operator should be able to see whether AI is on and exactly what
 leaves the network, without holding administrative rights.
 
-## Extending ORACLE
+## Extending PRISM
 
 1. **New provider** — implement `complete`/`health`, register a `ProviderDescriptor` with the honest `hosting`.
 2. **New capability** — register an `AICapability` naming its prompt and, above all, its deterministic `fallback`.
 3. **New prompt** — register a `PromptTemplate` with a new version; the safety preamble is applied for you.
 4. **New redaction rule** — add it to `OPTIONAL_RULES` with a label; mandatory rules are for credentials only.
-5. Never bypass `OracleService` — redaction, governance, feature flags and auditing all live in its gate.
+5. Never bypass `PrismService` — redaction, governance, feature flags and auditing all live in its gate.
 6. Never make an Atlas capability depend on AI. If it cannot degrade to a deterministic fallback, it is not an AI
    capability.
 
 ## Remaining limitations
 
-- **No consumer ships enabled in PR-165.** ORACLE is the platform; wiring Advisor's plain-English enhancement into
+- **No consumer ships enabled in PR-165.** PRISM is the platform; wiring Advisor's plain-English enhancement into
   the answer page is a separate, deliberately separate, change.
 - **Token counts come from the provider.** Providers that report none leave token and cost columns empty rather
   than estimated — honest, but incomplete for such providers.

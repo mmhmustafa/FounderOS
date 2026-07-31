@@ -298,7 +298,8 @@ class QualityGateTests(unittest.TestCase):
         "/predict", "/compass", "/topology", "/policy", "/changes",
         "/timeline", "/history", "/configuration", "/evidence",
         "/discovery", "/profiles", "/credentials", "/audit", "/settings",
-        "/settings/ai", "/inbox", "/users", "/management", "/console",
+        "/settings/ai", "/prism/playground", "/inbox", "/users",
+        "/management", "/console",
         "/system/integrity", "/healthz", "/readyz",
     )
 

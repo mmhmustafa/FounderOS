@@ -1,6 +1,6 @@
-"""ORACLE cost accounting and AI audit (PR-165, Parts 9 and 10).
+"""PRISM cost accounting and AI audit (PR-165, Parts 9 and 10).
 
-One append-only JSONL ledger, ``oracle-usage.jsonl``, in the workspace
+One append-only JSONL ledger, ``prism-usage.jsonl``, in the workspace
 output directory. Every AI call writes exactly one record: capability,
 provider, model, prompt VERSION, redaction policy applied, token
 counts, estimated cost, latency, retries, and outcome.
@@ -28,7 +28,7 @@ from pathlib import Path
 from typing import Any
 
 
-USAGE_FILENAME = "oracle-usage.jsonl"
+USAGE_FILENAME = "prism-usage.jsonl"
 USAGE_SCHEMA_VERSION = "1.0.0"
 
 MAX_FILE_BYTES = 5 * 1024 * 1024
