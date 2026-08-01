@@ -572,6 +572,28 @@ body[data-theme="dark"] table[data-row-select] tbody tr.row-selected { backgroun
   .advisor-skel { animation: none; }
 }
 
+/* PRISM Playground enhancements: sample library, side-by-side
+   comparison, export. Token-only, like every panel since PR-163. */
+.prism-sample-row { align-items: flex-end; flex-wrap: wrap; gap: 10px; }
+.prism-sample-chip { background: var(--accent-soft); color: var(--accent);
+  border: 1px solid var(--line); }
+.prism-sample-note { font-size: 12px; margin: 2px 0 8px; }
+.prism-compare-setup { margin: 12px 0; padding: 10px 12px;
+  border: 1px solid var(--line); border-radius: var(--radius); }
+.prism-compare-setup summary { cursor: pointer;
+  font-weight: var(--weight-semibold); }
+.prism-export { margin: 6px 0 14px; flex-wrap: wrap; gap: 8px;
+  align-items: center; }
+/* Two columns side by side on a wide screen; stacked on a narrow one,
+   where "side by side" would mean unreadable 40-character lines. */
+.prism-compare { display: grid; gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr)); }
+.prism-compare .prism-view { min-width: 0; }
+.prism-view { border-top: 1px solid var(--line); padding-top: 10px;
+  margin-top: 14px; }
+.prism-compare .prism-view { border-top: 0; margin-top: 0; }
+.prism-view-meta { font-size: 12px; }
+
 /* PR-166 (INSIGHT): the Advisor's optional AI explanation panel.
    Visually subordinate to the answer above it — AI restates, Atlas
    concludes. Token-only, like every panel since PR-163. */

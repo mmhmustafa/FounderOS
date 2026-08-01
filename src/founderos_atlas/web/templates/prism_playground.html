@@ -30,12 +30,31 @@
 
 <section class="card">
   <h2>Atlas evidence</h2>
-  <p class="muted">Paste a finding from an Advisor answer, an incident, or a report — or use the
-  sample. PRISM receives only this text, and only after redaction removes credentials, keys and
-  (by your policy) identifying detail.</p>
+  <p class="muted">Paste a finding from an Advisor answer, an incident, or a report — or load one
+  of the built-in sample cases to demonstrate PRISM without a live network. PRISM receives only
+  this text, and only after redaction removes credentials, keys and (by your policy) identifying
+  detail.</p>
   <form class="form" method="post" action="/prism/playground" id="prism-playground-form">{{ csrf_field() }}
+    <div class="form-row prism-sample-row">
+      <label>Sample case
+        <select name="sample" id="prism-sample">
+          {% for case in samples %}
+          <option value="{{ case.key }}" {{ 'selected' if case.key == selected_sample else '' }}>{{ case.category }} — {{ case.label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <button class="btn btn-sm" type="submit" name="action" value="sample">Load sample</button>
+      {% if loaded_sample %}
+      <span class="badge hop-badge prism-sample-chip">Sample case: {{ loaded_sample.label }}</span>
+      {% endif %}
+    </div>
+    {% if loaded_sample %}
+    <p class="muted prism-sample-note">This is illustrative sample evidence, not your network.
+    Edit it freely — it stays editable, and the chip disappears once you change it.</p>
+    {% endif %}
+
     <label class="visually-hidden" for="prism-evidence">Atlas evidence to present</label>
-    <textarea id="prism-evidence" name="evidence" rows="8"
+    <textarea id="prism-evidence" name="evidence" rows="10"
               placeholder="Paste Atlas evidence here…">{{ evidence }}</textarea>
     <div class="form-row">
       <label>Audience
@@ -64,10 +83,49 @@
       <input name="limitations" value="{{ limitations }}"
              placeholder="e.g. 2 devices refused credentials, so their state is unknown">
     </label>
+
+    <details class="prism-compare-setup" {{ 'open' if compare_mode else '' }}>
+      <summary>Side-by-side comparison</summary>
+      <p class="muted">Compare the same Atlas evidence under two PRISM configurations. The
+      evidence, confidence and limitations handed to both sides are identical — only the
+      presentation differs.</p>
+      <div class="form-row">
+        <label>Side B audience
+          <select name="audience_b">
+            <option value="">Same as above</option>
+            {% for audience in audiences %}
+            <option value="{{ audience.key }}" {{ 'selected' if audience.key == side_b.audience else '' }}>{{ audience.label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>Side B language
+          <select name="language_b">
+            <option value="">Same as above</option>
+            {% for language in languages %}
+            <option value="{{ language.code }}" {{ 'selected' if language.code == side_b.language else '' }}>{{ language.label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+      </div>
+      <div class="form-row">
+        <label>Side B provider
+          <select name="provider_b">
+            <option value="">Same as configured</option>
+            {% for descriptor in providers %}
+            <option value="{{ descriptor.kind }}" {{ 'selected' if descriptor.kind == side_b.provider else '' }}>{{ descriptor.label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>Side B model<input name="model_b" value="{{ side_b.model }}" placeholder="same as configured"></label>
+      </div>
+      <div class="form-actions">
+        <button class="btn" type="submit" name="action" value="compare-two">Compare side by side</button>
+      </div>
+    </details>
+
     <div class="form-actions">
       <button class="btn btn-primary" type="submit" name="action" value="generate">Generate view</button>
       <button class="btn" type="submit" name="action" value="compare">Compare all audiences</button>
-      <button class="btn btn-sm" type="submit" name="action" value="sample">Load sample evidence</button>
     </div>
   </form>
 </section>
@@ -88,6 +146,17 @@
   <p class="muted">Same evidence, same confidence, same unknowns — different readers. Compare
   them: if a view states something the evidence above does not, that is a finding worth
   reporting, not a feature.</p>
+
+  <form class="filter-bar prism-export" method="post" action="/prism/playground/export">{{ csrf_field() }}
+    <input type="hidden" name="views" value="{{ views_payload }}">
+    <input type="hidden" name="evidence" value="{{ evidence }}">
+    <span class="muted">Export these views, with their provenance:</span>
+    <button class="btn btn-sm" type="submit" name="format" value="md">Markdown</button>
+    <button class="btn btn-sm" type="submit" name="format" value="txt">Plain text</button>
+    <button class="btn btn-sm" type="submit" name="format" value="pdf">PDF</button>
+  </form>
+
+  <div class="{{ 'prism-compare' if compare_mode else '' }}" {{ 'id=prism-compare' if compare_mode else '' }}>
   {% for view in views %}
   <article class="prism-view">
     <div class="job-head">
@@ -113,6 +182,11 @@
     {% endif %}
   </article>
   {% endfor %}
+  </div>
+  {% if compare_mode %}
+  <p class="muted">Both sides received the identical Atlas evidence shown above. Any difference
+  between them is presentation, not a difference in what Atlas found.</p>
+  {% endif %}
 </section>
 {% endif %}
 

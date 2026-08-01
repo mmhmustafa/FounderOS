@@ -257,6 +257,10 @@ ENDPOINT_PERMISSIONS: dict[str, str] = {
     # provider/model/cost detail: administrative, like the other PRISM
     # controls that reach outside the network.
     "prism_playground": SYSTEM_ADMIN,
+    # Exporting renders views already generated on the page — no new
+    # provider call — but it produces a shareable document, so it stays
+    # with the Playground's own permission.
+    "prism_playground_export": SYSTEM_ADMIN,
     "schedules_create": DISCOVERY_RUN,
     "schedules_state": DISCOVERY_RUN,
     "maintenance_create": SETTINGS_MANAGE,

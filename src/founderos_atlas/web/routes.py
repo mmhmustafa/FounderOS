@@ -14,6 +14,7 @@ comparing one network against another.
 
 from __future__ import annotations
 
+import json
 import threading
 
 from datetime import datetime, timezone
@@ -376,6 +377,7 @@ def register_routes(app) -> None:
         return principal.username if principal else "local-operator"
 
     from flask import (
+        Response,
         abort,
         flash,
         g,
@@ -7587,17 +7589,6 @@ def register_routes(app) -> None:
             **base_context("ai"),
         )
 
-    SAMPLE_EVIDENCE = (
-        "mumbai-core is degraded: 1 active issue. The BGP session to "
-        "chennai-edge has flapped 4 times in 2 hours; traffic is using "
-        "the backup path. Discovery is 92% complete for this scope and "
-        "the newest evidence is 30 hours old.\n\n"
-        "Evidence Atlas cited:\n"
-        "- Enterprise Graph: federated snapshot 8f2a41c9\n"
-        "- Change Report: 2 recorded changes in the last 24 hours\n"
-        "- Routing Observations: 41 BGP sessions, 1 unstable"
-    )
-
     @app.route("/prism/playground", methods=["GET", "POST"])
     def prism_playground():
         """PRISM's demonstration environment (Part 8).
@@ -7611,27 +7602,61 @@ def register_routes(app) -> None:
             AUDIENCES, LANGUAGES, Explanation, explain,
         )
         from founderos_atlas.prism import (
-            DEFAULT_PROMPT_REGISTRY, redact, validate,
+            DEFAULT_PROMPT_REGISTRY, DEFAULT_PROVIDER_REGISTRY, redact,
+            validate,
         )
+        from founderos_atlas.prism.samples import SAMPLE_CASES
 
         service = _prism_service()
         config = service.config
         repository = _prism_repository()
         panel = _prism_panel_context(service)
 
+        from founderos_atlas.prism.samples import sample, sample_choices
+
         action = request.form.get("action", "")
         evidence = str(request.form.get("evidence") or "").strip()
-        if action == "sample" or (request.method == "GET"):
-            evidence = evidence or SAMPLE_EVIDENCE
         limitations = str(request.form.get("limitations") or "").strip()
         audience_key = str(request.form.get("audience") or "").strip()
         language = str(request.form.get("language") or "en").strip()
         confidence = str(request.form.get("confidence") or "Medium").strip()
+        sample_key = str(request.form.get("sample") or "").strip()
+        loaded_sample = None
+
+        # -- Part 1: the sample library. Loading REPLACES the fields, and
+        # everything stays editable afterwards — a sample is a starting
+        # point, not a locked fixture.
+        if action == "sample":
+            case = sample(sample_key)
+            if case is not None:
+                evidence = case.evidence
+                limitations = case.limitations
+                confidence = case.confidence
+                loaded_sample = case.to_dict()
+        elif sample_key and sample(sample_key) is not None:
+            case = sample(sample_key)
+            # Still flagged as sample-derived while the text is unedited,
+            # so a demonstration cannot be mistaken for real evidence.
+            if evidence == case.evidence:
+                loaded_sample = case.to_dict()
+        if request.method == "GET" and not evidence:
+            first = SAMPLE_CASES[0]
+            evidence, limitations = first.evidence, first.limitations
+            confidence, sample_key = first.confidence, first.key
+            loaded_sample = first.to_dict()
 
         views: list = []
         preview = ""
         preview_summary = ""
-        if evidence and action in ("generate", "compare"):
+        compare_mode = action == "compare-two"
+        side_b = {
+            "audience": str(request.form.get("audience_b") or "").strip(),
+            "language": str(request.form.get("language_b") or "en").strip(),
+            "provider": str(request.form.get("provider_b") or "").strip(),
+            "model": str(request.form.get("model_b") or "").strip(),
+        }
+
+        if evidence and action in ("generate", "compare", "compare-two"):
             # ONE set of known names for both the preview and the real
             # call. They were computed separately once, and the preview
             # showed hostnames redacted that the provider actually
@@ -7645,10 +7670,6 @@ def register_routes(app) -> None:
                 config.redaction_policy().with_known_names(known_names),
             )
             preview, preview_summary = safe, report.describe()
-            wanted = (
-                [item.key for item in AUDIENCES] if action == "compare"
-                else [audience_key or panel["default_audience"]]
-            )
             # A synthetic "stored answer": the Playground never reads a
             # real one, so the operator's pasted text IS the finding.
             pasted = {
@@ -7659,12 +7680,38 @@ def register_routes(app) -> None:
                 "steps": [],
                 "generated_at": now_iso(),
             }
-            for key in wanted:
-                views.append(explain(
-                    pasted, service=service, audience_key=key,
-                    language=language, scope_label=GLOBAL_SCOPE_LABEL,
+
+            def present(key, lang, service_override=None):
+                return explain(
+                    pasted, service=service_override or service,
+                    audience_key=key, language=lang,
+                    scope_label=GLOBAL_SCOPE_LABEL,
                     known_names=known_names, now=now_iso(),
-                ).to_dict())
+                ).to_dict()
+
+            if action == "compare":
+                for item in AUDIENCES:
+                    views.append(present(item.key, language))
+            elif compare_mode:
+                # -- Part 2: two sides over IDENTICAL evidence. Only the
+                # PRISM configuration differs; the finding, confidence
+                # and limitations are the same object for both.
+                views.append(present(
+                    audience_key or panel["default_audience"], language
+                ))
+                views.append(present(
+                    side_b["audience"] or audience_key
+                    or panel["default_audience"],
+                    side_b["language"] or language,
+                    service_override=_prism_service_with(
+                        provider_kind=side_b["provider"],
+                        model=side_b["model"],
+                    ),
+                ))
+            else:
+                views.append(present(
+                    audience_key or panel["default_audience"], language
+                ))
 
         return render_template(
             "prism_playground.html",
@@ -7679,15 +7726,86 @@ def register_routes(app) -> None:
             languages=[{"code": code, "label": label}
                        for code, label in LANGUAGES],
             prompts=[item.to_dict() for item in DEFAULT_PROMPT_REGISTRY.all()],
+            providers=DEFAULT_PROVIDER_REGISTRY.descriptors(),
+            samples=sample_choices(),
+            selected_sample=sample_key,
+            loaded_sample=loaded_sample,
             evidence=evidence,
             limitations=limitations,
             selected_audience=audience_key or panel["default_audience"],
             selected_language=language,
             selected_confidence=confidence,
+            side_b=side_b,
+            compare_mode=compare_mode,
             redaction_preview=preview,
             redaction_summary=preview_summary,
             views=views,
+            views_payload=json.dumps(views) if views else "",
             **base_context("prism-playground"),
+        )
+
+    def _prism_service_with(*, provider_kind: str = "", model: str = ""):
+        """A PRISM service with ONE side's provider overridden.
+
+        Comparison mode changes only the presentation configuration:
+        the evidence, confidence and limitations handed to both sides
+        are the same object. Governance still applies — an override to
+        a provider the policy forbids is refused exactly as it would be
+        in settings."""
+
+        from dataclasses import replace as _replace
+
+        from founderos_atlas.prism import PrismService
+
+        repository = _prism_repository()
+        config = repository.load()
+        if provider_kind:
+            config = _replace(config, provider_kind=provider_kind)
+        if model:
+            config = _replace(config, model=model)
+        return PrismService(
+            repository=repository, config=config, output_dir=output_dir(),
+            clock=now_iso,
+        )
+
+    @app.route("/prism/playground/export", methods=["POST"])
+    def prism_playground_export():
+        """Download the generated views (Part 3).
+
+        Renders from the views ALREADY generated and shown on the page —
+        it never calls a provider again, so the exported text is exactly
+        what the operator read, and exporting costs nothing."""
+
+        from founderos_atlas.prism.export import EXPORT_FORMATS, render
+
+        fmt = str(request.form.get("format") or "md").strip()
+        if fmt not in EXPORT_FORMATS:
+            abort(400, description="Unsupported export format.")
+        raw = str(request.form.get("views") or "")
+        if len(raw) > 200_000:
+            abort(400, description="Too much content to export.")
+        try:
+            views = json.loads(raw) if raw else []
+        except json.JSONDecodeError:
+            views = []
+        if not isinstance(views, list) or not views:
+            flash("Generate a PRISM view before exporting.", "error")
+            return redirect(url_for("prism_playground"))
+        evidence = str(request.form.get("evidence") or "").strip()
+        payload, content_type, filename = render(
+            fmt, views, evidence=evidence, generated_at=now_iso()
+        )
+        _administration_audit(
+            "prism-export",
+            before={}, after={"format": fmt, "views": len(views)},
+            reason="Operator exported PRISM output",
+        )
+        return Response(
+            payload,
+            mimetype=content_type,
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+            },
         )
 
     @app.route("/api/prism/diagnostics")
