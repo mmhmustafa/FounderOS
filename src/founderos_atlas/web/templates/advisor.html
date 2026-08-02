@@ -23,38 +23,111 @@
     <div class="advisor-skel"></div>
     <div class="advisor-skel advisor-skel-short"></div>
   </div>
-  <div class="advisor-quick">
-    <form method="post" action="/advisor/ask">{{ csrf_field() }}<input type="hidden" name="question" value="Investigate an issue"><button class="btn btn-sm" type="submit">{{ icons.icon('paths', 15) }} Investigate an Issue</button></form>
-    <form method="post" action="/advisor/ask">{{ csrf_field() }}<input type="hidden" name="question" value="Help me plan maintenance"><button class="btn btn-sm" type="submit">{{ icons.icon('wrench', 15) }} Plan a Change</button></form>
-    <form method="post" action="/advisor/ask">{{ csrf_field() }}<input type="hidden" name="question" value="Summarize discovery"><button class="btn btn-sm" type="submit">{{ icons.icon('discovery', 15) }} Discover Infrastructure</button></form>
-    <form method="post" action="/advisor/ask">{{ csrf_field() }}<input type="hidden" name="question" value="What changed?"><button class="btn btn-sm" type="submit">{{ icons.icon('trending', 15) }} Explain Recent Changes</button></form>
-    <form method="post" action="/advisor/ask">{{ csrf_field() }}<input type="hidden" name="question" value="Explain enterprise health"><button class="btn btn-sm" type="submit">{{ icons.icon('chart', 15) }} Summarize Enterprise Health</button></form>
-  </div>
+  {# PR-169 Part 7. These five starters are how an operator with no
+     question in mind begins — genuinely useful on an empty page. Once
+     an answer is on screen they compete with that answer's own "What
+     to do next", which is specific to it. So they stay, in full and
+     keyboard-reachable, but step back into a disclosure. #}
+  {% if response and presented %}
+  <details class="advisor-starters">
+    <summary><span>Start a different investigation</span></summary>
+    <div class="advisor-quick">
+  {% else %}
+    <div class="advisor-quick">
+  {% endif %}
+      <form method="post" action="/advisor/ask">{{ csrf_field() }}<input type="hidden" name="question" value="Investigate an issue"><button class="btn btn-sm" type="submit">{{ icons.icon('paths', 15) }} Investigate an Issue</button></form>
+      <form method="post" action="/advisor/ask">{{ csrf_field() }}<input type="hidden" name="question" value="Help me plan maintenance"><button class="btn btn-sm" type="submit">{{ icons.icon('wrench', 15) }} Plan a Change</button></form>
+      <form method="post" action="/advisor/ask">{{ csrf_field() }}<input type="hidden" name="question" value="Summarize discovery"><button class="btn btn-sm" type="submit">{{ icons.icon('discovery', 15) }} Discover Infrastructure</button></form>
+      <form method="post" action="/advisor/ask">{{ csrf_field() }}<input type="hidden" name="question" value="What changed?"><button class="btn btn-sm" type="submit">{{ icons.icon('trending', 15) }} Explain Recent Changes</button></form>
+      <form method="post" action="/advisor/ask">{{ csrf_field() }}<input type="hidden" name="question" value="Explain enterprise health"><button class="btn btn-sm" type="submit">{{ icons.icon('chart', 15) }} Summarize Enterprise Health</button></form>
+    </div>
+  {% if response and presented %}
+  </details>
+  {% endif %}
 </section>
 
-{% if status_cards %}
-<section class="card" aria-label="Current status of the selected scope">
-  <h2>Status right now</h2>
-  <p class="muted">Live status of <strong>{{ active_scope_label }}</strong> —
-  independent of any stored answer below.</p>
-  <div class="tiles advisor-cards">
-    {% for card in status_cards %}
-    <a class="tile advisor-card" href="{{ card.href }}"
-       {% if card.detail %}title="{{ card.detail }}"{% endif %}>
-      <strong>{{ card.title }}</strong>
-      <span class="tile-text">{{ card.value }}</span>
-      {# Part 9: operational words. A tile with no health state is a
-         COUNT, and saying "count only / not evaluated yet" twice tells
-         an operator nothing they can act on. Say what is true, once. #}
-      {% if card.state %}
-      <span class="badge hop-badge health-state-{{ card.state }}">{{ card.state }}</span>
-      {% else %}
-      <span class="muted advisor-card-meta">No health state assessed</span>
-      {% endif %}
-      {% if card.updated %}<span class="muted advisor-card-meta">updated {{ card.updated | timestamp }}</span>{% endif %}
-    </a>
-    {% endfor %}
+{# ══ ENTERPRISE SUMMARY ═══════════════════════════════════════════════
+   PR-169. Context, not a second page. One readiness word, a row of
+   scannable chips, and the detail behind a disclosure — which opens by
+   default only while there is no answer to compete with. Every value
+   here is the health model's own; this section decides nothing. #}
+{% if enterprise.available %}
+<section class="card ops-summary" aria-labelledby="ops-summary-heading">
+  <div class="ops-head">
+    <h2 id="ops-summary-heading">Enterprise status</h2>
+    <span class="verdict-chip verdict-chip-{{ enterprise.tone }}">
+      <span class="verdict-dot" aria-hidden="true"></span>{{ enterprise.status }}
+    </span>
+    <span class="muted ops-scope">{{ active_scope_label }}</span>
+    {% if enterprise.updated %}
+    <span class="muted ops-updated">updated {{ enterprise.updated | timestamp }}</span>
+    {% endif %}
   </div>
+
+  {# Part 3: chips for scanning, not cards for reading. Each is a link
+     to the page that owns that dimension. #}
+  <ul class="ops-chips">
+    {% for chip in enterprise.chips %}
+    <li>
+      {# State reaches the operator three ways, never colour alone: the
+         icon is a SHAPE, the status word is in the accessible name,
+         and the border is the colour. A border by itself left a
+         colour-blind operator and a screen reader with nothing. #}
+      <a class="ops-chip ops-chip-{{ chip.tone }}" href="{{ chip.href }}"
+         {% if chip.detail %}title="{{ chip.detail }}"{% endif %}>
+        {% if chip.mark %}<span class="ops-chip-mark">{{ icons.icon(chip.mark, 12) }}</span>{% endif %}
+        <span class="ops-chip-label">{{ chip.label }}</span>
+        <span class="ops-chip-value">{{ chip.value }}</span>
+        {% if chip.status %}<span class="visually-hidden">— {{ chip.status }}</span>{% endif %}
+      </a>
+    </li>
+    {% endfor %}
+  </ul>
+
+  {# Part 4/5: open while the operator has not asked anything; reduced
+     the moment there is an answer, so the answer is the largest thing
+     on the page. Server-rendered, so it needs no JavaScript and holds
+     with scripting off. #}
+  <details class="ops-detail"{% if not (response and presented) %} open{% endif %}>
+    {# "nothing flagged" may only be said when nothing IS flagged. The
+       readiness word covers dimensions this page gives no card, so a
+       clean chip row does not mean a clean estate — saying otherwise
+       under a Warning badge reads as a bug and hides the real cause. #}
+    <summary>
+      <span>Operational readiness</span>
+      <span class="muted">— {% if enterprise.concerns %}{{ enterprise.concerns }} dimension(s) need attention{% elif enterprise.unlisted_concern %}flagged by a dimension not summarised above{% else %}nothing flagged{% endif %}</span>
+    </summary>
+    {% if enterprise.show_detail %}<p class="muted ops-verdict-detail">{{ enterprise.detail }}</p>{% endif %}
+    <ul class="ops-observations">
+      {% for item in enterprise.observations %}
+      <li class="ops-observation-{{ item.tone }}">
+        <span class="ops-mark">{{ icons.icon(item.mark, 14) }}</span>
+        <span><strong>{{ item.label }}</strong> <span class="muted">{{ item.text }}</span></span>
+      </li>
+      {% endfor %}
+    </ul>
+
+    {# Nothing was removed: the full per-dimension metrics that used to
+       be six cards live here, one compact row each. #}
+    <h3>Dimension detail</h3>
+    <ul class="kv ops-dimensions">
+      {% for card in status_cards %}
+      <li>
+        <span><a href="{{ card.href }}">{{ card.title }}</a>
+          {% if card.state %}<span class="badge hop-badge health-state-{{ card.state }}">{{ card.state }}</span>{% else %}<span class="muted">no health state assessed</span>{% endif %}
+        </span>
+        {# The Health row's value IS its state, so printing both gave
+           "stale  Stale". Show the value only when it says something
+           the badge beside it does not. #}
+        <span class="muted">{% if card.value and card.value | lower != card.state | lower %}{{ card.value }}{% endif %}{% if card.updated %} · updated {{ card.updated | timestamp }}{% endif %}</span>
+      </li>
+      {% endfor %}
+    </ul>
+    {# The scope is named once, on the header row above — repeating it
+       here was the guide's own "once each" rule, broken by the page
+       that documents it. #}
+    <p class="muted">Live status — independent of any stored answer below.</p>
+  </details>
 </section>
 {% endif %}
 
@@ -113,7 +186,7 @@
   {# Part 10: visible work, named as subjects rather than engines. #}
   {% if presented.investigated %}
   <p class="verdict-investigated"><span class="muted">Atlas investigated</span>
-    {% for subject in presented.investigated %}<span class="investigated-chip"><span aria-hidden="true">✓</span> {{ subject }}</span>{% endfor %}
+    {% for subject in presented.investigated %}<span class="investigated-chip">{{ icons.icon('check', 12) }} {{ subject }}</span>{% endfor %}
     {% if presented.investigated_ms is not none %}<span class="muted">— completed in {{ presented.investigated_ms }} ms</span>{% endif %}
   </p>
   {% endif %}
@@ -128,7 +201,7 @@
   <ul class="findings-list">
     {% for item in presented.key_findings %}
     <li>
-      <span class="findings-mark" aria-hidden="true">✓</span>
+      <span class="findings-mark">{{ icons.icon('check', 14) }}</span>
       <span>{% if item.href %}<a href="{{ item.href }}">{{ item.label }}</a>{% else %}<strong>{{ item.label }}</strong>{% endif %}{% if item.detail %}
         <span class="muted findings-detail">{{ item.detail }}</span>{% endif %}</span>
     </li>
@@ -210,7 +283,7 @@
     <ul class="investigation-plan">
       {% for step in inv.plan.steps %}
       <li class="investigation-step-{{ step.status }}">
-        <span class="investigation-mark" aria-hidden="true">{% if step.status == 'done' %}✓{% elif step.status == 'skipped' %}–{% else %}!{% endif %}</span>
+        <span class="investigation-mark">{% if step.status == 'done' %}{{ icons.icon('check', 13) }}{% elif step.status == 'skipped' %}{{ icons.icon('dot', 13) }}{% else %}{{ icons.icon('warning', 13) }}{% endif %}</span>
         {{ step.label }}
         <span class="muted">— {{ step.status }}{% if step.detail %}: {{ step.detail }}{% endif %}</span>
       </li>
@@ -246,7 +319,7 @@
     <ul class="advisor-checked">
       {% for step in presented.checked %}
       <li class="advisor-check-{{ step.outcome }}">
-        <span class="advisor-finding-icon" aria-hidden="true">{% if step.outcome == 'done' %}✓{% elif step.outcome == 'skipped' %}–{% else %}!{% endif %}</span>
+        <span class="advisor-finding-icon">{% if step.outcome == 'done' %}{{ icons.icon('check', 13) }}{% elif step.outcome == 'skipped' %}{{ icons.icon('dot', 13) }}{% else %}{{ icons.icon('warning', 13) }}{% endif %}</span>
         <strong>{{ step.label }}</strong>{% if step.step and step.step != step.label %} <span class="muted">— {{ step.step }}</span>{% endif %}</li>
       {% endfor %}
     </ul>
@@ -289,7 +362,7 @@
     <h3>Evidence freshness</h3>
     {% if presented.freshness %}
     <p class="{{ 'advisor-fresh-warn' if presented.freshness.warn else 'muted' }}">
-      {% if presented.freshness.warn %}<span aria-hidden="true">⚠</span> {% endif %}{{ presented.freshness.note }}
+      {% if presented.freshness.warn %}{{ icons.icon('warning', 13) }} {% endif %}{{ presented.freshness.note }}
     </p>
     {% else %}
     <p class="muted">Freshness for this scope could not be determined.</p>

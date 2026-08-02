@@ -6739,12 +6739,25 @@ def register_routes(app) -> None:
         def dim(key):
             return dims.get(key) or {"state": "unknown", "summary": ""}
 
+        # PR-169: each card also carries a CHIP — the shortest honest
+        # form of its own value, for the compact summary. Chips are
+        # built from the numbers the health model already recorded
+        # (numerator/denominator), never by parsing the display text
+        # back apart.
+        from founderos_atlas.web.dashboard import percentage
+
         query = f"?scope={scope_id}"
+
+        def count(key):
+            value = dim(key).get("numerator")
+            return "—" if value is None else str(value)
+
         return [
             {
                 "title": "Health",
                 "state": health.get("overall", "unknown"),
                 "value": str(health.get("overall", "unknown")).capitalize(),
+                "chip": str(health.get("overall", "unknown")).capitalize(),
                 "detail": health.get("overall_detail", ""),
                 "updated": health.get("generated_at"),
                 "href": f"/{query}",
@@ -6753,6 +6766,7 @@ def register_routes(app) -> None:
                 "title": "Discovery",
                 "state": dim(DIMENSION_FRESHNESS)["state"],
                 "value": f"{device_count} devices",
+                "chip": f"{device_count}",
                 "detail": dim(DIMENSION_FRESHNESS)["summary"],
                 "updated": last,
                 "href": f"/history{query}",
@@ -6763,6 +6777,7 @@ def register_routes(app) -> None:
                 "value": str(
                     dim(DIMENSION_INCIDENTS).get("ratio") or "—"
                 ),
+                "chip": count(DIMENSION_INCIDENTS),
                 "detail": dim(DIMENSION_INCIDENTS)["summary"],
                 "updated": dim(DIMENSION_INCIDENTS).get("observed_at"),
                 "href": f"/incidents{query}",
@@ -6771,6 +6786,10 @@ def register_routes(app) -> None:
                 "title": "Policy",
                 "state": dim(DIMENSION_POLICY)["state"],
                 "value": str(dim(DIMENSION_POLICY).get("ratio") or "—"),
+                "chip": percentage(
+                    dim(DIMENSION_POLICY).get("numerator"),
+                    dim(DIMENSION_POLICY).get("denominator"),
+                ) or count(DIMENSION_POLICY),
                 "detail": dim(DIMENSION_POLICY)["summary"],
                 "updated": dim(DIMENSION_POLICY).get("observed_at"),
                 "href": f"/policy{query}",
@@ -6779,6 +6798,7 @@ def register_routes(app) -> None:
                 "title": "Identity",
                 "state": dim(DIMENSION_IDENTITY)["state"],
                 "value": str(dim(DIMENSION_IDENTITY).get("ratio") or "—"),
+                "chip": count(DIMENSION_IDENTITY),
                 "detail": dim(DIMENSION_IDENTITY)["summary"],
                 "updated": dim(DIMENSION_IDENTITY).get("observed_at"),
                 "href": "/evidence/resolution-center",
@@ -6789,6 +6809,7 @@ def register_routes(app) -> None:
                 "title": "Routing",
                 "state": None,
                 "value": f"{relationship_count} relationships",
+                "chip": f"{relationship_count}",
                 "detail": "Counts only — Atlas defines no routing health "
                           "verdict.",
                 "updated": last,
@@ -6820,6 +6841,12 @@ def register_routes(app) -> None:
         # absent entirely when AI is off — the page below is unchanged
         # from PR-163 in that case.
         from founderos_atlas.advisor.explanation import panel_context
+        from founderos_atlas.web.dashboard import summarise
+
+        # PR-169: the same cards, presented as ONE compact summary. The
+        # full card data still reaches the template — the expanded view
+        # renders it, so nothing was removed, only reordered by weight.
+        cards = _advisor_status_cards(scopes, scope_id)
 
         return render_template(
             "advisor.html",
@@ -6830,7 +6857,8 @@ def register_routes(app) -> None:
             response=latest,
             presented=present_answer(latest, freshness=freshness),
             freshness=freshness,
-            status_cards=_advisor_status_cards(scopes, scope_id),
+            status_cards=cards,
+            enterprise=summarise(cards),
             conversation_index=selected_index,
             ai_panel=panel_context(_prism_service()),
             **context,

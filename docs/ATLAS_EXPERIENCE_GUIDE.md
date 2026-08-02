@@ -264,6 +264,108 @@ page: the strongest rule must be on the most important card.
 
 ---
 
+## 9b. Dashboards — the Operational Dashboard Standard
+
+> **Answer first. Context second. Evidence third.**
+> A dashboard supports an operator. It does not compete with an answer.
+
+An operator who asks Atlas a question came for an answer. Enterprise context helps them judge that
+answer — *is discovery stale? are there open incidents?* — but the moment it occupies more of the
+page than the answer, the page has changed subject.
+
+**The measurable rule: the answer must be the tallest element on the page.** Compute it; do not
+eyeball it. On the reference implementation the verdict is ~2.4× the dashboard at every breakpoint.
+
+### The Enterprise Summary pattern
+
+One card, not a grid. It carries four things and nothing else:
+
+```
+Enterprise status   [🟡 Warning]   Enterprise        updated 02-Aug-2026 21:33 IST
+  Discovery 85   Incidents 0   Policy 53%   Identity 85   Routing 119
+  ▸ Operational readiness — 1 dimension(s) need attention
+```
+
+| Element | Rule |
+|---|---|
+| Heading | 14px — smaller than the answer's 19px. The weight ordering *is* the design |
+| Readiness | one status word from §4, **reused** from the page's existing health determination |
+| Scope + updated | once each, on the header row |
+| Chips | one per dimension, for scanning |
+| Detail | a disclosure (see the progressive pattern below) |
+
+### The Operational Readiness pattern
+
+The readiness word is **read, never computed**. A dashboard maps the health model's states onto the
+§4 status words and stops there:
+
+| Health state | Status word |
+|---|---|
+| `healthy` | Healthy |
+| `degraded`, `stale` | Warning |
+| `critical` | Attention required |
+| `unavailable`, `unknown` | Not enough evidence |
+
+`stale` is a Warning rather than "not enough evidence" because Atlas *can* see the estate — it is
+seeing an older version of it, which is a developing operational risk.
+
+**Enumerate every state the model can emit and check each lands somewhere deliberate.** A state with
+no mapping falls through to the safest label and silently withdraws a signal — that is exactly how
+PR-168 lost the engine's Warning. A test asserts the mapping is total.
+
+Beneath the word, supporting observations in Atlas's own sentences:
+
+```
+⚠ Discovery   the last discovery is older than 24h
+·  Incidents  no operational-state report exists yet
+✓ Identity    healthy across 1 network(s)
+```
+
+A **✓ means "checked and fine"**. A dimension Atlas could not assess gets a neutral dot, never a
+tick. The overall card is the verdict and is not an observation about itself.
+
+### The Status Chip pattern
+
+Chips are for **scanning**; cards are for reading. A chip is `label · value` on one line, wrapping,
+with no fixed height:
+
+- The value is the **shortest honest form**: a percentage from a ratio the model already recorded, a
+  count, or `—`. Compute it from the model's own numerator and denominator — never by parsing the
+  display text back apart.
+- Each chip **links** to the page that owns that dimension.
+- State shows on the chip's **edge**, and the value text carries the same fact — colour is never the
+  only channel. Border colours must reach **3:1** against the chip surface in both themes (use
+  `--amber`, not `--amber-fill`, which is a fill token and measured 2.81:1).
+- A dimension with **no verdict gets no colour** — not even the neutral "unknown" styling, which
+  reads as "Atlas tried and failed".
+- **Never chip a fact the readiness word already states.** "Health · Stale" beside "Warning" is one
+  fact, twice, in two vocabularies.
+
+### The Progressive Dashboard pattern
+
+The detail opens **only while there is nothing to compete with**:
+
+```jinja
+<details class="ops-detail"{% if not answer %} open{% endif %}>
+```
+
+Server-rendered, so it needs no JavaScript and holds with scripting off. The `<summary>` states
+whether opening it is worth the operator's time — *"1 dimension(s) need attention"* / *"nothing
+flagged"*.
+
+The same reasoning applies to **generic starting actions**: useful on an empty page, competing noise
+once the answer has its own "what to do next". They step back into a disclosure rather than
+disappearing.
+
+**Collapsing is not removing.** Every metric the cards showed still renders, one compact row each,
+inside the disclosure. A test asserts it.
+
+### Adopting this on another page
+
+The presenter is page-agnostic — `founderos_atlas.web.dashboard.summarise()` takes plain card dicts
+(`title`, `state`, `chip`, `detail`, `href`) and returns readiness, chips and observations. Import
+it; do not re-implement it. Order the cards with the overall assessment first.
+
 ## 10. Migration strategy
 
 Advisor is the reference implementation. Other pages adopt this incrementally — a page is not
@@ -280,6 +382,8 @@ required to change until it is touched.
 
 **Per-page checklist:**
 
+0. If the page carries a dashboard, apply §9b first — a page whose context outweighs its answer
+   cannot be fixed by reordering the answer alone.
 1. Identify the page's verdict. If it has none, say so in the sanctioned status words — do not
    invent one.
 2. Promote the answer above the method.
@@ -310,6 +414,9 @@ verdict to give, that is a finding about the page, and the honest interim answer
 
 `src/founderos_atlas/web/templates/advisor.html` — hierarchy
 `src/founderos_atlas/advisor/presentation.py` — status words, operator vocabulary, findings, context
+`src/founderos_atlas/web/dashboard.py` — the operational summary, page-agnostic (§9b)
 `src/founderos_atlas/web/static/atlas.css` — the component classes (`verdict-*`, `findings-*`,
-`actions-*`, `advisor-detail`)
+`actions-*`, `advisor-detail`, `ops-*`)
 `tests/test_advisor.py::test_ask_renders_the_answer_hierarchy` — the order, pinned
+`tests/test_advisor.py::test_the_dashboard_is_context_not_the_answer` — the progressive behaviour
+`tests/test_operational_summary.py` — the readiness mapping, chips and observations

@@ -493,30 +493,98 @@ class AdvisorGuiTests(unittest.TestCase):
             self.assertIn(b"Run Discovery", response.data)
 
     def test_status_cards_show_current_scope_honestly(self) -> None:
-        """The card strip is CURRENT scope status (an old stored answer
+        """The summary is CURRENT scope status (an old stored answer
         may come from another scope), and Routing carries no invented
         health verdict.
 
-        PR-168 Part 9 replaced the filler "count only" with a sentence
-        that says the same thing in operational words. The honesty
-        being tested is unchanged: a tile with no health state must SAY
-        it has no health state rather than imply one.
+        PR-169 replaced the six-card grid with one Enterprise status
+        summary. Every dimension is still named, every metric is still
+        reachable, and the honesty is unchanged: a dimension with no
+        health state must SAY so rather than imply one.
         """
 
         with tempfile.TemporaryDirectory() as tmp:
             client = self.build_client(Path(tmp))
             page = client.get("/advisor").data
-            self.assertIn(b"Status right now", page)
+            self.assertIn(b"Enterprise status", page)
             for card in (b"Health", b"Discovery", b"Incidents", b"Policy",
                          b"Identity", b"Routing"):
                 self.assertIn(card, page)
             self.assertIn(b"independent of any stored answer", page)
-            self.assertIn(b"No health state assessed", page)
+            self.assertIn(b"no health state assessed", page)
             self.assertIn(b"no routing health", page)
-            # The phrases Part 9 retires: filler that tells an operator
-            # nothing they can act on.
+            # Filler that tells an operator nothing they can act on.
             self.assertNotIn(b"count only", page)
             self.assertNotIn(b"not evaluated yet", page)
+
+    def test_the_dashboard_is_context_not_the_answer(self) -> None:
+        """PR-169: the summary supports the answer; it must not compete
+        with it. With no question asked the readiness detail is open —
+        there is nothing to compete with. The moment there IS an answer
+        it steps back, and the verdict becomes the largest thing on the
+        page.
+        """
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = self.build_client(Path(tmp))
+            empty = client.get("/advisor").data.decode()
+            self.assertIn('<details class="ops-detail" open>', empty)
+            # Starters are front and centre when there is no answer.
+            self.assertNotIn("Start a different investigation", empty)
+
+            client.post("/advisor/ask", data={"question": "Find GW"},
+                        follow_redirects=True)
+            answered = client.get("/advisor").data.decode()
+            self.assertIn('<details class="ops-detail">', answered)
+            self.assertNotIn('<details class="ops-detail" open>', answered)
+            # ...and the generic starters step back too, without being
+            # removed — they are still there, still keyboard-reachable.
+            self.assertIn("Start a different investigation", answered)
+            for starter in ("Investigate an Issue", "Plan a Change",
+                            "Discover Infrastructure",
+                            "Explain Recent Changes",
+                            "Summarize Enterprise Health"):
+                self.assertIn(starter, answered)
+
+            # The answer outranks the dashboard in the DOM order.
+            self.assertLess(answered.index("verdict-card"),
+                            answered.index("Recent Conversations"))
+
+    def test_the_summary_keeps_every_metric_the_cards_had(self) -> None:
+        """Part 12: no functionality removed. The compact chips are a
+        summary OF the dimension detail, not a replacement for it."""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = self.build_client(Path(tmp))
+            page = client.get("/advisor").data.decode()
+            detail = page[page.index("Dimension detail"):]
+            detail = detail[:detail.index("</details>")]
+            # Every card still contributes a row with its own link...
+            for href in ("/history", "/incidents", "/policy",
+                         "/evidence/resolution-center", "/topology"):
+                self.assertIn(href, detail)
+            # ...and its own METRIC VALUE. Asserting only the links let
+            # `{{ card.value }}` be deleted with the suite still green —
+            # which is exactly the "collapsing is not removing" claim
+            # this test exists to defend.
+            import re as _re
+
+            self.assertIn("devices", detail)
+            self.assertIn("relationships", detail)
+            rows = _re.findall(r"<li>.*?</li>", detail, _re.S)
+            self.assertEqual(len(rows), 6)
+            for row in rows:
+                self.assertRegex(
+                    row, r'<span class="muted">\s*\S',
+                    "every dimension row must carry its metric value",
+                )
+            # The chips are present too, and are links, not decoration.
+            # Five dimension chips; the sixth card is the overall
+            # readiness, which is the status word above them.
+            chips = page[page.index('class="ops-chips"'):]
+            chips = chips[:chips.index("</ul>")]
+            self.assertEqual(chips.count("ops-chip "), 5)
+            self.assertNotIn(">Health</span>", chips)
 
     def test_conversations_group_pin_and_search(self) -> None:
         """History is grouped by recency, pinnable, and searchable —
