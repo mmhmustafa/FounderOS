@@ -14,10 +14,11 @@ from dataclasses import dataclass
 from typing import Any
 
 
-# 1.1.0 (PR-164): ADDITIVE ONLY — the optional "operational_intent"
-# block joined the schema; no existing key was renamed or removed, so
-# every stored 1.0.0 conversation still renders.
-ADVISOR_SCHEMA_VERSION = "1.1.0"
+# 1.1.0 (PR-164): the optional "operational_intent" block.
+# 1.2.0 (PR-167): the optional "investigation" block.
+# ADDITIVE ONLY — no key has ever been renamed or removed, so every
+# stored 1.0.0 and 1.1.0 conversation still renders.
+ADVISOR_SCHEMA_VERSION = "1.2.0"
 
 CONFIDENCE_HIGH = "High"
 CONFIDENCE_MEDIUM = "Medium"
@@ -87,6 +88,12 @@ class AdvisorResponse:
     # declared workflows/recommendations/limitations. None for answers
     # stored before OIR existed; presentation tolerates both.
     operational_intent: dict | None = None
+    # PR-167 (ADDITIVE): when the question named a specific scope, the
+    # investigation that produced this answer — its structured request,
+    # resolved entities, plan with per-step status, findings and gaps.
+    # None for estate-wide answers and for anything stored before the
+    # investigator existed; presentation tolerates both.
+    investigation: dict | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -107,6 +114,7 @@ class AdvisorResponse:
             "steps": list(self.steps),
             "generated_at": self.generated_at,
             "operational_intent": self.operational_intent,
+            "investigation": self.investigation,
         }
 
 

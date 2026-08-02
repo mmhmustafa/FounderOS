@@ -63,10 +63,117 @@ def answer(question: str, context: AdvisorContext) -> AdvisorResponse:
 
     sites = tuple(getattr(context.graph, "sites", ()) or ())
     route = router.route(question, sites=sites)
+
+    # PR-167: a question that NAMES something specific is an
+    # investigation, not a request for one engine. The investigator
+    # plans and runs several engines over the named scope and answers
+    # about THAT. It returns None for estate-wide questions, which then
+    # take the existing single-engine path unchanged — so "Explain
+    # enterprise health" still answers exactly as it always has.
+    investigation = _investigate(question, context)
+    if investigation is not None:
+        return replace(
+            _investigation_response(question, route.engine, investigation,
+                                    context),
+            operational_intent=_intent_payload(route),
+        )
+
     handler = _HANDLERS.get(route.engine, _answer_unknown)
     response = handler(question, route.engine, context)
     return replace(
         response, operational_intent=_intent_payload(route)
+    )
+
+
+def _investigate(question: str, context: AdvisorContext):
+    """Run the investigator, or None.
+
+    The operator must never lose an answer to a failing investigation,
+    so this falls back to the single-engine path. But a swallowed
+    failure once made the whole feature silently do nothing, so the
+    reason is LOGGED rather than discarded — an invisible fallback is
+    indistinguishable from a feature that was never wired up.
+    """
+
+    import logging
+
+    from founderos_atlas.investigation import investigate
+
+    try:
+        return investigate(
+            question, graph=context.graph, snapshot=context.snapshot,
+            change_report=_change_report_summary(context),
+        )
+    except Exception:  # noqa: BLE001 - fall back to the single engine
+        logging.getLogger("atlas").warning(
+            "investigation failed; falling back to the single engine",
+            exc_info=True,
+        )
+        return None
+
+
+def _change_report_summary(context: AdvisorContext) -> dict | None:
+    """A count of recorded changes for the scope, if one is stored."""
+
+    total = 0
+    found = False
+    for profile in context.profiles or ():
+        scope = profile_scope(
+            context.base_output_dir, profile.profile_id, profile.name
+        )
+        report = _read_json(scope.output_dir / "state_change_report.json")
+        if isinstance(report, dict):
+            found = True
+            for key in ("changes", "entries", "items"):
+                value = report.get(key)
+                if isinstance(value, list):
+                    total += len(value)
+                    break
+    return {"count": total} if found else None
+
+
+def _investigation_response(
+    question: str, engine: str, result, context: AdvisorContext
+) -> AdvisorResponse:
+    """Turn an investigation into Atlas's standard answer shape.
+
+    The investigation's own summary, findings, gaps and citations
+    become the answer — no estate-wide summary is substituted, which is
+    the entire point of PR-167.
+    """
+
+    evidence = tuple(
+        EvidenceItem(label=item.get("label", ""),
+                     detail=item.get("detail", ""),
+                     href=item.get("href") or None)
+        for item in result.evidence
+    ) or (_graph_evidence(context),)
+    steps = tuple(
+        f"{step.label} — {step.status}" for step in result.plan.steps
+    )
+    followups = [
+        FollowUp("Open Topology", href="/topology?scope=all"),
+        FollowUp("What changed?", question="What changed?"),
+    ]
+    if result.request.protocol == "bgp":
+        followups.insert(0, FollowUp("Open BGP view",
+                                     href="/topology?view=bgp"))
+    elif result.request.protocol == "ospf":
+        followups.insert(0, FollowUp("Open OSPF view",
+                                     href="/topology?view=ospf"))
+    return AdvisorResponse(
+        question=question, intent=engine,
+        summary=result.summary,
+        evidence=evidence,
+        confidence=result.confidence,
+        confidence_basis=result.confidence_basis,
+        next_action_label="Open Topology",
+        next_action_href="/topology?scope=all",
+        followups=tuple(followups),
+        unknowns=tuple(result.gaps),
+        steps=steps,
+        generated_at=context.generated_at,
+        investigation=result.to_dict(),
     )
 
 

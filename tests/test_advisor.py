@@ -182,9 +182,13 @@ class EvidenceAnswerTests(unittest.TestCase):
             self.assertEqual(INTENT_PATH, response.intent)
             self.assertIn("A1 can reach B1", response.summary)
             self.assertIn("A1 → GW → B1", response.summary)
-            self.assertIn(
-                "Running a path investigation", response.steps[0]
-            )
+            # PR-167: the steps are now the whole investigation plan
+            # with each step's outcome, not a single engine call. The
+            # path walk is still among them — it is the engine the
+            # investigation orchestrates for reachability.
+            steps = " | ".join(response.steps)
+            self.assertIn("Walk the path hop by hop", steps)
+            self.assertIn("done", steps)
             self.assertIn(response.confidence, ("High", "Medium", "Low"))
 
     def test_path_question_without_endpoints_routes_to_flow(self) -> None:

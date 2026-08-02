@@ -572,6 +572,28 @@ body[data-theme="dark"] table[data-row-select] tbody tr.row-selected { backgroun
   .advisor-skel { animation: none; }
 }
 
+/* PR-167 (INVESTIGATOR): the investigation panel. It sits inside the
+   answer card, above the summary, because what Atlas checked is part
+   of judging what it concluded. Token-only. */
+.investigation { margin: 12px 0 16px; padding: 12px 14px;
+  border: 1px solid var(--line); border-left: 3px solid var(--accent);
+  border-radius: var(--radius); background: var(--surface-2); }
+.investigation h3 { margin: 12px 0 6px; font-size: 13px;
+  text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.investigation-chip { background: var(--panel); color: var(--muted);
+  border: 1px solid var(--line); }
+.investigation-plan { list-style: none; margin: 4px 0; padding: 0; }
+.investigation-plan li { margin: 4px 0; display: flex; gap: 8px;
+  align-items: baseline; flex-wrap: wrap; }
+.investigation-mark { font-weight: var(--weight-bold); width: 1em;
+  flex: 0 0 auto; }
+.investigation-step-done .investigation-mark { color: var(--green); }
+.investigation-step-skipped .investigation-mark { color: var(--muted); }
+.investigation-step-blocked .investigation-mark { color: var(--amber); }
+.investigation-entities li span:last-child,
+.investigation-findings li span:last-child { max-width: 62ch;
+  text-align: right; }
+
 /* PRISM Playground enhancements: sample library, side-by-side
    comparison, export. Token-only, like every panel since PR-163. */
 .prism-sample-row { align-items: flex-end; flex-wrap: wrap; gap: 10px; }

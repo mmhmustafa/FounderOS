@@ -84,6 +84,58 @@
      · every citation deep-links to the exact stored artifact; evidence Atlas
      does not hold is listed under Limitations, never implied.</p>
 
+  {# PR-167: when the question named a scope, Atlas investigated it.
+     The plan and its per-step outcome come BEFORE the summary, because
+     an operator judging an answer needs to know what was checked. #}
+  {% if response.investigation %}
+  {% set inv = response.investigation %}
+  <section class="investigation" aria-labelledby="investigation-heading">
+    <div class="job-head">
+      <h2 id="investigation-heading">Investigation: {{ inv.plan.title }}</h2>
+      <span class="badge hop-badge investigation-chip">{{ inv.engines_used | length }} engine(s) · {{ inv.duration_ms }} ms</span>
+    </div>
+    <p class="muted">{{ inv.plan.objective }}</p>
+
+    {% if inv.entities.source or inv.entities.destination or inv.entities.sites %}
+    <ul class="kv investigation-entities">
+      {% for entity in [inv.entities.source, inv.entities.destination] + inv.entities.sites + inv.entities.devices %}
+      {% if entity %}
+      <li>
+        <span><strong>{{ entity.query }}</strong>
+          <span class="badge hop-badge hop-badge-{{ 'pass' if entity.status == 'resolved' else ('warning' if entity.status == 'ambiguous' else 'failed') }}">{{ entity.status }}</span>
+        </span>
+        <span class="muted">{{ entity.detail }}{% if entity.candidates %} Candidates: {{ entity.candidates | join(', ') }}.{% endif %}</span>
+      </li>
+      {% endif %}
+      {% endfor %}
+    </ul>
+    {% endif %}
+
+    <h3>What Atlas checked</h3>
+    <ul class="investigation-plan">
+      {% for step in inv.plan.steps %}
+      <li class="investigation-step-{{ step.status }}">
+        <span class="investigation-mark" aria-hidden="true">{% if step.status == 'done' %}✓{% elif step.status == 'skipped' %}–{% else %}!{% endif %}</span>
+        {{ step.label }}
+        <span class="muted">— {{ step.status }}{% if step.detail %}: {{ step.detail }}{% endif %}</span>
+      </li>
+      {% endfor %}
+    </ul>
+
+    {% if inv.findings %}
+    <h3>What Atlas found</h3>
+    <ul class="kv investigation-findings">
+      {% for finding in inv.findings %}
+      <li>
+        <span>{% if finding.href %}<a href="{{ finding.href }}">{{ finding.label }}</a>{% else %}<strong>{{ finding.label }}</strong>{% endif %}</span>
+        <span class="muted">{{ finding.detail }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </section>
+  {% endif %}
+
   {# 2. Domain-aware summary — the engine's own words, scannable. #}
   <h2>{{ presented.summary_title }}</h2>
   <ul class="advisor-summary">
