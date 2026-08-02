@@ -472,9 +472,14 @@ class GovernanceTests(PrismHarness):
     def test_validation_warns_before_identity_leaves_the_network(
         self,
     ) -> None:
+        # PR-166.2: the privacy PROFILE now governs identity, so
+        # "identity is unprotected" is expressed as a configuration
+        # whose active profile preserves identifying fields. This is
+        # the pre-profile shape — explicit rules, all of them off.
         config = PrismConfig(
             enabled=True, provider_kind=KIND_OPENAI, model="gpt-x",
             allow_cloud_providers=True, redaction_rules=(),
+            privacy_profile="",
         )
         problems = validate(config, has_api_key=True)
         self.assertTrue(

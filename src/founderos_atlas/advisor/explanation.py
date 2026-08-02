@@ -30,6 +30,7 @@ from founderos_atlas.prism import (
     CAPABILITY_PLAIN_ENGLISH,
     CAPABILITY_TRANSLATION,
 )
+from founderos_atlas.prism import presentation, semantic
 
 
 # -- audiences (Part 3) -----------------------------------------------------
@@ -143,6 +144,19 @@ class Explanation:
     redaction_summary: str = ""
     translated: bool = False
     reason: str = ""
+    # -- semantic redaction (PR-166.2) ------------------------------
+    # ``segments`` is the OPERATOR's view of ``text``: the same words,
+    # with each alias annotated and linked back to the Atlas object it
+    # stands for, subject to the reader's permissions. ``text`` is what
+    # the provider produced; these two are deliberately not identical.
+    segments: tuple = ()
+    privacy_profile: str = ""
+    privacy_profile_label: str = ""
+    privacy_note: str = ""
+    alias_legend: tuple = ()
+    semantic_alias_count: int = 0
+    masked_field_count: int = 0
+    removed_field_count: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -164,6 +178,14 @@ class Explanation:
             "redaction_summary": self.redaction_summary,
             "translated": self.translated,
             "reason": self.reason,
+            "segments": [segment.to_dict() for segment in self.segments],
+            "privacy_profile": self.privacy_profile,
+            "privacy_profile_label": self.privacy_profile_label,
+            "privacy_note": self.privacy_note,
+            "alias_legend": list(self.alias_legend),
+            "semantic_alias_count": self.semantic_alias_count,
+            "masked_field_count": self.masked_field_count,
+            "removed_field_count": self.removed_field_count,
         }
 
 
@@ -215,11 +237,21 @@ def explain(
     scope_label: str = "",
     known_names: Iterable[str] = (),
     now: str = "",
+    aliases=None,
+    can_view: bool = False,
+    can_reveal: bool = False,
 ) -> Explanation:
     """Explain one STORED Atlas answer for one audience and language.
 
     Never raises: an unusable request, a disabled platform, a refused
     policy or a dead provider all return ``ok=False``.
+
+    ``aliases`` enables semantic redaction (PR-166.2). ``can_view`` and
+    ``can_reveal`` are the CALLER's determination, from the
+    authenticated user's existing permissions, of whether this reader
+    may follow a link to an Atlas object and whether they may see the
+    original name behind an alias. This function only honours them; it
+    never decides them, and never widens them.
     """
 
     audience = AUDIENCE_BY_KEY.get(audience_key or "", DEFAULT_AUDIENCE)
@@ -258,7 +290,7 @@ def explain(
 
     result = service.enhance(
         audience.capability, variables,
-        known_names=known_names,
+        known_names=known_names, aliases=aliases,
         evidence_version=_clean(response.get("generated_at")),
     )
     if not result.ok:
@@ -270,16 +302,34 @@ def explain(
         # Part 4: translation is its own PRISM capability, audited and
         # costed separately. A failure here keeps the untranslated
         # explanation rather than losing the whole thing.
+        # The alias book MUST come along. Without it this second pass
+        # runs with an unreconciled name list and no profile, and the
+        # generic hostname rule rewrites the aliases the first pass
+        # inserted: "the Mumbai Core Router at site Mumbai" came back as
+        # "the [redacted:hostname-1] Core Router at site
+        # [redacted:hostname-1]" — the alias mangled, the site the Cloud
+        # profile promised to preserve masked, and two distinct objects
+        # collapsed onto one placeholder.
         translation = service.enhance(
             CAPABILITY_TRANSLATION,
             {"language": language_label, "text": text},
-            known_names=known_names,
+            known_names=known_names, aliases=aliases,
             evidence_version=_clean(response.get("generated_at")),
         )
         if translation.ok and translation.text.strip():
             text = translation.text
             translated = True
 
+    # The operator's view of the same answer. Translation is applied
+    # BEFORE this, and a translated alias no longer matches the book —
+    # so a translated explanation simply carries no links rather than
+    # linking the wrong device.
+    active = _active_profile(service)
+    segments = presentation.present(
+        text, aliases=aliases, active_profile=active,
+        can_view=can_view, can_reveal=can_reveal,
+        provider=result.provider, model=result.model,
+    )
     return Explanation(
         ok=True, text=text,
         audience=audience.key, audience_label=audience.label,
@@ -294,7 +344,31 @@ def explain(
         estimated_cost=result.estimated_cost,
         redaction_summary=result.redaction_summary,
         translated=translated,
+        segments=tuple(segments),
+        privacy_profile=result.privacy_profile,
+        privacy_profile_label=result.privacy_profile_label,
+        privacy_note=presentation.describe_disclosure(active, {
+            semantic.ALIAS: result.semantic_alias_count,
+            semantic.MASK: result.masked_field_count,
+            semantic.REMOVE: result.removed_field_count,
+        }),
+        alias_legend=tuple(presentation.alias_legend(
+            result.aliases, can_reveal=can_reveal,
+        )),
+        semantic_alias_count=result.semantic_alias_count,
+        masked_field_count=result.masked_field_count,
+        removed_field_count=result.removed_field_count,
     )
+
+
+def _active_profile(service):
+    """The privacy profile in force, tolerant of a stub service in
+    tests that has no configuration at all."""
+
+    try:
+        return service.config.active_profile()
+    except Exception:
+        return semantic.profile(semantic.DEFAULT_PROFILE)
 
 
 def _refused(base: Explanation, reason: str) -> Explanation:
@@ -327,4 +401,9 @@ def panel_context(service) -> dict[str, Any]:
             {"code": code, "label": label} for code, label in LANGUAGES
         ],
         "default_audience": DEFAULT_AUDIENCE.key,
+        # Part 5: the operator can see which privacy profile is active
+        # BEFORE asking for an explanation, not only afterwards.
+        "privacy_profile": _active_profile(service).to_dict(),
+        "field_labels": dict(semantic.FIELD_LABELS),
+        "action_labels": dict(semantic.ACTION_LABELS),
     }

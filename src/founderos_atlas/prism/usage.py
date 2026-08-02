@@ -63,6 +63,14 @@ class UsageRecord:
     outcome: str
     redaction_rules: tuple[str, ...] = ()
     redactions: int = 0
+    # -- semantic redaction (PR-166.2, Part 10) ---------------------
+    # Which posture was in force and how much it changed. Counts only:
+    # a removed secret is never recorded, not even its label position,
+    # because an audit trail is not a place to store what was removed.
+    privacy_profile: str = ""
+    semantic_alias_count: int = 0
+    masked_field_count: int = 0
+    removed_field_count: int = 0
     input_tokens: int | None = None
     output_tokens: int | None = None
     estimated_cost: float | None = None
@@ -83,6 +91,10 @@ class UsageRecord:
             "outcome": self.outcome,
             "redaction_rules": list(self.redaction_rules),
             "redactions": self.redactions,
+            "privacy_profile": self.privacy_profile,
+            "semantic_alias_count": self.semantic_alias_count,
+            "masked_field_count": self.masked_field_count,
+            "removed_field_count": self.removed_field_count,
             "input_tokens": self.input_tokens,
             "output_tokens": self.output_tokens,
             "estimated_cost": self.estimated_cost,

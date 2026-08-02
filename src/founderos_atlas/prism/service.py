@@ -61,6 +61,7 @@ from .providers import (
     KIND_DISABLED,
     ProviderRegistry,
 )
+from . import semantic
 from .redaction import RedactionPolicy, RedactionReport, redact
 from .usage import (
     OUTCOME_BLOCKED,
@@ -97,6 +98,18 @@ class Enhancement:
     output_tokens: int | None = None
     estimated_cost: float | None = None
     latency_ms: int | None = None
+    # -- semantic redaction (PR-166.2) ------------------------------
+    # The aliases that ACTUALLY appeared in the outgoing text — not the
+    # whole book. Server-side only: they map an alias back to a real
+    # object for an authorised operator, and are excluded from
+    # to_dict() so they cannot leak into a response body, a stored
+    # conversation or the audit ledger.
+    aliases: Any = None
+    privacy_profile: str = ""
+    privacy_profile_label: str = ""
+    semantic_alias_count: int = 0
+    masked_field_count: int = 0
+    removed_field_count: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -114,6 +127,11 @@ class Enhancement:
             "output_tokens": self.output_tokens,
             "estimated_cost": self.estimated_cost,
             "latency_ms": self.latency_ms,
+            "privacy_profile": self.privacy_profile,
+            "privacy_profile_label": self.privacy_profile_label,
+            "semantic_alias_count": self.semantic_alias_count,
+            "masked_field_count": self.masked_field_count,
+            "removed_field_count": self.removed_field_count,
         }
 
 
@@ -181,11 +199,20 @@ class PrismService:
         *,
         known_names: Iterable[str] = (),
         evidence_version: str = "",
+        aliases=None,
     ) -> Enhancement:
         """Run one optional AI enhancement, or explain why it did not.
 
         ``variables`` fill the capability's registered prompt. Every
         value is redacted before it can reach a provider.
+
+        ``aliases`` is an optional
+        :class:`~founderos_atlas.prism.semantic.AliasBook`. Supplying
+        one turns blind redaction into semantic redaction: the provider
+        sees "the Mumbai Core Router" instead of an opaque placeholder,
+        and the returned :class:`Enhancement` carries the book so the
+        caller can map the answer back to real Atlas objects for an
+        authorised operator. The book never leaves Atlas.
         """
 
         capability, refusal = self._gate(capability_key)
@@ -205,16 +232,34 @@ class PrismService:
             )
 
         # -- PRIVACY: nothing reaches a provider unredacted ----------
+        # One policy, one alias book, one report for the whole call —
+        # so a device reads the same in every variable, and the caller
+        # can map the answer back to real Atlas objects afterwards.
         policy = config.redaction_policy()
-        if known_names:
-            policy = policy.with_known_names(known_names)
+        names = list(known_names)
+        if aliases is not None:
+            names = semantic.known_names_for(aliases, names)
+        if names:
+            policy = policy.with_known_names(names)
         safe_variables: dict[str, Any] = {}
         report = RedactionReport()
         for name, value in variables.items():
-            safe, item_report = redact(str(value), policy)
+            safe, item_report = redact(str(value), policy, aliases=aliases)
             safe_variables[name] = safe
             for label, count in item_report.counts.items():
                 report.add(label, count)
+            for alias in item_report.aliases:
+                report.note_alias(alias)
+
+        # Audited and reported, but never the values themselves
+        # (Part 10): counts only, and no removed secret is ever named.
+        active = config.active_profile()
+        counts = report.action_counts()
+        actions = {
+            "semantic_alias_count": counts[semantic.ALIAS],
+            "masked_field_count": counts[semantic.MASK],
+            "removed_field_count": counts[semantic.REMOVE],
+        }
 
         try:
             system, user = template.render(safe_variables)
@@ -259,8 +304,9 @@ class PrismService:
                 provider=result.provider, model=result.model,
                 prompt_version=template.identifier,
                 outcome=OUTCOME_SUCCESS,
-                redaction_rules=tuple(config.redaction_rules),
+                redaction_rules=tuple(active.optional_rules()),
                 redactions=report.total,
+                privacy_profile=active.key, **actions,
                 input_tokens=result.input_tokens,
                 output_tokens=result.output_tokens,
                 estimated_cost=cost, currency=config.currency,
@@ -277,14 +323,17 @@ class PrismService:
                 output_tokens=result.output_tokens,
                 estimated_cost=cost, latency_ms=result.latency_ms,
                 fallback=capability.fallback,
+                aliases=tuple(report.aliases), privacy_profile=active.key,
+                privacy_profile_label=active.label, **actions,
             )
 
         self._ledger.record(UsageRecord(
             at=self._clock(), capability=capability.key,
             provider=config.provider_kind, model=config.model,
             prompt_version=template.identifier, outcome=OUTCOME_FAILED,
-            redaction_rules=tuple(config.redaction_rules),
+            redaction_rules=tuple(active.optional_rules()),
             redactions=report.total, retries=attempts - 1,
+            privacy_profile=active.key, **actions,
             evidence_version=evidence_version, detail=last_error,
         ))
         return Enhancement(
@@ -295,6 +344,8 @@ class PrismService:
             prompt_version=template.identifier,
             redactions=report.total,
             redaction_summary=report.describe(),
+            privacy_profile=active.key,
+            privacy_profile_label=active.label, **actions,
         )
 
     # -- gates -------------------------------------------------------

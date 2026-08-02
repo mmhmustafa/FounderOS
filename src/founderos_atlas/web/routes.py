@@ -6870,6 +6870,7 @@ def register_routes(app) -> None:
         scope_id = active_scope_id(scopes)
         graph, _snapshot, _profiles = scoped_world(scope_id)
         known_names = _enterprise_names(graph)
+        can_view, can_reveal = _alias_visibility()
 
         result = explain(
             stored,
@@ -6879,6 +6880,8 @@ def register_routes(app) -> None:
             scope_label=scopes[scope_id].label
             if scope_id in scopes else GLOBAL_SCOPE_LABEL,
             known_names=known_names,
+            aliases=_alias_book(graph),
+            can_view=can_view, can_reveal=can_reveal,
             now=now_iso(),
         )
         return jsonify(result.to_dict())
@@ -6910,6 +6913,47 @@ def register_routes(app) -> None:
             (name for name in names if name.strip()),
             key=len, reverse=True,
         ))
+
+    def _alias_book(graph, *, active_profile=None):
+        """Semantic aliases for this enterprise under a privacy profile
+        (PR-166.2).
+
+        Built from the graph Atlas already loaded, so it costs one pass
+        over the devices and no extra evidence read. The book stays
+        server-side: it is what lets the operator's page map an alias
+        back to a real device.
+
+        ``active_profile`` MUST be the profile of the service that will
+        use the book. A book built for one profile and handed to a
+        service running another is not merely inconsistent — under an
+        Internal book every entry is Preserve, so
+        :func:`semantic.known_names_for` correctly drops them all, and
+        a Cloud service then has no known names left and sends bare
+        hostnames in the clear.
+        """
+
+        from founderos_atlas.prism import semantic
+
+        return semantic.build_alias_book(
+            graph,
+            active_profile=(
+                active_profile or _prism_service().config.active_profile()
+            ),
+        )
+
+    def _alias_visibility():
+        """(can_view, can_reveal) for the CURRENT principal.
+
+        The decision itself lives in :func:`prism.presentation.
+        visibility_for` so the route and its test exercise the same
+        code — a permission rule that is duplicated is a permission
+        rule that will drift.
+        """
+
+        from flask import g as _g
+        from founderos_atlas.prism.presentation import visibility_for
+
+        return visibility_for(getattr(_g, "principal", None))
 
     @app.route("/advisor/ask", methods=["POST"])
     def advisor_ask_route():
@@ -7410,15 +7454,21 @@ def register_routes(app) -> None:
             OPTIONAL_RULES,
             validate,
         )
+        from founderos_atlas.prism import semantic
 
         service = _prism_service()
         config = service.config
         repository = _prism_repository()
         has_api_key = repository.has_api_key(config.provider_kind)
         descriptor = DEFAULT_PROVIDER_REGISTRY.get(config.provider_kind)
+        # From the profile ACTUALLY in force, not from the now-vestigial
+        # rule list. Reading the stale field made this line overstate
+        # protection the moment a profile was chosen — and this is the
+        # sentence an administrator reads to check what is protected.
+        active_rules = config.active_profile().optional_rules()
         redaction_summary = ", ".join(
             OPTIONAL_RULE_LABELS[rule].lower()
-            for rule in OPTIONAL_RULES if rule in config.redaction_rules
+            for rule in OPTIONAL_RULES if rule in active_rules
         )
         return {
             "prism": config,
@@ -7444,6 +7494,19 @@ def register_routes(app) -> None:
                 + redaction_summary if redaction_summary
                 else "credentials and key material only"
             ),
+            # -- Part 7: privacy profiles and the per-field policy ----
+            "privacy_profiles": [
+                item.to_dict() for item in semantic.PROFILES
+            ],
+            "privacy_profile": config.active_profile().to_dict(),
+            "privacy_profile_key": config.privacy_profile,
+            "privacy_auto": semantic.PROFILE_AUTO,
+            "privacy_fields": list(semantic.FIELDS),
+            "privacy_actions": [
+                (action, semantic.ACTION_LABELS[action])
+                for action in semantic.ACTIONS
+            ],
+            "privacy_overrides": dict(config.field_overrides),
             "has_api_key": has_api_key,
             "problems": validate(config, has_api_key=has_api_key),
             "usage": service.usage_summary(),
@@ -7473,6 +7536,73 @@ def register_routes(app) -> None:
             except (TypeError, ValueError):
                 return default
 
+        def _privacy_profile_choice(form, before):
+            """The submitted profile, or the one already in force.
+
+            An unrecognised value is NOT silently coerced to a default:
+            it keeps the current profile, so a malformed post can never
+            quietly relax a privacy posture.
+            """
+
+            from founderos_atlas.prism import semantic
+
+            choice = str(form.get("privacy_profile") or "").strip()
+            if (choice in semantic.PROFILE_BY_KEY
+                    or choice == semantic.PROFILE_AUTO):
+                return choice
+            return before.privacy_profile
+
+        def _privacy_field_overrides(form, before):
+            """Per-field policy from the settings form (Part 7).
+
+            Two rules, and both exist because getting them wrong made
+            the primary privacy control do nothing:
+
+            1. **The baseline is the profile this save RESOLVES to.**
+               ``auto`` and the legacy ("") setting are not profile
+               keys, so comparing against ``PROFILE_BY_KEY`` found
+               nothing and every one of the eleven fields was stored as
+               a hard override — permanently pinning whatever happened
+               to be on screen and defeating "Match the provider". The
+               baseline is therefore resolved from the configuration as
+               it will be AFTER this save, provider included.
+            2. **If that resolved profile changed, the radios are
+               discarded.** The table was rendered from the profile
+               that WAS in force. Submitting it alongside a different
+               profile stored every difference as an override,
+               reinstating the old policy in full — so the primary
+               privacy control did nothing at all. The same applies
+               when the PROVIDER changes under "match the provider",
+               which silently moves Internal to Cloud; the hidden field
+               therefore records the RESOLVED profile, not the setting.
+            """
+
+            from dataclasses import replace as _replace
+
+            from founderos_atlas.prism import semantic
+
+            chosen = _privacy_profile_choice(form, before)
+            base = _replace(
+                before,
+                enabled=bool(form.get("enabled")),
+                provider_kind=str(form.get("provider_kind")
+                                  or before.provider_kind),
+                privacy_profile=chosen, field_overrides=(),
+            ).active_profile()
+
+            rendered = str(form.get("privacy_profile_rendered") or "").strip()
+            if rendered and rendered != base.key:
+                return ()
+            overrides: list[tuple[str, str]] = []
+            for field_name, _label in semantic.FIELDS:
+                action = str(form.get(f"policy__{field_name}") or "").strip()
+                if action not in semantic.ACTIONS:
+                    continue
+                if base.action(field_name) == action:
+                    continue
+                overrides.append((field_name, action))
+            return tuple(overrides)
+
         try:
             updated = _replace(
                 before,
@@ -7490,7 +7620,14 @@ def register_routes(app) -> None:
                 max_context_tokens=_number("max_context_tokens", int, 8192),
                 max_output_tokens=_number("max_output_tokens", int, 800),
                 temperature=_number("temperature", float, 0.2),
-                redaction_rules=tuple(form.getlist("redaction_rules")),
+                # The profile now governs the optional rules, so the
+                # form no longer posts them. They are RETAINED rather
+                # than cleared: an enterprise still on legacy rules
+                # must not have its posture emptied by an unrelated
+                # save.
+                redaction_rules=before.redaction_rules,
+                privacy_profile=_privacy_profile_choice(form, before),
+                field_overrides=_privacy_field_overrides(form, before),
                 allow_cloud_providers=bool(form.get("allow_cloud_providers")),
                 allowed_models=tuple(
                     item.strip()
@@ -7605,6 +7742,7 @@ def register_routes(app) -> None:
             DEFAULT_PROMPT_REGISTRY, DEFAULT_PROVIDER_REGISTRY, redact,
             validate,
         )
+        from founderos_atlas.prism import semantic as prism_semantic
         from founderos_atlas.prism.samples import SAMPLE_CASES
 
         service = _prism_service()
@@ -7648,6 +7786,9 @@ def register_routes(app) -> None:
         views: list = []
         preview = ""
         preview_summary = ""
+        alias_preview: list = []
+        privacy_note = ""
+        active_privacy = config.active_profile()
         compare_mode = action == "compare-two"
         side_b = {
             "audience": str(request.form.get("audience_b") or "").strip(),
@@ -7662,14 +7803,30 @@ def register_routes(app) -> None:
             # showed hostnames redacted that the provider actually
             # received in the clear — a preview that overstates
             # protection is worse than no preview at all.
-            known_names = _enterprise_names(
-                scoped_world(active_scope_id(known_scopes()))[0]
+            playground_graph = scoped_world(active_scope_id(known_scopes()))[0]
+            known_names = _enterprise_names(playground_graph)
+            book = _alias_book(playground_graph)
+            # Names the profile PRESERVES are excluded from the generic
+            # rules, exactly as the service does — or the preview would
+            # again claim protection the real call does not apply.
+            from founderos_atlas.prism import presentation, semantic
+
+            policy = config.redaction_policy().with_known_names(
+                semantic.known_names_for(book, known_names)
             )
-            safe, report = redact(
-                evidence,
-                config.redaction_policy().with_known_names(known_names),
-            )
+            safe, report = redact(evidence, policy, aliases=book)
             preview, preview_summary = safe, report.describe()
+            # Part 6: the four stages, shown in order — original
+            # evidence, the aliases Atlas minted, what the provider
+            # actually receives, and then the explanation itself.
+            active_privacy = config.active_profile()
+            alias_preview = [
+                entry.to_dict(include_original=True)
+                for entry in report.aliases
+            ]
+            privacy_note = presentation.describe_disclosure(
+                active_privacy, report.action_counts()
+            )
             # A synthetic "stored answer": the Playground never reads a
             # real one, so the operator's pasted text IS the finding.
             pasted = {
@@ -7682,11 +7839,28 @@ def register_routes(app) -> None:
             }
 
             def present(key, lang, service_override=None):
+                # The Playground requires SYSTEM_ADMIN, so this reader
+                # is already permitted to see every original name.
+                #
+                # Each side gets a book built for ITS OWN profile.
+                # Comparison overrides the provider, and under "match
+                # the provider" that changes the profile too — sharing
+                # one book let a cloud side B run with an Internal book
+                # and no known names, sending hostnames in the clear.
+                target = service_override or service
+                side_book = (
+                    book if target is service
+                    else _alias_book(
+                        playground_graph,
+                        active_profile=target.config.active_profile(),
+                    )
+                )
                 return explain(
-                    pasted, service=service_override or service,
+                    pasted, service=target,
                     audience_key=key, language=lang,
                     scope_label=GLOBAL_SCOPE_LABEL,
-                    known_names=known_names, now=now_iso(),
+                    known_names=known_names, aliases=side_book,
+                    can_view=True, can_reveal=True, now=now_iso(),
                 ).to_dict()
 
             if action == "compare":
@@ -7739,6 +7913,11 @@ def register_routes(app) -> None:
             compare_mode=compare_mode,
             redaction_preview=preview,
             redaction_summary=preview_summary,
+            alias_preview=alias_preview,
+            privacy_note=privacy_note,
+            privacy_profile=active_privacy.to_dict(),
+            field_labels=dict(prism_semantic.FIELD_LABELS),
+            action_labels=dict(prism_semantic.ACTION_LABELS),
             views=views,
             views_payload=json.dumps(views) if views else "",
             **base_context("prism-playground"),

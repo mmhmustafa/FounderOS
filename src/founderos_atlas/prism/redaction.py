@@ -18,6 +18,16 @@ an inspectable claim rather than a promise. Redacted values are
 replaced by stable placeholders (``[redacted:password]``,
 ``[redacted:ip-1]``) — consistent within one request, so a model can
 still reason about "the same device" without learning its address.
+
+PR-166.2 added **semantic redaction** on top. A placeholder protects an
+identifier by destroying it, and the resulting explanation is safe but
+unreadable. When the caller supplies an
+:class:`~founderos_atlas.prism.semantic.AliasBook`, values Atlas can
+describe are replaced by a meaningful alias — "the Mumbai Core Router"
+rather than ``[redacted:hostname-1]`` — built only from metadata Atlas
+already holds. Everything else is unchanged: without an alias book this
+module behaves exactly as it did, and no alias can ever apply to a
+mandatory secret.
 """
 
 from __future__ import annotations
@@ -25,6 +35,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Pattern
+
+from . import semantic
 
 
 # -- policy -----------------------------------------------------------------
@@ -173,9 +185,12 @@ _MAC = re.compile(
     r"\b(?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}\b"
     r"|\b(?:[0-9A-Fa-f]{4}\.){2}[0-9A-Fa-f]{4}\b"
 )
+# The captured name may not END in a dot or hyphen: "Contact user:
+# dpatel." must redact "dpatel" and leave the full stop, or the
+# sentence comes back welded to the next one.
 _USERNAME = re.compile(
     r"(?i)\b(?:user(?:name)?|login|operator|account)[\s:=]+[\"']?"
-    r"([A-Za-z0-9._\\@-]{2,})"
+    r"([A-Za-z0-9._\\@-]*[A-Za-z0-9_\\@])"
 )
 # A dotted, TLD-shaped name: every label alphanumeric, the LAST label
 # alphabetic. "mumbai-core.example.net" matches; "10.20.30.40" does
@@ -187,29 +202,70 @@ _FQDN = re.compile(
     re.IGNORECASE,
 )
 # Placeholders already inserted by an earlier rule are never re-scanned:
-# without this, "[redacted:password-1]" reads as a hostname.
-_PLACEHOLDER = re.compile(r"\[redacted:[a-z-]+-\d+\]")
+# without this, "[redacted:password-1]" reads as a hostname. Removal
+# tokens count too — they carry no index precisely because a removed
+# value must not be correlatable, so they must not be re-read either.
+_PLACEHOLDER = re.compile(r"\[redacted:[a-z-]+-\d+\]|\[removed:[a-z-]+\]")
+
+# Report suffix for a value the policy REMOVED rather than masked. A
+# mask is a stable placeholder a model can correlate across mentions;
+# a removal deliberately is not, so the two are counted apart.
+_REMOVED_SUFFIX = " (removed)"
 
 
 @dataclass
 class RedactionReport:
     """What was removed, by rule. Displayed and audited — never the
-    values themselves, only the labels and counts."""
+    values themselves, only the labels and counts.
+
+    ``aliases`` records the semantic aliases that actually appeared in
+    the outgoing text. It holds alias objects, which DO carry the
+    original value, because the operator's page needs to map an alias
+    back to a real Atlas object. It is a server-side structure: it is
+    never sent to a provider and never written to the audit ledger.
+    """
 
     counts: dict[str, int] = field(default_factory=dict)
+    aliases: list = field(default_factory=list)
 
     def add(self, label: str, amount: int = 1) -> None:
         if amount:
             self.counts[label] = self.counts.get(label, 0) + amount
 
+    def note_alias(self, alias) -> None:
+        if alias is not None and alias not in self.aliases:
+            self.aliases.append(alias)
+
     @property
     def total(self) -> int:
         return sum(self.counts.values())
 
+    def action_counts(self) -> dict[str, int]:
+        """Aliased / masked / removed totals, for the audit record."""
+
+        totals = {semantic.ALIAS: 0, semantic.MASK: 0, semantic.REMOVE: 0}
+        for alias in self.aliases:
+            action = getattr(alias, "action", "")
+            if action in totals:
+                totals[action] += 1
+        # Secrets and explicit removals are removals; every other
+        # placeholder is a mask by definition. Neither is represented
+        # in the alias book.
+        for label, count in self.counts.items():
+            if label in _SECRET_LABELS or label.endswith(_REMOVED_SUFFIX):
+                totals[semantic.REMOVE] += count
+            elif label not in _ALIAS_LABELS:
+                totals[semantic.MASK] += count
+        return totals
+
     def to_dict(self) -> dict[str, Any]:
+        actions = self.action_counts()
         return {
             "total": self.total,
             "by_rule": dict(sorted(self.counts.items())),
+            "semantic_alias_count": actions[semantic.ALIAS],
+            "masked_field_count": actions[semantic.MASK],
+            "removed_field_count": actions[semantic.REMOVE],
         }
 
     def describe(self) -> str:
@@ -219,6 +275,15 @@ class RedactionReport:
             f"{count} {label}" for label, count in sorted(self.counts.items())
         ]
         return ", ".join(parts)
+
+
+# Labels produced by the mandatory (secret) tier — always a removal.
+_SECRET_LABELS = frozenset((
+    "private-key", "snmp-community", "api-key", "password", "credential",
+))
+# Labels whose count is already represented by an alias entry, so that
+# action_counts() does not count the same replacement twice.
+_ALIAS_LABELS = frozenset(("alias",))
 
 
 class _Placeholders:
@@ -260,8 +325,17 @@ def _outside_placeholders(text: str, transform) -> str:
 def _redact_pattern(
     text: str, label: str, pattern: Pattern[str], group: int,
     report: RedactionReport, placeholders: _Placeholders,
-    *, skip_values: frozenset[str] = frozenset(),
+    *, skip_values: frozenset[str] = frozenset(), remove: bool = False,
 ) -> str:
+    """Replace matches with a placeholder, or delete them outright.
+
+    ``remove`` implements the Remove action: the value is replaced by
+    an UNNUMBERED token, so unlike a mask it carries no identity a
+    model could correlate across mentions. A policy that says "remove"
+    and then emits ``[redacted:username-1]`` twice has not removed the
+    user — it has pseudonymised them.
+    """
+
     def replace(match: re.Match[str]) -> str:
         value = match.group(group)
         if not value:
@@ -272,10 +346,14 @@ def _redact_pattern(
             return match.group(0)
         if skip_values and _HASH_TYPE.match(bare):
             return match.group(0)
-        if value.startswith("[redacted:"):
+        if value.startswith(("[redacted:", "[removed:")):
             return match.group(0)
-        report.add(label)
-        token = placeholders.token(label, value)
+        if remove:
+            report.add(label + _REMOVED_SUFFIX)
+            token = f"[removed:{label}]"
+        else:
+            report.add(label)
+            token = placeholders.token(label, value)
         whole = match.group(0)
         if group == 0:
             return token
@@ -286,14 +364,63 @@ def _redact_pattern(
     return pattern.sub(replace, text)
 
 
+def _alias_segments(
+    text: str, aliases, report: RedactionReport,
+) -> list[tuple[str, bool]]:
+    """Split ``text`` into (chunk, protected) segments, substituting
+    every value the alias book knows.
+
+    Inserted aliases are marked protected so no later rule can rewrite
+    them: without this, aliasing "mumbai-core-01" to "Mumbai Core
+    Router" and then running the known-name rule for the site "mumbai"
+    would mangle the alias into "[redacted:hostname-2] Core Router".
+    """
+
+    originals = [item for item in aliases.originals() if item]
+    if not originals:
+        return [(text, False)]
+
+    # Longest first, so a full hostname wins over the site name inside
+    # it. AliasBook.originals() already sorts that way.
+    pattern = re.compile(
+        r"(?<![\w.-])(" + "|".join(re.escape(item) for item in originals)
+        + r")(?![\w-])",
+        re.IGNORECASE,
+    )
+    blocked = [match.span() for match in _PLACEHOLDER.finditer(text)]
+
+    segments: list[tuple[str, bool]] = []
+    cursor = 0
+    for match in pattern.finditer(text):
+        if any(start < match.end() and match.start() < end
+               for start, end in blocked):
+            continue          # never rewrite another rule's output
+        entry = aliases.for_original(match.group(1))
+        if entry is None or entry.action == semantic.PRESERVE:
+            continue
+        segments.append((text[cursor:match.start()], False))
+        segments.append((entry.alias, True))
+        report.add("alias")
+        report.note_alias(entry)
+        cursor = match.end()
+    segments.append((text[cursor:], False))
+    return segments
+
+
 def redact(
-    text: str, policy: RedactionPolicy | None = None
+    text: str, policy: RedactionPolicy | None = None, *, aliases=None,
 ) -> tuple[str, RedactionReport]:
     """Scrub one piece of text. Returns the safe text and the report.
 
     Mandatory rules always run. Optional rules run only where the
     policy enables them. Returns a report even when nothing matched,
     so callers can always state what happened.
+
+    ``aliases`` is an optional
+    :class:`~founderos_atlas.prism.semantic.AliasBook`. When supplied,
+    values Atlas can describe are replaced by their semantic alias
+    instead of an opaque placeholder. Aliases are applied AFTER the
+    mandatory rules, so no alias can ever survive in place of a secret.
     """
 
     policy = policy or STRICT_POLICY
@@ -308,6 +435,20 @@ def redact(
             skip_values=skip,
         )
 
+    # Which fields the active profile REMOVES rather than masks. With
+    # no alias book there is no profile, so every rule masks — exactly
+    # the pre-PR-166.2 behaviour.
+    active = getattr(aliases, "profile", None)
+
+    def removes(field_name: str) -> bool:
+        return (active is not None
+                and active.action(field_name) == semantic.REMOVE)
+
+    remove_host = removes(semantic.FIELD_HOSTNAMES)
+    remove_user = removes(semantic.FIELD_USERNAMES)
+    remove_mac = removes(semantic.FIELD_MAC_ADDRESSES)
+    remove_ip = removes(semantic.FIELD_IP_ADDRESSES)
+
     # Optional rules never rewrite an existing placeholder.
     def optional_pass(chunk: str) -> str:
         if policy.enabled(RULE_HOSTNAME):
@@ -315,47 +456,61 @@ def redact(
             # as ONE name rather than splitting around its short form;
             # then the enterprise's known bare names.
             chunk = _redact_pattern(
-                chunk, "hostname", _FQDN, 0, report, placeholders
+                chunk, "hostname", _FQDN, 0, report, placeholders,
+                remove=remove_host,
             )
             for name in policy.known_names:
                 pattern = re.compile(
                     rf"(?<![\w.-]){re.escape(name)}(?![\w-])", re.IGNORECASE
                 )
                 chunk = _redact_pattern(
-                    chunk, "hostname", pattern, 0, report, placeholders
+                    chunk, "hostname", pattern, 0, report, placeholders,
+                    remove=remove_host,
                 )
         if policy.enabled(RULE_USERNAME):
             chunk = _redact_pattern(
-                chunk, "username", _USERNAME, 1, report, placeholders
+                chunk, "username", _USERNAME, 1, report, placeholders,
+                remove=remove_user,
             )
         if policy.enabled(RULE_MAC):
             chunk = _redact_pattern(
-                chunk, "mac", _MAC, 0, report, placeholders
+                chunk, "mac", _MAC, 0, report, placeholders,
+                remove=remove_mac,
             )
         if policy.enabled(RULE_IP):
             chunk = _redact_pattern(
-                chunk, "ip", _IPV4, 0, report, placeholders
+                chunk, "ip", _IPV4, 0, report, placeholders, remove=remove_ip,
             )
             chunk = _redact_pattern(
-                chunk, "ip", _IPV6, 0, report, placeholders
+                chunk, "ip", _IPV6, 0, report, placeholders, remove=remove_ip,
             )
         return chunk
 
-    safe = _outside_placeholders(safe, optional_pass)
+    if aliases is None:
+        safe = _outside_placeholders(safe, optional_pass)
+    else:
+        safe = "".join(
+            chunk if protected else _outside_placeholders(chunk, optional_pass)
+            for chunk, protected in _alias_segments(safe, aliases, report)
+        )
     return safe, report
 
 
 def redact_all(
-    values: Iterable[str], policy: RedactionPolicy | None = None
+    values: Iterable[str], policy: RedactionPolicy | None = None,
+    *, aliases=None,
 ) -> tuple[list[str], RedactionReport]:
     """Redact several strings under one shared report. Placeholders are
-    per-string; the report aggregates."""
+    per-string; aliases and the report are shared, so one device reads
+    the same across every value in the request."""
 
     combined = RedactionReport()
     safe_values: list[str] = []
     for value in values:
-        safe, report = redact(value, policy)
+        safe, report = redact(value, policy, aliases=aliases)
         safe_values.append(safe)
         for label, count in report.counts.items():
             combined.add(label, count)
+        for alias in report.aliases:
+            combined.note_alias(alias)
     return safe_values, combined

@@ -35,6 +35,7 @@ from .providers import (
     KIND_DISABLED,
     ProviderRegistry,
 )
+from . import semantic
 from .redaction import OPTIONAL_RULES, RedactionPolicy, STRICT_POLICY
 
 
@@ -66,6 +67,21 @@ FORBIDDEN_KEYS = frozenset(
 )
 
 
+def _privacy_profile(data: dict[str, Any]) -> str:
+    """Which profile a stored document is running under.
+
+    An explicit choice wins. Otherwise a document that already carries
+    ``redaction_rules`` predates profiles and stays on those rules; a
+    document without them is new and gets the Cloud profile — the
+    stronger posture, never the weaker one.
+    """
+
+    explicit = str(data.get("privacy_profile") or "").strip()
+    if explicit in semantic.PROFILE_BY_KEY or explicit == semantic.PROFILE_AUTO:
+        return explicit
+    return "" if "redaction_rules" in data else semantic.PROFILE_CLOUD
+
+
 class PrismConfigError(ValueError):
     """An operator-readable configuration problem."""
 
@@ -93,8 +109,19 @@ class PrismConfig:
     max_context_tokens: int = 8192
     max_output_tokens: int = 800
     temperature: float = 0.2
-    # -- privacy (Part 8) -------------------------------------------
+    # -- privacy (Part 8; profiles added in PR-166.2) ---------------
     redaction_rules: tuple[str, ...] = tuple(OPTIONAL_RULES)
+    # Cloud by default — the stronger posture. Part 8 permits a local
+    # model to preserve hostnames; it does not require Atlas to assume
+    # it. A "local" endpoint may still be a proxy to a cloud model or a
+    # service shared beyond this team, so preserving identifiers is an
+    # administrator's explicit decision (the Internal profile, or the
+    # "match the provider" choice), never an inference Atlas makes.
+    # "" means this enterprise configured individual rules before
+    # profiles existed; those rules stay in force until a profile is
+    # chosen, so upgrading never silently changes a privacy posture.
+    privacy_profile: str = semantic.PROFILE_CLOUD
+    field_overrides: tuple[tuple[str, str], ...] = ()
     # -- governance (Part 11) ---------------------------------------
     allow_cloud_providers: bool = False
     allowed_providers: tuple[str, ...] = ()   # () = every registered kind
@@ -121,8 +148,29 @@ class PrismConfig:
     def is_cloud(self) -> bool:
         return self.mode == MODE_CLOUD
 
+    def active_profile(self) -> semantic.PrivacyProfile:
+        """The privacy profile actually in force, overrides applied.
+
+        ``auto`` resolves against how the provider is hosted: a model
+        on your own network gets Internal, anything external gets
+        Cloud (Parts 8 and 9).
+        """
+
+        key = str(self.privacy_profile or "")
+        if key == semantic.PROFILE_AUTO:
+            base = semantic.profile(semantic.profile_for_hosting(
+                "local" if self.mode == MODE_LOCAL else "cloud"
+            ))
+        elif key in semantic.PROFILE_BY_KEY:
+            base = semantic.profile(key)
+        else:
+            base = semantic.legacy_profile(self.redaction_rules)
+        return base.with_overrides(dict(self.field_overrides))
+
     def redaction_policy(self) -> RedactionPolicy:
-        return RedactionPolicy.from_names(self.redaction_rules)
+        return RedactionPolicy.from_names(
+            self.active_profile().optional_rules()
+        )
 
     def capability_enabled(self, name: str) -> bool:
         return name in self.enabled_capabilities
@@ -155,6 +203,10 @@ class PrismConfig:
             "max_output_tokens": self.max_output_tokens,
             "temperature": self.temperature,
             "redaction_rules": list(self.redaction_rules),
+            "privacy_profile": self.privacy_profile,
+            "field_overrides": {
+                name: action for name, action in self.field_overrides
+            },
             "allow_cloud_providers": self.allow_cloud_providers,
             "allowed_providers": list(self.allowed_providers),
             "allowed_models": list(self.allowed_models),
@@ -204,6 +256,18 @@ class PrismConfig:
             ),
             temperature=_bounded_float(data.get("temperature"), 0.2, 0.0, 2.0),
             redaction_rules=rules if rules else (),
+            # A document written before profiles existed keeps its
+            # explicit rules ("" = legacy) instead of being upgraded to
+            # a posture nobody chose. A fresh document gets ``auto``.
+            privacy_profile=_privacy_profile(data),
+            field_overrides=tuple(
+                (str(name), str(action))
+                for name, action in sorted(
+                    (data.get("field_overrides") or {}).items()
+                )
+                if name in semantic.FIELD_LABELS
+                and action in semantic.ACTIONS
+            ),
             allow_cloud_providers=bool(
                 data.get("allow_cloud_providers", False)
             ),
@@ -485,12 +549,21 @@ def validate(
             "Cloud AI is disabled by policy. Enable cloud providers "
             "first, or choose a customer-hosted provider."
         )
-    if (config.is_cloud
-            and not set(config.redaction_rules) >= set(OPTIONAL_RULES)):
-        # Not an error: an informed choice. Stated plainly so nobody
-        # sends identifying detail to a third party by accident.
-        problems.append(
-            "Warning: identifying detail (see the redaction options) "
-            "will be sent to a third-party provider."
-        )
+    if config.is_cloud:
+        active = config.active_profile()
+        preserved = [
+            semantic.FIELD_LABELS[name]
+            for name in semantic.IDENTIFYING_FIELDS
+            if active.preserves(name)
+        ]
+        if preserved:
+            # Not an error: an informed choice. Stated plainly, and
+            # naming the exact fields, so nobody sends identifying
+            # detail to a third party by accident.
+            problems.append(
+                "Warning: identifying detail will be sent to a "
+                "third-party provider — the “"
+                f"{active.label}” profile preserves "
+                f"{', '.join(preserved).lower()}."
+            )
     return problems

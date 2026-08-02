@@ -289,13 +289,14 @@ class PlaygroundTests(unittest.TestCase):
                 "audience": "engineer", "language": "en",
                 "confidence": "Medium", "limitations": "",
             }).data.decode("utf-8")
-            self.assertIn("What PRISM would actually receive", page)
-            # Scope the check to the PREVIEW block. The textarea above it
-            # legitimately echoes the operator's own paste back to them
-            # for editing; what matters is the text that would leave
-            # Atlas.
-            preview = page.split("What PRISM would actually receive", 1)[1]
-            preview = preview.split("</section>", 1)[0]
+            self.assertIn("Data sent to the provider", page)
+            # Scope the check to the PAYLOAD blockquote. Both the
+            # textarea and stage 1 legitimately echo the operator's own
+            # paste back to them — stage 1 exists precisely to show the
+            # untouched original. What matters is the text that would
+            # leave Atlas, which is stage 3 and nothing else.
+            preview = page.split("Data sent to the provider", 1)[1]
+            preview = preview.split("</blockquote>", 1)[0]
             self.assertNotIn("S3cret", preview)
             self.assertNotIn("10.9.9.9", preview)
             self.assertIn("[redacted:", preview)
@@ -306,7 +307,14 @@ class PlaygroundTests(unittest.TestCase):
         They were computed from different name lists once, and the
         preview showed hostnames redacted that the provider received in
         the clear. A preview that overstates protection is worse than no
-        preview at all, because an administrator trusts it."""
+        preview at all, because an administrator trusts it.
+
+        This is the STRUCTURAL half of that guarantee: one name list and
+        one alias book must reach both paths. The behavioural half —
+        the preview text appearing verbatim in the recorded payload,
+        under every privacy profile — is
+        ``test_prism_semantic.PreviewMatchesWhatIsSentTests``.
+        """
 
         source = (
             REPO / "src/founderos_atlas/web/routes.py"
@@ -314,11 +322,23 @@ class PlaygroundTests(unittest.TestCase):
         block = source.split("def prism_playground()", 1)[1].split(
             "@app.route", 1
         )[0]
-        # One list, used by both the redact() preview and explain().
+        # ONE name list, feeding both the redact() preview and explain().
         self.assertIn("known_names = _enterprise_names(", block)
-        self.assertIn(".with_known_names(known_names)", block)
+        self.assertIn("known_names_for(book, known_names)", block)
         self.assertIn("known_names=known_names", block)
         self.assertNotIn("known_names=()", block)
+        # PR-166.2 added a second thing that must match: the alias book.
+        # A preview aliased from one book while the provider is sent
+        # another would mislead in exactly the same way.
+        self.assertIn("book = _alias_book(", block)
+        self.assertIn("aliases=book)", block)          # the preview
+        self.assertIn("aliases=side_book", block)      # the real call
+        # ...and the side's book must be built for the profile of the
+        # service that will USE it. Comparison overrides the provider,
+        # which under "match the provider" changes the profile too; one
+        # shared book let a cloud side run with an Internal book and no
+        # known names at all, sending hostnames in the clear.
+        self.assertIn("target.config.active_profile()", block)
 
     def test_a_dead_provider_leaves_the_page_usable(self) -> None:
         """Part 11 on the Playground too: the pasted evidence stays and

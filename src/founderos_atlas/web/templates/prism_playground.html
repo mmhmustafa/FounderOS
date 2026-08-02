@@ -132,20 +132,64 @@
 
 {% if redaction_preview %}
 <section class="card">
-  <h2>What PRISM would actually receive</h2>
-  <p class="muted">Redaction runs before anything leaves Atlas. This is the exact text after
-  it — inspect it before you trust a provider with production evidence.</p>
-  <blockquote class="advisor-ai-text">{{ redaction_preview }}</blockquote>
-  <p class="muted">Removed: {{ redaction_summary }}</p>
+  <h2>From your evidence to the provider</h2>
+  <p class="muted">The four stages, in order. Everything below the first one is derived — you
+  can see exactly what changed and why, before you trust a provider with production evidence.
+  Privacy profile in force: <strong>{{ privacy_profile.label }}</strong>.</p>
+
+  <div class="prism-stage">
+    <h4>1 · Original evidence</h4>
+    <p class="muted prism-stage-note">What you pasted. Atlas keeps this unchanged — redaction
+    applies to the copy sent for explanation, never to the record.</p>
+    <blockquote class="advisor-ai-text">{{ evidence }}</blockquote>
+  </div>
+
+  <div class="prism-stage">
+    <h4>2 · Semantic alias preview</h4>
+    {% if alias_preview %}
+    <p class="muted prism-stage-note">Every alias Atlas minted for this text, and the metadata
+    it was built from. Nothing here is invented — an object Atlas cannot describe gets a
+    numbered generic instead of a guessed role.</p>
+    <table class="table">
+      <thead><tr><th scope="col">Original</th><th scope="col">Sent as</th>
+        <th scope="col">Rule</th><th scope="col">Built from</th></tr></thead>
+      <tbody>
+        {% for row in alias_preview %}
+        <tr>
+          <td><code>{{ row.original }}</code></td>
+          <td>{{ row.alias }}</td>
+          <td>{{ field_labels.get(row.field, row.field) }} → {{ action_labels.get(row.action, row.action) }}</td>
+          <td class="muted">{% if row.basis %}{{ row.basis | join(', ') }}{% else %}Atlas held no descriptive metadata for this object{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="muted prism-stage-note">No value in this text matched a device or site Atlas has
+    discovered, so no alias was needed. Atlas does not mint aliases for names it does not
+    know — there would be no metadata to build one from.</p>
+    {% endif %}
+  </div>
+
+  <div class="prism-stage">
+    <h4>3 · Data sent to the provider</h4>
+    <p class="muted prism-stage-note">The exact text after redaction. {{ privacy_note }}{% if compare_mode %}
+    This preview is the <strong>first</strong> side. If the second side uses a provider that
+    resolves a different privacy profile, its payload differs — each side's profile is shown with
+    its view below.{% endif %}</p>
+    <blockquote class="advisor-ai-text">{{ redaction_preview }}</blockquote>
+    <p class="muted">Removed or replaced: {{ redaction_summary }}</p>
+  </div>
 </section>
 {% endif %}
 
 {% if views %}
 <section class="card">
-  <h2>PRISM views</h2>
+  <h2>4 · Generated explanation</h2>
   <p class="muted">Same evidence, same confidence, same unknowns — different readers. Compare
   them: if a view states something the evidence above does not, that is a finding worth
-  reporting, not a feature.</p>
+  reporting, not a feature. Aliases below are shown as an authorised operator sees them,
+  linked back to the Atlas object each one stands for.</p>
 
   <form class="filter-bar prism-export" method="post" action="/prism/playground/export">{{ csrf_field() }}
     <input type="hidden" name="views" value="{{ views_payload }}">
@@ -164,7 +208,12 @@
       <span class="badge hop-badge hop-badge-{{ 'pass' if view.ok else 'unknown' }}">{{ 'generated' if view.ok else 'unavailable' }}</span>
     </div>
     {% if view.ok %}
-    <blockquote class="advisor-ai-text">{{ view.text }}</blockquote>
+    {# Part 5.1: what an AUTHORISED operator sees — the same words the
+       provider produced, with each alias annotated and linked to the
+       Atlas object it stands for. The provider saw the bare alias. #}
+    {% set seen = namespace(aliases=[]) %}
+    <blockquote class="advisor-ai-text">{% if view.segments %}{% for segment in view.segments %}{% if segment.alias %}{% if segment.href %}<a class="prism-alias" href="{{ segment.href }}" title="{{ segment.note }}{% if segment.original %} — {{ segment.original }}{% endif %}">{{ segment.text }}</a>{% else %}<span class="prism-alias prism-alias-plain" title="{{ segment.note }}">{{ segment.text }}</span>{% endif %}{% if segment.text not in seen.aliases %}{% set seen.aliases = seen.aliases + [segment.text] %} <span class="muted">({{ segment.note }})</span>{% endif %}{% else %}{{ segment.text }}{% endif %}{% endfor %}{% else %}{{ view.text }}{% endif %}</blockquote>
+    {% if view.privacy_note %}<p class="muted prism-privacy-note">{{ view.privacy_note }}</p>{% endif %}
     <ul class="kv prism-view-meta">
       <li><span>Provider</span><span>{{ view.provider }}</span></li>
       <li><span>Model</span><span>{{ view.model }}</span></li>
@@ -173,6 +222,8 @@
       <li><span>Tokens</span><span>{{ view.input_tokens if view.input_tokens is not none else '—' }} in / {{ view.output_tokens if view.output_tokens is not none else '—' }} out</span></li>
       <li><span>Estimated cost</span><span>{% if view.estimated_cost is not none %}{{ prism.currency }} {{ '%.6f' | format(view.estimated_cost) }}{% else %}not priced{% endif %}</span></li>
       <li><span>Redacted before sending</span><span>{{ view.redaction_summary or 'nothing needed redaction' }}</span></li>
+      <li><span>Privacy profile</span><span>{{ view.privacy_profile_label or '—' }}</span></li>
+      <li><span>Aliased / masked / removed</span><span>{{ view.semantic_alias_count }} / {{ view.masked_field_count }} / {{ view.removed_field_count }}</span></li>
       <li><span>Generated</span><span>{{ view.generated_at }}</span></li>
     </ul>
     <p class="muted">Generated by PRISM from the Atlas evidence above.</p>

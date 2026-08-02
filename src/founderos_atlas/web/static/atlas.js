@@ -914,10 +914,94 @@
     var aiHide = document.getElementById("advisor-ai-hide");
     var aiBusy = false;
 
+    var aiPrivacy = document.getElementById("advisor-ai-privacy");
+    var aiWhy = document.getElementById("advisor-ai-why");
+    var aiWhyBody = document.getElementById("advisor-ai-why-body");
+
     var aiToggleActions = function (show) {
       [aiCopy, aiDownload, aiHide].forEach(function (button) {
         if (button) { button.hidden = !show; }
       });
+    };
+
+    // PR-166.2 Part 5.1: the operator's view of the answer. The
+    // provider received alias text; here each alias is annotated and,
+    // where the server said this reader may follow it, linked to the
+    // real Atlas object. Built as DOM nodes — never innerHTML — so the
+    // model's output can never become markup.
+    var aiRenderSegments = function (segments, plainText) {
+      while (aiText.firstChild) { aiText.removeChild(aiText.firstChild); }
+      if (!segments || !segments.length) {
+        aiText.textContent = plainText;
+        return;
+      }
+      var annotated = {};
+      segments.forEach(function (segment) {
+        if (!segment.alias) {
+          aiText.appendChild(document.createTextNode(segment.text));
+          return;
+        }
+        var node;
+        if (segment.href) {
+          node = document.createElement("a");
+          node.setAttribute("href", segment.href);
+          node.className = "prism-alias";
+        } else {
+          // No link where the reader could not navigate there anyway:
+          // the page must not imply a destination RBAC would refuse.
+          node = document.createElement("span");
+          node.className = "prism-alias prism-alias-plain";
+        }
+        node.textContent = segment.text;
+        var note = segment.note || "protected during AI processing";
+        var full = segment.original ? note + " — " + segment.original : note;
+        node.setAttribute("title", full);
+        aiText.appendChild(node);
+        // Annotate the FIRST mention only. Repeating the parenthetical
+        // after every occurrence buries the sentence it is explaining;
+        // later mentions keep the link, the styling and the tooltip.
+        if (!annotated[segment.text]) {
+          annotated[segment.text] = true;
+          aiText.appendChild(document.createTextNode(" (" + note + ")"));
+        }
+      });
+    };
+
+    // Part 5.2: the transparency record for the aliases actually used.
+    var aiRenderWhy = function (data) {
+      if (!aiWhy || !aiWhyBody) { return; }
+      while (aiWhyBody.firstChild) {
+        aiWhyBody.removeChild(aiWhyBody.firstChild);
+      }
+      var rows = (data && data.alias_legend) || [];
+      if (!rows.length) { aiWhy.hidden = true; return; }
+      var intro = document.createElement("p");
+      intro.textContent =
+        "Privacy profile “" + (data.privacy_profile_label || "") + "”. "
+        + "Atlas still holds every original value, unchanged — redaction "
+        + "applies only to the copy sent for explanation.";
+      aiWhyBody.appendChild(intro);
+      var list = document.createElement("dl");
+      rows.forEach(function (row) {
+        var term = document.createElement("dt");
+        term.textContent = row.alias;
+        var detail = document.createElement("dd");
+        var parts = [];
+        if (row.original) { parts.push("original: " + row.original); }
+        parts.push("rule: " + (row.field || "") + " → " + (row.action || ""));
+        if (row.basis && row.basis.length) {
+          parts.push("built from " + row.basis.join(", "));
+        } else {
+          parts.push("Atlas held no descriptive metadata, so a generic "
+            + "alias was used rather than inventing one");
+        }
+        parts.push("the provider never received the original");
+        detail.textContent = parts.join(" · ");
+        list.appendChild(term);
+        list.appendChild(detail);
+      });
+      aiWhyBody.appendChild(list);
+      aiWhy.hidden = false;
     };
 
     var aiExplain = function () {
@@ -942,7 +1026,12 @@
         .then(function (response) { return response.json(); })
         .then(function (data) {
           if (data && data.ok && data.text) {
-            aiText.textContent = data.text;
+            aiRenderSegments(data.segments, data.text);
+            if (aiPrivacy) {
+              aiPrivacy.textContent = data.privacy_note || "";
+              aiPrivacy.hidden = !data.privacy_note;
+            }
+            aiRenderWhy(data);
             var bits = [];
             if (data.provider) { bits.push("provider " + data.provider); }
             if (data.model) { bits.push("model " + data.model); }

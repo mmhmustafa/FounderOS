@@ -91,6 +91,12 @@ from .redaction import (
     RedactionReport,
     redact,
 )
+# Semantic redaction (PR-166.2). Exported as MODULES rather than as
+# loose names: the field, action and profile vocabularies belong
+# together, and callers read better as ``semantic.PROFILE_CLOUD`` than
+# as a bare constant.
+from . import presentation, semantic
+from .semantic import AliasBook, PrivacyProfile, build_alias_book
 from .service import Enhancement, PrismService
 from .usage import (
     USAGE_FILENAME,
@@ -149,8 +155,13 @@ __all__ = [
     "PromptError",
     "PromptRegistry",
     "PromptTemplate",
+    "AliasBook",
+    "PrivacyProfile",
     "RedactionPolicy",
     "RedactionReport",
+    "build_alias_book",
+    "presentation",
+    "semantic",
     "SAFETY_PREAMBLE",
     "STRICT_POLICY",
     "USAGE_FILENAME",

@@ -189,6 +189,20 @@ Redacted values become stable placeholders (`[redacted:ip-1]`) — consistent wi
 reason about "the same device" without learning its address. Every redaction is counted and the counts are shown to
 the operator and recorded in the audit.
 
+### Semantic redaction (PR-166.2)
+
+A placeholder protects an identifier by destroying it, and the resulting explanation is safe but unreadable. PRISM
+now replaces values Atlas can describe with a **meaningful alias** built only from metadata it already holds — "the
+Mumbai Core Router" rather than `[redacted:hostname-1]` — governed by three **privacy profiles** (Internal, Cloud,
+High security) with a per-field policy of Preserve / Semantic alias / Mask / Remove. Secrets remain outside that
+policy entirely: no profile, override or form control can preserve one.
+
+What the provider receives and what an authorised Atlas operator reads are deliberately **not the same thing**: the
+operator sees the alias annotated and linked back to the real object, gated by the permissions they already hold.
+
+See **[ATLAS_PRISM_SEMANTIC_REDACTION.md](ATLAS_PRISM_SEMANTIC_REDACTION.md)** for the full design, the profile
+table, the RBAC rules and the architecture diagram.
+
 ## Cost management and AI audit (Parts 9–10)
 
 One append-only ledger, `prism-usage.jsonl`, in the workspace output directory (5 MB rotation, 3 backups). Each

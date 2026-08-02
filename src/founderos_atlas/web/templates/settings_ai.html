@@ -98,15 +98,50 @@
       <label>Permitted models<input name="allowed_models" value="{{ prism.allowed_models | join(', ') }}" placeholder="blank = any model"></label>
     </div>
 
-    <h3>Privacy and redaction</h3>
+    <h3>Privacy profile</h3>
     <p class="muted">Credentials, API keys, SNMP communities and private keys are
-    <strong>always</strong> removed before anything is sent — for every provider, with no way to
-    switch that off. The options below add identifying detail to what is removed.</p>
-    <div class="form-row">
-      {% for rule, label in redaction_options %}
-      <label class="ai-check"><input type="checkbox" name="redaction_rules" value="{{ rule }}" {{ 'checked' if rule in prism.redaction_rules else '' }}> Redact {{ label | lower }}</label>
+    <strong>always</strong> removed before anything is sent — for every provider, under every
+    profile, with no way to switch that off. There is no setting below that can preserve a secret.
+    The profile governs <em>identifying</em> detail: what a provider sees in place of your
+    hostnames, addresses and site names.</p>
+    {# The RESOLVED profile the table below was rendered from. If this
+       save lands on a different one — a new profile, or a new provider
+       under "match the provider" — those radios describe the OLD
+       policy and must not be stored as overrides against the new one. #}
+    <input type="hidden" name="privacy_profile_rendered" value="{{ privacy_profile.key }}">
+    <div class="form-row prism-profiles">
+      <label class="ai-check"><input type="radio" name="privacy_profile" value="{{ privacy_auto }}" {{ 'checked' if privacy_profile_key == privacy_auto else '' }}>
+        <strong>Match the provider</strong> — a model on your own network gets Internal; an
+        external provider gets Cloud.</label>
+      {% for profile in privacy_profiles %}
+      <label class="ai-check"><input type="radio" name="privacy_profile" value="{{ profile.key }}" {{ 'checked' if privacy_profile_key == profile.key else '' }}>
+        <strong>{{ profile.label }}</strong> — {{ profile.description }}</label>
       {% endfor %}
     </div>
+
+    <h4>Active policy, field by field</h4>
+    <p class="muted">This is the policy in force right now — profile
+    “<strong>{{ privacy_profile.label }}</strong>”, with any changes you make below. <em>Semantic
+    alias</em> replaces a value with a description Atlas can justify from its own metadata
+    (“Mumbai Core Router”); <em>Mask</em> replaces it with an opaque placeholder; <em>Remove</em>
+    deletes it; <em>Preserve</em> sends it unchanged.</p>
+    <table class="table prism-policy">
+      <thead><tr><th scope="col">Field</th>
+        {% for action, label in privacy_actions %}<th scope="col">{{ label }}</th>{% endfor %}
+      </tr></thead>
+      <tbody>
+        {% for field, label in privacy_fields %}
+        <tr>
+          <th scope="row">{{ label }}</th>
+          {% for action, action_label in privacy_actions %}
+          <td><label class="prism-policy-cell"><input type="radio" name="policy__{{ field }}" value="{{ action }}"
+            {{ 'checked' if privacy_profile.rules[field] == action else '' }}>
+            <span class="visually-hidden">{{ label }}: {{ action_label }}</span></label></td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
 
     <h3>Capabilities</h3>
     <p class="muted">PRISM is never switched on as a whole. Enable one capability at a time; each

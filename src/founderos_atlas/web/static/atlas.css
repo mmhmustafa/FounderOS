@@ -616,6 +616,36 @@ body[data-theme="dark"] table[data-row-select] tbody tr.row-selected { backgroun
 .prism-compare .prism-view { border-top: 0; margin-top: 0; }
 .prism-view-meta { font-size: 12px; }
 
+/* PR-166.2 (Semantic Redaction). An alias is text the operator can act
+   on, so it reads as a link where they may follow it and as plain
+   emphasis where they may not — the page must never imply a
+   destination the RBAC would refuse. */
+.prism-profiles { flex-direction: column; align-items: stretch; gap: 8px; }
+.prism-profiles .ai-check { align-items: flex-start; line-height: 1.45; }
+.prism-policy { margin: 8px 0 16px; }
+.prism-policy th[scope="col"] { font-size: 12px; white-space: nowrap; }
+.prism-policy th[scope="row"] { font-weight: var(--weight-regular);
+  text-align: left; }
+.prism-policy-cell { display: flex; justify-content: center; margin: 0;
+  cursor: pointer; }
+.prism-privacy-note { font-size: 12px; margin: 0 0 10px;
+  padding: 8px 10px; border-radius: var(--radius);
+  background: var(--surface-2); border: 1px solid var(--line); }
+.prism-alias { border-bottom: 1px dotted var(--accent);
+  text-decoration: none; }
+.prism-alias[href]:hover, .prism-alias[href]:focus-visible {
+  border-bottom-style: solid; }
+.prism-alias-plain { border-bottom: 1px dotted var(--line-strong); }
+.prism-alias-why { font-size: 12px; margin: 8px 0 0; }
+.prism-alias-why summary { cursor: pointer; }
+.prism-alias-why dl { margin: 6px 0 0; display: grid; gap: 2px 10px;
+  grid-template-columns: minmax(140px, auto) 1fr; }
+.prism-alias-why dt { font-weight: var(--weight-semibold); }
+.prism-alias-why dd { margin: 0; }
+.prism-stage { margin: 14px 0; }
+.prism-stage h4 { margin: 0 0 4px; }
+.prism-stage-note { font-size: 12px; margin: 0 0 6px; }
+
 /* PR-166 (INSIGHT): the Advisor's optional AI explanation panel.
    Visually subordinate to the answer above it — AI restates, Atlas
    concludes. Token-only, like every panel since PR-163. */
