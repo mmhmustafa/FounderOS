@@ -388,9 +388,15 @@ class AdvisorGuiTests(unittest.TestCase):
             self.assertIn(b"Recent Conversations", page)
 
     def test_ask_renders_the_answer_hierarchy(self) -> None:
-        """PR-163: the conclusion first, then summary, findings, what was
-        checked, the reasoning, the evidence, confidence separated from
-        freshness, and explained recommendations — in that order."""
+        """PR-168: verdict, then key findings, then what to do next —
+        and only then the supporting detail, collapsed.
+
+        PR-163 pinned the opposite order (summary, findings, checks,
+        reasoning, evidence, confidence, freshness, recommendations),
+        which put the thing an operator needs first in eighth place.
+        The order is still asserted as an ORDER, not a bag of headings;
+        it is the order itself that changed.
+        """
 
         with tempfile.TemporaryDirectory() as tmp:
             client = self.build_client(Path(tmp))
@@ -400,29 +406,64 @@ class AdvisorGuiTests(unittest.TestCase):
                 follow_redirects=True,
             )
             body = response.data
-            # Judge the ANSWER CARD, not the page chrome (the sidebar has
-            # its own "Evidence" link) — and use the heading markup so a
-            # word inside prose cannot satisfy a section check.
-            card = body[body.index(b"advisor-response"):]
-            # PR-164: the summary heading is domain-aware ("Find GW"
-            # routes to Device Lookup, an inventory-domain intent) and
-            # the checks section carries operational-check names.
-            sections = (b"Inventory summary</h2>", b"Key findings</h2>",
-                        b"Operational checks performed</h2>",
-                        b"Why Atlas reached this conclusion</h2>",
-                        b"<h2>Evidence</h2>",
-                        b"Answer confidence</h3>",
-                        b"Evidence freshness</h3>",
-                        b"Atlas recommends</h2>")
+            answer = body[body.index(b"verdict-card"):]
+            sections = (b"verdict-chip",                  # the status
+                        b"verdict-answer",                # the answer
+                        b"Key findings</h2>",
+                        b"What to do next</h2>",
+                        b"Supporting detail</h2>",
+                        b"Evidence</span>")
             for section in sections:
-                self.assertIn(section, card)
-            # The hierarchy is an ORDER, not a bag of headings.
-            positions = [card.index(section) for section in sections]
+                self.assertIn(section, answer)
+            positions = [answer.index(section) for section in sections]
             self.assertEqual(positions, sorted(positions))
+
+            # The verdict card leads with a status word an operator can
+            # act on, not an internal tone key.
+            verdict = answer[:answer.index(b"Key findings</h2>")]
+            self.assertTrue(
+                any(status in verdict for status in
+                    (b"Healthy", b"Attention required",
+                     b"Not enough evidence", b"Informational")),
+                "the verdict must state an operational status",
+            )
+
+            # Nothing was lost — the supporting detail still carries
+            # every section the old hierarchy showed inline.
+            supporting = body[body.index(b"Supporting detail</h2>"):]
+            for kept in (b"Inventory summary", b"checks performed",
+                         b"Why Atlas reached this conclusion",
+                         b"artifact(s) cited", b"Evidence freshness</h3>"):
+                self.assertIn(kept, supporting)
+
             self.assertIn(b"Found GW", body)
             self.assertIn(b"High confidence", body)
             self.assertIn(b"/devices/", body)
             self.assertNotIn(PASSWORD.encode(), body)
+
+    def test_supporting_detail_is_collapsed_not_deleted(self) -> None:
+        """Part 4: details on demand. Every supporting section must be
+        a <details> — present in the DOM, reachable by keyboard and by
+        a screen reader, and closed by default so it does not compete
+        with the answer. Deleting them instead would be a regression
+        dressed as a simplification."""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = self.build_client(Path(tmp))
+            body = client.post(
+                "/advisor/ask", data={"question": "Find GW"},
+                follow_redirects=True,
+            ).data.decode()
+            supporting = body[body.index("Supporting detail</h2>"):]
+            supporting = supporting[:supporting.index("</section>")]
+            self.assertIn("<details", supporting)
+            # Only Limitations may open by default: an unstated
+            # limitation reads as a claim.
+            opened = supporting.count("<details class=\"advisor-detail "
+                                      "advisor-limitations\" open>")
+            self.assertLessEqual(opened, 1)
+            self.assertNotIn("<details class=\"advisor-detail\" open>",
+                             supporting)
 
     def test_unknown_question_is_honest_in_the_gui(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -440,14 +481,27 @@ class AdvisorGuiTests(unittest.TestCase):
             self.assertIn(b"currently have enough evidence to answer this.",
                           response.data)
             self.assertIn(b"Unknown confidence", response.data)
-            # The Operational Intent Router wears its decision openly.
-            self.assertIn(b"Understood as: Unknown", response.data)
+            # PR-168 Part 9: the status word an operator reads is
+            # "Not enough evidence" — a real answer, said plainly.
+            self.assertIn(b"Not enough evidence", response.data)
+            # The Operational Intent Router still wears its decision
+            # openly; PR-168 moved it out of the headline and into the
+            # collapsed "Why Atlas reached this conclusion", because it
+            # describes ATLAS rather than the operator's network.
+            self.assertIn(b"Understood as <strong>Unknown</strong>",
+                          response.data)
             self.assertIn(b"Run Discovery", response.data)
 
     def test_status_cards_show_current_scope_honestly(self) -> None:
         """The card strip is CURRENT scope status (an old stored answer
         may come from another scope), and Routing carries no invented
-        health verdict — counts only."""
+        health verdict.
+
+        PR-168 Part 9 replaced the filler "count only" with a sentence
+        that says the same thing in operational words. The honesty
+        being tested is unchanged: a tile with no health state must SAY
+        it has no health state rather than imply one.
+        """
 
         with tempfile.TemporaryDirectory() as tmp:
             client = self.build_client(Path(tmp))
@@ -457,8 +511,12 @@ class AdvisorGuiTests(unittest.TestCase):
                          b"Identity", b"Routing"):
                 self.assertIn(card, page)
             self.assertIn(b"independent of any stored answer", page)
-            self.assertIn(b"count only", page)
+            self.assertIn(b"No health state assessed", page)
             self.assertIn(b"no routing health", page)
+            # The phrases Part 9 retires: filler that tells an operator
+            # nothing they can act on.
+            self.assertNotIn(b"count only", page)
+            self.assertNotIn(b"not evaluated yet", page)
 
     def test_conversations_group_pin_and_search(self) -> None:
         """History is grouped by recency, pinnable, and searchable —

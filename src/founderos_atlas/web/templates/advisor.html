@@ -43,12 +43,15 @@
        {% if card.detail %}title="{{ card.detail }}"{% endif %}>
       <strong>{{ card.title }}</strong>
       <span class="tile-text">{{ card.value }}</span>
+      {# Part 9: operational words. A tile with no health state is a
+         COUNT, and saying "count only / not evaluated yet" twice tells
+         an operator nothing they can act on. Say what is true, once. #}
       {% if card.state %}
       <span class="badge hop-badge health-state-{{ card.state }}">{{ card.state }}</span>
       {% else %}
-      <span class="muted advisor-card-meta">count only</span>
+      <span class="muted advisor-card-meta">No health state assessed</span>
       {% endif %}
-      <span class="muted advisor-card-meta">{% if card.updated %}updated {{ card.updated | timestamp }}{% else %}not evaluated yet{% endif %}</span>
+      {% if card.updated %}<span class="muted advisor-card-meta">updated {{ card.updated | timestamp }}</span>{% endif %}
     </a>
     {% endfor %}
   </div>
@@ -56,44 +59,136 @@
 {% endif %}
 
 {% if response and presented %}
-<section class="card root-cause advisor-response">
-  {# 1. The final answer — the conclusion first, never buried in prose. #}
-  <div class="job-head">
-    <h2 class="advisor-question">{{ response.question }}</h2>
+{# ══ VERDICT ══════════════════════════════════════════════════════════
+   PR-168 Part 1. The operator must understand the answer in three
+   seconds, so this card answers "what happened?" and "should I worry?"
+   and nothing else. Evidence, plans and engines are supporting material
+   and live further down, collapsed. #}
+<section class="card verdict-card verdict-{{ presented.verdict.tone }}"
+         aria-labelledby="advisor-answer">
+  <p class="verdict-asked"><span class="muted">You asked</span>
+     <span class="advisor-question">{{ response.question }}</span></p>
+
+  <div class="verdict-status">
+    <span class="verdict-chip verdict-chip-{{ presented.verdict.tone }}">
+      <span class="verdict-dot" aria-hidden="true"></span>{{ presented.verdict.status }}
+    </span>
     <span class="badge hop-badge hop-badge-{{ presented.confidence.css }}"
           aria-label="Answer confidence: {{ presented.confidence.level }}">
       <span class="conf-meter" aria-hidden="true">{% for i in range(4) %}<span class="conf-seg{{ ' on' if i < presented.confidence.meter else '' }}"></span>{% endfor %}</span>
       {{ presented.confidence.level }} confidence
     </span>
+    {% if presented.freshness and presented.freshness.warn %}
+    <span class="badge hop-badge hop-badge-warning">Evidence may be stale</span>
+    {% endif %}
   </div>
-  {% if presented.intent %}
-  {# PR-164: the Operational Intent Router's decision, worn openly. #}
-  <p class="advisor-intent-line">
-    <span class="badge hop-badge advisor-intent-chip"
-          title="How Atlas understood the question — detected by the deterministic Operational Intent Router">
-      Understood as: {{ presented.intent.name }}</span>
-    <span class="muted">routing confidence {{ presented.intent.confidence }}{% if presented.intent.escalated %} — inferred from keywords, not a direct workflow phrase{% endif %}</span>
+
+  {# The engine's own first sentence IS the answer. #}
+  <h2 id="advisor-answer" class="verdict-answer">{{ presented.summary_bullets[0] if presented.summary_bullets else response.summary }}</h2>
+  {% if presented.summary_bullets | length > 1 %}
+  <ul class="verdict-detail">
+    {% for bullet in presented.summary_bullets[1:] %}<li>{{ bullet }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+  <p class="muted verdict-note">{{ presented.verdict.headline }}</p>
+
+  {# Part 5: what this answer IS, in operator language — never
+     "Understood as: Site Health", which describes Atlas's router. #}
+  {% if presented.context %}
+  <dl class="verdict-context">
+    {% for row in presented.context %}
+    <div><dt>{{ row.label }}</dt><dd>{{ row.value }}</dd></div>
+    {% endfor %}
+    {# The page-wide scope selector is only worth naming when the answer
+       did not name a narrower one of its own — otherwise the row reads
+       "Scope: chennai · Scope in view: Enterprise", which is two facts
+       competing to mean the same thing. #}
+    {% if not presented.context | selectattr('label', 'equalto', 'Scope') | list %}
+    <div><dt>Scope</dt><dd>{{ active_scope_label }}</dd></div>
+    {% endif %}
+    <div><dt>Answered</dt><dd>{{ response.generated_at | timestamp if response.generated_at else 'just now' }}</dd></div>
+  </dl>
+  {% endif %}
+
+  {# Part 10: visible work, named as subjects rather than engines. #}
+  {% if presented.investigated %}
+  <p class="verdict-investigated"><span class="muted">Atlas investigated</span>
+    {% for subject in presented.investigated %}<span class="investigated-chip"><span aria-hidden="true">✓</span> {{ subject }}</span>{% endfor %}
+    {% if presented.investigated_ms is not none %}<span class="muted">— completed in {{ presented.investigated_ms }} ms</span>{% endif %}
   </p>
   {% endif %}
-  <p class="advisor-verdict advisor-verdict-{{ presented.verdict.tone }}">
-    <span class="advisor-verdict-icon" aria-hidden="true">{{ presented.verdict.icon }}</span>
-    <strong>{{ presented.verdict.headline }}</strong>
-  </p>
-  <p class="muted">Answered {{ response.generated_at | timestamp if response.generated_at else 'now' }}
-     · scope: <strong>{{ active_scope_label }}</strong>
-     · every citation deep-links to the exact stored artifact; evidence Atlas
-     does not hold is listed under Limitations, never implied.</p>
+</section>
 
-  {# PR-167: when the question named a scope, Atlas investigated it.
-     The plan and its per-step outcome come BEFORE the summary, because
-     an operator judging an answer needs to know what was checked. #}
+{# ══ KEY FINDINGS ═════════════════════════════════════════════════════
+   Part 2. Short, scannable, one concept per line. The full citation
+   list stays under Evidence — this is a summary of it, not a copy. #}
+{% if presented.key_findings %}
+<section class="card findings-card" aria-labelledby="advisor-findings-heading">
+  <h2 id="advisor-findings-heading">Key findings</h2>
+  <ul class="findings-list">
+    {% for item in presented.key_findings %}
+    <li>
+      <span class="findings-mark" aria-hidden="true">✓</span>
+      <span>{% if item.href %}<a href="{{ item.href }}">{{ item.label }}</a>{% else %}<strong>{{ item.label }}</strong>{% endif %}{% if item.detail %}
+        <span class="muted findings-detail">{{ item.detail }}</span>{% endif %}</span>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+{# ══ NEXT ACTIONS ═════════════════════════════════════════════════════
+   Part 3. An operator should never have to discover a workflow. #}
+{% if presented.actions or presented.followup_questions %}
+<section class="card actions-card" aria-labelledby="advisor-actions-heading">
+  <h2 id="advisor-actions-heading">What to do next</h2>
+  {% if presented.actions %}
+  <ul class="actions-list">
+    {% for action in presented.actions %}
+    <li>
+      <a class="btn {{ 'btn-primary' if action.primary else 'btn-sm' }}" href="{{ action.href }}"
+         data-oir-choice data-oir-intent="{{ presented.intent.name if presented.intent else '' }}"
+         data-oir-label="{{ action.label }}">{{ action.label }}</a>
+      <span class="muted advisor-why">{{ action.why }}</span>
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+  {% if presented.followup_questions %}
+  <p class="muted actions-ask">Ask next</p>
+  <div class="advisor-quick">
+    {% for item in presented.followup_questions %}
+    <form method="post" action="/advisor/ask">{{ csrf_field() }}<input type="hidden" name="question" value="{{ item.question }}"><button class="btn btn-sm" type="submit">{{ item.label }}</button></form>
+    {% endfor %}
+  </div>
+  {% endif %}
+</section>
+{% endif %}
+
+{# No `root-cause` here: that class draws an 8px accent left border —
+   twice the weight of the verdict's 4px status edge — which put the
+   heaviest rule on the page around the least important card and
+   inverted the very hierarchy this PR exists to fix. #}
+<section class="card advisor-response advisor-supporting"
+         aria-labelledby="advisor-supporting-heading">
+  <h2 id="advisor-supporting-heading" class="advisor-supporting-heading">Supporting detail</h2>
+  <p class="muted">Everything Atlas used to reach the answer above. Most
+  operators never need to open these — every citation deep-links to the
+  exact stored artifact, and evidence Atlas does not hold is listed under
+  Limitations rather than implied.</p>
+
+  {# PR-167 investigation, PR-168 collapsed. The plan and its per-step
+     outcome are how an operator AUDITS an answer they doubt — which is
+     a different need from reading the answer, and a rarer one. The
+     chip row in the verdict card already shows that the work happened;
+     this is where they check exactly what it was. #}
   {% if response.investigation %}
   {% set inv = response.investigation %}
-  <section class="investigation" aria-labelledby="investigation-heading">
-    <div class="job-head">
-      <h2 id="investigation-heading">Investigation: {{ inv.plan.title }}</h2>
-      <span class="badge hop-badge investigation-chip">{{ inv.engines_used | length }} engine(s) · {{ inv.duration_ms }} ms</span>
-    </div>
+  <details class="investigation" aria-labelledby="investigation-heading">
+    <summary>
+      <span id="investigation-heading">Investigation detail</span>
+      <span class="muted">— {{ inv.plan.title }}, {{ inv.plan.steps | length }} check(s)</span>
+    </summary>
     <p class="muted">{{ inv.plan.objective }}</p>
 
     {% if inv.entities.source or inv.entities.destination or inv.entities.sites %}
@@ -122,8 +217,11 @@
       {% endfor %}
     </ul>
 
-    {% if inv.findings %}
-    <h3>What Atlas found</h3>
+    {# The findings themselves are the Key findings card above — this
+       repeats them only when that card had to truncate, so the full
+       list stays reachable without showing it twice. #}
+    {% if inv.findings and inv.findings | length > presented.key_findings | length %}
+    <h3>All {{ inv.findings | length }} findings</h3>
     <ul class="kv investigation-findings">
       {% for finding in inv.findings %}
       <li>
@@ -133,108 +231,85 @@
       {% endfor %}
     </ul>
     {% endif %}
-  </section>
-  {% endif %}
-
-  {# 2. Domain-aware summary — the engine's own words, scannable. #}
-  <h2>{{ presented.summary_title }}</h2>
-  <ul class="advisor-summary">
-    {% for bullet in presented.summary_bullets %}<li>{{ bullet }}</li>{% endfor %}
-  </ul>
-
-  {# 3. Key findings — concise; the full citations follow under Evidence. #}
-  {% if presented.findings %}
-  <h2>Key findings</h2>
-  <ul class="advisor-findings">
-    {% for item in presented.findings %}
-    <li><span class="advisor-finding-icon" aria-hidden="true">✓</span> {{ item.label }}</li>
-    {% endfor %}
-  </ul>
-  {% endif %}
-
-  {# 4. Operational checks performed — named checks, raw steps kept. #}
-  {% if presented.checked %}
-  <h2>Operational checks performed</h2>
-  <ul class="advisor-checked">
-    {% for step in presented.checked %}
-    <li><span class="advisor-finding-icon" aria-hidden="true">✓</span>
-      <strong>{{ step.label }}</strong>{% if step.step and step.step != step.label %} <span class="muted">— {{ step.step }}</span>{% endif %}</li>
-    {% endfor %}
-  </ul>
-  <p class="muted">These are the operations Advisor actually performed against
-  the existing engines — real orchestration, never simulated reasoning.</p>
-  {% endif %}
-
-  {# 5. Why — reasoning separated from the raw evidence. #}
-  {% if presented.reasoning %}
-  <h2>Why Atlas reached this conclusion</h2>
-  <p>{{ presented.reasoning }}</p>
-  {% endif %}
-  {% if presented.intent and presented.intent.why %}
-  <details class="advisor-route-why">
-    <summary class="muted">How Atlas routed this question</summary>
-    <ul>
-      {% for reason in presented.intent.why %}<li class="muted">{{ reason }}</li>{% endfor %}
-    </ul>
   </details>
   {% endif %}
 
-  {# 6. Evidence — every citation, with its artifact link. #}
-  <h2>Evidence</h2>
-  {% if response.evidence %}
-  <details open>
-    <summary class="muted">Evidence ({{ response.evidence | length }} artifact(s) cited)</summary>
+  {# The operations Advisor ran. The SUMMARY is deliberately not
+     repeated here: the verdict card above already carries every bullet,
+     and _summary_bullets caps the list before either sees it — so a
+     "full summary" disclosure could never hold anything the operator
+     had not just read. What is unique to this block is the checks. #}
+  {% if presented.checked %}
+  <details class="advisor-detail">
+    <summary><span>{{ presented.summary_title }} — checks performed</span>
+      <span class="muted">— {{ presented.checked | length }} operation(s) Advisor ran</span></summary>
+    <ul class="advisor-checked">
+      {% for step in presented.checked %}
+      <li class="advisor-check-{{ step.outcome }}">
+        <span class="advisor-finding-icon" aria-hidden="true">{% if step.outcome == 'done' %}✓{% elif step.outcome == 'skipped' %}–{% else %}!{% endif %}</span>
+        <strong>{{ step.label }}</strong>{% if step.step and step.step != step.label %} <span class="muted">— {{ step.step }}</span>{% endif %}</li>
+      {% endfor %}
+    </ul>
+    <p class="muted">These are the operations Advisor actually performed against
+    the existing engines — real orchestration, never simulated reasoning. A step
+    Atlas skipped or could not run is marked as such rather than counted as a
+    check that happened.</p>
+  </details>
+  {% endif %}
+
+  {# Why — reasoning separated from the raw evidence. #}
+  {% if presented.reasoning or (presented.intent and presented.intent.why) %}
+  <details class="advisor-detail">
+    <summary><span>Why Atlas reached this conclusion</span></summary>
+    {% if presented.reasoning %}<p>{{ presented.reasoning }}</p>{% endif %}
+    {% if presented.intent and presented.intent.why %}
+    <h3>How Atlas routed this question</h3>
+    <p class="muted">Understood as <strong>{{ presented.intent.name }}</strong>,
+      routing confidence {{ presented.intent.confidence }}{% if presented.intent.escalated %} — inferred from keywords, not a direct workflow phrase{% endif %}.</p>
+    <ul>
+      {% for reason in presented.intent.why %}<li class="muted">{{ reason }}</li>{% endfor %}
+    </ul>
+    {% endif %}
+  </details>
+  {% endif %}
+
+  {# Evidence — every citation, with its artifact link. #}
+  <details class="advisor-detail">
+    <summary><span>Evidence</span>
+      <span class="muted">— {{ response.evidence | length }} artifact(s) cited</span></summary>
+    {% if response.evidence %}
     <ul>
       {% for item in response.evidence %}
       <li>{{ icons.icon('check', 14) }} {% if item.href %}<a href="{{ item.href }}">{{ item.label }}</a>{% else %}{{ item.label }}{% endif %} <span class="muted">— {{ item.detail }}</span></li>
       {% endfor %}
     </ul>
+    {% else %}
+    <p class="muted">No relevant evidence was found for this question — which is exactly what the confidence says.</p>
+    {% endif %}
+    <h3>Evidence freshness</h3>
+    {% if presented.freshness %}
+    <p class="{{ 'advisor-fresh-warn' if presented.freshness.warn else 'muted' }}">
+      {% if presented.freshness.warn %}<span aria-hidden="true">⚠</span> {% endif %}{{ presented.freshness.note }}
+    </p>
+    {% else %}
+    <p class="muted">Freshness for this scope could not be determined.</p>
+    {% endif %}
+    <p class="muted">Old evidence lowers freshness — it never quietly lowers
+    the answer's confidence.</p>
   </details>
-  {% else %}
-  <p class="muted">No relevant evidence was found for this question — which is exactly what the confidence says.</p>
-  {% endif %}
 
-  {# 7. Answer confidence and evidence freshness — different facts. #}
-  <div class="advisor-conf-fresh">
-    <div>
-      <h3>Answer confidence</h3>
-      <p><span class="badge hop-badge hop-badge-{{ presented.confidence.css }}">{{ presented.confidence.level }}</span></p>
-    </div>
-    <div>
-      <h3>Evidence freshness</h3>
-      {% if presented.freshness %}
-      <p class="{{ 'advisor-fresh-warn' if presented.freshness.warn else 'muted' }}">
-        {% if presented.freshness.warn %}<span aria-hidden="true">⚠</span> {% endif %}{{ presented.freshness.note }}
-      </p>
-      {% else %}
-      <p class="muted">Freshness for this scope could not be determined.</p>
-      {% endif %}
-      <p class="muted">Old evidence lowers freshness — it never quietly lowers
-      the answer's confidence.</p>
-    </div>
-  </div>
-
-  {# 8. Limitations — what Atlas cannot see, stated rather than implied. #}
+  {# Limitations — what Atlas cannot see, stated rather than implied.
+     Open by default: an unstated limitation is indistinguishable from
+     a claim, and this is the one detail block that changes how the
+     answer above should be read. #}
   {% if presented.limitations %}
-  <h2>Limitations</h2>
-  <ul>
-    {% for item in presented.limitations %}<li class="muted">{{ item }}</li>{% endfor %}
-  </ul>
-  {% endif %}
-
-  {# 9. Recommendations — each explains why it is offered. #}
-  {% if presented.actions %}
-  <h2>Atlas recommends</h2>
-  <ul class="advisor-recommends">
-    {% for action in presented.actions %}
-    <li>
-      <a class="btn {{ 'btn-primary' if action.primary else 'btn-sm' }}" href="{{ action.href }}"
-         data-oir-choice data-oir-intent="{{ presented.intent.name if presented.intent else '' }}"
-         data-oir-label="{{ action.label }}">{{ action.label }}</a>
-      <span class="muted advisor-why">{{ action.why }}</span>
-    </li>
-    {% endfor %}
-  </ul>
+  <details class="advisor-detail advisor-limitations" open>
+    <summary><span>Limitations</span>
+      <span class="muted">— what Atlas could not determine</span></summary>
+    <ul>
+      {% for item in presented.limitations %}<li class="muted">{{ item }}</li>{% endfor %}
+    </ul>
+  </details>
   {% endif %}
 
   {# The question counts: an engineer who asks about core1 is telling Atlas
@@ -242,26 +317,19 @@
      against canonical devices, so a typo or an unknown name offers nothing. #}
   {% set mentioned = devices_mentioned(response.question, response.summary, response.evidence | map(attribute='label') | join(' '), response.evidence | map(attribute='detail') | join(' ')) %}
   {% if mentioned %}
-  <h2>Devices in this answer</h2>
-  <p class="muted">Atlas can open an interactive SSH session or a verified web interface for these. It will not do so on its own — nothing connects or opens until you click.</p>
-  <ul class="kv">
-    {% for target in mentioned %}
-    <li>
-      <span><strong>{{ target.hostname }}</strong> <span class="muted">{{ target.management_ip }}</span></span>
-      <span>{{ device_actions(target, compact=True, web=web_access(device_id=target.device_id)) }}</span>
-    </li>
-    {% endfor %}
-  </ul>
-  {% endif %}
-
-  {# 10. Follow-up questions — only those relevant to this answer. #}
-  {% if presented.followup_questions %}
-  <h2>Ask next</h2>
-  <div class="advisor-quick">
-    {% for item in presented.followup_questions %}
-    <form method="post" action="/advisor/ask">{{ csrf_field() }}<input type="hidden" name="question" value="{{ item.question }}"><button class="btn btn-sm" type="submit">{{ item.label }}</button></form>
-    {% endfor %}
-  </div>
+  <details class="advisor-detail">
+    <summary><span>Devices in this answer</span>
+      <span class="muted">— {{ mentioned | length }} device(s) you can open</span></summary>
+    <p class="muted">Atlas can open an interactive SSH session or a verified web interface for these. It will not do so on its own — nothing connects or opens until you click.</p>
+    <ul class="kv">
+      {% for target in mentioned %}
+      <li>
+        <span><strong>{{ target.hostname }}</strong> <span class="muted">{{ target.management_ip }}</span></span>
+        <span>{{ device_actions(target, compact=True, web=web_access(device_id=target.device_id)) }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+  </details>
   {% endif %}
 
   {% if can('investigate.run') %}
@@ -364,7 +432,10 @@
       {% for item in group['items'] %}
       {% set entry = item.entry %}
       <li data-question="{{ (entry.label or entry.response.question) | lower }}">
-        <span class="activity-kind">{{ entry.response.intent }}</span>
+        {# Part 5 applies to the history surface too: the raw router key
+           ("health", "unknown") is Atlas's bookkeeping, not a word an
+           operator chose. #}
+        <span class="activity-kind">{{ intent_label(entry.response.intent) }}</span>
         <a href="/advisor?conversation={{ item.index }}">{{ entry.label or entry.response.question }}</a>
         <span class="muted">{{ entry.asked_at | timestamp if entry.asked_at else '' }} · {{ entry.response.confidence }} confidence</span>
         {% if can('investigate.run') %}

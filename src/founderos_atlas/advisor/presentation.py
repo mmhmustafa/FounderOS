@@ -30,6 +30,7 @@ from typing import Any, Mapping
 
 TONE_OK = "ok"
 TONE_ATTENTION = "attention"
+TONE_WARNING = "warning"
 TONE_UNKNOWN = "unknown"
 TONE_INFO = "info"
 
@@ -41,6 +42,8 @@ _NEGATED_FORMS = (
     "no conflict",
     "not degraded",
     "no warning",
+    "0 warning",
+    "0 reconciliation warning",
 )
 
 _ATTENTION_MARKERS = (
@@ -56,6 +59,18 @@ _ATTENTION_MARKERS = (
     "interfaces down",
 )
 
+# A problem that is DEVELOPING, which the enterprise health engine
+# distinguishes from a critical one — "Enterprise health is Warning —
+# 3 reconciliation warning(s)." matched no marker and fell through to
+# the neutral "Informational", so an estate the engine had flagged read
+# as untroubled. (The negated form "no warning" was already guarded
+# above, which is the tell: the marker it guards was never added.)
+_WARNING_MARKERS = (
+    "health is warning",
+    "reconciliation warning",
+    "address-ownership conflict",
+)
+
 _OK_MARKERS = (
     "healthy",
     "can reach",
@@ -64,9 +79,22 @@ _OK_MARKERS = (
     "no changes",
 )
 
+# PR-168 Part 9: operational status words, not internal tone keys. This
+# is a RELABELLING of a determination Atlas has already made — the tone
+# is computed from the engine's own summary above — never a new
+# judgement. "Not enough evidence" is a real answer and is said plainly.
+_STATUS_LABELS = {
+    TONE_OK: "Healthy",
+    TONE_ATTENTION: "Attention required",
+    TONE_WARNING: "Warning",
+    TONE_UNKNOWN: "Not enough evidence",
+    TONE_INFO: "Informational",
+}
+
 _HEADLINES = {
     TONE_OK: "All clear in what Atlas checked.",
     TONE_ATTENTION: "Atlas found concerns that need attention.",
+    TONE_WARNING: "Atlas found a developing problem.",
     # PR-164 Part 6: the natural-language honest sentence, verbatim.
     TONE_UNKNOWN: "Atlas doesn't currently have enough evidence to "
                   "answer this.",
@@ -76,6 +104,7 @@ _HEADLINES = {
 _ICONS = {
     TONE_OK: "✓",         # check mark
     TONE_ATTENTION: "⚠",  # warning sign
+    TONE_WARNING: "!",
     TONE_UNKNOWN: "?",
     TONE_INFO: "•",       # bullet
 }
@@ -175,11 +204,235 @@ def _verdict(summary: str, confidence: str) -> dict[str, str]:
             text = text.replace(form, "")
         if any(marker in text for marker in _ATTENTION_MARKERS):
             tone = TONE_ATTENTION
+        elif any(marker in text for marker in _WARNING_MARKERS):
+            tone = TONE_WARNING
         elif any(marker in summary.casefold() for marker in _OK_MARKERS):
             tone = TONE_OK
         else:
             tone = TONE_INFO
-    return {"tone": tone, "icon": _ICONS[tone], "headline": _HEADLINES[tone]}
+    return {
+        "tone": tone, "icon": _ICONS[tone], "headline": _HEADLINES[tone],
+        "status": _STATUS_LABELS[tone],
+    }
+
+
+# ---------------------------------------------------------------------------
+# PR-168 — operator vocabulary
+#
+# Atlas's internals are not the operator's problem. An engine key, a
+# router intent name and a plan template id are implementation detail;
+# what an operator needs is the KIND of investigation, the protocol and
+# the scope. Everything below is a relabelling of facts Atlas already
+# recorded — nothing here decides anything.
+# ---------------------------------------------------------------------------
+
+# Engine keys -> what that engine actually looked at, in operator words.
+_ENGINE_SUBJECTS = {
+    "graph": "Devices & interfaces",
+    "routing": "Routing",
+    "topology": "Topology",
+    "path": "Path",
+    "changes": "Recent changes",
+    "interfaces": "Interfaces",
+}
+
+# Router intent names -> the kind of investigation an operator recognises.
+_INVESTIGATION_KINDS = {
+    "Path Analysis": "Connectivity investigation",
+    "Site Health": "Site health investigation",
+    "Device Health": "Device investigation",
+    "Change Review": "Change investigation",
+    "Discovery Review": "Discovery review",
+    "Policy Review": "Policy review",
+    "Incident Review": "Incident review",
+    "Prediction": "Risk forecast",
+    "Enterprise Health": "Enterprise health review",
+}
+_DEFAULT_KIND = "Evidence review"
+
+# Router intent KEYS -> a word an operator chose. Used by the history
+# list, which was tagging every stored answer with Atlas's internal key
+# ("health", "path", and "unknown" for a question it could not route).
+_INTENT_LABELS = {
+    "health": "Health", "changes": "Changes", "discovery": "Discovery",
+    "path": "Connectivity", "prediction": "Prediction",
+    "compass": "Maintenance", "continue": "Continue",
+    "search": "Search", "enterprise": "Enterprise",
+    "investigation": "Investigation", "policy": "Policy",
+    "identity": "Identity", "incident": "Incident",
+    "routing": "Routing", "configuration": "Configuration",
+    "unknown": "No evidence",
+}
+
+
+def intent_label(intent: Any) -> str:
+    """An operator-facing name for a stored answer's intent."""
+
+    key = _clean_text(intent).casefold()
+    return _INTENT_LABELS.get(key, _clean_text(intent).replace("-", " ").title()
+                              or "Answer")
+
+_MAX_INVESTIGATED = 8
+_MAX_KEY_FINDINGS = 6
+
+
+def _investigation_block(response: Mapping[str, Any]) -> Mapping[str, Any]:
+    block = response.get("investigation")
+    return block if isinstance(block, Mapping) else {}
+
+
+def _scope_phrase(entities: Mapping[str, Any]) -> str:
+    """The scope an operator would name: "Mumbai to Chennai", "Chennai"."""
+
+    def label(entity: Any) -> str:
+        if isinstance(entity, Mapping):
+            return _clean_text(entity.get("query"))
+        return ""
+
+    source = label(entities.get("source"))
+    destination = label(entities.get("destination"))
+    if source and destination:
+        return f"{source} to {destination}"
+    named = [
+        label(item) for item in
+        list(entities.get("sites") or ()) + list(entities.get("devices") or ())
+    ]
+    named = [item for item in named if item]
+    if source:
+        named.insert(0, source)
+    seen: list[str] = []
+    for item in named:
+        if item not in seen:
+            seen.append(item)
+    return ", ".join(seen[:3])
+
+
+def _context_rows(
+    response: Mapping[str, Any], oi: Mapping[str, Any]
+) -> list[dict[str, str]]:
+    """The answer's framing, in operator language (Part 5).
+
+    Replaces "Understood as: Site Health" — a statement about Atlas's
+    router — with what the operator actually needs to know about the
+    answer in front of them.
+    """
+
+    investigation = _investigation_block(response)
+    plan = investigation.get("plan") or {}
+    request = investigation.get("request") or {}
+    entities = investigation.get("entities") or {}
+    rows: list[dict[str, str]] = []
+
+    kind = _clean_text(plan.get("title") if isinstance(plan, Mapping) else "")
+    if not kind:
+        kind = _INVESTIGATION_KINDS.get(
+            _clean_text(oi.get("name")), _DEFAULT_KIND
+        )
+    rows.append({"label": "Investigation", "value": kind})
+
+    protocol = _clean_text(
+        request.get("protocol") if isinstance(request, Mapping) else ""
+    )
+    if protocol:
+        rows.append({"label": "Protocol", "value": protocol.upper()})
+
+    scope = _scope_phrase(entities) if isinstance(entities, Mapping) else ""
+    if scope:
+        rows.append({"label": "Scope", "value": scope})
+    return rows
+
+
+def _investigated(response: Mapping[str, Any]) -> list[str]:
+    """What Atlas looked at, named as SUBJECTS rather than engines.
+
+    Part 10: operators trust visible work — but "5 engine(s)" is not
+    visible work, it is an implementation count. These are the things
+    that were actually examined: the resolved scope, the protocol, and
+    the subject each engine covered.
+    """
+
+    investigation = _investigation_block(response)
+    if not investigation:
+        return []
+    entities = investigation.get("entities") or {}
+    request = investigation.get("request") or {}
+    subjects: list[str] = []
+
+    def add(value: str) -> None:
+        text = _clean_text(value)
+        if text and text not in subjects:
+            subjects.append(text)
+
+    # ONLY resolved entities. A ✓ beside a name Atlas could not resolve
+    # would claim work that did not happen — the chip row exists to make
+    # real work visible, not to look thorough. An ambiguous or unknown
+    # entity is reported honestly in the investigation detail instead.
+    #
+    # A plain site word is capitalised for reading ("mumbai" -> "Mumbai");
+    # anything carrying a dot, digit or hyphen is an IDENTIFIER and is
+    # shown exactly as Atlas holds it. Title-casing everything turned the
+    # real hostname "core1.example.net" into "Core1.Example.Net" — a
+    # string that matches no device, cannot be pasted into search or a
+    # CLI, and disagreed with the scope line in the same card.
+    def readable(value: str) -> str:
+        text = _clean_text(value)
+        return text.title() if text.isalpha() else text
+
+    if isinstance(entities, Mapping):
+        candidates = [entities.get("source"), entities.get("destination")]
+        candidates += list(entities.get("sites") or ())
+        candidates += list(entities.get("devices") or ())
+        for item in candidates:
+            if isinstance(item, Mapping) and item.get("status") == "resolved":
+                add(readable(item.get("query")))
+
+    engines = [_clean_text(engine) for engine in
+               investigation.get("engines_used") or ()]
+    # The protocol is what the operator ASKED about; it earns a ✓ only
+    # if an engine that reads protocol state actually ran. Otherwise the
+    # row would claim Atlas investigated HSRP — which it has no engine
+    # for — simply because the question said "HSRP".
+    if isinstance(request, Mapping) and {"routing", "path"} & set(engines):
+        add(_clean_text(request.get("protocol")).upper())
+    for engine in engines:
+        add(_ENGINE_SUBJECTS.get(engine, ""))
+    return subjects[:_MAX_INVESTIGATED]
+
+
+def _key_findings(response: Mapping[str, Any]) -> list[dict[str, str]]:
+    """The scannable answer (Part 2).
+
+    An investigation's own findings are real conclusions with detail, so
+    they are preferred. Without one, the cited evidence labels are the
+    next best scannable list. Either way the FULL citation list still
+    appears under Evidence — this is a summary of it, not a second copy
+    of it.
+    """
+
+    investigation = _investigation_block(response)
+    findings = list(investigation.get("findings") or ())
+    rows: list[dict[str, str]] = []
+    for item in findings:
+        if not isinstance(item, Mapping):
+            continue
+        label = _clean_text(item.get("label"))
+        if label:
+            rows.append({
+                "label": label,
+                "detail": _clean_text(item.get("detail")),
+                "href": _clean_text(item.get("href")),
+            })
+    if not rows:
+        for item in response.get("evidence") or ():
+            if not isinstance(item, Mapping):
+                continue
+            label = _clean_text(item.get("label"))
+            if label:
+                rows.append({
+                    "label": label, "detail": "",
+                    "href": _clean_text(item.get("href")),
+                })
+    return rows[:_MAX_KEY_FINDINGS]
 
 
 def _summary_bullets(summary: str) -> list[str]:
@@ -245,7 +498,17 @@ def _checked(steps: list) -> list[dict[str, str]]:
             (name for marker, name in _CHECK_NAMES if marker in folded),
             raw,
         )
-        checked.append({"label": label, "step": raw})
+        # PR-168: an investigation records each step's OUTCOME in the
+        # step text ("… — skipped", "… — blocked"). Rendering those with
+        # a ✓ under the heading "Operational checks performed" told an
+        # operator five checks ran when one did. The outcome now travels
+        # with the row so the template can mark it for what it was.
+        outcome = "done"
+        for state in ("skipped", "blocked"):
+            if folded.endswith(f"— {state}") or folded.endswith(f"- {state}"):
+                outcome = state
+                break
+        checked.append({"label": label, "step": raw, "outcome": outcome})
     return checked
 
 
@@ -375,6 +638,11 @@ def present_answer(
         ),
         "summary_bullets": _summary_bullets(summary),
         "findings": list(response.get("evidence") or ()),
+        # -- PR-168: the operator-facing layer ----------------------
+        "key_findings": _key_findings(response),
+        "context": _context_rows(response, oi),
+        "investigated": _investigated(response),
+        "investigated_ms": _investigation_block(response).get("duration_ms"),
         "checked": _checked(list(response.get("steps") or ())),
         "reasoning": _reasoning(response),
         "intent": _intent_display(oi),

@@ -470,17 +470,30 @@ class AdvisorAIPageTests(unittest.TestCase):
             client.post("/advisor/ask", data={"question": "Find GW"},
                         follow_redirects=True)
             before = client.get("/advisor").data
-            answer_before = before[before.index(b"advisor-response"):
+            # PR-168: the answer now STARTS at the verdict card;
+            # advisor-response marks the supporting detail below it, so
+            # slicing from there would miss the answer entirely.
+            answer_before = before[before.index(b"verdict-card"):
                                    before.index(b"Recent Conversations")]
             self.enable_ai(client)
             after = client.get("/advisor").data
-            answer_after = after[after.index(b"advisor-response"):
+            answer_after = after[after.index(b"verdict-card"):
                                  after.index(b"advisor-ai-panel")]
             self.assertIn(b"Found GW", answer_before)
             self.assertIn(b"Found GW", answer_after)
-            # The verdict, confidence and evidence blocks are identical.
-            for marker in (b"Inventory summary</h2>", b"<h2>Evidence</h2>",
-                           b"Answer confidence</h3>"):
+            # PR-168: rather than sampling three headings, compare the
+            # whole verdict — the part an operator actually reads —
+            # BYTE FOR BYTE. If enabling AI changed so much as a
+            # character of Atlas's own answer, this fails.
+            def verdict(page: bytes) -> bytes:
+                return page[page.index(b"verdict-card"):
+                            page.index(b"What to do next</h2>")]
+
+            self.assertEqual(verdict(before), verdict(after))
+            # And the supporting detail still carries the full summary
+            # and the citations, in both.
+            for marker in (b"Inventory summary", b"artifact(s) cited",
+                           b"Evidence freshness</h3>"):
                 self.assertIn(marker, answer_before)
                 self.assertIn(marker, answer_after)
 

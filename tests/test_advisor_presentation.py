@@ -250,5 +250,233 @@ class OperationalIntentTests(unittest.TestCase):
                          shown["checked"][1]["label"])
 
 
+INVESTIGATION = {
+    "request": {"protocol": "bgp"},
+    "entities": {
+        "source": {"query": "mumbai", "status": "resolved", "detail": ""},
+        "destination": {"query": "chennai", "status": "resolved",
+                        "detail": ""},
+        "sites": [], "devices": [],
+    },
+    "plan": {"title": "BGP between two endpoints", "objective": "…",
+             "steps": []},
+    "findings": [
+        {"label": "BGP session", "detail": "established", "href": "/x"},
+        {"label": "No route flaps", "detail": "", "href": ""},
+    ],
+    "engines_used": ["graph", "routing", "changes"],
+    "duration_ms": 4,
+}
+
+
+class ExperienceLanguageTests(unittest.TestCase):
+    """PR-168: the operator-facing layer. Every value here is a
+    RELABELLING of something Atlas already recorded — the tests exist to
+    stop that turning into a new judgement."""
+
+    def test_the_verdict_carries_an_operational_status_word(self) -> None:
+        for confidence, summary, expected in (
+            ("High", "The enterprise is healthy.", "Healthy"),
+            ("High", "2 interfaces down and a degraded link.",
+             "Attention required"),
+            ("Unknown", "Anything at all.", "Not enough evidence"),
+            ("Medium", "Here are 4 devices.", "Informational"),
+        ):
+            with self.subTest(expected=expected):
+                shown = present_answer(make_response(
+                    summary=summary, confidence=confidence,
+                ))
+                self.assertEqual(shown["verdict"]["status"], expected)
+
+    def test_the_status_never_outruns_the_engine(self) -> None:
+        """The presenter may not decide a network is healthy. When the
+        engine's words do not support a judgement, the status says so
+        rather than guessing — this is the whole honesty contract of
+        the verdict, restated for the new label."""
+
+        shown = present_answer(make_response(
+            summary="4 adjacency(ies) observed, 4 in Full state.",
+            confidence="High",
+        ))
+        self.assertEqual(shown["verdict"]["status"], "Informational")
+        self.assertNotEqual(shown["verdict"]["status"], "Healthy")
+
+    def test_context_replaces_implementation_language(self) -> None:
+        shown = present_answer(make_response(investigation=INVESTIGATION))
+        rows = {row["label"]: row["value"] for row in shown["context"]}
+        self.assertEqual(rows["Investigation"], "BGP between two endpoints")
+        self.assertEqual(rows["Protocol"], "BGP")
+        self.assertEqual(rows["Scope"], "mumbai to chennai")
+        # Nothing in the operator-facing context names Atlas's router.
+        self.assertNotIn("Understood as", repr(shown["context"]))
+
+    def test_context_falls_back_to_a_kind_without_an_investigation(
+        self,
+    ) -> None:
+        shown = present_answer(
+            make_response(),
+            # No investigation block: the intent name still becomes an
+            # operator-facing KIND rather than being shown raw.
+        )
+        rows = {row["label"]: row["value"] for row in shown["context"]}
+        self.assertIn("Investigation", rows)
+        self.assertNotIn("Protocol", rows)
+
+    def test_investigated_names_subjects_not_engines(self) -> None:
+        shown = present_answer(make_response(investigation=INVESTIGATION))
+        self.assertEqual(
+            shown["investigated"],
+            ["Mumbai", "Chennai", "BGP", "Devices & interfaces", "Routing",
+             "Recent changes"],
+            # "mumbai"/"chennai" are plain site words, so they are
+            # capitalised for reading; an identifier would not be.
+        )
+        self.assertEqual(shown["investigated_ms"], 4)
+        for engine in ("graph", "routing", "changes"):
+            self.assertNotIn(engine, shown["investigated"])
+
+    def test_an_unresolved_entity_is_never_shown_as_investigated(
+        self,
+    ) -> None:
+        """A ✓ beside a name Atlas could not resolve claims work that
+        did not happen. The chip row exists to make REAL work visible;
+        an ambiguous or unknown entity belongs in the investigation
+        detail, where its status is stated."""
+
+        unresolved = dict(INVESTIGATION)
+        unresolved["entities"] = {
+            "source": {"query": "mumbai", "status": "resolved"},
+            "destination": {"query": "atlantis", "status": "unknown"},
+            "sites": [{"query": "delhi", "status": "ambiguous"}],
+            "devices": [{"query": "core1", "status": "resolved"}],
+        }
+        shown = present_answer(make_response(investigation=unresolved))
+        self.assertIn("Mumbai", shown["investigated"])
+        self.assertIn("core1", shown["investigated"])
+        self.assertNotIn("Atlantis", shown["investigated"])
+        self.assertNotIn("Delhi", shown["investigated"])
+
+    def test_an_identifier_is_shown_exactly_as_atlas_holds_it(self) -> None:
+        """A site word is capitalised for reading; a hostname is not.
+        "core1.example.net" title-cased to "Core1.Example.Net" — a
+        string matching no device, unpasteable into search or a CLI."""
+
+        graphish = dict(INVESTIGATION)
+        graphish["entities"] = {
+            "source": {"query": "core1.example.net", "status": "resolved"},
+            "destination": {"query": "mumbai", "status": "resolved"},
+            "sites": [], "devices": [],
+        }
+        shown = present_answer(make_response(investigation=graphish))
+        self.assertIn("core1.example.net", shown["investigated"])
+        self.assertIn("Mumbai", shown["investigated"])
+
+    def test_a_protocol_chip_needs_an_engine_that_read_it(self) -> None:
+        """The protocol is what the operator ASKED about. Emitting a ✓
+        beside it because the question said "HSRP" claims Atlas
+        investigated a protocol it has no engine for."""
+
+        asked_only = dict(INVESTIGATION)
+        asked_only["request"] = {"protocol": "hsrp"}
+        asked_only["engines_used"] = ["graph", "changes"]
+        shown = present_answer(make_response(investigation=asked_only))
+        self.assertNotIn("HSRP", shown["investigated"])
+
+        # With a routing engine in the run, the chip is earned.
+        read_it = dict(asked_only)
+        read_it["engines_used"] = ["graph", "routing"]
+        shown = present_answer(make_response(investigation=read_it))
+        self.assertIn("HSRP", shown["investigated"])
+
+    def test_a_skipped_step_is_not_counted_as_a_check_performed(
+        self,
+    ) -> None:
+        """An investigation records each step's outcome in the step
+        text. Rendering "… — skipped" with a ✓ under "Operational
+        checks performed" told an operator five checks ran when one
+        did."""
+
+        shown = present_answer(make_response(steps=[
+            "Collect BGP sessions — done",
+            "Walk the path hop by hop — skipped",
+            "Read recent changes — blocked",
+        ]))
+        self.assertEqual([item["outcome"] for item in shown["checked"]],
+                         ["done", "skipped", "blocked"])
+
+    def test_the_engines_warning_state_is_not_flattened(self) -> None:
+        """The enterprise health engine distinguishes Warning from
+        Critical. No marker matched "Warning", so an estate Atlas had
+        flagged rendered as a neutral "Informational" — the operator
+        got no signal that a problem was developing."""
+
+        shown = present_answer(make_response(
+            summary="Enterprise health is Warning — 3 reconciliation "
+                    "warning(s). The graph holds 85 device(s).",
+            confidence="High",
+        ))
+        self.assertEqual(shown["verdict"]["status"], "Warning")
+        self.assertEqual(shown["verdict"]["tone"], "warning")
+
+        # Critical still outranks it, and a clean estate is unaffected.
+        critical = present_answer(make_response(
+            summary="Enterprise health is Critical — 2 interfaces down.",
+            confidence="High",
+        ))
+        self.assertEqual(critical["verdict"]["status"], "Attention required")
+        healthy = present_answer(make_response(
+            summary="Enterprise health is Healthy — 0 reconciliation "
+                    "warning(s); no active issues.",
+            confidence="High",
+        ))
+        self.assertEqual(healthy["verdict"]["status"], "Healthy")
+
+    def test_stored_intents_get_operator_names(self) -> None:
+        from founderos_atlas.advisor.presentation import intent_label
+
+        self.assertEqual(intent_label("health"), "Health")
+        self.assertEqual(intent_label("path"), "Connectivity")
+        # The history list tagged unroutable questions "unknown".
+        self.assertEqual(intent_label("unknown"), "No evidence")
+        self.assertEqual(intent_label(""), "Answer")
+
+    def test_nothing_is_investigated_without_an_investigation(self) -> None:
+        shown = present_answer(make_response())
+        self.assertEqual(shown["investigated"], [])
+        self.assertIsNone(shown["investigated_ms"])
+
+    def test_key_findings_prefer_the_investigations_own(self) -> None:
+        shown = present_answer(make_response(investigation=INVESTIGATION))
+        self.assertEqual([item["label"] for item in shown["key_findings"]],
+                         ["BGP session", "No route flaps"])
+        self.assertEqual(shown["key_findings"][0]["detail"], "established")
+
+    def test_key_findings_fall_back_to_cited_evidence(self) -> None:
+        shown = present_answer(make_response())
+        self.assertEqual([item["label"] for item in shown["key_findings"]],
+                         ["Enterprise Graph"])
+
+    def test_key_findings_are_capped(self) -> None:
+        many = dict(INVESTIGATION)
+        many["findings"] = [
+            {"label": f"Finding {i}", "detail": "", "href": ""}
+            for i in range(20)
+        ]
+        shown = present_answer(make_response(investigation=many))
+        self.assertEqual(len(shown["key_findings"]), 6)
+
+    def test_a_malformed_investigation_never_raises(self) -> None:
+        """The GUI renders persisted dicts, so a stored answer from an
+        older schema must degrade, not explode."""
+
+        for bad in ({}, {"entities": "nope"}, {"findings": ["not a dict"]},
+                    {"plan": None, "request": 7}):
+            with self.subTest(bad=bad):
+                shown = present_answer(make_response(investigation=bad))
+                self.assertIsInstance(shown["context"], list)
+                self.assertIsInstance(shown["investigated"], list)
+                self.assertIsInstance(shown["key_findings"], list)
+
+
 if __name__ == "__main__":
     unittest.main()

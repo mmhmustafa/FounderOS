@@ -646,6 +646,144 @@ body[data-theme="dark"] table[data-row-select] tbody tr.row-selected { backgroun
 .prism-stage h4 { margin: 0 0 4px; }
 .prism-stage-note { font-size: 12px; margin: 0 0 6px; }
 
+/* ── PR-168: the Atlas Experience Language ───────────────────────────
+   Verdict first, then findings, then actions; everything else is
+   supporting detail and collapses. Three rules govern the styling:
+
+   1. ONE primary message per card. The verdict card carries the answer
+      and nothing competes with it typographically.
+   2. Whitespace does the separating, not borders. The only strong
+      border in the answer is the verdict's status edge, which is
+      information (green/amber/grey), not decoration.
+   3. Every colour is a token, so light and dark stay in step and the
+      contrast pairs already proven elsewhere are reused. */
+
+.verdict-card { border-left: 4px solid var(--line-strong);
+  padding: 18px 20px 16px; }
+.verdict-ok { border-left-color: var(--green); }
+.verdict-attention { border-left-color: var(--red); }
+.verdict-warning { border-left-color: var(--amber-fill); }
+.verdict-info { border-left-color: var(--accent); }
+.verdict-unknown { border-left-color: var(--slate); }
+
+.verdict-asked { font-size: 13px; margin: 0 0 10px; }
+.verdict-asked .advisor-question { font-weight: var(--weight-semibold); }
+.verdict-status { display: flex; flex-wrap: wrap; align-items: center;
+  gap: 8px; margin-bottom: 10px; }
+
+/* The status chip is the three-second answer to "should I worry?".
+   The dot repeats the state in shape as well as colour, so the
+   distinction does not rest on colour alone. */
+.verdict-chip { display: inline-flex; align-items: center; gap: 7px;
+  padding: 4px 11px; border-radius: 999px; font-size: 12px;
+  font-weight: var(--weight-semibold); letter-spacing: .01em;
+  border: 1px solid var(--line); background: var(--surface-2); }
+.verdict-dot { width: 8px; height: 8px; border-radius: 50%;
+  background: var(--slate); flex: none; }
+.verdict-chip-ok { background: var(--green-soft); border-color: var(--green);
+  color: var(--green); }
+.verdict-chip-ok .verdict-dot { background: var(--green); }
+/* Attention required = a problem NOW (red); Warning = one developing
+   (amber). The engine distinguishes them, so the page must too. */
+.verdict-chip-attention { background: var(--red-soft);
+  border-color: var(--red); color: var(--red-dark); }
+.verdict-chip-attention .verdict-dot { background: var(--red); }
+.verdict-chip-warning { background: var(--amber-soft);
+  border-color: var(--amber-fill); color: var(--amber); }
+.verdict-chip-warning .verdict-dot { background: var(--amber-fill); }
+.verdict-chip-info { background: var(--accent-soft);
+  border-color: var(--accent); color: var(--accent); }
+.verdict-chip-info .verdict-dot { background: var(--accent); }
+
+.verdict-answer { margin: 0 0 6px; font-size: 19px; line-height: 1.35; }
+.verdict-detail { margin: 0 0 8px; padding-left: 18px; }
+.verdict-detail li { margin: 2px 0; }
+.verdict-note { margin: 0 0 12px; font-size: 13px; }
+
+/* Framing facts, not a table of contents: small, quiet, one row. */
+.verdict-context { display: flex; flex-wrap: wrap; gap: 4px 22px;
+  margin: 0 0 10px; font-size: 12px; }
+.verdict-context > div { display: flex; flex-direction: column; gap: 1px; }
+.verdict-context dt { color: var(--muted); text-transform: uppercase;
+  letter-spacing: .04em; font-size: 10px; }
+.verdict-context dd { margin: 0; font-weight: var(--weight-medium); }
+
+.verdict-investigated { margin: 0; font-size: 12px; display: flex;
+  flex-wrap: wrap; align-items: center; gap: 6px; }
+.investigated-chip { display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px; border-radius: 999px; background: var(--surface-2);
+  border: 1px solid var(--line); }
+
+.findings-card h2, .actions-card h2 { margin: 0 0 10px; font-size: 15px; }
+.findings-list { list-style: none; margin: 0; padding: 0; }
+.findings-list li { display: flex; gap: 9px; margin: 7px 0;
+  line-height: 1.45; }
+.findings-mark { color: var(--green); font-weight: var(--weight-bold);
+  flex: none; }
+.findings-detail { display: block; font-size: 12px; }
+
+.actions-list { list-style: none; margin: 0; padding: 0;
+  display: flex; flex-direction: column; gap: 9px; }
+.actions-list li { display: flex; flex-wrap: wrap; align-items: center;
+  gap: 10px; }
+.actions-ask { margin: 14px 0 6px; font-size: 12px;
+  text-transform: uppercase; letter-spacing: .04em; }
+
+/* Supporting detail: present, findable, and visually subordinate. */
+.advisor-supporting-heading { font-size: 15px; margin: 0 0 4px; }
+.advisor-detail, .advisor-supporting .investigation { border: 0;
+  border-top: 1px solid var(--line); border-radius: 0; margin: 0;
+  padding: 10px 0 4px; background: none; }
+/* display MUST stay list-item. A <summary> draws its disclosure
+   triangle from that box, so `display: flex` silently removed the only
+   affordance telling an operator these sections open at all — and made
+   the ::marker rule below dead CSS. The inner spans are inline, so
+   margin does the spacing flex was there for. */
+.advisor-detail > summary,
+.advisor-supporting .investigation > summary { cursor: pointer;
+  font-weight: var(--weight-semibold); font-size: 13px;
+  display: list-item; list-style-position: outside; margin-left: 14px; }
+.advisor-detail > summary > span + span,
+.advisor-supporting .investigation > summary > span + span {
+  margin-left: 6px; }
+.advisor-detail > summary::marker,
+.advisor-supporting .investigation > summary::marker { color: var(--muted); }
+.advisor-detail > summary:focus-visible,
+.advisor-supporting .investigation > summary:focus-visible {
+  outline: var(--focus-ring); outline-offset: var(--focus-offset);
+  border-radius: var(--radius-sm); }
+
+/* A step Atlas skipped or could not run is not a check that happened. */
+.advisor-check-skipped .advisor-finding-icon { color: var(--muted); }
+.advisor-check-blocked .advisor-finding-icon { color: var(--amber); }
+.advisor-detail h3, .advisor-supporting .investigation h3 {
+  font-size: 12px; margin: 12px 0 4px; text-transform: uppercase;
+  letter-spacing: .04em; color: var(--muted); }
+.advisor-limitations > summary { color: var(--amber); }
+
+/* The dark theme overrides the -soft BACKGROUNDS but not the status
+   foregrounds, so var(--green)/(--amber)/(--accent) land dark-on-dark:
+   the info chip measured 2.84:1, on the single most important element
+   of the page. Lighter foregrounds, measured on the dark soft fills. */
+body[data-theme="dark"] .verdict-chip-ok { color: #4ade80; }
+body[data-theme="dark"] .verdict-chip-attention { color: #fca5a5; }
+body[data-theme="dark"] .verdict-chip-warning { color: #fcd34d; }
+body[data-theme="dark"] .verdict-chip-info { color: #93c5fd; }
+body[data-theme="dark"] .findings-mark { color: #4ade80; }
+body[data-theme="dark"] .advisor-limitations > summary { color: #fcd34d; }
+/* The stale-evidence line is the one sentence in the Evidence block
+   that changes how the verdict should be read; --amber on the dark
+   panel measured 3.41:1, dimmer than the .muted prose around it. */
+body[data-theme="dark"] .advisor-fresh-warn { color: #fcd34d; }
+body[data-theme="dark"] .advisor-check-blocked .advisor-finding-icon {
+  color: #fcd34d; }
+
+@media (max-width: 640px) {
+  .verdict-card { padding: 14px 15px; }
+  .verdict-answer { font-size: 17px; }
+  .verdict-context { gap: 6px 16px; }
+}
+
 /* PR-166 (INSIGHT): the Advisor's optional AI explanation panel.
    Visually subordinate to the answer above it — AI restates, Atlas
    concludes. Token-only, like every panel since PR-163. */
@@ -1298,6 +1436,16 @@ body[data-theme="system"] .table-scroll:focus-visible { outline-color: var(--acc
 body[data-theme="system"] .level-choice { border-color: var(--line); }
 body[data-theme="system"] .search-trigger { background: #1a2740; color: var(--topbar-ink); border-color: var(--line-strong); }
 body[data-theme="system"] .columns-panel, body[data-theme="system"] .filter-chip { background: var(--panel); border-color: var(--line); color: var(--ink); }
+/* PR-168 verdict chips — the System twins of the dark rules above. */
+body[data-theme="system"] .verdict-chip-ok { color: #4ade80; }
+body[data-theme="system"] .verdict-chip-attention { color: #fca5a5; }
+body[data-theme="system"] .verdict-chip-warning { color: #fcd34d; }
+body[data-theme="system"] .verdict-chip-info { color: #93c5fd; }
+body[data-theme="system"] .findings-mark { color: #4ade80; }
+body[data-theme="system"] .advisor-limitations > summary { color: #fcd34d; }
+body[data-theme="system"] .advisor-fresh-warn { color: #fcd34d; }
+body[data-theme="system"] .advisor-check-blocked .advisor-finding-icon {
+  color: #fcd34d; }
 }
 .progress-steps {
   display: flex;

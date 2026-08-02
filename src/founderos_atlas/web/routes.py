@@ -8815,9 +8815,12 @@ def register_routes(app) -> None:
             )
             return [action.to_dict() for action in actions]
 
+        from founderos_atlas.advisor.presentation import intent_label
+
         return {
             "device_target": device_target,
             "devices_mentioned": devices_mentioned,
+            "intent_label": intent_label,
             "web_access": web_access,
             "confidence_display": confidence_display,
             "confidence_detail": confidence_detail,
