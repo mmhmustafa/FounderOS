@@ -468,3 +468,345 @@ def recent_changes(context: InvestigationContext) -> bool:
     )
     context.cite("Change Report", f"{count} recorded change(s)", "/changes")
     return True
+
+
+# -- engine: policy validation (PR-171) -------------------------------------
+#
+# The validation template ORCHESTRATES the existing policy engine — the
+# PR-167 precedent, applied again: the connectivity template calls Path
+# Intelligence rather than re-reading links, and this calls
+# PolicyEngine.evaluate() rather than re-implementing any matching.
+# Nothing below parses configuration, evaluates a rule, or computes a
+# disposition; it selects the subject's rules by tag and aggregates
+# what the engine concluded.
+
+def enterprise_scope(context: InvestigationContext) -> bool:
+    """Resolve the ENTERPRISE scope to every managed device.
+
+    "Across the enterprise" is a positive scope (PR-171): when the
+    operator named no narrower place, the whole estate is what gets
+    judged — stated, never silently substituted. A named scope keeps
+    the device list ``locate_entities`` already resolved.
+    """
+
+    if context.device_ids:
+        return True                      # a narrower scope already won
+    devices = tuple(getattr(context.graph, "devices", ()) or ())
+    context.device_ids = tuple(
+        str(getattr(device, "enterprise_id", "")) for device in devices
+    )
+    context.cite(
+        "Enterprise Graph",
+        f"{len(context.device_ids)} managed device(s) in scope",
+        "/topology",
+    )
+    return True
+
+
+def aggregate_policy_report(
+    report, *, tags: tuple[str, ...], scope_hostnames: frozenset[str],
+    rule_ids: frozenset[str] = frozenset(),
+) -> dict[str, Any]:
+    """One subject's slice of a policy report, aggregated honestly.
+
+    Pure and shared: the investigation engine and the Advisor's
+    validate handler both read THIS, so the two paths can never
+    disagree about what the policy engine concluded. Every number is a
+    count of the engine's own dispositions — pass, fail, warning,
+    unknown — plus ``not_applicable`` (PR-172, R1): an evaluation whose
+    rule did not apply to the device. A device that does not run the
+    subject at all is never counted as passing its policies.
+
+    Per evaluation the precedence is: **unknown first** (absent
+    evidence outranks everything — Atlas cannot even establish whether
+    the rule applies), then **not applicable**, then the judged
+    disposition. Per device: ``devices_judged`` holds only devices
+    with at least one judged evaluation; ``devices_not_applicable``
+    holds devices that were evaluated but where nothing applied.
+    """
+
+    tag_set = set(tags)
+    evaluations = [
+        item for item in getattr(report, "evaluations", ())
+        if tag_set & set(getattr(item.policy, "tags", ()))
+    ]
+    if rule_ids:
+        # PR-172 (R9): when the caller derived a capability, only its
+        # vetted rules may shape the verdict — a mask-blind rule that
+        # happens to share the subject's tag stays out.
+        evaluations = [
+            item for item in evaluations
+            if str(getattr(item.policy, "policy_id", "")) in rule_ids
+        ]
+    if scope_hostnames:
+        folded = {name.casefold() for name in scope_hostnames}
+        evaluations = [
+            item for item in evaluations
+            if str(item.hostname or "").casefold() in folded
+            or str(item.device_id or "").casefold() in folded
+        ]
+
+    by_policy: dict[str, dict[str, Any]] = {}
+    devices_evaluated: set[str] = set()
+    devices_judged: set[str] = set()
+    devices_na_seen: set[str] = set()
+    counts = {"pass": 0, "fail": 0, "warning": 0, "unknown": 0,
+              "not_applicable": 0}
+    unknown_reasons: dict[str, int] = {}
+    for item in evaluations:
+        status = item.status
+        applicable = bool(getattr(item, "applicable", True))
+        device = str(item.hostname or item.device_id)
+        devices_evaluated.add(device)
+        # Precedence: unknown (no evidence) > not applicable > judged.
+        if status == "unknown":
+            bucket = "unknown"
+        elif not applicable:
+            bucket = "not_applicable"
+        else:
+            bucket = status
+        if bucket in counts:
+            counts[bucket] += 1
+        if bucket in ("pass", "fail", "warning"):
+            devices_judged.add(device)
+        elif bucket == "not_applicable":
+            devices_na_seen.add(device)
+        row = by_policy.setdefault(item.policy.policy_id, {
+            "policy_id": item.policy.policy_id,
+            "name": item.policy.name,
+            "severity": str(getattr(item.policy, "severity", "") or ""),
+            "pass": 0, "fail": 0, "warning": 0, "unknown": 0,
+            "not_applicable": 0,
+            "failed_devices": [],
+        })
+        if bucket in row:
+            row[bucket] += 1
+        if bucket == "fail":
+            row["failed_devices"].append(device)
+        if bucket == "unknown":
+            # The ENGINE'S OWN reason lives in the result's conclusion
+            # ("...: unknown — required evidence (running-config) is
+            # not available."); ``summary`` is kept as a fallback for
+            # older result shapes.
+            reason = ""
+            result = getattr(item, "result", None)
+            if result is not None:
+                reason = str(
+                    getattr(result, "conclusion", "")
+                    or getattr(result, "summary", "")
+                    or ""
+                )
+            reason = reason or "the evidence this policy needs is absent"
+            unknown_reasons[reason] = unknown_reasons.get(reason, 0) + 1
+
+    return {
+        "policies": sorted(by_policy.values(),
+                           key=lambda row: row["policy_id"]),
+        "counts": counts,
+        "devices_judged": frozenset(devices_judged),
+        # Devices where the subject's rules were evaluated but none
+        # applied — the device does not run the subject. Reported as
+        # its own state, never as compliant.
+        "devices_not_applicable": frozenset(devices_na_seen - devices_judged),
+        "devices_evaluated": frozenset(devices_evaluated),
+        "unknown_reasons": unknown_reasons,
+        "evaluated": len(evaluations),
+    }
+
+
+def policy_validation(context: InvestigationContext) -> bool:
+    """Judge the subject's configuration with the EXISTING policy
+    engine, and report its dispositions without editing them.
+
+    Honesty rules, in order of importance:
+
+    * **No matching policies is a refusal, never a pass.** A subject
+      whose tags select zero rules cannot be judged, and saying
+      "compliant" about it would be the exact confident-answer-without-
+      evidence failure this PR exists to prevent (risk R3).
+    * A device the engine could not judge stays UNKNOWN, with the
+      engine's own reason attached.
+    * Devices in scope that produced no evaluation at all are counted
+      and named — "not judged" is part of the answer, not a footnote.
+    """
+
+    from .subjects import label_for, subject as subject_of
+
+    request = context.request
+    descriptor = subject_of(request.subject or request.protocol)
+    label = label_for(request.subject or request.protocol)
+    runner = context.facts.get("policy_runner")
+    if not callable(runner):
+        context.add_gap(
+            "Policy evaluation is not available in this context, so the "
+            f"{label} configuration could not be judged."
+        )
+        return False
+
+    tags = tuple(descriptor.policy_tags) if descriptor else ()
+    if not tags:
+        context.facts["validation_no_policies"] = True
+        context.add_gap(
+            f"Atlas has no configuration policies for {label}, so it "
+            "cannot judge this configuration — and it will not claim "
+            "compliance it has not checked."
+        )
+        return False
+
+    report = runner()
+    if report is None:
+        context.add_gap(
+            "The policy engine returned no report, so the "
+            f"{label} configuration could not be judged."
+        )
+        return False
+
+    # PR-172 (R9 + governance): the capability's vetted rule list —
+    # only rules the masked view can actually see may shape a verdict,
+    # and they are derived from the pack THIS REPORT was judged with
+    # (the governance-effective pack when the caller supplied it), so
+    # the verdict and the policy page read the same rule set. Reports
+    # that do not declare their pack (test stubs) keep tag selection.
+    from .validation import capability as capability_of
+
+    report_pack = getattr(report, "pack", None)
+    cap = (
+        capability_of(request.subject or request.protocol, report_pack)
+        if report_pack is not None else None
+    )
+    vetted_rules = frozenset(cap.rules) if cap else frozenset()
+
+    # Hostnames for the devices in scope, so a site-scoped validation
+    # judges only that site. Enterprise scope filters nothing.
+    scope_hostnames: frozenset[str] = frozenset()
+    if request.scope not in ("", "enterprise"):
+        names = set()
+        for device_id in context.device_ids:
+            device = device_by_id(context.graph, device_id)
+            if device is not None:
+                names.add(str(getattr(device, "hostname", "") or device_id))
+            else:
+                names.add(str(device_id))
+        scope_hostnames = frozenset(names)
+
+    aggregate = aggregate_policy_report(
+        report, tags=tags, scope_hostnames=scope_hostnames,
+        rule_ids=vetted_rules,
+    )
+    context.facts["validation"] = {
+        "subject": label,
+        "counts": aggregate["counts"],
+        "evaluated": aggregate["evaluated"],
+        "policies": len(aggregate["policies"]),
+    }
+
+    from .validation import verdict_for
+
+    if not aggregate["policies"]:
+        if report_pack is not None and cap is not None:
+            # The pack DOES carry rules for this subject — the scope
+            # simply produced no evaluations (no evidence for these
+            # devices). Saying "no policies" here would name the wrong
+            # cause; the projection says "not enough evidence".
+            context.facts["validation_verdict"] = verdict_for(
+                aggregate, scope_count=len(context.device_ids),
+            )
+            context.add_gap(
+                f"The policy engine produced no {label} evaluations "
+                "for the devices in this scope, so this configuration "
+                "could not be judged."
+            )
+            return False
+        # Tags are declared but the pack this report was judged with
+        # carries none of them (or a stub report declares no pack) —
+        # the same refusal, reached one step later.
+        context.facts["validation_no_policies"] = True
+        context.add_gap(
+            f"Atlas has no configuration policies for {label} in the "
+            "active policy pack, so it cannot judge this configuration."
+        )
+        return False
+
+    # PR-172: the verdict projection — computed HERE, where the
+    # aggregate lives, so the summary layer only ever repeats it.
+    context.facts["validation_verdict"] = verdict_for(
+        aggregate, scope_count=len(context.device_ids),
+    )
+
+    for row in aggregate["policies"]:
+        judged = row["pass"] + row["fail"] + row["warning"]
+        not_applicable = int(row.get("not_applicable") or 0)
+        na_note = (
+            f" Not applicable on {not_applicable} device(s)."
+            if not_applicable else ""
+        )
+        if row["fail"]:
+            failed = ", ".join(sorted(row["failed_devices"])[:6])
+            more = len(row["failed_devices"]) - 6
+            context.add_finding(
+                f"{row['name']} — {row['fail']} device(s) fail",
+                f"{row['policy_id']}: {row['pass']} pass, {row['fail']} "
+                f"fail of {judged} judged. Failing: {failed}"
+                + (f" and {more} more" if more > 0 else "") + "."
+                + na_note,
+                href="/policy", engine="policy",
+            )
+        elif judged:
+            context.add_finding(
+                f"{row['name']} — {row['pass']} of {judged} judged "
+                "device(s) pass",
+                f"{row['policy_id']}: no failures among the devices the "
+                "policy engine could judge." + na_note,
+                href="/policy", engine="policy",
+            )
+        elif not_applicable:
+            # PR-172 (R1): every evaluation was not applicable — the
+            # subject is not configured on any device this rule saw.
+            # Stated as its own outcome, never as a pass.
+            context.add_finding(
+                f"{row['name']} — not applicable on "
+                f"{not_applicable} device(s)",
+                f"{row['policy_id']}: no device this rule evaluated has "
+                "the configuration it judges, so there is nothing to "
+                "certify — and Atlas does not report absence as "
+                "compliance.",
+                href="/policy", engine="policy",
+            )
+
+    for reason, count in sorted(aggregate["unknown_reasons"].items()):
+        context.add_gap(
+            f"{count} evaluation(s) are unknown: {reason}"
+        )
+
+    # Devices where the subject's rules were evaluated but none applied
+    # — the device does not run the subject (PR-172, R1). A positive
+    # determination, stated as its own state: never compliant, never a
+    # gap (nothing is missing — Atlas looked and the subject is not
+    # there).
+    not_applicable_devices = aggregate["devices_not_applicable"]
+    if not_applicable_devices:
+        context.facts["validation_not_applicable"] = (
+            len(not_applicable_devices)
+        )
+
+    # Devices in scope the engine never evaluated at all — usually no
+    # collected running-config. Counted, and the reason stated.
+    scope_count = len(context.device_ids)
+    evaluated_devices = aggregate["devices_evaluated"]
+    if scope_count and len(evaluated_devices) < scope_count:
+        missing = scope_count - len(evaluated_devices)
+        context.facts["validation_not_judged"] = missing
+        context.add_gap(
+            f"{missing} of {scope_count} device(s) in scope were not "
+            "judged — Atlas holds no configuration evidence for them, so "
+            f"their {label} configuration is unknown, not compliant."
+        )
+
+    context.cite(
+        "Policy Engine Results",
+        f"{aggregate['evaluated']} evaluation(s) across "
+        f"{len(aggregate['policies'])} {label} polic"
+        + ("y" if len(aggregate["policies"]) == 1 else "ies"),
+        "/policy",
+    )
+    return True

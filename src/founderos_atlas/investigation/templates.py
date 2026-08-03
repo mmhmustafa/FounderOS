@@ -166,16 +166,73 @@ TEMPLATE_BY_KEY = {item.key: item for item in TEMPLATES}
 # pretend to check it.
 ROUTING_PROTOCOLS = frozenset(("bgp", "ospf"))
 
+def validation_template(cap) -> InvestigationTemplate:
+    """The one validation investigation, parameterised by subject
+    (PR-172).
+
+    Built from a discovered
+    :class:`~founderos_atlas.investigation.validation.ValidationCapability`
+    — never hand-written per subject. Everything subject-specific here
+    is a LABEL; the three steps and both engines are identical for
+    every subject, which is what "adding a technology touches only
+    data" means. The key stays per-subject (``ospf-configuration``,
+    ``bgp-configuration``) because plans, summaries and tests
+    legitimately name which validation ran.
+    """
+
+    label = cap.label
+    return InvestigationTemplate(
+        key=f"{cap.subject}-configuration", domain="validation",
+        title=f"{cap.title} validation",
+        objective=f"Judge the {label} configuration against the "
+                  "enterprise's policy rules and report every "
+                  "disposition — pass, fail, warning, not applicable, "
+                  "and the devices Atlas could not judge.",
+        completion=f"Every device in scope judged by the {label} "
+                   "policies, or the reason it could not be judged "
+                   "stated.",
+        steps=(
+            _locate(False),
+            StepSpec("scope", "Resolve the scope to its devices",
+                     "graph", engines.enterprise_scope),
+            StepSpec("policies",
+                     f"Evaluate the {label} configuration policies",
+                     "policy", engines.policy_validation),
+        ),
+    )
+
 
 def select(request: InvestigationRequest) -> InvestigationTemplate | None:
     """The template for one request, or None to leave the question to
     Atlas's existing estate-wide answer.
 
-    Specific first: protocol + two endpoints, then protocol + scope,
-    then endpoints alone, then a named scope alone. A question naming
-    nothing returns None — inventing a scope would be worse than the
-    general answer.
+    Deterministic and specific-first (PR-171 order):
+
+      1. subject + objective=validate      -> the subject's validation
+         template, built from its DISCOVERED capability (PR-172): the
+         subject's declared policy tags select rules in the active
+         pack, or there is no capability and the orchestrator refuses
+         HONESTLY (never the estate summary). Scope is optional here —
+         a validation naming no narrower place is judged estate-wide,
+         and extraction has already recorded that as a POSITIVE
+         enterprise scope.
+      2. protocol + two endpoints          -> protocol-between
+      3. protocol + a named scope          -> protocol-scope
+      4. endpoints alone                   -> connectivity-between
+      5. a named site or device            -> site-scope
+      6. nothing named                     -> None (the PR-167 rule:
+         inventing a scope would be worse than the general answer)
+
+    Rungs 2-6 are exactly PR-167's ladder: a question with the default
+    objective routes precisely as it always has.
     """
+
+    # -- rung 1: validation (the only objective-routed rung today) ----
+    if request.objective == "validate" and request.has_subject:
+        from .validation import capability
+
+        cap = capability(request.subject or request.protocol)
+        return validation_template(cap) if cap else None
 
     if not request.named_anything:
         return None

@@ -124,12 +124,16 @@ def ask(
     search_index,
     generated_at: str,
     repository: ConversationRepository | None = None,
+    policy_runner=None,
 ) -> AdvisorResponse:
     """Answer one question from evidence and (optionally) store it.
 
     The caller supplies the SAME cached enterprise graph and search
     index the GUI already uses — Advisor adds no second source of truth
-    and re-derives nothing.
+    and re-derives nothing. ``policy_runner`` (PR-172) is the caller's
+    own policy evaluation — the web layer passes the governed,
+    device-context-aware one the /policy page renders, so the two
+    surfaces judge with one pipeline.
     """
 
     response = answer(
@@ -141,6 +145,7 @@ def ask(
             snapshot=snapshot,
             search_index=search_index,
             generated_at=generated_at,
+            policy_runner=policy_runner,
         ),
     )
     if repository is not None:

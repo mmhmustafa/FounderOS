@@ -204,6 +204,7 @@ class ReasoningEngine:
             recommendations=outcome.recommendations,
             consumer=question.consumer,
             provenance=self._provenance(),
+            applicable=outcome.applicable,
         )
 
     def _empty_result(

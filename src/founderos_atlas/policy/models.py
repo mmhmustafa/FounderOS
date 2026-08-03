@@ -251,6 +251,23 @@ class PolicyEvaluation:
     def passed(self) -> bool:
         return self.status == STATUS_PASSED
 
+    @property
+    def applicable(self) -> bool:
+        """Whether this policy really applied to this device (PR-172, R1).
+
+        Two independent gates, both already decided upstream and merely
+        read here: the targeting selector (``PolicyApplicability``) and
+        the check's own antecedent (a device with no ``router bgp`` is
+        not judged by a BGP rule). Aggregations that answer "is X
+        compliant?" must exclude non-applicable evaluations from the
+        judged counts — not applicable is a third outcome, never a pass.
+        """
+
+        return bool(
+            getattr(self.result, "applicable", True)
+            and self.applicability.applicable
+        )
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "policy": self.policy.to_dict(),
@@ -259,6 +276,7 @@ class PolicyEvaluation:
             "network": self.network,
             "status": self.status,
             "status_label": self.status_label,
+            "applicable": self.applicable,
             "config_snippet": list(self.config_snippet),
             "applicability": self.applicability.to_dict(),
             "device_context": dict(self.device_context),

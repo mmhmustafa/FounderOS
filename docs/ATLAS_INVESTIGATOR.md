@@ -24,6 +24,61 @@ steps. Every finding comes from stored evidence.
 Advisor falls through to its existing single-engine path unchanged. Inventing a scope would be worse than a general
 answer — so "Is the network healthy?" still answers exactly as it did before PR-167, and a test pins that.
 
+## Question Understanding (PR-171): subject · objective · scope
+
+PR-171 added the three dimensions the original extraction conflated or lacked. Every one is a fixed
+vocabulary over the operator's own words — no scoring, no similarity, no AI — and every one records
+the **basis** for its own determination, which the answer shows.
+
+| Dimension | Values | Rule |
+|---|---|---|
+| **subject** | a protocol key, or a domain subject (`configuration`, `interfaces`) | protocols win over domain subjects — "ospf configuration" is about OSPF. The vocabulary lives in the **subject registry** (`subjects.py`): adding IS-IS is one descriptor, nothing else changes. |
+| **objective** | `validate` · `assess` (default) · `locate` · `explain` · `compare` · `forecast` | most specific wins, in that fixed order. **`validate` is gated twice**: it needs a subject ("is the network fine?" stays an assessment), and it needs configuration-context AND a judgement word together, or a self-contained term like "misconfigured" — so "show me the OSPF configuration" stays a lookup. |
+| **scope** | `enterprise` · `sites` · `devices` · `interfaces` — a **positive value** | "across the enterprise" is a real, resolved scope, not the absence of one. A validation naming no narrower place is judged estate-wide, and the basis says so. Conflating "named no place" with "asked about everything" is exactly what made an enterprise-scoped OSPF question read as unscoped. |
+
+Subject and scope are orthogonal: `has_subject` and `has_scope` are separate predicates, and the
+original PR-167 `named_anything` keeps its exact meaning (named a *place or object*) because the
+estate-wide contract is pinned against it.
+
+### Selection order (deterministic, specific-first)
+
+1. **subject + objective=validate** → the subject's validation template, built from its
+   **discovered capability** (PR-172, `investigation/validation.py`): the subject's declared
+   `policy_tags` select rules in the active pack, or there is no capability and the question is
+   **refused honestly** — never handed to the estate summary, never run through an adjacency
+   investigation in validation's clothing.
+2–6. The PR-167 ladder, byte-for-byte: protocol+endpoints → protocol+scope → endpoints →
+   named scope → **None**.
+
+### The generic validation template (PR-172)
+
+**One template builder for every subject** — `validation_template(capability)` — parameterised
+entirely by labels; the three steps and both engines are identical for OSPF, BGP and every future
+subject. It orchestrates the **existing policy engine** and re-implements no matching: the
+capability's vetted rules are judged by `PolicyEngine.evaluate()`, and the template aggregates the
+engine's own dispositions. Adding a technology is two data edits — a subject descriptor with
+`policy_tags`, and rules in a pack carrying those tags. No template, no intent, no dict entry, no
+code.
+
+Honesty rules, pinned by tests:
+
+- **No matching policies is a refusal, never a pass** — "Atlas has no configuration policies for X."
+- A device the engine could not judge stays **unknown, with the engine's own reason**.
+- **A device that does not run the subject is *not applicable*, never compliant** (PR-172, R1) —
+  a minority protocol's verdict is decided by its real speakers, not drowned by the devices that
+  never ran it.
+- Devices in scope with no configuration evidence are **counted and named** — "not judged" is part
+  of the answer.
+- A rule the masked configuration view blinds (its pattern contains a sensitive term such as
+  `password` or `community`) **never enters a verdict** — refused at the capability seam (R9).
+
+The verdict is a **projection**, computed and never stored: Compliant · Non-compliant · Partially
+verified · Not enough evidence · Not applicable · Unsupported, each mapped onto an existing
+Experience-Language chip. See `docs/ATLAS_VALIDATION_FRAMEWORK.md` for the full framework.
+
+**Current rule coverage: OSPF and BGP** (one starter rule each). Every other subject is an honest
+refusal naming what Atlas *can* validate — sourced live from the capability registry.
+
 ## Part 1 — Structured question understanding
 
 `investigation/extraction.py` extracts, from fixed vocabularies and shapes:

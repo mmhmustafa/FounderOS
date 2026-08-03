@@ -69,6 +69,21 @@ _WARNING_MARKERS = (
     "health is warning",
     "reconciliation warning",
     "address-ownership conflict",
+    # PR-172 verdict projection: Non-compliant at medium/low severity
+    # and Partially verified both map to the Warning chip (review §6).
+    # Verbatim phrases only the validation summary writes.
+    "violation(s) at medium or low severity",
+    "partially verified —",
+)
+
+# PR-172: an UNSUPPORTED validation — no rules for the subject — is
+# Informational, not "Not enough evidence": evidence is not the
+# problem, capability is, and the refusal names what Atlas CAN do.
+# Checked before the confidence gate because refusals carry Unknown
+# confidence. Verbatim phrases only the validation refusals write.
+_UNSUPPORTED_MARKERS = (
+    "can currently validate",
+    "no configuration policies for",
 )
 
 _OK_MARKERS = (
@@ -77,6 +92,12 @@ _OK_MARKERS = (
     "no active issues",
     "completed successfully",
     "no changes",
+    # PR-171: the validation template's all-pass sentence, exactly as
+    # the orchestrator writes it. High-precision by design — only the
+    # branch where the policy engine passed EVERY judged evaluation
+    # produces this phrase, so the verdict relabels the engine's own
+    # 100%-pass determination and nothing weaker.
+    "every judged evaluation passed",
 )
 
 # PR-168 Part 9: operational status words, not internal tone keys. This
@@ -196,7 +217,10 @@ def _clean_text(value: Any) -> str:
 
 
 def _verdict(summary: str, confidence: str) -> dict[str, str]:
-    if confidence == "Unknown":
+    folded = summary.casefold()
+    if any(marker in folded for marker in _UNSUPPORTED_MARKERS):
+        tone = TONE_INFO
+    elif confidence == "Unknown":
         tone = TONE_UNKNOWN
     else:
         text = summary.casefold()
@@ -234,6 +258,7 @@ _ENGINE_SUBJECTS = {
     "path": "Path",
     "changes": "Recent changes",
     "interfaces": "Interfaces",
+    "policy": "Policy compliance",     # PR-171: the validation engine
 }
 
 # Router intent names -> the kind of investigation an operator recognises.
@@ -307,6 +332,18 @@ def _scope_phrase(entities: Mapping[str, Any]) -> str:
     return ", ".join(seen[:3])
 
 
+# PR-171: objectives, in operator words. ``assess`` is the default and
+# deliberately shows nothing — stamping "Assessment" on every answer
+# would teach operators to stop reading the row.
+_OBJECTIVE_LABELS = {
+    "validate": "Configuration validation",
+    "locate": "Lookup",
+    "explain": "Root cause",
+    "compare": "Comparison",
+    "forecast": "Forecast",
+}
+
+
 def _context_rows(
     response: Mapping[str, Any], oi: Mapping[str, Any]
 ) -> list[dict[str, str]]:
@@ -314,13 +351,18 @@ def _context_rows(
 
     Replaces "Understood as: Site Health" — a statement about Atlas's
     router — with what the operator actually needs to know about the
-    answer in front of them.
+    answer in front of them. PR-171: the stored ``understanding`` block
+    fills the same rows when the investigation did not — one
+    vocabulary, two sources, never two rows for one fact.
     """
 
     investigation = _investigation_block(response)
     plan = investigation.get("plan") or {}
     request = investigation.get("request") or {}
     entities = investigation.get("entities") or {}
+    understanding = response.get("understanding")
+    if not isinstance(understanding, Mapping):
+        understanding = {}
     rows: list[dict[str, str]] = []
 
     kind = _clean_text(plan.get("title") if isinstance(plan, Mapping) else "")
@@ -330,13 +372,34 @@ def _context_rows(
         )
     rows.append({"label": "Investigation", "value": kind})
 
+    objective = _OBJECTIVE_LABELS.get(
+        _clean_text(understanding.get("objective"))
+    )
+    if objective:
+        rows.append({"label": "Objective", "value": objective})
+
     protocol = _clean_text(
         request.get("protocol") if isinstance(request, Mapping) else ""
     )
     if protocol:
         rows.append({"label": "Protocol", "value": protocol.upper()})
+    elif _clean_text(understanding.get("subject")) not in (
+        "", "configuration", "interfaces",
+    ):
+        # A domain subject is not a protocol — "Protocol:
+        # CONFIGURATION" would be a category error on the very row
+        # that exists to speak the operator's language. The label is
+        # already properly cased by the subject registry.
+        rows.append({
+            "label": "Protocol",
+            "value": _clean_text(understanding.get("subject_label")),
+        })
 
     scope = _scope_phrase(entities) if isinstance(entities, Mapping) else ""
+    if not scope and _clean_text(
+        understanding.get("scope")
+    ) == "enterprise":
+        scope = "Enterprise"
     if scope:
         rows.append({"label": "Scope", "value": scope})
     return rows
@@ -389,10 +452,13 @@ def _investigated(response: Mapping[str, Any]) -> list[str]:
     engines = [_clean_text(engine) for engine in
                investigation.get("engines_used") or ()]
     # The protocol is what the operator ASKED about; it earns a ✓ only
-    # if an engine that reads protocol state actually ran. Otherwise the
-    # row would claim Atlas investigated HSRP — which it has no engine
-    # for — simply because the question said "HSRP".
-    if isinstance(request, Mapping) and {"routing", "path"} & set(engines):
+    # if an engine that actually read protocol evidence ran — routing
+    # and path read protocol state, and policy (PR-171) judges the
+    # protocol's configuration rules. Otherwise the row would claim
+    # Atlas investigated HSRP — which it has no engine for — simply
+    # because the question said "HSRP".
+    if isinstance(request, Mapping) and {"routing", "path",
+                                         "policy"} & set(engines):
         add(_clean_text(request.get("protocol")).upper())
     for engine in engines:
         add(_ENGINE_SUBJECTS.get(engine, ""))

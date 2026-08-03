@@ -95,20 +95,33 @@ def plan_for(template: InvestigationTemplate, request) -> InvestigationPlan:
 def investigate(
     question: str, *, graph, snapshot: dict | None = None,
     change_report: dict | None = None,
+    policy_runner=None,
 ) -> InvestigationResult | None:
     """Run one investigation, or return None when the question is not
     an investigation (no named scope) and Atlas's estate-wide answer
-    should stand."""
+    should stand.
+
+    ``policy_runner`` is a zero-argument callable returning a
+    PolicyReport, supplied by the caller because policy evaluation
+    needs the workspace's Enterprise Memory, which the investigator
+    deliberately does not know how to reach. It is invoked lazily and
+    only by a validation template — every other investigation never
+    touches it.
+    """
 
     started = time.perf_counter()
     request = understand(question, graph)
     template = select(request)
     if template is None:
+        # PR-171: a VALIDATION question whose subject has no validation
+        # template is refused honestly — never handed to the estate
+        # summary, which answers a different question, and never run
+        # through an adjacency investigation, which answers yet another.
+        if request.objective == "validate" and request.has_subject:
+            return _validation_refusal(request, started)
         return None
 
     entities = resolve(graph, request)
-    # The objective belongs to the template, so the request stays
-    # exactly as it was extracted from the operator's words.
     plan = plan_for(template, request)
     context = InvestigationContext(
         request=request, entities=entities, graph=graph, snapshot=snapshot,
@@ -116,6 +129,8 @@ def investigate(
     context.device_ids = devices_in_scope(graph, entities)
     if change_report is not None:
         context.facts["change_report"] = change_report
+    if policy_runner is not None:
+        context.facts["policy_runner"] = policy_runner
 
     engines_used: list[str] = []
     for spec, step in zip(template.steps, plan.steps):
@@ -148,6 +163,72 @@ def investigate(
         evidence=tuple(context.evidence), summary=summary,
         confidence=confidence, confidence_basis=basis,
         engines_used=tuple(engines_used),
+        duration_ms=int((time.perf_counter() - started) * 1000),
+    )
+
+
+def _validation_refusal(request, started: float) -> InvestigationResult:
+    """The honest answer when Atlas cannot validate what was asked.
+
+    Success criterion 3: "Is all the FOO configuration fine?" must name
+    what Atlas CAN do, not fall back to the estate summary — which is
+    the original failure in a different costume — and must never run an
+    adjacency investigation in validation's clothing.
+    """
+
+    from .models import ResolvedEntities
+    from .subjects import label_for
+    from .validation import capabilities
+
+    key = request.subject or request.protocol
+    label = label_for(key)
+    # "the Configuration configuration" reads like a stutter — when the
+    # subject IS the configuration domain, the question named no
+    # specific subject at all, and the refusal should say that.
+    named = ("this configuration" if key == "configuration"
+             else f"the {label} configuration")
+    # PR-172: the "can currently validate" list is READ from the
+    # capability registry — one source of truth, so this sentence can
+    # never advertise a validation the pack cannot deliver (R3).
+    supported = ", ".join(
+        item.title for item in capabilities()
+    ) or "nothing yet"
+    plan = InvestigationPlan(
+        template="validation-refusal",
+        title=f"{label} configuration validation"
+        if key != "configuration" else "Configuration validation",
+        objective=f"Judge {named} against policy rules.",
+        steps=(),
+    )
+    return InvestigationResult(
+        request=request,
+        entities=ResolvedEntities(),
+        plan=plan,
+        findings=(),
+        gaps=(
+            f"Atlas has no configuration-validation investigation for "
+            f"{label}. It can currently validate: {supported}.",
+        ) if key != "configuration" else (
+            "The question names no subject Atlas can validate. It can "
+            f"currently validate: {supported}.",
+        ),
+        evidence=(),
+        summary=(
+            f"Atlas cannot validate {named} as asked — it has no "
+            f"validation rules for {label}. It can currently validate: "
+            f"{supported}. It will not claim compliance it has not "
+            "checked."
+        ) if key != "configuration" else (
+            "Atlas cannot validate this configuration as asked — the "
+            "question names no subject it recognises. It can currently "
+            f"validate: {supported}. It will not claim compliance it "
+            "has not checked."
+        ),
+        confidence=CONFIDENCE_UNKNOWN,
+        confidence_basis=(
+            "the question asks for a validation Atlas has no rules for"
+        ),
+        engines_used=(),
         duration_ms=int((time.perf_counter() - started) * 1000),
     )
 
@@ -233,6 +314,157 @@ def _summarise(template, context: InvestigationContext
         )
         confidence = CONFIDENCE_HIGH if total else CONFIDENCE_LOW
         basis = f"{total} OSPF adjacency(ies) read from stored evidence"
+    elif template.domain == "validation":
+        # PR-172: ONE summary for every subject's validation — the
+        # subject contributes its label, nothing else.
+        from .subjects import label_for
+
+        label = label_for(
+            context.request.subject or context.request.protocol
+        )
+        from .validation import (
+            VERDICT_NON_COMPLIANT,
+            VERDICT_NOT_APPLICABLE,
+            VERDICT_PARTIAL,
+        )
+
+        validation = facts.get("validation") or {}
+        counts = validation.get("counts") or {}
+        passed = int(counts.get("pass") or 0)
+        failed = int(counts.get("fail") or 0)
+        warned = int(counts.get("warning") or 0)
+        unknown = int(counts.get("unknown") or 0)
+        not_applicable = int(counts.get("not_applicable") or 0)
+        judged = passed + failed + warned
+        not_judged = int(facts.get("validation_not_judged") or 0)
+        na_devices = int(facts.get("validation_not_applicable") or 0)
+        # PR-172: the summary SPEAKS the verdict projection the
+        # validation engine already computed and stored — it never
+        # re-judges, and it may never contradict it. Every branch
+        # below is keyed on the projection first, raw counts second
+        # (the counts-only fallbacks cover runs where the projection
+        # could not be computed at all).
+        projection = facts.get("validation_verdict") or {}
+        term = str(projection.get("verdict") or "")
+        tone = str(projection.get("tone") or "")
+        if facts.get("validation_no_policies"):
+            sentences.append(
+                f"Atlas has no configuration policies for {label} in "
+                "the active policy pack, so it cannot judge this "
+                "configuration — and it will not claim compliance it "
+                "has not checked."
+            )
+            confidence = CONFIDENCE_UNKNOWN
+            basis = "no policy in the active pack judges this subject"
+        elif term == VERDICT_NOT_APPLICABLE:
+            # PR-172 (R1): every evaluation was not applicable AND
+            # every device in scope was actually examined — the
+            # projection only says "Not applicable" when nothing in
+            # scope went unevaluated, so this positive claim never
+            # covers a device Atlas has not seen.
+            sentences.append(
+                f"No device in scope has {label} configured — the "
+                f"{not_applicable} evaluation(s) were not applicable. "
+                "Atlas does not report absence as compliance."
+            )
+            confidence = CONFIDENCE_HIGH
+            basis = (
+                f"{not_applicable} evaluation(s) by the policy engine; "
+                "none applied to the devices in scope"
+            )
+        elif judged == 0:
+            # Not enough evidence — nothing could be judged, whether
+            # because evaluations came back unknown, devices in scope
+            # were never evaluated, or the engine produced nothing.
+            # Never a compliance sentence, never a positive claim.
+            sentences.append(
+                f"The {label} configuration could not be judged: "
+                "Atlas does not have enough evidence."
+                if projection else
+                f"The policy engine produced no {label} evaluations "
+                "for this scope, so the configuration could not be "
+                "judged."
+            )
+            if not_applicable:
+                sentences.append(
+                    f"{not_applicable} evaluation(s) were not "
+                    "applicable — those devices do not have "
+                    f"{label} configured."
+                )
+            if unknown:
+                sentences.append(
+                    f"{unknown} evaluation(s) could not be judged and "
+                    "remain unknown."
+                )
+            if not_judged:
+                sentences.append(
+                    f"{not_judged} device(s) in scope have no "
+                    "configuration evidence and were not judged."
+                )
+            confidence = CONFIDENCE_UNKNOWN
+            basis = (
+                "nothing in scope could be judged"
+                if projection else
+                "no evaluations were produced for the scope"
+            )
+        else:
+            # Wording is deliberate: "failed" appears only for grave
+            # (critical/high) violations, so the presentation layer's
+            # existing markers map the verdict onto the right chip —
+            # Attention for grave, Warning for medium/low, Healthy for
+            # a full pass — with no new status vocabulary.
+            if term == VERDICT_NON_COMPLIANT and tone == "warning":
+                sentences.append(
+                    f"{label} configuration: Non-compliant — "
+                    f"{failed + warned} violation(s) at medium or low "
+                    f"severity; {passed} of {judged} judged "
+                    "evaluation(s) pass."
+                )
+            elif term == VERDICT_NON_COMPLIANT or failed or warned:
+                sentences.append(
+                    f"{label} configuration: Non-compliant — "
+                    f"{failed} evaluation(s) failed; {passed} "
+                    f"of {judged} judged evaluation(s) pass."
+                )
+            elif term == VERDICT_PARTIAL:
+                sentences.append(
+                    f"{label} configuration: Partially verified — "
+                    f"{passed} of {judged} judged evaluation(s) pass; "
+                    "the rest could not be judged."
+                )
+            else:
+                sentences.append(
+                    f"{label} configuration: Compliant — every judged "
+                    f"evaluation passed ({passed} of {judged})."
+                )
+            if warned:
+                sentences.append(f"{warned} warning(s).")
+            if na_devices:
+                sentences.append(
+                    f"{na_devices} device(s) in scope do not have "
+                    f"{label} configured and were reported as not "
+                    "applicable, never as compliant."
+                )
+            if unknown:
+                sentences.append(
+                    f"{unknown} evaluation(s) could not be judged and "
+                    "remain unknown."
+                )
+            if not_judged:
+                sentences.append(
+                    f"{not_judged} device(s) in scope have no "
+                    "configuration evidence and were not judged."
+                )
+            confidence = (
+                CONFIDENCE_HIGH if not unknown and not not_judged
+                else CONFIDENCE_MEDIUM
+            )
+            basis = (
+                f"{judged + unknown} evaluation(s) by the policy engine "
+                f"across {int(validation.get('policies') or 0)} {label} "
+                "polic" + ("y" if int(validation.get("policies") or 0) == 1
+                           else "ies")
+            )
     elif template.key == "connectivity-between":
         status = str(facts.get("path_status") or "")
         start = facts.get("path_start") or source

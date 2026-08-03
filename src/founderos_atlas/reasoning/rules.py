@@ -51,6 +51,12 @@ class RuleOutcome:
     severity: str = SEVERITY_MEDIUM
     has_evidence: bool = True
     confidence_basis: str = ""
+    # PR-172 (R1): whether the rule actually APPLIED to this subject.
+    # A conditional rule whose antecedent is absent concludes "not
+    # applicable" — that is a third epistemic state, and downstream
+    # aggregation must never count it as a pass. Additive; every
+    # existing outcome keeps applicable=True.
+    applicable: bool = True
 
 
 @runtime_checkable

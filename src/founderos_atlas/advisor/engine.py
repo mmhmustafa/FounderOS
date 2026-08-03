@@ -46,6 +46,12 @@ class AdvisorContext:
     snapshot: dict | None    # the federated snapshot dict (or None)
     search_index: object     # search SearchIndex
     generated_at: str
+    # PR-172: the caller may supply its own policy evaluation — the web
+    # layer passes the SAME governed, context-rich evaluation the
+    # /policy page renders, so a validation verdict and the policy page
+    # can never disagree about the same estate. None -> the advisor's
+    # own ungoverned fallback (headless/tests).
+    policy_runner: object = None
 
 
 def answer(question: str, context: AdvisorContext) -> AdvisorResponse:
@@ -64,6 +70,12 @@ def answer(question: str, context: AdvisorContext) -> AdvisorResponse:
     sites = tuple(getattr(context.graph, "sites", ()) or ())
     route = router.route(question, sites=sites)
 
+    # PR-171: ONE understanding, attached to every answer. The same
+    # extraction the investigator uses — never a second classifier —
+    # with each dimension carrying the basis for its own determination,
+    # so the answer can show why it was read the way it was.
+    understanding = _understanding_payload(question, context)
+
     # PR-167: a question that NAMES something specific is an
     # investigation, not a request for one engine. The investigator
     # plans and runs several engines over the named scope and answers
@@ -76,13 +88,69 @@ def answer(question: str, context: AdvisorContext) -> AdvisorResponse:
             _investigation_response(question, route.engine, investigation,
                                     context),
             operational_intent=_intent_payload(route),
+            understanding=understanding,
         )
 
-    handler = _HANDLERS.get(route.engine, _answer_unknown)
+    # PR-171: dispatch reads the OBJECTIVE as well as the engine. The
+    # resolved intent used to survive only as display decoration — Atlas
+    # recognised "OSPF" in a configuration question and still answered
+    # with the enterprise summary, because dispatch saw only
+    # engine="health". An (engine, objective) pair now selects a
+    # specific handler first; every pre-existing intent declares the
+    # default objective ("assess"), so the fallback to the engine-only
+    # table reproduces the old behaviour exactly.
+    objective = getattr(route.intent, "objective", "assess")
+    handler = _OBJECTIVE_HANDLERS.get(
+        (route.engine, objective)
+    ) or _HANDLERS.get(route.engine, _answer_unknown)
     response = handler(question, route.engine, context)
     return replace(
-        response, operational_intent=_intent_payload(route)
+        response, operational_intent=_intent_payload(route),
+        understanding=understanding,
     )
+
+
+def _understanding_payload(question: str, context: AdvisorContext) -> dict:
+    """The five dimensions of one question, as stored JSON.
+
+    Every value is the investigator's own extraction — deterministic
+    vocabularies over the operator's words — and ``basis`` states why
+    each dimension was chosen. Tolerant by design: understanding is
+    presentation support, and a failure here must never cost an answer.
+    """
+
+    try:
+        from founderos_atlas.investigation.orchestrator import understand
+        from founderos_atlas.investigation.subjects import label_for
+
+        request = understand(question, context.graph)
+        relationship = None
+        if request.source or request.destination or request.direction:
+            relationship = {
+                "source": request.source,
+                "destination": request.destination,
+                "direction": request.direction,
+            }
+        return {
+            "subject": request.subject,
+            "subject_label": (
+                label_for(request.subject) if request.subject else ""
+            ),
+            "objective": request.objective,
+            "scope": request.scope,
+            "sites": list(request.sites),
+            "time_range": request.time_range,
+            "relationship": relationship,
+            "basis": list(request.basis),
+        }
+    except Exception:  # noqa: BLE001 - understanding must not cost answers
+        import logging
+
+        logging.getLogger("atlas").warning(
+            "question understanding failed; answering without it",
+            exc_info=True,
+        )
+        return {}
 
 
 def _investigate(question: str, context: AdvisorContext):
@@ -103,6 +171,7 @@ def _investigate(question: str, context: AdvisorContext):
         return investigate(
             question, graph=context.graph, snapshot=context.snapshot,
             change_report=_change_report_summary(context),
+            policy_runner=_policy_runner(context),
         )
     except Exception:  # noqa: BLE001 - fall back to the single engine
         logging.getLogger("atlas").warning(
@@ -110,6 +179,52 @@ def _investigate(question: str, context: AdvisorContext):
             exc_info=True,
         )
         return None
+
+
+def _policy_runner(context: AdvisorContext):
+    """A lazy policy evaluation over every profile's Enterprise Memory.
+
+    The investigator deliberately cannot reach the workspace — it reads
+    the graph and snapshot it is handed. Policy evaluation needs the
+    per-scope memory stores, so the ADVISOR builds this closure and the
+    validation template invokes it only when it actually runs. Returns
+    None when no scope has a memory store, which the engine reports as
+    "could not be judged" — never as compliant.
+
+    When the caller supplied its own runner (PR-172: the web layer's
+    governed, device-context-aware evaluation — the same one /policy
+    renders), that runner wins: two surfaces, one judgement.
+    """
+
+    if callable(context.policy_runner):
+        return context.policy_runner
+
+    def run():
+        from founderos_atlas.enterprise_memory import (
+            EnterpriseMemory,
+            EnterpriseMemoryStore,
+        )
+        from founderos_atlas.policy import PolicyEngine
+
+        memories = []
+        for profile in context.profiles or ():
+            scope = profile_scope(
+                context.base_output_dir, profile.profile_id, profile.name
+            )
+            store_dir = scope.output_dir / "enterprise-memory"
+            if not store_dir.is_dir():
+                continue
+            memories.append((
+                profile.name,
+                EnterpriseMemory(EnterpriseMemoryStore(store_dir)),
+            ))
+        if not memories:
+            return None
+        return PolicyEngine().evaluate_scopes(
+            memories, scope_label="Enterprise"
+        )
+
+    return run
 
 
 def _change_report_summary(context: AdvisorContext) -> dict | None:
@@ -186,6 +301,7 @@ def _intent_payload(route) -> dict:
         "name": intent.name,
         "key": intent.key,
         "domain": intent.domain,
+        "objective": getattr(intent, "objective", "assess"),
         "description": intent.description,
         "routing_confidence": route.confidence,
         "why": list(route.why),
@@ -951,6 +1067,225 @@ def _read_json(path: Path):
         return None
 
 
+def _answer_validate(question, intent, context) -> AdvisorResponse:
+    """Answer a configuration-validation question by orchestrating the
+    EXISTING policy engine (PR-171).
+
+    The investigator normally owns this path — it runs before dispatch
+    and produces the richer plan-and-findings answer. This handler is
+    the resilience path for when the investigation itself failed: it
+    reuses the SAME extraction and the SAME aggregation helper, so the
+    two paths cannot disagree, and it re-implements no matching. When
+    the subject cannot be judged, it refuses — the estate summary is
+    never substituted for a validation question.
+    """
+
+    from founderos_atlas.investigation.engines import (
+        aggregate_policy_report,
+    )
+    from founderos_atlas.investigation.orchestrator import understand
+    from founderos_atlas.investigation.subjects import (
+        label_for,
+        subject as subject_of,
+    )
+
+    steps = ["Understanding the validation question…",
+             "Evaluating the enterprise policy pack…"]
+    request = understand(question, context.graph)
+    descriptor = subject_of(request.subject or request.protocol)
+    label = label_for(request.subject or request.protocol)
+    tags = tuple(descriptor.policy_tags) if descriptor else ()
+
+    def refusal(reason: str, basis: str) -> AdvisorResponse:
+        return AdvisorResponse(
+            question=question, intent=intent,
+            summary=reason,
+            evidence=(_graph_evidence(context),),
+            confidence=CONFIDENCE_UNKNOWN,
+            confidence_basis=basis,
+            next_action_label="Open Policy",
+            next_action_href="/policy",
+            followups=(
+                FollowUp("Open Policy results", href="/policy"),
+                FollowUp("Is the network healthy?",
+                         question="Is the network healthy?"),
+            ),
+            unknowns=(reason,),
+            steps=tuple(steps), generated_at=context.generated_at,
+        )
+
+    from founderos_atlas.investigation.validation import (
+        capabilities as _capabilities,
+        capability as _capability,
+    )
+
+    # PR-172: the "can currently validate" list is READ from the
+    # capability registry — the same single source of truth the
+    # orchestrator's refusal reads, so the two paths can never
+    # disagree about what Atlas can do.
+    supported = ", ".join(
+        item.title for item in _capabilities()
+    ) or "nothing yet"
+    subject_key = request.subject or request.protocol
+    if not subject_key or subject_key == "configuration":
+        # A validation-worded question that names NO subject Atlas
+        # recognises ("is anything misconfigured?"). The orchestrator's
+        # refusal phrasing, not "the  configuration" with a hole in it.
+        return refusal(
+            "Atlas cannot validate this configuration as asked — the "
+            "question names no subject it recognises. It can currently "
+            f"validate: {supported}. It will not claim compliance it "
+            "has not checked.",
+            "the question names no subject Atlas can validate",
+        )
+    if _capability(subject_key) is None:
+        return refusal(
+            f"Atlas cannot validate the {label} configuration — it has "
+            f"no validation rules for {label}. It can currently "
+            f"validate: {supported}. It will not claim compliance it "
+            "has not checked.",
+            "no policy in the active pack judges this subject",
+        )
+    report = _policy_runner(context)()
+    if report is None:
+        return refusal(
+            f"Atlas cannot judge the {label} configuration: no scope "
+            "has collected configuration evidence yet.",
+            "no Enterprise Memory store exists for any scope",
+        )
+    # Vetted rules come from the pack THIS REPORT was judged with —
+    # the governance-effective pack when the web layer supplied the
+    # runner — so verdict and /policy read one rule set (PR-172).
+    report_pack = getattr(report, "pack", None)
+    cap = (
+        _capability(subject_key, report_pack)
+        if report_pack is not None else _capability(subject_key)
+    )
+    aggregate = aggregate_policy_report(
+        report, tags=tags, scope_hostnames=frozenset(),
+        rule_ids=frozenset(cap.rules) if cap else frozenset(),
+    )
+    if not aggregate["policies"]:
+        if report_pack is not None and cap is not None:
+            return refusal(
+                f"The policy engine produced no {label} evaluations "
+                "for this scope, so the configuration could not be "
+                "judged.",
+                "no evaluations were produced for the scope",
+            )
+        return refusal(
+            f"Atlas has no configuration policies for {label} in the "
+            "active policy pack, so it cannot judge this configuration.",
+            "the active pack carries no policy tagged for this subject",
+        )
+
+    from founderos_atlas.investigation.validation import (
+        VERDICT_NON_COMPLIANT,
+        VERDICT_NOT_APPLICABLE,
+        VERDICT_PARTIAL,
+        verdict_for,
+    )
+
+    counts = aggregate["counts"]
+    judged = counts["pass"] + counts["fail"] + counts["warning"]
+    not_applicable = int(counts.get("not_applicable") or 0)
+    na_devices = len(aggregate.get("devices_not_applicable") or ())
+    scope_count = len(tuple(getattr(context.graph, "devices", ()) or ()))
+    projection = verdict_for(aggregate, scope_count=scope_count)
+    term = projection["verdict"]
+    if term == VERDICT_NOT_APPLICABLE:
+        # PR-172 (R1): nothing applied — the subject is not configured
+        # anywhere in scope. A determination, never a compliance claim.
+        summary = (
+            f"No device in scope has {label} configured — the "
+            f"{not_applicable} evaluation(s) were not applicable. "
+            "Atlas does not report absence as compliance."
+        )
+    elif term == VERDICT_NON_COMPLIANT and projection["tone"] == "warning":
+        summary = (
+            f"{label} configuration: Non-compliant — "
+            f"{counts['fail'] + counts['warning']} violation(s) at "
+            f"medium or low severity; {counts['pass']} of {judged} "
+            "judged pass."
+        )
+    elif term == VERDICT_NON_COMPLIANT:
+        summary = (
+            f"{label} configuration: Non-compliant — "
+            f"{counts['fail'] + counts['warning']} evaluation(s) "
+            f"failed; {counts['pass']} of {judged} judged pass."
+        )
+    elif term == VERDICT_PARTIAL:
+        summary = (
+            f"{label} configuration: Partially verified — "
+            f"{counts['pass']} of {judged} judged evaluation(s) pass; "
+            "the rest could not be judged."
+        )
+    elif judged == 0:
+        # "Not enough evidence" — the projection's own words; never
+        # a compliance sentence over zero judged devices.
+        summary = (
+            f"{label} configuration: nothing in scope could be judged "
+            f"— {projection['cause']}."
+        )
+    else:
+        summary = (
+            f"{label} configuration: Compliant — every judged "
+            f"evaluation passed ({counts['pass']} of {judged})."
+        )
+    if na_devices and judged:
+        summary += (
+            f" {na_devices} device(s) in scope do not have {label} "
+            "configured and were reported as not applicable, never as "
+            "compliant."
+        )
+    if counts["unknown"]:
+        summary += (
+            f" {counts['unknown']} evaluation(s) could not be judged "
+            "and remain unknown."
+        )
+    evidence = [
+        EvidenceItem(
+            label="Policy Engine Results",
+            detail=f"{aggregate['evaluated']} evaluation(s) across "
+                   f"{len(aggregate['policies'])} {label} policy rule(s)",
+            href="/policy",
+        ),
+        _graph_evidence(context),
+    ]
+    return AdvisorResponse(
+        question=question, intent=intent,
+        summary=summary,
+        evidence=tuple(evidence),
+        confidence=(
+            CONFIDENCE_UNKNOWN if judged == 0
+            and term not in (VERDICT_NOT_APPLICABLE,)
+            # "Partially verified" is Medium even when the unjudged
+            # remainder is unevaluated devices rather than unknown
+            # evaluations — a partial answer never claims High.
+            else CONFIDENCE_MEDIUM if term == VERDICT_PARTIAL
+            or counts["unknown"]
+            else CONFIDENCE_HIGH
+        ),
+        confidence_basis=(
+            f"{judged + counts['unknown']} evaluation(s) by the policy "
+            "engine"
+        ),
+        next_action_label="Open Policy",
+        next_action_href="/policy",
+        followups=(
+            FollowUp("Open Policy results", href="/policy"),
+            FollowUp("What changed?", question="What changed?"),
+        ),
+        unknowns=tuple(
+            f"{count} evaluation(s) unknown: {reason}"
+            for reason, count in sorted(
+                aggregate["unknown_reasons"].items()
+            )
+        ),
+        steps=tuple(steps), generated_at=context.generated_at,
+    )
+
+
 _HANDLERS = {
     router.INTENT_HEALTH: _answer_health,
     router.INTENT_CHANGES: _answer_changes,
@@ -962,4 +1297,13 @@ _HANDLERS = {
     router.INTENT_CONTINUE: _answer_continue,
     router.INTENT_INVESTIGATION: _answer_investigation,
     router.INTENT_ENTERPRISE: _answer_enterprise,
+}
+
+# PR-171: dispatch on (engine, objective) — consulted BEFORE the
+# engine-only table, so an intent's declared objective finally reaches
+# execution instead of surviving as display decoration. Sparse by
+# design: every pre-existing intent declares objective="assess" and no
+# (engine, "assess") key exists here, so their dispatch is untouched.
+_OBJECTIVE_HANDLERS = {
+    ("health", "validate"): _answer_validate,
 }

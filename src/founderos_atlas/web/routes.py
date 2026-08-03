@@ -399,6 +399,52 @@ def register_routes(app) -> None:
     def profile_service():
         return cfg("ATLAS_PROFILE_SERVICE")
 
+    def _workspace_store():
+        from founderos_atlas.workspace.user_preferences import (
+            UserPreferenceStore,
+        )
+
+        return UserPreferenceStore(cfg("ATLAS_WORKSPACE_ROOT"))
+
+    def _workspace_lists() -> tuple[list, list]:
+        """(favourites, recents) for the current user.
+
+        Per-USER and server-side, so a pinned device follows the
+        operator to another browser and survives a restart. A broken
+        store yields empty lists — a preference file must never break a
+        page (the same rule the store itself follows).
+        """
+
+        from . import workspace as ws
+
+        store = _workspace_store()
+        owner = current_actor()
+        return (
+            ws._clean(store.ui_value(owner, ws.FAVOURITES_KEY, []),
+                      ws.MAX_FAVOURITES),
+            ws._clean(store.ui_value(owner, ws.RECENTS_KEY, []),
+                      ws.MAX_RECENTS),
+        )
+
+    def _remember_place(kind: str, label: str, href: str) -> None:
+        """Record where the operator just went (Part 4).
+
+        Best-effort by design: failing to write a convenience list must
+        never fail the page the operator asked for.
+        """
+
+        from . import workspace as ws
+
+        try:
+            store = _workspace_store()
+            owner = current_actor()
+            store.set_ui_value(owner, ws.RECENTS_KEY, ws.remember(
+                store.ui_value(owner, ws.RECENTS_KEY, []),
+                kind=kind, label=label, href=href,
+            ))
+        except Exception:  # noqa: BLE001 - a convenience list, not evidence
+            logger.debug("could not record a recent place", exc_info=True)
+
     def base_context(active: str) -> dict:
         # ``active`` is the view key a route already passed; the sidebar derives
         # which workflow to open from it, so no route had to change.
@@ -409,6 +455,18 @@ def register_routes(app) -> None:
         except Exception:
             preferences = None
         from .models import visible_nav_groups
+        from . import workspace as ws
+
+        # PR-170: the workspace layer. Every page gets its breadcrumbs,
+        # its favourites and its recents from here, so no route had to
+        # change and a page added to the nav is connected for free.
+        # ``trail`` and ``context`` are what only a page can know; a
+        # route passes them by overriding these keys after the call.
+        scope_id = workspace_scope()
+        try:
+            favourites, recents = _workspace_lists()
+        except Exception:
+            favourites, recents = [], []
 
         return {
             "nav_groups": visible_nav_groups(app),
@@ -417,9 +475,40 @@ def register_routes(app) -> None:
             "product": "Atlas",
             "ui_theme": preferences.theme if preferences else "system",
             "ui_density": preferences.density if preferences else "comfortable",
+            # NB: not "breadcrumbs" — three templates already import a
+            # macro of that name, and a context variable would shadow
+            # it. The macro is REUSED to render these; PR-170 adds the
+            # automatic trail, not a second implementation.
+            "workspace_crumbs": ws.breadcrumbs(active, scope_id=scope_id),
+            "workspace_context": [],
+            "workspace_related": [],
+            "workspace_favourites": favourites,
+            "workspace_recents": recents,
+            "workspace_scope": scope_id,
+            "workspace_here": ws.page(active) or {},
         }
 
     # -- Scopes ---------------------------------------------------------------
+
+    def workspace_scope() -> str:
+        """The active scope, for building workspace links (PR-170).
+
+        Cached per request. ``_active_scope_for_links`` does the same
+        job but is defined inside the template context processor, so it
+        is not reachable from a route — calling it there raised a
+        NameError that a broad ``except`` swallowed, leaving every
+        breadcrumb without its scope. This one lives where both can
+        reach it.
+        """
+
+        cache = getattr(g, "_workspace_scope", None)
+        if cache is None:
+            try:
+                cache = active_scope_id(known_scopes())
+            except Exception:  # noqa: BLE001 - a link must not 500 a page
+                cache = GLOBAL_SCOPE_ID
+            g._workspace_scope = cache
+        return cache
 
     def known_scopes() -> dict[str, DiscoveryScope]:
         """Every selectable scope: one per profile plus the local workspace."""
@@ -6605,6 +6694,40 @@ def register_routes(app) -> None:
 
         scope_id = active_scope_id(known_scopes())
         graph, snapshot, profiles = scoped_world(scope_id)
+
+        def governed_policy_runner():
+            """The SAME governed, device-context-aware evaluation the
+            /policy page renders (PR-172): effective pack over the
+            scoped memories, with selector attributes resolved. One
+            pipeline, two surfaces — the validation verdict and the
+            policy page can never disagree."""
+
+            from founderos_atlas.policy import PolicyEngine
+            from founderos_atlas.policy.governance import (
+                PolicyGovernanceRepository,
+                effective_pack,
+            )
+            from founderos_atlas.policy.packs import default_pack
+
+            governance = PolicyGovernanceRepository(
+                cfg("ATLAS_WORKSPACE_ROOT")
+            )
+            pack = effective_pack(default_pack(), governance.active())
+            contexts = _policy_device_contexts()
+            pairs = [
+                (
+                    scope.label,
+                    memory_service(scope),
+                    _policy_contexts_for_scope(scope, contexts),
+                )
+                for scope in memory_scopes(known_scopes(), scope_id)
+            ]
+            if not pairs:
+                return None
+            return PolicyEngine(pack).evaluate_scopes(
+                pairs, scope_label="Enterprise"
+            )
+
         started = time.perf_counter()
         response = ask(
             question,
@@ -6615,6 +6738,7 @@ def register_routes(app) -> None:
             search_index=current_search_index(),
             generated_at=now_iso(),
             repository=advisor_repository(),
+            policy_runner=governed_policy_runner,
         )
         # Workflow analytics (PR-164): RECORD-ONLY — what was detected,
         # at what confidence, how long the answer took. Never read back
@@ -6843,6 +6967,44 @@ def register_routes(app) -> None:
         from founderos_atlas.advisor.explanation import panel_context
         from founderos_atlas.web.dashboard import summarise
 
+        # PR-170: the answer on screen becomes part of the trail and the
+        # context strip, so an operator who navigates away and back can
+        # see what they were looking at. Everything here is read from
+        # the STORED answer — the workspace adds no new determination.
+        from . import workspace as ws
+
+        presented_answer = present_answer(latest, freshness=freshness)
+        # PR-168 already derived the answer's framing — investigation
+        # kind, protocol and scope — in operator language. Reuse it
+        # rather than reading the investigation block a second way and
+        # risking two answers to the same question on one page.
+        answer_context = {
+            row["label"].casefold(): row["value"]
+            for row in (presented_answer or {}).get("context", [])
+        }
+        trail: list[dict[str, str]] = []
+        if latest:
+            trail.append({
+                "label": (latest.get("question") or "Answer")[:48],
+                "href": f"/advisor?conversation={selected_index}",
+            })
+        if answer_context.get("investigation"):
+            trail.append({"label": answer_context["investigation"][:48]})
+        context = dict(context)
+        context["workspace_crumbs"] = ws.breadcrumbs(
+            "advisor", trail=trail, scope_id=workspace_scope(),
+        )
+        context["workspace_context"] = ws.context_items(
+            investigation=answer_context.get("investigation", ""),
+            protocol=answer_context.get("protocol", ""),
+            site=answer_context.get("scope", ""),
+            confidence=(presented_answer or {}).get(
+                "confidence", {},
+            ).get("level", ""),
+            discovery_age=(freshness or {}).get("note", "")
+            if isinstance(freshness, dict) else "",
+        )
+
         # PR-169: the same cards, presented as ONE compact summary. The
         # full card data still reaches the template — the expanded view
         # renders it, so nothing was removed, only reordered by weight.
@@ -6855,7 +7017,7 @@ def register_routes(app) -> None:
             ),
             conversation_count=len(conversations),
             response=latest,
-            presented=present_answer(latest, freshness=freshness),
+            presented=presented_answer,
             freshness=freshness,
             status_cards=cards,
             enterprise=summarise(cards),
@@ -7121,12 +7283,70 @@ def register_routes(app) -> None:
             current_search_index(), query, limit_per_group=limit
         )
         payload = response.to_dict()
+
+        # PR-170 Part 6: the palette answers "where is that page?" too.
+        # Added as one more GROUP in the existing response rather than a
+        # second overlay, so the ranking, keyboard handling, "show all"
+        # and recent-search behaviour are all inherited untouched.
+        pages_group = _palette_pages_group(query, limit)
+        if pages_group:
+            payload["groups"] = list(payload.get("groups") or []) + [pages_group]
+            payload["total"] = int(payload.get("total") or 0) + len(
+                pages_group["results"]
+            )
+
         if group:
             payload["groups"] = [
                 item for item in payload["groups"] if item["id"] == group
             ]
             payload["expanded_group"] = group
         return jsonify(payload)
+
+    def _palette_pages_group(query: str, limit: int) -> dict | None:
+        """Pages and commands matching ``query``, as a search group.
+
+        Substring matching on the label and its area — deterministic and
+        explainable, like every other Atlas match. RBAC is respected by
+        construction: the index is built from the nav groups this
+        principal can actually see, so the palette can never offer a
+        page the sidebar would hide.
+        """
+
+        from . import workspace as ws
+
+        needle = str(query or "").strip().casefold()
+        if len(needle) < 2:
+            return None
+        from .models import visible_nav_groups
+
+        allowed = {
+            item.key for group in visible_nav_groups(app) for item in group.items
+        }
+        rows = []
+        for row in ws.palette_index(workspace_scope()):
+            if row["kind"] == "page":
+                key = next(
+                    (page["key"] for page in ws.pages()
+                     if page["label"] == row["label"]), "",
+                )
+                if key and key not in allowed:
+                    continue
+            haystack = f"{row['label']} {row['detail']}".casefold()
+            if needle in haystack:
+                rows.append({
+                    "label": row["label"],
+                    "detail": row["detail"],
+                    "href": row["href"],
+                    "kind": row["kind"],
+                })
+        if not rows:
+            return None
+        return {
+            "id": "pages",
+            "label": "Pages & commands",
+            "results": rows[:limit],
+            "total": len(rows),
+        }
 
     @app.route("/devices/<path:enterprise_id>")
     def device_details(enterprise_id: str):
@@ -7173,6 +7393,31 @@ def register_routes(app) -> None:
                     neighbor_by_port[link.remote_interface.casefold()] = (
                         link.local_hostname
                     )
+        # PR-170: this device becomes part of the workspace — it is
+        # remembered as a recent place, it can be pinned, and every
+        # other Atlas surface that holds it is one click away.
+        from . import workspace as ws
+
+        scope_id = workspace_scope()
+        site_label = getattr(getattr(device, "site", None), "label", "") or ""
+        _remember_place(
+            "device", device.hostname or enterprise_id,
+            f"/devices/{device.enterprise_id}",
+        )
+        context = dict(context)
+        context["workspace_related"] = ws.related(
+            "device", scope_id=scope_id, device_id=device.enterprise_id,
+        )
+        context["workspace_context"] = ws.context_items(
+            device=device.hostname or enterprise_id,
+            site=site_label if site_label not in ("unknown", "") else "",
+            scope=context.get("active_scope_label", ""),
+        )
+        context["workspace_here"] = {
+            "key": "device", "label": device.hostname or enterprise_id,
+            "href": f"/devices/{device.enterprise_id}",
+        }
+
         return render_template(
             "device.html",
             found=True,
@@ -8063,6 +8308,67 @@ def register_routes(app) -> None:
         except ValueError as error:
             return jsonify(error=str(error)), 400
         return jsonify(saved=True)
+
+    @app.route("/workspace/favourite", methods=["POST"])
+    def workspace_favourite():
+        """Pin or unpin a place for the CURRENT user (PR-170, Part 5).
+
+        Personal presentation state, exactly like the display level: it
+        never touches another user's list, never changes what RBAC
+        allows, and stores only a label and an in-app href — never
+        evidence, never a credential.
+        """
+
+        from . import workspace as ws
+
+        label = str(request.form.get("label") or "").strip()
+        href = str(request.form.get("href") or "").strip()
+        kind = str(request.form.get("kind") or "page").strip()
+        # An absolute, scheme-bearing or backslash-normalised href would
+        # let a pinned item navigate off Atlas; the store is for places
+        # inside it. The CENTRAL validator decides — the same one every
+        # redirect uses, so "/\\evil.test" (which browsers normalise to
+        # a protocol-relative URL) is rejected here too, not only at
+        # redirect time (PR-172 review).
+        if not href or safe_redirect_target(href, "") != href:
+            flash("That link cannot be pinned.", "error")
+            return redirect(safe_redirect_target(request.form.get("next"), "/"))
+        store = _workspace_store()
+        owner = current_actor()
+        updated, pinned = ws.toggle_favourite(
+            store.ui_value(owner, ws.FAVOURITES_KEY, []),
+            kind=kind, label=label, href=href,
+        )
+        try:
+            store.set_ui_value(owner, ws.FAVOURITES_KEY, updated)
+            flash("Pinned." if pinned else "Unpinned.", "success")
+        except ValueError as error:
+            flash(str(error), "error")
+        return redirect(safe_redirect_target(request.form.get("next"), href))
+
+    @app.route("/api/workspace/palette")
+    def api_workspace_palette():
+        """Pages and commands for the command palette (Part 6).
+
+        The existing Ctrl+K overlay already searches ENTITIES from the
+        live index; this adds the parts of Atlas that are not entities,
+        so "where is that page?" stops being a question. Read-only, and
+        every row is a destination — the palette never performs an
+        action, because a palette that mutates on Enter is a way to run
+        discovery by accident.
+        """
+
+        from . import workspace as ws
+        from .models import allowed_nav_path
+
+        # PR-172 review: the palette lists only what the CURRENT
+        # principal may open — the same predicate the nav uses. A
+        # viewer's Ctrl+K must not advertise administration pages the
+        # nav correctly hides.
+        return jsonify(items=[
+            row for row in ws.palette_index(workspace_scope())
+            if allowed_nav_path(app, str(row.get("href") or ""))
+        ])
 
     @app.route("/preferences/display-level", methods=["POST"])
     def preferences_display_level():

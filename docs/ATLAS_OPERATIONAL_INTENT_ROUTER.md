@@ -52,6 +52,7 @@ Everything the router knows comes from `IntentDefinition` registrations. A defin
 | `default_for_engine` | The ONE intent per engine a bare engine match falls back to. |
 | `refine_keywords`, `refine_entities` | Signals that pick this intent WITHIN its engine family (single tokens match at word starts; `("site",)` matches a NAMED KNOWN site). |
 | `fallback_keywords` | Escalation signals used only when no direct phrase matched (Medium confidence). |
+| `objective` | PR-171: WHAT KIND of answer this intent wants — `validate`, `assess` (default), `locate`, `explain`, `compare` or `forecast`. Validated at freeze against the controlled vocabulary. The engine says WHERE the answer comes from; the objective says WHAT SHAPE it takes — and the Advisor dispatches on `(engine, objective)`, falling back to the engine alone. Every pre-PR-171 intent declares the default, so their dispatch is byte-for-byte unchanged. Before this field, the resolved intent was never consulted at execution time: Atlas recognised "OSPF" in a configuration question and still answered with the enterprise summary. |
 | `required_evidence` | Canonical evidence kinds (validated against `oir/vocabulary.py`). |
 | `workflows`, `recommendations` | The workflows that serve the intent — each with a WHY (hrefs validated against the known workflow surfaces). |
 | `followups` | Suggested next questions. |
@@ -62,7 +63,12 @@ Everything the router knows comes from `IntentDefinition` registrations. A defin
 There are **no static routing tables**. The routing table is *derived* at freeze from every registered intent's
 `routing_phrases`, ordered by `routing_priority`. Detection then runs three deterministic steps:
 
-1. **Direct routing** — first phrase hit across the priority-ordered derived table. A phrase owned by an engine's
+1. **Direct routing** — first phrase hit across the priority-ordered derived table, **anchored at a word start**
+   (PR-171). Bare substring containment ran first and at High confidence, so "security **breach**" selected the
+   connectivity engine (it contains "reach") and "inventory of ex**changes**" selected the change engine — silent,
+   confident misroutes with no escalation flag. A phrase can no longer fire from the middle of a longer word;
+   registered prefix-style phrases ("scan ", "how is ") still work because the anchor is at the start only. Phrases
+   shorter than 4 characters are refused at freeze. A phrase owned by an engine's
    default intent resolves the engine and continues to refinement; a phrase owned by a specific intent selects that
    intent outright.
 2. **Refinement** — within the engine's registered family, `refine_keywords`/`refine_entities` pick the finest
@@ -104,7 +110,7 @@ Registrations live with their owners — `founderos_atlas.<capability>.intents`,
 | Module | Registers |
 |---|---|
 | `health.intents` | Enterprise Health, Site Health |
-| `routing.intents` | Routing / BGP / OSPF / WAN / LAN Investigation |
+| `routing.intents` | Configuration Validation (PR-172: ONE subject-free intent, registered first so validation wording wins fallback ties against protocol intents) / Routing / BGP / OSPF / WAN / LAN Investigation |
 | `policy.intents` | Policy Compliance |
 | `path_intelligence.intents` | Connectivity Validation, Resume Investigation |
 | `change.intents` | Change Analysis, Timeline Review, Configuration Comparison, Configuration Review |

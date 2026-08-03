@@ -168,6 +168,11 @@ class PolicyRule:
             severity=SEVERITY_INFO,
             has_evidence=True,
             confidence_basis=basis,
+            # PR-172 (R1): carried so aggregation can report this as its
+            # own state. conclusion_kind stays PASS deliberately — the
+            # /policy page's headline number keeps today's meaning until
+            # the user decides otherwise (review R2).
+            applicable=False,
         )
 
     def _unknown_outcome(self, gaps: tuple[EvidenceGap, ...]) -> RuleOutcome:

@@ -16,6 +16,62 @@ CAPABILITY = "Routing Intelligence"
 
 def register(registry) -> None:
     registry.register(IntentDefinition(
+        name="Configuration Validation",
+        key="configuration-validation",
+        description="Judge a subject's configuration against the "
+                    "enterprise's policy rules — pass, fail, warning, "
+                    "not applicable and unknown per device. ONE intent "
+                    "for every subject (PR-172): the intent says what "
+                    "SHAPE of answer (a validation), the subject "
+                    "registry says what it is about, and the two axes "
+                    "never multiply.",
+        engine="health", domain="configuration", capability="Policy",
+        # PR-171: the objective is the second dispatch axis; dispatch
+        # reads (engine, objective), so validation questions reach the
+        # validate handler instead of the enterprise summary.
+        objective="validate",
+        examples=("Is all the OSPF configuration fine across the "
+                  "enterprise?",
+                  "Is the BGP configuration compliant?",
+                  "Is OSPF configured correctly?"),
+        required_evidence=("Policy Engine Results", "Configuration Memory"),
+        workflows=(
+            Workflow("Open Policy", "/policy",
+                     "The policy page holds every evaluation this "
+                     "verdict is built from."),
+        ),
+        recommendations=(
+            Workflow("Open Configuration", "/configuration",
+                     "The collected configurations the policies "
+                     "judged."),
+        ),
+        followups=(
+            FollowUpSeed("Show recent changes", "What changed?"),
+            FollowUpSeed("Open policy results", "Show policy compliance"),
+        ),
+        # SUBJECT-FREE validation wording, deliberately: the subject
+        # comes from extraction, never from routing keywords. Each
+        # keyword pairs configuration context with a judgement word (or
+        # is self-contained, like "misconfigured"), so a lookup —
+        # "Show me the OSPF configuration" — never lands here. This
+        # intent registers FIRST in this module because fallback ties
+        # break toward the earlier registration: a question carrying
+        # validation wording AND a protocol name ("is the BGP
+        # configuration compliant?") must be a validation, not a
+        # protocol investigation.
+        fallback_keywords=("configuration fine", "configuration correct",
+                           "configuration compliant", "configuration ok",
+                           "configured correctly", "correctly configured",
+                           "config fine", "config compliant",
+                           "misconfigured"),
+        confidence_rule="Medium — reached by validation keywords, since "
+                        "no direct routing phrase claims configuration "
+                        "wording estate-wide.",
+        limitations=("Validation covers the subjects the active policy "
+                     "pack carries rules for; a subject with no rules is "
+                     "refused, never passed.",),
+    ))
+    registry.register(IntentDefinition(
         name="Routing Investigation", key="routing-investigation",
         description="State of the routed control plane as observed.",
         engine="health", domain="routing", capability=CAPABILITY,

@@ -197,6 +197,11 @@ class ReasoningResult:
     recommendations: tuple[Recommendation, ...] = ()
     consumer: str = ""
     provenance: ResultProvenance | None = None
+    # PR-172 (R1): False when the winning rule concluded "not
+    # applicable" — the subject exists but the rule's antecedent does
+    # not hold for it. Distinct from unknown (no evidence) and from
+    # pass (judged and satisfied). Additive with a safe default.
+    applicable: bool = True
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -217,4 +222,5 @@ class ReasoningResult:
             "recommendations": [r.to_dict() for r in self.recommendations],
             "consumer": self.consumer,
             "provenance": self.provenance.to_dict() if self.provenance else None,
+            "applicable": self.applicable,
         }
