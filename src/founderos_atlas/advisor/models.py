@@ -16,9 +16,11 @@ from typing import Any
 
 # 1.1.0 (PR-164): the optional "operational_intent" block.
 # 1.2.0 (PR-167): the optional "investigation" block.
+# 1.3.0 (PR-171): the optional "understanding" block — subject,
+#   objective, scope, time, relationship, and the basis for each.
 # ADDITIVE ONLY — no key has ever been renamed or removed, so every
-# stored 1.0.0 and 1.1.0 conversation still renders.
-ADVISOR_SCHEMA_VERSION = "1.2.0"
+# stored 1.0.0, 1.1.0 and 1.2.0 conversation still renders.
+ADVISOR_SCHEMA_VERSION = "1.3.0"
 
 CONFIDENCE_HIGH = "High"
 CONFIDENCE_MEDIUM = "Medium"
@@ -94,6 +96,9 @@ class AdvisorResponse:
     # None for estate-wide answers and for anything stored before the
     # investigator existed; presentation tolerates both.
     investigation: dict | None = None
+    # PR-171: how Atlas understood the question, per dimension, with
+    # the stated basis for each determination. Additive and optional.
+    understanding: dict | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -115,6 +120,7 @@ class AdvisorResponse:
             "generated_at": self.generated_at,
             "operational_intent": self.operational_intent,
             "investigation": self.investigation,
+            "understanding": self.understanding,
         }
 
 

@@ -12,6 +12,14 @@ from typing import Iterable
 
 from .vocabulary import EVIDENCE_KINDS, KNOWN_WORKFLOW_PATHS, workflow_path
 
+# The six operational objectives (PR-171). A controlled vocabulary,
+# validated at freeze like evidence kinds and workflow paths — a typo'd
+# objective would otherwise silently dispatch to the engine default and
+# the intent's declared shape would never fire.
+KNOWN_OBJECTIVES = frozenset((
+    "validate", "assess", "locate", "explain", "compare", "forecast",
+))
+
 
 def validate_definitions(definitions: Iterable) -> list[str]:
     """Every validation problem across the whole registration set."""
@@ -42,6 +50,14 @@ def validate_definitions(definitions: Iterable) -> list[str]:
                     f"{key!r}: every entry in {field} must be a string"
                 )
 
+        # -- objective is a controlled vocabulary ----------------------
+        if getattr(definition, "objective", "assess") not in KNOWN_OBJECTIVES:
+            problems.append(
+                f"{key!r}: unknown objective "
+                f"{getattr(definition, 'objective', '')!r} — use one of: "
+                + ", ".join(sorted(KNOWN_OBJECTIVES))
+            )
+
         # -- the honest fallback contract -----------------------------
         if definition.key == "unknown" and definition.engine != "unknown":
             problems.append(
@@ -65,6 +81,17 @@ def validate_definitions(definitions: Iterable) -> list[str]:
             if not folded.strip():
                 problems.append(f"{key!r}: empty routing phrase")
                 continue
+            if len(folded.strip()) < 4:
+                # A very short phrase is a collision waiting to happen:
+                # even word-anchored, "up" or "ok" would fire inside
+                # ordinary prose. Direct phrases are HIGH-confidence
+                # routes; anything this short belongs in
+                # fallback_keywords, which route at Medium.
+                problems.append(
+                    f"{key!r}: routing phrase {phrase!r} is shorter than "
+                    "4 characters — too collision-prone for a "
+                    "High-confidence direct route; use fallback_keywords"
+                )
             if str(phrase) != folded:
                 # Matching runs over the casefolded question; a
                 # mixed-case phrase would pass validation yet never

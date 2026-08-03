@@ -61,6 +61,7 @@ class IntentRoute:
             "key": self.intent.key,
             "engine": self.engine,
             "domain": self.intent.domain,
+            "objective": self.intent.objective,
             "confidence": self.confidence,
             "why": list(self.why),
             "escalated": self.escalated,
@@ -99,11 +100,22 @@ def _direct_match(
     registry: IntentRegistry, folded: str
 ) -> tuple[IntentDefinition, str] | None:
     """(definition, phrase) for the first direct-phrase hit across the
-    registry's priority-ordered routing table, else None."""
+    registry's priority-ordered routing table, else None.
+
+    Phrases anchor at a WORD START — the same rule ``_keyword_hits``
+    has always applied, and for the same reason. Bare containment ran
+    FIRST and at HIGH confidence, so "breach" selected the connectivity
+    engine (it contains "reach") and "exchanges" selected the change
+    engine (it contains "changes"): a security question silently
+    answered by the wrong engine, with no escalation flag to warn the
+    operator. Word-start (not full word-boundary) is deliberate — it
+    preserves the registered prefix style ("scan ", "how is ") while
+    a phrase can no longer fire from the middle of a longer word.
+    """
 
     for definition, phrases in registry.routing_table():
         for phrase in phrases:
-            if phrase in folded:
+            if re.search(rf"\b{re.escape(phrase)}", folded):
                 return definition, phrase
     return None
 

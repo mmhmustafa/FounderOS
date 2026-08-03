@@ -23,21 +23,12 @@ from .models import InvestigationRequest
 
 # -- vocabularies ----------------------------------------------------------
 
-PROTOCOLS: dict[str, tuple[str, ...]] = {
-    "bgp": ("bgp", "border gateway"),
-    "ospf": ("ospf",),
-    "eigrp": ("eigrp",),
-    "isis": ("is-is", "isis"),
-    "hsrp": ("hsrp", "vrrp", "first hop redundancy", "fhrp"),
-    "stp": ("stp", "spanning tree", "spanning-tree"),
-    "vpn": ("vpn", "ipsec", "tunnel", "dmvpn"),
-    "mpls": ("mpls", "ldp"),
-    "lldp": ("lldp", "cdp"),
-    "dns": ("dns",),
-    "dhcp": ("dhcp",),
-    "ntp": ("ntp",),
-    "snmp": ("snmp",),
-}
+# PR-171: the protocol vocabulary moved to the subject REGISTRY
+# (subjects.py) — one seam for the two-year horizon of new protocols.
+# The derived dict here has exactly the shape and content the inline
+# dict had, so extraction behaviour is unchanged and the existing
+# extraction tests prove it.
+from .subjects import DOMAIN_SUBJECTS, PROTOCOLS  # noqa: E402  (re-export)
 
 APPLICATIONS: dict[str, tuple[str, ...]] = {
     "https": ("https", "port 443", "tls", "ssl"),
@@ -51,6 +42,67 @@ APPLICATIONS: dict[str, tuple[str, ...]] = {
     "email": ("email", "smtp", "exchange", "outlook"),
     "file-sharing": ("smb", "cifs", "nfs", "file share"),
 }
+
+# PR-171: the operational OBJECTIVE — what KIND of answer is wanted.
+# Fixed vocabularies, word-anchored, no scoring, exactly like every
+# other dimension here. When several match, the most specific wins in
+# the fixed precedence below (assess last — it is also the default).
+OBJECTIVE_VALIDATE = "validate"
+OBJECTIVE_ASSESS = "assess"
+OBJECTIVE_LOCATE = "locate"
+OBJECTIVE_EXPLAIN = "explain"
+OBJECTIVE_COMPARE = "compare"
+OBJECTIVE_FORECAST = "forecast"
+
+# Validation is TWO signals, not one. "Configuration" alone is a
+# subject ("show me the OSPF configuration" is a lookup); a judgement
+# word alone is an assessment ("is OSPF fine?"). Only together do they
+# ask Atlas to JUDGE a configuration — plus a few self-contained terms
+# that carry both meanings in one word.
+VALIDATE_CONTEXT_TERMS: tuple[str, ...] = (
+    "configuration", "config", "configured", "set up",
+)
+VALIDATE_JUDGEMENT_TERMS: tuple[str, ...] = (
+    "fine", "correct", "correctly", "right", "ok", "properly",
+    "standard", "good",
+)
+VALIDATE_STANDALONE_TERMS: tuple[str, ...] = (
+    "misconfigured", "compliant", "compliance",
+    "correctly configured", "configured correctly",
+)
+
+OBJECTIVES: dict[str, tuple[str, ...]] = {
+    OBJECTIVE_EXPLAIN: ("why", "cause", "reason", "root cause"),
+    OBJECTIVE_COMPARE: ("changed", "differs", "difference", "drift"),
+    OBJECTIVE_FORECAST: ("will", "risk", "predict", "impact"),
+    OBJECTIVE_LOCATE: ("find", "where is", "show me", "which device"),
+    OBJECTIVE_ASSESS: ("healthy", "health", "working", "up", "status",
+                       "state"),
+}
+
+# Most specific first; assess is both last and the default. The order
+# is part of the contract: a question matching two objectives always
+# resolves the same way, and the basis says which terms decided it.
+OBJECTIVE_PRECEDENCE = (
+    OBJECTIVE_VALIDATE, OBJECTIVE_EXPLAIN, OBJECTIVE_COMPARE,
+    OBJECTIVE_FORECAST, OBJECTIVE_LOCATE, OBJECTIVE_ASSESS,
+)
+
+# PR-171: the positive scope. "Across the enterprise" is a REAL,
+# resolved scope — not the absence of one. Conflating "named no place"
+# with "asked about everything" is precisely what made an
+# enterprise-scoped OSPF question read as unscoped.
+SCOPE_ENTERPRISE = "enterprise"
+SCOPE_SITES = "sites"
+SCOPE_DEVICES = "devices"
+SCOPE_INTERFACES = "interfaces"
+
+ENTERPRISE_SCOPE_TERMS: tuple[str, ...] = (
+    "across the enterprise", "enterprise-wide", "enterprise wide",
+    "the whole enterprise", "the entire enterprise", "everywhere",
+    "all sites", "every site", "all devices", "every device",
+    "fleet-wide", "fleet wide", "the whole network", "the entire network",
+)
 
 SEVERITIES: dict[str, tuple[str, ...]] = {
     "down": ("down", "outage", "offline", "unreachable", "dead"),
@@ -184,6 +236,88 @@ def _time_range(folded: str) -> str:
     return ""
 
 
+def _objective(folded: str, *, has_subject: bool) -> tuple[str, list[str]]:
+    """(objective, basis) — the most specific objective the question's
+    own words support, with the terms that decided it.
+
+    ``validate`` REQUIRES a subject. "Is the network fine?" must stay
+    an assessment: without a subject there is nothing whose
+    configuration could be judged, and reading it as validation would
+    send generic questions to the compliance engine (risk R2).
+    """
+
+    # Validation first, and gated twice: it needs a SUBJECT (R2 — "is
+    # the network fine?" stays an assessment) and it needs either a
+    # self-contained validation word or configuration-context AND a
+    # judgement word together. "Show me the OSPF configuration" is a
+    # lookup; "is the OSPF configuration fine" is a validation.
+    if has_subject:
+        standalone = _match_all_terms(folded, VALIDATE_STANDALONE_TERMS)
+        context_hits = _match_all_terms(folded, VALIDATE_CONTEXT_TERMS)
+        judgement_hits = _match_all_terms(folded, VALIDATE_JUDGEMENT_TERMS)
+        if standalone or (context_hits and judgement_hits):
+            hits = list(standalone) + list(context_hits) + \
+                list(judgement_hits)
+            terms = ", ".join(f"“{hit}”" for hit in hits)
+            return OBJECTIVE_VALIDATE, [
+                "objective validate: configuration terminology detected "
+                f"({terms})"
+            ]
+
+    for objective in OBJECTIVE_PRECEDENCE:
+        if objective == OBJECTIVE_VALIDATE:
+            continue                     # handled above, with its gates
+        hits = list(_match_all_terms(folded, OBJECTIVES[objective]))
+        if hits:
+            terms = ", ".join(f"“{hit}”" for hit in hits)
+            return objective, [f"objective {objective}: the question "
+                               f"says {terms}"]
+    return OBJECTIVE_ASSESS, ["objective assess: the default — no more "
+                              "specific objective terminology was used"]
+
+
+def _match_all_terms(folded: str, terms: tuple[str, ...]) -> tuple[str, ...]:
+    """Every term that appears, with the same boundary rules as the
+    vocabularies above: bare single tokens at word boundaries, phrases
+    and decorated terms as substrings."""
+
+    hits = []
+    for term in terms:
+        if " " in term.strip() or not term.strip().isalnum():
+            if term in folded:
+                hits.append(term)
+        elif re.search(rf"\b{re.escape(term)}\b", folded):
+            hits.append(term)
+    return tuple(hits)
+
+
+def _scope_of(folded: str, *, sites: tuple[str, ...],
+              source: str, destination: str, devices: tuple[str, ...],
+              interfaces: tuple[str, ...]) -> tuple[str, list[str]]:
+    """(scope, basis). Enterprise phrasing is a POSITIVE scope."""
+
+    for term in ENTERPRISE_SCOPE_TERMS:
+        if term in folded:
+            return SCOPE_ENTERPRISE, [
+                f"scope enterprise: the question says “{term}”"
+            ]
+    if sites:
+        return SCOPE_SITES, [
+            "scope sites: the question names " + ", ".join(sites)
+        ]
+    if source or destination or devices:
+        named = [item for item in (source, destination) if item]
+        named += list(devices)
+        return SCOPE_DEVICES, [
+            "scope devices: the question names " + ", ".join(named)
+        ]
+    if interfaces:
+        return SCOPE_INTERFACES, [
+            "scope interfaces: the question names " + ", ".join(interfaces)
+        ]
+    return "", []
+
+
 def extract(question: str, *, known_sites: tuple[str, ...] = ()
             ) -> InvestigationRequest:
     """Understand one question structurally.
@@ -226,9 +360,48 @@ def extract(question: str, *, known_sites: tuple[str, ...] = ()
             sites.append(name)
             seen_sites.add(folded_name)
 
+    # -- PR-171: subject, objective and positive scope ---------------
+    # Protocols first — "ospf configuration" is about OSPF, not about
+    # configuration in general; the domain subject only stands in when
+    # no protocol claimed the question.
+    protocol = _match_vocabulary(folded, PROTOCOLS)
+    basis: list[str] = []
+    subject = protocol
+    if subject:
+        basis.append(f"subject {subject}: protocol recognised")
+    else:
+        subject = _match_vocabulary(folded, DOMAIN_SUBJECTS)
+        if subject:
+            basis.append(f"subject {subject}: terminology recognised")
+
+    objective, objective_basis = _objective(
+        folded, has_subject=bool(subject),
+    )
+    basis.extend(objective_basis)
+
+    scope, scope_basis = _scope_of(
+        folded, sites=tuple(sites), source=source, destination=destination,
+        devices=(), interfaces=interfaces,
+    )
+    basis.extend(scope_basis)
+    # A validation question that names no place is asking about the
+    # whole estate — the honest default for "is all the X configuration
+    # fine", and a POSITIVE value, never a fallback the operator cannot
+    # see.
+    if not scope and objective == OBJECTIVE_VALIDATE:
+        scope = SCOPE_ENTERPRISE
+        basis.append(
+            "scope enterprise: a validation naming no narrower place "
+            "is judged estate-wide"
+        )
+
     return InvestigationRequest(
         question=text.strip(),
-        protocol=_match_vocabulary(folded, PROTOCOLS),
+        subject=subject,
+        objective=objective,
+        scope=scope,
+        basis=tuple(basis),
+        protocol=protocol,
         source=source,
         destination=destination,
         sites=tuple(sites),

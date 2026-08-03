@@ -33,7 +33,23 @@ class InvestigationRequest:
     """
 
     question: str
-    objective: str = ""            # the template's objective, once chosen
+    # PR-171: the three dimensions that were missing or conflated.
+    # ``subject`` is what the question is ABOUT (a protocol key, or a
+    # domain subject like "configuration"); ``objective`` is what KIND
+    # of answer is wanted (validate/assess/locate/explain/compare/
+    # forecast — extracted from the operator's own words, never
+    # invented); ``scope`` is a POSITIVE value — "across the
+    # enterprise" is a real scope, not the absence of one, and
+    # conflating the two is what made an enterprise-scoped OSPF
+    # question read as unscoped. ``basis`` records why each dimension
+    # was chosen, so the answer can show its reasoning (Experience
+    # Language: every determination explains itself).
+    subject: str = ""
+    objective: str = ""            # extracted objective; "" in older
+    #                                stored requests (pre-PR-171)
+    scope: str = ""                # enterprise | sites | devices |
+    #                                interfaces | "" (nothing named)
+    basis: tuple[str, ...] = ()
     protocol: str = ""             # bgp | ospf | hsrp | stp | vpn | ...
     source: str = ""               # named source site/device, as typed
     destination: str = ""          # named destination, as typed
@@ -51,7 +67,10 @@ class InvestigationRequest:
     def to_dict(self) -> dict[str, Any]:
         return {
             "question": self.question,
+            "subject": self.subject,
             "objective": self.objective,
+            "scope": self.scope,
+            "basis": list(self.basis),
             "protocol": self.protocol,
             "source": self.source,
             "destination": self.destination,
@@ -72,10 +91,30 @@ class InvestigationRequest:
         return bool(self.source and self.destination)
 
     @property
+    def has_subject(self) -> bool:
+        """Did the question say what it is ABOUT? Subject and scope are
+        orthogonal (PR-171): "is all the OSPF configuration fine across
+        the enterprise" has a subject and an enterprise scope — it is
+        not an unscoped question."""
+
+        return bool(self.subject or self.protocol or self.applications)
+
+    @property
+    def has_scope(self) -> bool:
+        """Did the question say WHERE — including the whole enterprise,
+        which is a positive answer, not a missing one."""
+
+        return bool(
+            self.scope or self.source or self.destination or self.devices
+            or self.sites or self.interfaces or self.addresses
+        )
+
+    @property
     def named_anything(self) -> bool:
-        """Did the operator name a specific thing at all? A question
-        that names nothing is an estate-wide question, and answering it
-        with a site-specific investigation would be inventing scope."""
+        """Did the operator name a specific PLACE or object? Kept with
+        its original PR-167 semantics, now derived: the estate-wide
+        contract ("a question naming nothing keeps the answer it always
+        got") is pinned against exactly this predicate."""
 
         return bool(
             self.source or self.destination or self.devices or self.sites

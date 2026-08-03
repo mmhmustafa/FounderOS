@@ -102,6 +102,16 @@ class IntentDefinition:
     description: str
     engine: str
     domain: str
+    # PR-171: WHAT KIND of answer this intent wants — validate, assess,
+    # locate, explain, compare or forecast. The engine says WHERE the
+    # answer comes from; the objective says WHAT SHAPE it takes, and
+    # dispatch reads both. Every pre-existing intent takes the default,
+    # so (engine, objective) dispatch reproduces the old engine-only
+    # dispatch exactly. Before this field existed the resolved intent
+    # was never consulted at execution time at all — Atlas recognised
+    # "OSPF" in a configuration question and then answered with the
+    # enterprise summary, because dispatch saw only engine="health".
+    objective: str = "assess"
     capability: str = "Atlas Platform"
     routing_phrases: tuple[str, ...] = ()
     routing_priority: int = 0
@@ -129,6 +139,7 @@ class IntentDefinition:
             "description": self.description,
             "engine": self.engine,
             "domain": self.domain,
+            "objective": self.objective,
             "capability": self.capability,
             "routing_phrases": list(self.routing_phrases),
             "routing_priority": self.routing_priority,
