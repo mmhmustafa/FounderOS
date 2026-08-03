@@ -448,16 +448,16 @@ def device_inventory(scoped_snapshots) -> list[dict[str, Any]]:
     return devices
 
 
-def visible_nav_groups(app) -> tuple[NavGroup, ...]:
-    """NAV_GROUPS filtered to what the CURRENT request's principal can
-    open. The one builder both the context processor and base_context
-    use — two copies once disagreed, and the unfiltered one won.
+def allowed_nav_path(app, path: str) -> bool:
+    """Whether the CURRENT request's principal may open ``path``.
+
+    The nav and the command palette share this ONE predicate (PR-172
+    review) — two filters once disagreed, and the unfiltered one won:
+    the palette listed administration pages the nav correctly hid.
 
     Display fails open (an unresolvable path stays visible); access
     stays closed — RBAC is enforced on every request regardless.
     """
-
-    from dataclasses import replace as _dc_replace
 
     from flask import g
 
@@ -465,32 +465,40 @@ def visible_nav_groups(app) -> tuple[NavGroup, ...]:
 
     principal = getattr(g, "principal", None)
     if principal is None:
-        return NAV_GROUPS
+        return True
 
     cache = app.extensions.setdefault("atlas_nav_endpoints", {})
+    bare = path.split("?", 1)[0].split("#", 1)[0]
+    if bare not in cache:
+        try:
+            cache[bare] = app.url_map.bind("nav.localhost").match(
+                bare, method="GET"
+            )[0]
+        except Exception:  # noqa: BLE001 - display fails open
+            cache[bare] = None
+    endpoint = cache[bare]
+    if endpoint is None:
+        return True
+    permission = permission_for_endpoint(endpoint)
+    if permission == PUBLIC or permission is None:
+        return True
+    return permission in principal.permissions
 
-    def _endpoint(path: str):
-        if path not in cache:
-            try:
-                cache[path] = app.url_map.bind("nav.localhost").match(
-                    path, method="GET"
-                )[0]
-            except Exception:  # noqa: BLE001 - display fails open
-                cache[path] = None
-        return cache[path]
 
-    def _allowed(path: str) -> bool:
-        endpoint = _endpoint(path)
-        if endpoint is None:
-            return True
-        permission = permission_for_endpoint(endpoint)
-        if permission == PUBLIC or permission is None:
-            return True
-        return permission in principal.permissions
+def visible_nav_groups(app) -> tuple[NavGroup, ...]:
+    """NAV_GROUPS filtered to what the CURRENT request's principal can
+    open. The one builder both the context processor and base_context
+    use — two copies once disagreed, and the unfiltered one won.
+    """
+
+    from dataclasses import replace as _dc_replace
 
     groups = []
     for group in NAV_GROUPS:
-        items = tuple(item for item in group.items if _allowed(item.href))
+        items = tuple(
+            item for item in group.items
+            if allowed_nav_path(app, item.href)
+        )
         if items:
             groups.append(_dc_replace(group, items=items))
     return tuple(groups)

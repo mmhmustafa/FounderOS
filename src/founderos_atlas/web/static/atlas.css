@@ -646,6 +646,57 @@ body[data-theme="dark"] table[data-row-select] tbody tr.row-selected { backgroun
 .prism-stage h4 { margin: 0 0 4px; }
 .prism-stage-note { font-size: 12px; margin: 0 0 6px; }
 
+/* ── PR-170: the workspace ───────────────────────────────────────────
+   Navigation that disappears into the background. The breadcrumb bar is
+   deliberately the quietest text on the page — an operator should be
+   able to find it when they ask "where am I?" and never notice it
+   otherwise. Nothing here may outweigh a verdict. */
+
+.workspace-bar { display: flex; flex-wrap: wrap; align-items: center;
+  gap: 8px 12px; margin: 0 0 12px; font-size: 12px; }
+.crumbs { list-style: none; display: flex; flex-wrap: wrap;
+  align-items: center; gap: 6px; margin: 0; padding: 0; }
+.crumbs li { display: inline-flex; align-items: center; gap: 6px; }
+/* The separator is decorative, so it is generated rather than authored
+   into the markup where a screen reader would read it aloud. */
+.crumbs li + li::before { content: "/"; color: var(--muted); }
+.crumbs a { color: var(--muted); }
+.crumbs a:hover, .crumbs a:focus-visible { color: var(--accent); }
+.crumbs [aria-current="page"] { color: var(--ink);
+  font-weight: var(--weight-semibold); }
+.workspace-bar-actions { margin-left: auto; }
+.workspace-pin { display: inline-flex; }
+.workspace-pin-button[aria-pressed="true"] { border-color: var(--accent);
+  color: var(--accent); }
+
+.workspace-context { margin: 0 0 14px; font-size: 12px; }
+.workspace-context > summary { cursor: pointer; color: var(--muted);
+  display: list-item; list-style-position: outside; margin-left: 14px; }
+.workspace-context > summary:focus-visible { outline: var(--focus-ring);
+  outline-offset: var(--focus-offset); border-radius: var(--radius-sm); }
+.workspace-context > summary > span + span { margin-left: 6px; }
+.workspace-context-items { display: flex; flex-wrap: wrap; gap: 4px 22px;
+  margin: 8px 0 0 14px; }
+.workspace-context-items > div { display: flex; flex-direction: column;
+  gap: 1px; }
+.workspace-context-items dt { color: var(--muted); text-transform: uppercase;
+  letter-spacing: .04em; font-size: 10px; }
+.workspace-context-items dd { margin: 0; font-weight: var(--weight-medium); }
+
+/* Ways onward, after the answer — never competing with it. */
+.workspace-rail { margin-top: 18px; }
+.workspace-rail-heading { font-size: 13px; margin: 0 0 6px; }
+.workspace-rail h3 { font-size: 11px; margin: 12px 0 4px;
+  text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.workspace-links { list-style: none; margin: 0; padding: 0;
+  display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 12px; }
+.workspace-links li { display: inline-flex; align-items: baseline; gap: 6px; }
+
+@media (max-width: 640px) {
+  .workspace-bar-actions { margin-left: 0; }
+  .workspace-links { flex-direction: column; gap: 4px; }
+}
+
 /* ── PR-169: the operational summary ─────────────────────────────────
    Context that supports an answer. It must never be the largest thing
    on the page, so: no tile grid, no card heights, one row of chips,

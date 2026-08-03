@@ -79,6 +79,11 @@ ENDPOINT_PERMISSIONS: dict[str, str] = {
     "incidents": PAGES_VIEW,
     "settings": PAGES_VIEW,
     "preferences_display_level": PAGES_VIEW,
+    # PR-170 workspace: personal presentation state and a read-only
+    # index of pages. Both need only the permission to view a page —
+    # neither can reveal anything the viewer could not already open.
+    "workspace_favourite": PAGES_VIEW,
+    "api_workspace_palette": PAGES_VIEW,
     "api_ui_preference_get": PAGES_VIEW,
     "api_ui_preference_set": PAGES_VIEW,
     "device_actions_api": PAGES_VIEW,

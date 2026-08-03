@@ -2,6 +2,9 @@
 {% from "_breadcrumbs.html" import breadcrumbs %}
 {% from "_device_actions.html" import device_actions %}
 {% block title %}Configuration — {{ history.hostname }}{% endblock %}
+{# This page authors a richer trail below, so it opts out of the
+   automatic one rather than rendering two. #}
+{% block workspace_bar %}{% endblock %}
 {% block content %}
 {{ breadcrumbs([
   {'label': 'Timeline', 'href': scoped_url('/timeline', link_scope())},

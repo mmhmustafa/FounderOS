@@ -6,6 +6,10 @@ implementation. Every Atlas page should evolve toward this.
 This is an **information architecture** standard, not a visual style. The colours and spacing here
 matter far less than the order.
 
+This guide governs what a **page** says. Its companion, the
+[Atlas Workspace Guide](ATLAS_WORKSPACE_GUIDE.md), governs how an operator **moves between** pages —
+breadcrumbs, context, related objects, recents, favourites and the command palette.
+
 ---
 
 ## 1. The premise

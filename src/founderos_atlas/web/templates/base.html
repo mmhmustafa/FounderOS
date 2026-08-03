@@ -18,6 +18,7 @@
 #}
 <body data-theme="{{ ui_theme or 'system' }}" data-density="{{ ui_density or 'comfortable' }}" data-display-level="{{ display_level or 'simple' }}"{% if bare_chrome %} data-chrome="bare"{% endif %}>
 {% import "_icons.html" as icons %}
+{% import "_breadcrumbs.html" as crumb_macro %}
 {% if not bare_chrome %}
   <a class="skip-link" href="#atlas-main">Skip to content</a>
   <header class="topbar">
@@ -130,7 +131,95 @@
           </div>
         {% endif %}
       {% endwith %}
+
+      {# ══ WORKSPACE BAR (PR-170) ══════════════════════════════════════
+         Where you are, what this page is scoped to, and one click back
+         to anywhere on the trail. Derived in base_context from the
+         navigation registry, so every page has it and no route changed.
+         A page adds its own trail and context by overriding
+         `breadcrumbs` / `workspace_context`. #}
+      {# Detail pages that hand-author a richer trail (device,
+         configuration, compass plan) override this block, so a page
+         never grows two breadcrumb bars. They render the SAME macro. #}
+      {% block workspace_bar %}
+      {# A popup console is ONE task in ONE window; the workspace bar is
+         for moving AROUND Atlas and only steals room there — the same
+         reason the sidebar, search and scope selector are stripped. #}
+      {% if not bare_chrome and workspace_crumbs and workspace_crumbs | length > 1 %}
+      <div class="workspace-bar">
+        {{ crumb_macro.breadcrumbs(workspace_crumbs) }}
+        <div class="workspace-bar-actions">
+          {% if workspace_here and workspace_here.href %}
+          <form method="post" action="/workspace/favourite" class="workspace-pin">{{ csrf_field() }}
+            <input type="hidden" name="kind" value="page">
+            <input type="hidden" name="label" value="{{ workspace_here.label }}">
+            <input type="hidden" name="href" value="{{ workspace_here.href }}">
+            {# Return to exactly where the operator was — full_path
+               carries a trailing '?' when there is no query, so the
+               same guard the display-level form uses applies here. #}
+            <input type="hidden" name="next" value="{{ request.full_path if request.args else request.path }}">
+            {% set pinned = workspace_favourites | selectattr('href', 'equalto', workspace_here.href) | list %}
+            <button class="btn btn-sm workspace-pin-button" type="submit"
+                    aria-pressed="{{ 'true' if pinned else 'false' }}"
+                    aria-label="{{ 'Unpin' if pinned else 'Pin' }} {{ workspace_here.label }}">
+              {{ 'Pinned' if pinned else 'Pin' }}
+            </button>
+          </form>
+          {% endif %}
+        </div>
+      </div>
+      {% endif %}
+      {% endblock %}
+
+      {% if not bare_chrome and workspace_context %}
+      <details class="workspace-context" open>
+        <summary><span>Context</span>
+          <span class="muted">— what this page is scoped to</span></summary>
+        <dl class="workspace-context-items">
+          {% for item in workspace_context %}
+          <div><dt>{{ item.label }}</dt><dd>{{ item.value }}</dd></div>
+          {% endfor %}
+        </dl>
+      </details>
+      {% endif %}
+
       {% block content %}{% endblock %}
+
+      {# Related surfaces and the places this operator keeps returning
+         to. Rendered after the content because they are ways ONWARD,
+         not part of the answer. #}
+      {% if not bare_chrome and (workspace_related or workspace_favourites or workspace_recents) %}
+      <section class="card workspace-rail" aria-labelledby="workspace-rail-heading">
+        <h2 id="workspace-rail-heading" class="workspace-rail-heading">Elsewhere in Atlas</h2>
+        {% if workspace_related %}
+        <h3>Related</h3>
+        <ul class="workspace-links">
+          {% for item in workspace_related %}
+          <li><a href="{{ item.href }}">{{ item.label }}</a>
+            <span class="muted">{{ item.why }}</span></li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+        {% if workspace_favourites %}
+        <h3>Pinned</h3>
+        <ul class="workspace-links workspace-pins">
+          {% for item in workspace_favourites %}
+          <li><a href="{{ item.href }}">{{ item.label }}</a>
+            <span class="muted">{{ item.kind }}</span></li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+        {% if workspace_recents %}
+        <h3>Recent</h3>
+        <ul class="workspace-links workspace-recent">
+          {% for item in workspace_recents %}
+          <li><a href="{{ item.href }}">{{ item.label }}</a>
+            <span class="muted">{{ item.kind }}</span></li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+      </section>
+      {% endif %}
     </main>
   </div>
 

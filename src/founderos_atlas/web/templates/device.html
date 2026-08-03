@@ -4,6 +4,9 @@
 {% from "_device_actions.html" import device_actions, device_ssh_state %}
 {% from "_telemetry_context.html" import operational_context %}
 {% block title %}Device Details{% endblock %}
+{# This page authors a richer trail below, so it opts out of the
+   automatic one rather than rendering two. #}
+{% block workspace_bar %}{% endblock %}
 {% block content %}
 {{ breadcrumbs([
   {'label': 'Topology', 'href': scoped_url('/topology', link_scope())},

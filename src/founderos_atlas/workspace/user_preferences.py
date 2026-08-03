@@ -136,7 +136,12 @@ class UserPreferenceStore:
     #: Key prefixes a client may write through the UI-preference API.
     #: Anything else is refused — this store must never become a dumping
     #: ground, and security-sensitive state never rides through it.
-    ALLOWED_UI_PREFIXES = ("topology:", "table:", "workflow:")
+    #: ``workspace:`` (PR-170) carries favourites and recently-visited
+    #: places. They live here rather than in localStorage because an
+    #: operator's pinned devices should follow them to another browser
+    #: and survive a restart — and because this store is already
+    #: per-user, size-bounded and atomically written.
+    ALLOWED_UI_PREFIXES = ("topology:", "table:", "workflow:", "workspace:")
     MAX_UI_VALUE_BYTES = 4096
 
     def ui_value(self, owner: str, key: str, default: Any = None) -> Any:
