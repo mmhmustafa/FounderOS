@@ -6739,6 +6739,12 @@ def register_routes(app) -> None:
             generated_at=now_iso(),
             repository=advisor_repository(),
             policy_runner=governed_policy_runner,
+            # PR-173: the workspace's own staleness horizon governs how
+            # old an observation may be and still support a verdict.
+            state_horizon_minutes=(
+                _administration_repository().preferences()
+                .state_horizon_minutes
+            ),
         )
         # Workflow analytics (PR-164): RECORD-ONLY — what was detected,
         # at what confidence, how long the answer took. Never read back
@@ -8424,6 +8430,13 @@ def register_routes(app) -> None:
                 "density": request.form.get("density", "comfortable"),
                 "retention_days": request.form.get("retention_days", "365"),
                 "log_level": request.form.get("log_level", "INFO"),
+                # PR-173: absent from the form -> keep the stored value,
+                # so an unrelated settings save never resets the state
+                # horizon.
+                "state_horizon_minutes": request.form.get(
+                    "state_horizon_minutes",
+                    str(before.state_horizon_minutes),
+                ),
                 },
             )
             app.config["ATLAS_DISPLAY_TIMEZONE"] = preferences.timezone

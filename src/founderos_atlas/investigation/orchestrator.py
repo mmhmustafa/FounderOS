@@ -96,6 +96,8 @@ def investigate(
     question: str, *, graph, snapshot: dict | None = None,
     change_report: dict | None = None,
     policy_runner=None,
+    state_horizon_minutes: int | None = None,
+    state_now: str | None = None,
 ) -> InvestigationResult | None:
     """Run one investigation, or return None when the question is not
     an investigation (no named scope) and Atlas's estate-wide answer
@@ -111,6 +113,16 @@ def investigate(
 
     started = time.perf_counter()
     request = understand(question, graph)
+
+    # PR-173: a question about behaviour OVER TIME ("flapping",
+    # "unstable", "stable") asks for a state HISTORY Atlas does not
+    # retain. A single discovery cannot distinguish a link that flapped
+    # from one that was simply down when observed — so the question is
+    # refused honestly, quoting the operator's own word, before any
+    # template could pretend to answer it.
+    if request.temporal_terms and request.has_subject:
+        return _temporal_refusal(request, started)
+
     template = select(request)
     if template is None:
         # PR-171: a VALIDATION question whose subject has no validation
@@ -119,6 +131,14 @@ def investigate(
         # through an adjacency investigation, which answers yet another.
         if request.objective == "validate" and request.has_subject:
             return _validation_refusal(request, started)
+        # PR-173: the same discipline on the state axis. A
+        # judgement-phrased "is X healthy?" about a subject Atlas has
+        # no state capability for is refused with the missing HALF
+        # named — but only when nothing else in the ladder would have
+        # answered (a named site still earns its site investigation).
+        if (request.objective == "assess" and request.has_subject
+                and not request.named_anything):
+            return _state_refusal(request, started)
         return None
 
     entities = resolve(graph, request)
@@ -131,6 +151,14 @@ def investigate(
         context.facts["change_report"] = change_report
     if policy_runner is not None:
         context.facts["policy_runner"] = policy_runner
+    # PR-173: the state engine's freshness contract — the horizon is
+    # workspace policy the caller supplies; ``state_now`` exists so
+    # tests are deterministic. Neither invents anything: absent, the
+    # engine defaults to 60 minutes and the wall clock.
+    if state_horizon_minutes is not None:
+        context.facts["state_horizon_minutes"] = int(state_horizon_minutes)
+    if state_now is not None:
+        context.facts["state_now"] = str(state_now)
 
     engines_used: list[str] = []
     for spec, step in zip(template.steps, plan.steps):
@@ -227,6 +255,128 @@ def _validation_refusal(request, started: float) -> InvestigationResult:
         confidence=CONFIDENCE_UNKNOWN,
         confidence_basis=(
             "the question asks for a validation Atlas has no rules for"
+        ),
+        engines_used=(),
+        duration_ms=int((time.perf_counter() - started) * 1000),
+    )
+
+
+def _temporal_refusal(request, started: float) -> InvestigationResult:
+    """The honest answer to a question about behaviour over time.
+
+    Atlas retains no state history: a single discovery is one sample,
+    and "flapping"/"unstable" verdicts invented from one sample would
+    be the most confident-sounding wrong answers Atlas could give
+    (review R2). The reserved verdict "Unstable" exists precisely so
+    it can be refused by name here and never redefined to something
+    weaker.
+    """
+
+    from .models import ResolvedEntities
+    from .subjects import label_for
+
+    label = label_for(request.subject or request.protocol)
+    quoted = ", ".join(f"“{term}”" for term in request.temporal_terms)
+    # "Are interfaces stable" vs "Is BGP stable" — the label's own
+    # number decides the verb, so the refusal reads like an operator
+    # wrote it.
+    plural = label.casefold().endswith("s") and label.casefold() not in (
+        "mpls", "dns",
+    )
+    verb, pronoun = ("are", "Are") if plural else ("is", "Is")
+    plan = InvestigationPlan(
+        template="state-refusal",
+        title=f"{label} stability",
+        objective=f"Judge whether {label} {verb} stable over time.",
+        steps=(),
+    )
+    return InvestigationResult(
+        request=request,
+        entities=ResolvedEntities(),
+        plan=plan,
+        findings=(),
+        gaps=(
+            f"The question asks about behaviour over time ({quoted}), "
+            "and Atlas retains no state history — it holds one "
+            "observation per discovery, which cannot distinguish a "
+            "link that flapped from one that was down when observed.",
+        ),
+        evidence=(),
+        summary=(
+            f"Atlas cannot judge whether {label} {verb} stable — that "
+            f"needs state history ({quoted} describe behaviour over "
+            "time), and Atlas holds one observation per discovery. "
+            f"It can assess the CURRENT {label} state as of the last "
+            f"discovery; ask, for example, “{pronoun} "
+            f"{label} healthy?”."
+        ),
+        confidence=CONFIDENCE_UNKNOWN,
+        confidence_basis=(
+            "stability requires a state history Atlas does not retain"
+        ),
+        engines_used=(),
+        duration_ms=int((time.perf_counter() - started) * 1000),
+    )
+
+
+def _state_refusal(request, started: float) -> InvestigationResult:
+    """The honest answer when Atlas cannot assess a subject's state.
+
+    Names WHICH half is missing — the observation shape (a parser) or
+    the state rules (data) — because those lead to different actions,
+    and lists what Atlas CAN assess, read live from the capability
+    registry.
+    """
+
+    from .models import ResolvedEntities
+    from .subjects import label_for, subject as subject_of
+    from .validation import ASPECT_STATE, capabilities
+
+    key = request.subject or request.protocol
+    label = label_for(key)
+    descriptor = subject_of(key)
+    state_kind = str(getattr(descriptor, "state_kind", "") or "")
+    if descriptor is None:
+        cause = f"it does not recognise {label} as a subject"
+    elif not state_kind:
+        cause = (
+            f"it has no canonical observation shape for {label} state "
+            "— the collectors may gather the text, but nothing parses "
+            "it into judgeable observations yet"
+        )
+    else:
+        cause = (
+            f"it has an observation shape for {label} "
+            f"({state_kind}) but no state rules that judge it"
+        )
+    supported = ", ".join(
+        item.title for item in capabilities(aspect=ASPECT_STATE)
+    ) or "nothing yet"
+    plan = InvestigationPlan(
+        template="state-refusal",
+        title=f"{label} state assessment",
+        objective=f"Judge the operational state of {label}.",
+        steps=(),
+    )
+    return InvestigationResult(
+        request=request,
+        entities=ResolvedEntities(),
+        plan=plan,
+        findings=(),
+        gaps=(
+            f"Atlas has no state capability for {label}: {cause}. It "
+            f"can currently assess: {supported}.",
+        ),
+        evidence=(),
+        summary=(
+            f"Atlas cannot assess the {label} operational state — "
+            f"{cause}. It can currently assess: {supported}. It will "
+            "not claim health it has not checked."
+        ),
+        confidence=CONFIDENCE_UNKNOWN,
+        confidence_basis=(
+            "the question asks for a state assessment Atlas has no "
+            "capability for"
         ),
         engines_used=(),
         duration_ms=int((time.perf_counter() - started) * 1000),
@@ -464,6 +614,126 @@ def _summarise(template, context: InvestigationContext
                 f"across {int(validation.get('policies') or 0)} {label} "
                 "polic" + ("y" if int(validation.get("policies") or 0) == 1
                            else "ies")
+            )
+    elif template.domain == "state":
+        # PR-173: ONE summary for every subject's state assessment.
+        # The summary SPEAKS the stored projection and never
+        # re-judges; the observation age appears in every verdict
+        # sentence, because state is only as true as it is recent.
+        from .validation import (
+            VERDICT_DEGRADED,
+            VERDICT_FAILED,
+            VERDICT_NOT_APPLICABLE,
+        )
+
+        state = facts.get("state_validation") or {}
+        projection = facts.get("state_verdict") or {}
+        term = str(projection.get("verdict") or "")
+        tone = str(projection.get("tone") or "")
+        title = str(state.get("title") or "Operational state")
+        label = str(state.get("subject") or "the subject")
+        counts = state.get("counts") or {}
+        passed = int(counts.get("pass") or 0)
+        failed = int(counts.get("fail") or 0)
+        unknown = int(counts.get("unknown") or 0)
+        stale = int(counts.get("stale") or 0)
+        not_applicable = int(counts.get("not_applicable") or 0)
+        judged = passed + failed
+        age = str(state.get("age_sentence") or "")
+        unevaluated = int(state.get("unevaluated") or 0)
+        stale_devices = int(state.get("stale_devices") or 0)
+        if not state:
+            sentences.append(
+                f"The state engine produced no evaluations for this "
+                "scope, so the operational state could not be judged."
+            )
+            confidence = CONFIDENCE_UNKNOWN
+            basis = "no evaluations were produced for the scope"
+        elif term == VERDICT_NOT_APPLICABLE:
+            sentences.append(
+                f"No device in scope runs {label} — the graph holds "
+                f"no {title} observations for them. Atlas does not "
+                "report absence as health."
+            )
+            confidence = CONFIDENCE_HIGH
+            basis = (
+                f"{not_applicable} evaluation(s) by the state engine; "
+                "none applied to the devices in scope"
+            )
+        elif judged == 0:
+            sentences.append(
+                f"The {title} could not be judged: "
+                f"{projection.get('cause') or 'not enough evidence'}."
+            )
+            if stale_devices:
+                sentences.append(
+                    f"{stale_devices} device(s) hold observations "
+                    "older than the staleness horizon — stale state "
+                    "cannot prove current health."
+                )
+            confidence = CONFIDENCE_UNKNOWN
+            basis = "nothing in scope could be judged"
+        else:
+            observations = state.get("observations") or {}
+            in_state = int(observations.get("ok") or 0)
+            total = int(observations.get("total") or 0)
+            outside = max(0, total - in_state)
+            if term == VERDICT_FAILED:
+                sentences.append(
+                    f"{title}: Failed — no observation is in its "
+                    f"expected state (0 of {total}); {age}."
+                )
+            elif term == VERDICT_DEGRADED and tone == "warning":
+                sentences.append(
+                    f"{title}: {outside} of {total} observation(s) "
+                    "below par at medium or low severity; "
+                    f"{in_state} in their expected state; {age}."
+                )
+            elif term == VERDICT_DEGRADED or failed:
+                sentences.append(
+                    f"{title}: Degraded — {in_state} of {total} "
+                    f"observation(s) in their expected state; "
+                    f"{outside} outside; {age}."
+                )
+            else:
+                sentences.append(
+                    f"{title}: Healthy — every observation is in its "
+                    f"expected state ({in_state} of {total}); {age}."
+                )
+            if state.get("ageing"):
+                sentences.append(
+                    "The evidence is ageing — treat this as the state "
+                    "at last observation, not this instant."
+                )
+            if not_applicable:
+                sentences.append(
+                    f"{not_applicable} evaluation(s) were not "
+                    f"applicable — those devices do not run {label}."
+                )
+            if stale_devices:
+                sentences.append(
+                    f"{stale_devices} device(s) were not judged: their "
+                    "observations are older than the staleness horizon."
+                )
+            if unknown:
+                sentences.append(
+                    f"{unknown} evaluation(s) could not be judged and "
+                    "remain unknown."
+                )
+            if unevaluated:
+                sentences.append(
+                    f"{unevaluated} device(s) in scope hold no "
+                    "observations and were not judged."
+                )
+            confidence = (
+                CONFIDENCE_HIGH
+                if not unknown and not stale_devices and not unevaluated
+                and not state.get("ageing")
+                else CONFIDENCE_MEDIUM
+            )
+            basis = (
+                f"{judged} evaluation(s) by the state engine across "
+                f"{int(state.get('rules') or 0)} state rule(s); {age}"
             )
     elif template.key == "connectivity-between":
         status = str(facts.get("path_status") or "")

@@ -114,8 +114,6 @@ def locate_entities(context: InvestigationContext) -> bool:
 
 # -- engine: BGP -----------------------------------------------------------
 
-_ESTABLISHED = ("established", "estab", "up")
-
 # The same sentence wherever BGP is reported: the limits of the
 # evidence do not depend on which question asked for it.
 BGP_EVIDENCE_LIMIT = (
@@ -126,8 +124,17 @@ BGP_EVIDENCE_LIMIT = (
 )
 
 
-def _session_is_established(session: dict[str, Any]) -> bool:
-    return str(session.get("state") or "").casefold() in _ESTABLISHED
+def _established_by_rule(session: dict[str, Any]) -> bool:
+    """PR-173: the health VOCABULARY lives in the state RULES, not in
+    an inline tuple — this helper only reads it back for the listing
+    templates' informational counts, so a listing and a verdict can
+    never disagree about what "established" means."""
+
+    from .state_rules import state_rule, canonical_state
+
+    rule = state_rule("STATE-BGP-001")
+    expected = rule.check.expected_states if rule else ("established",)
+    return canonical_state(session.get("state")) in expected
 
 
 def bgp_between(context: InvestigationContext) -> bool:
@@ -182,7 +189,7 @@ def bgp_between(context: InvestigationContext) -> bool:
             )
         return True
 
-    established = [item for item in matched if _session_is_established(item[1])]
+    established = [item for item in matched if _established_by_rule(item[1])]
     for device_id, session in matched:
         device = device_by_id(graph, device_id)
         hostname = getattr(device, "hostname", device_id)
@@ -231,7 +238,7 @@ def bgp_for_devices(context: InvestigationContext) -> bool:
             "discovery, so Atlas holds no BGP evidence for it."
         )
         return True
-    established = [item for item in sessions if _session_is_established(item[1])]
+    established = [item for item in sessions if _established_by_rule(item[1])]
     context.facts["bgp_established"] = len(established)
     for device_id, session in sessions[:12]:
         device = device_by_id(graph, device_id)
@@ -275,9 +282,17 @@ def ospf_for_devices(context: InvestigationContext) -> bool:
             "discovery, so Atlas holds no OSPF evidence for it."
         )
         return True
+    # PR-173: "full" comes from the OSPF state RULE's vocabulary, so
+    # this listing count can never disagree with the state verdict.
+    from .state_rules import canonical_state, state_rule
+
+    ospf_rule = state_rule("STATE-OSPF-001")
+    expected_full = (
+        ospf_rule.check.expected_states if ospf_rule else ("full",)
+    )
     full = [
         item for item in adjacencies
-        if str(item[1].get("state") or "").casefold().startswith("full")
+        if canonical_state(item[1].get("state")) in expected_full
     ]
     context.facts["ospf_full"] = len(full)
     for device_id, item in adjacencies[:12]:
@@ -808,5 +823,347 @@ def policy_validation(context: InvestigationContext) -> bool:
         f"{len(aggregate['policies'])} {label} polic"
         + ("y" if len(aggregate["policies"]) == 1 else "ies"),
         "/policy",
+    )
+    return True
+
+
+# -- engine: operational state (PR-173) --------------------------------------
+
+
+def state_validation(context: InvestigationContext) -> bool:
+    """Judge the subject's OPERATIONAL STATE with the CORTEX engine —
+    the state twin of :func:`policy_validation`, and never mixed with
+    it.
+
+    Honesty rules, in order of importance:
+
+    * **Stale evidence never yields a verdict.** A device whose
+      observations are older than the workspace's horizon (or undated)
+      is UNJUDGED, with the age named — a three-day-old "Established"
+      is not evidence that BGP is up now.
+    * A device with no observations of the kind is **not applicable**
+      — never healthy, never failing (PR-172 R1 on the state axis).
+    * Devices in scope the graph holds nothing for are counted and
+      named.
+    * Every answer states the observation age and the source command.
+    """
+
+    from datetime import datetime, timezone
+
+    from founderos_atlas.reasoning import (
+        Evidence,
+        QUESTION_ASSESS,
+        ReasoningEngine,
+        ReasoningQuestion,
+        RuleRegistry,
+    )
+    from founderos_atlas.reasoning.evidence import (
+        EvidenceProvenance,
+        GAP_NOT_COLLECTED,
+        EvidenceGap,
+    )
+
+    from .state import (
+        DEFAULT_HORIZON_MINUTES,
+        FRESHNESS_AGEING,
+        FRESHNESS_STALE,
+        observation_age_sentence,
+        observations_for,
+        state_freshness,
+    )
+    from .state_rules import STATE_RULES_VERSION, StateRule, state_rule
+    from .subjects import label_for
+    from .validation import ASPECT_STATE, capability as capability_of
+    from .validation import state_verdict_for
+
+    request = context.request
+    key = request.subject or request.protocol
+    label = label_for(key)
+    cap = capability_of(key, aspect=ASPECT_STATE)
+    if cap is None:
+        context.add_gap(
+            f"Atlas has no state capability for {label}, so it cannot "
+            "judge this operational state — and it will not claim "
+            "health it has not checked."
+        )
+        return False
+
+    now = str(
+        context.facts.get("state_now")
+        or datetime.now(timezone.utc).isoformat()
+    )
+    try:
+        horizon = int(
+            context.facts.get("state_horizon_minutes")
+            or DEFAULT_HORIZON_MINUTES
+        )
+    except (TypeError, ValueError):
+        horizon = DEFAULT_HORIZON_MINUTES
+
+    kind = cap.evidence_kinds[0]
+    definitions = [
+        item for item in (state_rule(rule_id) for rule_id in cap.rules)
+        if item is not None
+    ]
+
+    # Gather and gate FIRST: the engine only ever sees devices whose
+    # observations may still support a verdict.
+    prepared: dict[str, Evidence] = {}
+    stale_devices: dict[str, str | None] = {}
+    ageing_devices: dict[str, str | None] = {}
+    fresh_dates: list[str] = []
+    source_commands: set[str] = set()
+    for device_id in context.device_ids:
+        observations = observations_for(context.graph, device_id, kind)
+        source_commands.update(observations.source_commands)
+        if observations.items:
+            freshness = state_freshness(
+                observations.observed_at, now=now,
+                horizon_minutes=horizon,
+            )
+            if freshness == FRESHNESS_STALE:
+                stale_devices[device_id] = observations.observed_at
+                continue
+            if freshness == FRESHNESS_AGEING:
+                ageing_devices[device_id] = observations.observed_at
+            if observations.observed_at:
+                fresh_dates.append(observations.observed_at)
+        prepared[device_id] = Evidence(
+            id=f"state:{kind}:{device_id}",
+            kind=kind,
+            source="cli",
+            subject=device_id,
+            observed_at=observations.observed_at,
+            summary=(
+                f"{len(observations.items)} {kind} observation(s)"
+            ),
+            provenance=EvidenceProvenance(
+                source="cli",
+                command=", ".join(observations.source_commands) or None,
+            ),
+            payload={
+                "items": list(observations.items),
+                "identities": list(observations.identities),
+                "source_commands": list(observations.source_commands),
+            },
+        )
+
+    class _PreparedProvider:
+        """Evidence the step already gathered and gated — the engine's
+        one window onto the graph."""
+
+        def gather(self, subject, *, as_of=None, kinds=()):
+            item = prepared.get(subject)
+            wanted = set(kinds or ())
+            if item is None or (wanted and item.kind not in wanted):
+                return ()
+            return (item,)
+
+        def describe_gaps(self, subject, *, as_of=None, kinds=()):
+            if subject in prepared:
+                return ()
+            return (EvidenceGap(
+                kind=kind, subject=str(subject),
+                why=GAP_NOT_COLLECTED,
+                detail=(
+                    "the observations are older than the workspace's "
+                    "staleness horizon"
+                    if subject in stale_devices
+                    else f"no {kind} observations were collected"
+                ),
+            ),)
+
+    registry = RuleRegistry()
+    registry.register_all(
+        StateRule(definition) for definition in definitions
+    )
+    engine = ReasoningEngine(
+        registry,
+        (_PreparedProvider(),),
+        clock=lambda: now,
+        rule_set_version=STATE_RULES_VERSION,
+    )
+
+    from .state_rules import canonical_state
+
+    counts = {"pass": 0, "fail": 0, "unknown": 0, "not_applicable": 0,
+              "stale": 0}
+    # Observation-level counts — the granularity the verdict speaks:
+    # "27 of 28 sessions Established" is about OBSERVATIONS, and it is
+    # what separates Degraded (some out of state) from Failed (none in
+    # state) even on a single device.
+    observations_total = 0
+    observations_ok = 0
+    rows: dict[str, dict[str, Any]] = {}
+    devices_judged: set[str] = set()
+    devices_na: set[str] = set()
+    offender_notes: dict[str, list[str]] = {}
+    for device_id in context.device_ids:
+        if device_id in stale_devices:
+            counts["stale"] += len(definitions)
+            continue
+        device = device_by_id(context.graph, device_id)
+        hostname = str(getattr(device, "hostname", "") or device_id)
+        for definition in definitions:
+            question = ReasoningQuestion(
+                kind=QUESTION_ASSESS,
+                subject=device_id,
+                focus=definition.rule_id,
+                consumer="state",
+            )
+            result = engine.evaluate(question)
+            row = rows.setdefault(definition.rule_id, {
+                "rule_id": definition.rule_id,
+                "name": definition.name,
+                "severity": definition.severity,
+                "pass": 0, "fail": 0, "unknown": 0,
+                "not_applicable": 0,
+                "failed_devices": [],
+            })
+            status = result.conclusion_kind
+            applicable = bool(getattr(result, "applicable", True))
+            if status == "unknown":
+                bucket = "unknown"
+            elif not applicable:
+                bucket = "not_applicable"
+            else:
+                bucket = status if status in ("pass", "fail") else "unknown"
+            counts[bucket] += 1
+            row[bucket] += 1
+            if bucket in ("pass", "fail"):
+                devices_judged.add(hostname)
+            if bucket in ("pass", "fail") and definition is definitions[0]:
+                # Observation counts are tallied against the PRIMARY
+                # rule only, once per device — a second rule over the
+                # same observations must not double-count them.
+                evidence_item = prepared.get(device_id)
+                check = definition.check
+                for observation in (
+                    (evidence_item.payload.get("items") or ())
+                    if evidence_item is not None else ()
+                ):
+                    value = canonical_state(
+                        observation.get(check.state_field)
+                    )
+                    if value in check.ignore_states:
+                        continue
+                    observations_total += 1
+                    in_expected = value in tuple(
+                        canonical_state(state)
+                        for state in check.expected_states
+                    )
+                    if check.operator == "none_in_states":
+                        in_expected = not in_expected
+                    if in_expected:
+                        observations_ok += 1
+            if bucket == "not_applicable":
+                devices_na.add(hostname)
+            if bucket == "fail":
+                row["failed_devices"].append(hostname)
+                notes = offender_notes.setdefault(definition.rule_id, [])
+                for step in result.reasoning_path[1:4]:
+                    note = f"{hostname}: {step.statement}"
+                    if note not in notes:
+                        notes.append(note)
+
+    devices_na -= devices_judged
+    scope_count = len(context.device_ids)
+    evaluated = len(prepared) + len(stale_devices)
+    unevaluated = max(0, scope_count - evaluated)
+    oldest = min(fresh_dates) if fresh_dates else None
+    age_sentence = observation_age_sentence(oldest, now=now)
+
+    aggregate = {
+        "counts": counts,
+        "observations": {
+            "total": observations_total, "ok": observations_ok,
+        },
+        "rules": sorted(rows.values(), key=lambda row: row["rule_id"]),
+        "devices_judged": frozenset(devices_judged),
+        "devices_not_applicable": frozenset(devices_na),
+        "devices_evaluated": frozenset(
+            str(getattr(device_by_id(context.graph, device_id),
+                        "hostname", "") or device_id)
+            for device_id in context.device_ids
+            if device_id in prepared or device_id in stale_devices
+        ),
+    }
+    verdict = state_verdict_for(aggregate, scope_count=scope_count)
+    context.facts["state_validation"] = {
+        "subject": label,
+        "title": cap.title,
+        "counts": counts,
+        "observations": {
+            "total": observations_total, "ok": observations_ok,
+        },
+        "rules": len(rows),
+        "age_sentence": age_sentence,
+        "ageing": bool(ageing_devices),
+        "stale_devices": len(stale_devices),
+        "unevaluated": unevaluated,
+        "rules_version": STATE_RULES_VERSION,
+        "source_commands": tuple(sorted(source_commands)),
+    }
+    context.facts["state_verdict"] = verdict
+
+    for row in aggregate["rules"]:
+        judged = row["pass"] + row["fail"]
+        if row["fail"]:
+            failing = ", ".join(sorted(set(row["failed_devices"]))[:6])
+            detail = (
+                f"{row['rule_id']}: {row['pass']} pass, {row['fail']} "
+                f"fail of {judged} judged. Failing: {failing}."
+            )
+            notes = offender_notes.get(row["rule_id"], [])
+            if notes:
+                detail += " " + " ".join(notes[:3])
+            context.add_finding(
+                f"{row['name']} — {row['fail']} device(s) degraded",
+                detail, href="/topology", engine="state",
+            )
+        elif judged:
+            context.add_finding(
+                f"{row['name']} — {row['pass']} of {judged} judged "
+                "device(s) healthy",
+                f"{row['rule_id']}: every judged device's observations "
+                "are in their expected state.",
+                href="/topology", engine="state",
+            )
+        elif row["not_applicable"]:
+            context.add_finding(
+                f"{row['name']} — not applicable on "
+                f"{row['not_applicable']} device(s)",
+                f"{row['rule_id']}: no device this rule saw holds "
+                "observations of this kind — and Atlas does not report "
+                "absence as health.",
+                href="/topology", engine="state",
+            )
+
+    if stale_devices:
+        stale_oldest = min(
+            (stamp for stamp in stale_devices.values() if stamp),
+            default=None,
+        )
+        context.add_gap(
+            f"{len(stale_devices)} device(s) hold {label} observations "
+            "older than the workspace's staleness horizon "
+            f"({horizon} minute(s); "
+            f"{observation_age_sentence(stale_oldest, now=now)}) — they "
+            "were not judged, because stale state cannot prove current "
+            "health."
+        )
+    if unevaluated:
+        context.add_gap(
+            f"{unevaluated} of {scope_count} device(s) in scope hold no "
+            f"{kind} observations and were not judged."
+        )
+
+    context.cite(
+        "State Observations",
+        f"{counts['pass'] + counts['fail']} judged evaluation(s) across "
+        f"{len(rows)} state rule(s) "
+        f"({', '.join(sorted(source_commands)) or 'discovery'}); "
+        f"{age_sentence}",
+        "/topology",
     )
     return True

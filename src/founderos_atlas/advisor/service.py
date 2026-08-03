@@ -125,6 +125,7 @@ def ask(
     generated_at: str,
     repository: ConversationRepository | None = None,
     policy_runner=None,
+    state_horizon_minutes: int | None = None,
 ) -> AdvisorResponse:
     """Answer one question from evidence and (optionally) store it.
 
@@ -146,6 +147,7 @@ def ask(
             search_index=search_index,
             generated_at=generated_at,
             policy_runner=policy_runner,
+            state_horizon_minutes=state_horizon_minutes,
         ),
     )
     if repository is not None:

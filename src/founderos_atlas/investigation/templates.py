@@ -202,6 +202,39 @@ def validation_template(cap) -> InvestigationTemplate:
     )
 
 
+def state_template(cap) -> InvestigationTemplate:
+    """The one operational-state investigation, parameterised by
+    subject (PR-173) — the state twin of :func:`validation_template`,
+    and never mixed with it.
+
+    Everything subject-specific is a label; the three steps and both
+    engines are identical for every subject. Configuration validation
+    and state assessment stay SEPARATE investigations with separate
+    vocabularies: this one says Healthy/Degraded/Failed and never
+    Compliant.
+    """
+
+    return InvestigationTemplate(
+        key=f"{cap.subject}-state", domain="state",
+        title=f"{cap.title} health",
+        objective=f"Judge the operational state of {cap.title} against "
+                  "Atlas's state rules and report every disposition — "
+                  "healthy, degraded, not applicable, stale and "
+                  "unknown — with the observation age stated.",
+        completion=f"Every device in scope judged by the {cap.label} "
+                   "state rules, or the reason it could not be judged "
+                   "stated.",
+        steps=(
+            _locate(False),
+            StepSpec("scope", "Resolve the scope to its devices",
+                     "graph", engines.enterprise_scope),
+            StepSpec("observations",
+                     f"Assess {cap.title} against the state rules",
+                     "state", engines.state_validation),
+        ),
+    )
+
+
 def select(request: InvestigationRequest) -> InvestigationTemplate | None:
     """The template for one request, or None to leave the question to
     Atlas's existing estate-wide answer.
@@ -227,12 +260,31 @@ def select(request: InvestigationRequest) -> InvestigationTemplate | None:
     objective routes precisely as it always has.
     """
 
-    # -- rung 1: validation (the only objective-routed rung today) ----
+    # -- rung 1: validation (objective-routed) ------------------------
     if request.objective == "validate" and request.has_subject:
         from .validation import capability
 
         cap = capability(request.subject or request.protocol)
         return validation_template(cap) if cap else None
+
+    # -- rung 1b: operational state (PR-173) --------------------------
+    # A judgement-phrased assessment of a subject Atlas can judge — "is
+    # BGP healthy?" — becomes a state VERDICT. Endpoints are excluded
+    # (a between-two-places question deserves the richer peering
+    # investigation), a temporal question never reaches judgement (the
+    # orchestrator refuses it first, naming the missing history), and
+    # "show me BGP for X" extracts objective=locate, so LISTINGS keep
+    # their exact PR-167 behaviour.
+    if (request.objective == "assess" and request.has_subject
+            and not request.has_endpoints
+            and not request.temporal_terms):
+        from .validation import ASPECT_STATE, capability
+
+        cap = capability(
+            request.subject or request.protocol, aspect=ASPECT_STATE,
+        )
+        if cap is not None:
+            return state_template(cap)
 
     if not request.named_anything:
         return None

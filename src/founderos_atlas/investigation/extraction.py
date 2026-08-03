@@ -80,6 +80,19 @@ OBJECTIVES: dict[str, tuple[str, ...]] = {
                        "state"),
 }
 
+# PR-173: words that ask about behaviour OVER TIME. Atlas retains no
+# state history — a single discovery cannot distinguish a link that
+# flapped from one that was simply down when observed — so a question
+# carrying one of these is refused honestly, quoting the word. Fixed
+# vocabulary, word-anchored, like every other dimension here.
+# "stability"/"stable" are included: "is BGP stable?" asks about time,
+# not about this instant.
+TEMPORAL_TERMS: tuple[str, ...] = (
+    "flapping", "flapped", "flaps", "flap",
+    "unstable", "instability", "stability", "stable",
+    "intermittent", "intermittently", "keeps dropping",
+)
+
 # Most specific first; assess is both last and the default. The order
 # is part of the contract: a question matching two objectives always
 # resolves the same way, and the basis says which terms decided it.
@@ -413,4 +426,5 @@ def extract(question: str, *, known_sites: tuple[str, ...] = ()
         time_range=_time_range(folded),
         severity=_match_vocabulary(folded, SEVERITIES),
         direction=_match_vocabulary(folded, DIRECTIONS),
+        temporal_terms=_match_all_terms(folded, TEMPORAL_TERMS),
     )

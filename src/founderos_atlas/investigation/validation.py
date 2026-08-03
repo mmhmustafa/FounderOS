@@ -88,6 +88,14 @@ def mask_blind_rules(pack=None) -> tuple[tuple[str, str], ...]:
     return tuple(rows)
 
 
+# PR-173: the second axis. One subject, two independently discovered
+# aspects — what its CONFIGURATION says, and what its operational STATE
+# shows. Never merged, never averaged, never sharing a verdict word.
+ASPECT_CONFIGURATION = "configuration"
+ASPECT_STATE = "state"
+ASPECTS = (ASPECT_CONFIGURATION, ASPECT_STATE)
+
+
 @dataclass(frozen=True)
 class ValidationCapability:
     """What Atlas can validate about one subject, and on what basis.
@@ -97,16 +105,18 @@ class ValidationCapability:
     it, which the Experience Language already requires of findings.
     ``platforms`` is the union of platform selectors across the
     selected rules — empty when at least one rule applies to every
-    platform.
+    platform. ``aspect`` (PR-173) says which axis this capability
+    judges; every PR-172 capability is ``configuration``.
     """
 
     subject: str                      # SubjectDescriptor.key
     label: str                        # "BGP"
-    title: str                        # "BGP configuration"
-    rules: tuple[str, ...]            # the policy_ids that will judge it
-    pack: str                         # "atlas-starter@1.0" — provenance
+    title: str                        # "BGP configuration" / "BGP sessions"
+    rules: tuple[str, ...]            # the rule ids that will judge it
+    pack: str                         # provenance: pack or rule-set version
     evidence_kinds: tuple[str, ...]   # evidence the rules need to judge
     platforms: tuple[str, ...]        # platforms targeted, () = all
+    aspect: str = ASPECT_CONFIGURATION
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -117,6 +127,7 @@ class ValidationCapability:
             "pack": self.pack,
             "evidence_kinds": list(self.evidence_kinds),
             "platforms": list(self.platforms),
+            "aspect": self.aspect,
         }
 
 
@@ -177,24 +188,72 @@ def _capability_for(
     )
 
 
+def _state_capability_for(
+    descriptor: SubjectDescriptor,
+) -> ValidationCapability | None:
+    """The STATE capability, discovered exactly like configuration's:
+    the subject declares an observation kind, and at least one state
+    rule judges that kind. Either half missing means no capability —
+    and the refusal upstream names WHICH half, because they lead to
+    different actions (write a parser vs. write a rule)."""
+
+    kind = str(getattr(descriptor, "state_kind", "") or "")
+    if not kind:
+        return None
+    from .state_rules import STATE_RULES_VERSION, rules_for_kind
+
+    selected = tuple(
+        rule for rule in rules_for_kind(kind)
+        if rule.subject == descriptor.key
+    )
+    if not selected:
+        return None
+    title = (
+        getattr(descriptor, "state_title", "")
+        or f"{descriptor.label} state"
+    )
+    return ValidationCapability(
+        subject=descriptor.key,
+        label=descriptor.label,
+        title=title,
+        rules=tuple(rule.rule_id for rule in selected),
+        pack=STATE_RULES_VERSION,
+        evidence_kinds=(kind,),
+        platforms=(),
+        aspect=ASPECT_STATE,
+    )
+
+
 def capabilities(
     pack=None, *, subjects: tuple[SubjectDescriptor, ...] | None = None,
+    aspect: str = ASPECT_CONFIGURATION,
 ) -> tuple[ValidationCapability, ...]:
-    """Every validation Atlas can currently perform, alphabetically by
-    label — the order an operator-facing list wants.
+    """Every validation Atlas can currently perform on one aspect,
+    alphabetically by label — the order an operator-facing list wants.
 
-    ``subjects`` exists so a test (or a future caller) can derive over
-    a different subject registry; production callers never pass it.
+    ``aspect`` defaults to configuration so every PR-172 caller keeps
+    its exact behaviour. ``subjects`` exists so a test (or a future
+    caller) can derive over a different subject registry; production
+    callers never pass it.
     """
 
-    active = _active_pack(pack)
-    found = [
-        item for item in (
-            _capability_for(descriptor, active)
-            for descriptor in (subjects if subjects is not None else SUBJECTS)
-        )
-        if item is not None
-    ]
+    roster = subjects if subjects is not None else SUBJECTS
+    if aspect == ASPECT_STATE:
+        found = [
+            item for item in (
+                _state_capability_for(descriptor) for descriptor in roster
+            )
+            if item is not None
+        ]
+    else:
+        active = _active_pack(pack)
+        found = [
+            item for item in (
+                _capability_for(descriptor, active)
+                for descriptor in roster
+            )
+            if item is not None
+        ]
     found.sort(key=lambda item: item.label.casefold())
     return tuple(found)
 
@@ -202,27 +261,50 @@ def capabilities(
 def capability(
     subject: str, pack=None, *,
     subjects: tuple[SubjectDescriptor, ...] | None = None,
+    aspect: str = ASPECT_CONFIGURATION,
 ) -> ValidationCapability | None:
-    """The capability for one subject key, or None — and None is a
-    refusal upstream, never a silent pass."""
+    """The capability for one subject key and one aspect, or None —
+    and None is a refusal upstream, never a silent pass."""
 
     key = str(subject or "")
     for descriptor in (subjects if subjects is not None else SUBJECTS):
         if descriptor.key == key:
+            if aspect == ASPECT_STATE:
+                return _state_capability_for(descriptor)
             return _capability_for(descriptor, _active_pack(pack))
     return None
 
 
 def unrealised(
     pack=None, *, subjects: tuple[SubjectDescriptor, ...] | None = None,
+    aspect: str = ASPECT_CONFIGURATION,
 ) -> tuple[tuple[str, str], ...]:
-    """Subjects whose declared tags select no rule in the pack — a
-    registry/pack disagreement surfaced as (subject key, explanation)
-    diagnostics. Empty when every declared tag finds rules."""
+    """Subjects whose declared half finds no other half — a registry
+    disagreement surfaced as (subject key, explanation) diagnostics.
 
-    active = _active_pack(pack)
+    Configuration: declared tags select no pack rule. State: a
+    declared observation kind that no state rule judges.
+    """
+
+    roster = subjects if subjects is not None else SUBJECTS
     rows: list[tuple[str, str]] = []
-    for descriptor in (subjects if subjects is not None else SUBJECTS):
+    if aspect == ASPECT_STATE:
+        from .state_rules import rules_for_kind
+
+        for descriptor in roster:
+            kind = str(getattr(descriptor, "state_kind", "") or "")
+            if kind and not tuple(
+                rule for rule in rules_for_kind(kind)
+                if rule.subject == descriptor.key
+            ):
+                rows.append((
+                    descriptor.key,
+                    f"{descriptor.label} declares the observation kind "
+                    f"{kind} but no installed state rule judges it.",
+                ))
+        return tuple(rows)
+    active = _active_pack(pack)
+    for descriptor in roster:
         if descriptor.policy_tags and not _selected_rules(descriptor, active):
             rows.append((
                 descriptor.key,
@@ -232,6 +314,96 @@ def unrealised(
                 "rule carrying any of them.",
             ))
     return tuple(rows)
+
+
+# -- the STATE verdict projection (PR-173) ------------------------------------
+#
+# Six terms mirroring configuration's six one-for-one, sharing the
+# honest tail (Not enough evidence / Not applicable / Unsupported use
+# the SAME words on both axes — three phrases, not six). The two
+# vocabularies never blend: configuration says Compliant, state says
+# Healthy, and no answer may use both words about one aspect.
+
+VERDICT_HEALTHY = "Healthy"
+VERDICT_DEGRADED = "Degraded"
+VERDICT_FAILED = "Failed"
+# RESERVED (PR-173): "Unstable" means state changed repeatedly across
+# observations — a determination that requires a state HISTORY Atlas
+# does not yet retain. The word is defined here so it cannot be reused
+# for something weaker, and it is NEVER emitted; a question asking for
+# it is refused honestly.
+VERDICT_UNSTABLE = "Unstable"
+
+
+def state_verdict_for(aggregate, *, scope_count: int = 0) -> dict[str, str]:
+    """The state verdict projection for one subject's aggregate.
+
+    Pure, like :func:`verdict_for`. The aggregate's counts are per
+    (device, rule) determinations from the CORTEX engine plus the
+    freshness gate's exclusions (``stale``): a stale device is
+    UNJUDGED — never healthy, never failing.
+    """
+
+    counts = aggregate.get("counts") or {}
+    passed = int(counts.get("pass") or 0)
+    failed = int(counts.get("fail") or 0)
+    unknown = int(counts.get("unknown") or 0)
+    stale = int(counts.get("stale") or 0)
+    not_applicable = int(counts.get("not_applicable") or 0)
+    judged = passed + failed
+    evaluated_devices = len(aggregate.get("devices_evaluated") or ())
+    unevaluated = max(0, scope_count - evaluated_devices)
+
+    if judged == 0:
+        if (unknown == 0 and stale == 0 and unevaluated == 0
+                and not_applicable):
+            return {
+                "verdict": VERDICT_NOT_APPLICABLE,
+                "tone": _TONE_INFO,
+                "cause": "no device in scope runs this subject",
+            }
+        return {
+            "verdict": VERDICT_NO_EVIDENCE,
+            "tone": _TONE_UNKNOWN,
+            "cause": (
+                "the observations are too old to support a verdict"
+                if stale and unknown == 0 and unevaluated == 0
+                else "no device in scope could be judged"
+            ),
+        }
+
+    if failed:
+        severities = {
+            str(row.get("severity") or "")
+            for row in aggregate.get("rules") or ()
+            if int(row.get("fail") or 0)
+        }
+        lenient = bool(severities) and severities <= _LENIENT_SEVERITIES
+        observations = aggregate.get("observations") or {}
+        in_state = int(observations.get("ok") or 0)
+        total = int(observations.get("total") or 0)
+        # Failed vs Degraded is decided at the OBSERVATION level —
+        # "27 of 28 Established" is Degraded even when every judged
+        # evaluation failed, because most sessions ARE up. Failed
+        # means NOTHING is in its expected state.
+        if total and in_state == 0:
+            return {
+                "verdict": VERDICT_FAILED,
+                "tone": _TONE_ATTENTION,
+                "cause": "no observation is in its expected state",
+            }
+        return {
+            "verdict": VERDICT_DEGRADED,
+            "tone": _TONE_WARNING if lenient else _TONE_ATTENTION,
+            "cause": f"{max(0, total - in_state)} of {total} "
+                     "observation(s) are outside their expected state",
+        }
+
+    return {
+        "verdict": VERDICT_HEALTHY,
+        "tone": _TONE_OK,
+        "cause": "every judged observation set is in its expected state",
+    }
 
 
 # -- the verdict projection (PR-172, review §6) -------------------------------
@@ -339,17 +511,25 @@ def verdict_for(aggregate, *, scope_count: int = 0) -> dict[str, str]:
 
 
 __all__ = [
+    "ASPECTS",
+    "ASPECT_CONFIGURATION",
+    "ASPECT_STATE",
     "ValidationCapability",
     "VERDICT_COMPLIANT",
+    "VERDICT_DEGRADED",
+    "VERDICT_FAILED",
+    "VERDICT_HEALTHY",
     "VERDICT_NON_COMPLIANT",
     "VERDICT_NOT_APPLICABLE",
     "VERDICT_NO_EVIDENCE",
     "VERDICT_PARTIAL",
+    "VERDICT_UNSTABLE",
     "VERDICT_UNSUPPORTED",
     "capabilities",
     "capability",
     "mask_blind_reason",
     "mask_blind_rules",
+    "state_verdict_for",
     "unrealised",
     "verdict_for",
 ]

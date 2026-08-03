@@ -63,6 +63,11 @@ class InvestigationRequest:
     time_range: str = ""           # "last 24 hours", "yesterday", ...
     severity: str = ""             # down | degraded | slow | unstable
     direction: str = ""            # inbound | outbound | bidirectional
+    # PR-173: the operator's words that ask about behaviour OVER TIME
+    # ("flapping", "unstable", "stable"). Atlas retains no state
+    # history, so a question carrying one of these is refused honestly
+    # — recorded here so the refusal can quote the exact word.
+    temporal_terms: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -84,6 +89,7 @@ class InvestigationRequest:
             "time_range": self.time_range,
             "severity": self.severity,
             "direction": self.direction,
+            "temporal_terms": list(self.temporal_terms),
         }
 
     @property

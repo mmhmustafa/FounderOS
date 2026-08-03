@@ -54,6 +54,13 @@ class SubjectDescriptor:
     policy_tags: tuple[str, ...] = ()      # policy-pack tags that judge it
     validation_title: str = ""             # "" -> "<label> configuration"
     platform_capability: str = ""          # collection capability name
+    # PR-173: which canonical observation kind describes this subject's
+    # OPERATIONAL state (investigation/state.py STATE_KIND_*). Empty
+    # means Atlas has no state shape for it — a state question is then
+    # an honest refusal naming that exact gap. state_title is the
+    # operator-facing name of the state aspect ("BGP sessions").
+    state_kind: str = ""
+    state_title: str = ""                  # "" -> "<label> state"
 
 
 # Seeded from the PR-167 protocol vocabulary — the DATA is unchanged,
@@ -66,11 +73,13 @@ SUBJECTS: tuple[SubjectDescriptor, ...] = (
         "bgp", "BGP", ("bgp", "border gateway"),
         evidence_kinds=("BGP Observations",), policy_tags=("bgp",),
         platform_capability="bgp",
+        state_kind="bgp-sessions", state_title="BGP sessions",
     ),
     SubjectDescriptor(
         "ospf", "OSPF", ("ospf",),
         evidence_kinds=("OSPF Observations",), policy_tags=("ospf",),
         platform_capability="ospf",
+        state_kind="ospf-adjacencies", state_title="OSPF adjacencies",
     ),
     SubjectDescriptor("eigrp", "EIGRP", ("eigrp",)),
     SubjectDescriptor("isis", "IS-IS", ("is-is", "isis")),
@@ -107,6 +116,7 @@ SUBJECTS: tuple[SubjectDescriptor, ...] = (
         "interfaces", "Interfaces", ("interface", "interfaces"),
         kind=KIND_DOMAIN, evidence_kinds=("Interface Inventory",),
         platform_capability="interfaces",
+        state_kind="interface-status", state_title="Interface status",
     ),
 )
 

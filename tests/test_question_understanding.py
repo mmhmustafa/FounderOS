@@ -230,10 +230,18 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual(template.key, "ospf-configuration")
 
     def test_the_assess_ladder_is_unchanged(self) -> None:
+        """PR-173 (R8, reviewed edit): a judgement-phrased assessment
+        of a state-capable subject — "Is OSPF healthy at chennai?" —
+        now upgrades from the adjacency LISTING to a judged state
+        verdict (ospf-state). Every other rung is byte-for-byte
+        PR-167: endpoints keep the peering investigation, and
+        "show me" extracts objective=locate, so listings stay
+        listings."""
+
         for question, sites, expected in (
             ("How is BGP between mumbai and hyderabad?",
              ("mumbai", "hyderabad"), "bgp-between"),
-            ("Is OSPF healthy at chennai?", ("chennai",), "ospf-scope"),
+            ("Is OSPF healthy at chennai?", ("chennai",), "ospf-state"),
             ("Show me BGP for ahmedabad", ("ahmedabad",), "bgp-scope"),
             ("Tell me about chennai", ("chennai",), "site-scope"),
         ):

@@ -233,8 +233,13 @@ class TemplateSelectionTests(unittest.TestCase):
     ) -> None:
         self.assertEqual("bgp-scope",
                          self.select_for("Show me BGP for Mumbai").key)
-        self.assertEqual("ospf-scope",
+        # PR-173 (R8, reviewed edit): a judgement-phrased assessment of
+        # a state-capable subject upgrades to the judged state verdict;
+        # the locate phrasing below keeps the listing.
+        self.assertEqual("ospf-state",
                          self.select_for("Is OSPF healthy at Mumbai?").key)
+        self.assertEqual("ospf-scope",
+                         self.select_for("Show me OSPF for Mumbai").key)
 
     def test_endpoints_without_a_protocol_select_connectivity(self) -> None:
         self.assertEqual(
@@ -315,7 +320,11 @@ class InvestigationTests(unittest.TestCase):
         self.assertIn("last-flap", gaps)
 
     def test_ospf_reports_adjacencies_and_the_missing_area(self) -> None:
-        result = self.run_for("Is OSPF healthy at Mumbai?")
+        # PR-173 (R8, reviewed edit): the judgement phrasing now earns
+        # a judged state verdict, so the LISTING behaviours this test
+        # pins are asked for with the locate phrasing that still
+        # selects the listing template.
+        result = self.run_for("Show me OSPF for Mumbai")
         self.assertIn("OSPF for mumbai", result.summary)
         self.assertIn("1 adjacency(ies) observed", result.summary)
         self.assertIn("does not carry the area", " ".join(result.gaps))

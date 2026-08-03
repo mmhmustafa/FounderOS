@@ -52,6 +52,10 @@ class AdvisorContext:
     # can never disagree about the same estate. None -> the advisor's
     # own ungoverned fallback (headless/tests).
     policy_runner: object = None
+    # PR-173: the workspace's state-staleness horizon in minutes — how
+    # old an observation may be and still support a health verdict.
+    # None -> the engine's 60-minute default.
+    state_horizon_minutes: int | None = None
 
 
 def answer(question: str, context: AdvisorContext) -> AdvisorResponse:
@@ -172,6 +176,7 @@ def _investigate(question: str, context: AdvisorContext):
             question, graph=context.graph, snapshot=context.snapshot,
             change_report=_change_report_summary(context),
             policy_runner=_policy_runner(context),
+            state_horizon_minutes=context.state_horizon_minutes,
         )
     except Exception:  # noqa: BLE001 - fall back to the single engine
         logging.getLogger("atlas").warning(

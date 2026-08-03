@@ -49,6 +49,10 @@ class WorkspacePreferences:
     density: str = "comfortable"
     retention_days: int = 365
     log_level: str = "INFO"
+    # PR-173: how old an operational-state observation may be and still
+    # support a health verdict. A lab and a change-frozen production
+    # estate reasonably differ, so this is workspace policy, not code.
+    state_horizon_minutes: int = 60
     updated_at: str | None = None
 
     @classmethod
@@ -62,6 +66,10 @@ class WorkspacePreferences:
             retention = int(value.get("retention_days", 365))
         except (TypeError, ValueError):
             retention = 365
+        try:
+            horizon = int(value.get("state_horizon_minutes", 60))
+        except (TypeError, ValueError):
+            horizon = 60
         if theme not in {"system", "light", "dark"}:
             raise ValueError("Theme must be system, light, or dark.")
         if density not in {"comfortable", "compact"}:
@@ -70,9 +78,14 @@ class WorkspacePreferences:
             raise ValueError("Log level must be ERROR, WARNING, INFO, or DEBUG.")
         if not 1 <= retention <= 3650:
             raise ValueError("Retention must be between 1 and 3650 days.")
+        if not 5 <= horizon <= 10080:
+            raise ValueError(
+                "State horizon must be between 5 minutes and 7 days."
+            )
         return cls(
             timezone=timezone_name, theme=theme, density=density,
             retention_days=retention, log_level=log_level,
+            state_horizon_minutes=horizon,
             updated_at=(str(value["updated_at"]) if value.get("updated_at") else None),
         )
 

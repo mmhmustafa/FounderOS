@@ -74,6 +74,9 @@ _WARNING_MARKERS = (
     # Verbatim phrases only the validation summary writes.
     "violation(s) at medium or low severity",
     "partially verified —",
+    # PR-173: the state projection's lenient Degraded — verbatim, only
+    # the state summary writes it.
+    "below par at medium or low severity",
 )
 
 # PR-172: an UNSUPPORTED validation — no rules for the subject — is
@@ -84,6 +87,11 @@ _WARNING_MARKERS = (
 _UNSUPPORTED_MARKERS = (
     "can currently validate",
     "no configuration policies for",
+    # PR-173: state-capability refusals — no shape, no rules, or no
+    # history. Capability absence is Informational, not a lack of
+    # evidence.
+    "can currently assess",
+    "needs state history",
 )
 
 _OK_MARKERS = (
@@ -259,6 +267,7 @@ _ENGINE_SUBJECTS = {
     "changes": "Recent changes",
     "interfaces": "Interfaces",
     "policy": "Policy compliance",     # PR-171: the validation engine
+    "state": "Operational state",      # PR-173: the state engine
 }
 
 # Router intent names -> the kind of investigation an operator recognises.
@@ -457,8 +466,8 @@ def _investigated(response: Mapping[str, Any]) -> list[str]:
     # protocol's configuration rules. Otherwise the row would claim
     # Atlas investigated HSRP — which it has no engine for — simply
     # because the question said "HSRP".
-    if isinstance(request, Mapping) and {"routing", "path",
-                                         "policy"} & set(engines):
+    if isinstance(request, Mapping) and {"routing", "path", "policy",
+                                         "state"} & set(engines):
         add(_clean_text(request.get("protocol")).upper())
     for engine in engines:
         add(_ENGINE_SUBJECTS.get(engine, ""))

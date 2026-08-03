@@ -40,6 +40,19 @@ class OspfAdjacencyObservation:
     source_command: str = ""
     observed_at: str | None = None
 
+    def identity(self) -> str:
+        """The adjacency's stable identity ACROSS discoveries (PR-173,
+        R7): the same neighbour must be recognisable run to run, or a
+        future state history has no key. Deliberately excludes ``state``
+        — identity is who the adjacency is with, not how it is doing.
+        Computed, never serialised: adding it to ``to_dict`` would
+        change stored graph artifacts."""
+
+        return "|".join((
+            "ospf", self.vrf, self.address_family,
+            self.neighbor_router_id, self.local_interface,
+        ))
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "neighbor_router_id": self.neighbor_router_id,
@@ -68,6 +81,16 @@ class BgpSessionObservation:
     accepted_prefixes: int | None = None
     source_command: str = ""
     observed_at: str | None = None
+
+    def identity(self) -> str:
+        """The session's stable identity ACROSS discoveries (PR-173,
+        R7). Excludes ``state`` and counters — identity is who the
+        session is with. Computed, never serialised (see the OSPF
+        twin)."""
+
+        return "|".join((
+            "bgp", self.vrf, self.address_family, self.peer_address,
+        ))
 
     def to_dict(self) -> dict[str, Any]:
         return {

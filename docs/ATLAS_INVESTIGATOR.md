@@ -47,6 +47,11 @@ estate-wide contract is pinned against it.
    `policy_tags` select rules in the active pack, or there is no capability and the question is
    **refused honestly** — never handed to the estate summary, never run through an adjacency
    investigation in validation's clothing.
+1b. **subject + objective=assess + state capability** (PR-173) → the subject's operational-state
+   template — "Is BGP healthy?" earns a judged verdict with the observation age stated. Endpoints
+   keep the peering investigation; "show me…" extracts `objective=locate` and keeps its listing;
+   a temporal question ("flapping", "stable") is refused before any template runs, because Atlas
+   retains no state history. See `docs/ATLAS_STATE_VALIDATION.md`.
 2–6. The PR-167 ladder, byte-for-byte: protocol+endpoints → protocol+scope → endpoints →
    named scope → **None**.
 
