@@ -216,6 +216,10 @@
     .node-action-primary { background: #2563eb; border-color: #2563eb; color: #fff; }
     .node-action-primary:hover { background: #1d4ed8; border-color: #1d4ed8; }
     #tooltip { position: fixed; left: 0; top: 0; display: none; z-index: 10; pointer-events: none; padding: 7px 10px; border-radius: 6px; background: rgba(17,24,39,0.92); color: white; font-size: 12px; box-shadow: 0 4px 12px rgba(15,23,42,0.25); will-change: transform; max-width: 340px; }
+    /* PR-174: development-mode invariant failures (?diag=1) fail loudly. */
+    #diag-banner { position: fixed; top: 0; left: 0; right: 0; z-index: 60;
+      padding: 8px 14px; background: #b91c1c; color: #fff; font-size: 13px;
+      font-weight: 600; text-align: center; }
     #tooltip .tt-head { font-weight: 600; }
     #tooltip .tt-sub { color: #cbd5e1; margin-top: 1px; }
     #tooltip .tt-ifaces { margin-top: 5px; padding-top: 4px; border-top: 1px solid rgba(148,163,184,0.35); display: grid; grid-template-columns: auto 1fr; gap: 1px 10px; }
@@ -1826,6 +1830,19 @@
       viewportHint.textContent = message;
     }
 
+    // Visible nodes whose position falls inside the current camera
+    // extent. Shared by the landing guarantee below and the
+    // development-mode diagnostics.
+    function nodesInExtent() {
+      const ext = cy.extent();
+      return cy.nodes().filter(nd => {
+        if (nd.style('display') === 'none') { return false; }
+        const p = nd.position();
+        return p.x >= ext.x1 && p.x <= ext.x2
+            && p.y >= ext.y1 && p.y <= ext.y2;
+      });
+    }
+
     function applyReadableViewport(isSkyline, elements = cy.elements()) {
       if (!elements || elements.length === 0) { return; }
       const floor = isSkyline ? READABLE_SITE_ZOOM : READABLE_DEVICE_ZOOM;
@@ -1844,15 +1861,98 @@
         cy.center(elements);
       }
 
-      viewportHint.hidden = !needsPan;
-      viewportHint.textContent = needsPan
-        ? (isSkyline
-            ? 'Readable scale - drag to pan, or zoom out for the whole estate'
-            : 'Readable scale - drag to pan, or zoom out to see it all')
-        : '';
+      // The camera must never come to rest over empty space (PR-174).
+      // cy.center() aims at the BOUNDING-BOX centre, and a ring-shaped
+      // layout has a hole there — the operator saw a blank canvas with
+      // every node 38,000 units off screen. Verify, and when nothing is
+      // in frame, land on the node nearest the centroid of the node
+      // POSITIONS (the densest part of the estate) instead. The zoom is
+      // untouched; only the centre moves.
+      // LIVE nodes, deliberately not the passed collection: a rebuild
+      // re-creates every element, and a queued viewport callback can
+      // otherwise centre on a node that no longer exists — moving the
+      // camera to garbage while claiming success. The correction is
+      // only believed when re-verification finds something in frame.
+      let corrected = false;
+      const visible = cy.nodes().filter(
+        nd => !nd.removed() && nd.style('display') !== 'none'
+      );
+      if (visible.length && nodesInExtent().length === 0) {
+        let sx = 0, sy = 0;
+        visible.forEach(nd => {
+          sx += nd.position('x'); sy += nd.position('y');
+        });
+        const cx0 = sx / visible.length, cy0 = sy / visible.length;
+        let best = null, bd = Infinity;
+        visible.forEach(nd => {
+          const d = Math.hypot(nd.position('x') - cx0,
+                               nd.position('y') - cy0);
+          if (d < bd) { bd = d; best = nd; }
+        });
+        if (best) {
+          cy.center(best);
+          corrected = nodesInExtent().length > 0;
+        }
+      }
+
+      viewportHint.hidden = !(needsPan || corrected);
+      viewportHint.textContent = corrected
+        ? 'Showing the nearest cluster - zoom out to see the whole estate'
+        : needsPan
+          ? (isSkyline
+              ? 'Readable scale - drag to pan, or zoom out for the whole estate'
+              : 'Readable scale - drag to pan, or zoom out to see it all')
+          : '';
       peerLabelsHidden = null;
       detailedLabelsShown = null;
       syncSemanticZoom();
+      runViewerDiagnostics('viewport');
+    }
+
+    // ---- viewer invariants (development-mode diagnostics, PR-174) ------
+    // Opt-in with ?diag=1 — the tests and dev sessions pass it; served
+    // production pages do not, so the cost there is one boolean test.
+    // A violated invariant fails LOUDLY: console.error plus a visible
+    // banner, so a future layout regression surfaces the moment it is
+    // rendered instead of shipping as a quietly blank canvas.
+    const DIAG = /[?&]diag=1(?:&|$)/.test(location.search);
+    function diagFail(message) {
+      console.error('[atlas-diag] ' + message);
+      let banner = document.getElementById('diag-banner');
+      if (!banner) {
+        banner = document.createElement('div');
+        banner.id = 'diag-banner';
+        banner.setAttribute('role', 'alert');
+        document.body.appendChild(banner);
+      }
+      banner.dataset.failures =
+        String(Number(banner.dataset.failures || 0) + 1);
+      banner.textContent = 'Viewer invariant violated - ' + message
+        + ' (' + banner.dataset.failures + ')';
+    }
+    function runViewerDiagnostics(stage) {
+      if (!DIAG) { return; }
+      let badCoords = 0;
+      cy.nodes().forEach(nd => {
+        const p = nd.position();
+        if (!isFinite(p.x) || !isFinite(p.y)) { badCoords += 1; }
+      });
+      if (badCoords) {
+        diagFail(stage + ': ' + badCoords
+          + ' node(s) have non-finite coordinates');
+      }
+      const bb = cy.elements().boundingBox();
+      if (![bb.x1, bb.y1, bb.x2, bb.y2].every(isFinite)) {
+        diagFail(stage + ': the bounding box is not finite');
+      }
+      const pan = cy.pan(), zoom = cy.zoom();
+      if (!isFinite(zoom) || zoom <= 0
+          || !isFinite(pan.x) || !isFinite(pan.y)) {
+        diagFail(stage + ': the camera transform is not finite');
+      }
+      if (cy.nodes(':visible').length && nodesInExtent().length === 0) {
+        diagFail(stage + ': no node is visible in the viewport');
+      }
     }
 
     function logicalPositions(visibleNodes, visibleEdges) {
@@ -2401,6 +2501,76 @@
     // are faded so the eye follows the grouping. Each oval also carries the
     // OSPF area / BGP AS its devices sit in, so the control-plane is legible
     // here too — per site, not as the estate-wide tint that used to smear.
+    // ---- ATLAS_SITE_FORCE_BEGIN (extracted verbatim by tests) ----------
+    // Fruchterman–Reingold over the site ovals, CONFINED. The attraction
+    // term below fires only for site pairs joined by a cross-site link;
+    // an estate whose sites never link to each other (every observed BGP
+    // peer lives inside its own site) therefore has NO inward force from
+    // it, and 260 iterations of unopposed repulsion once inflated the
+    // seeded ring 12.5× into a 78,000-unit canvas with the camera parked
+    // over the empty middle (PR-174). Two additions keep the physics
+    // honest rather than accidentally bounded, and neither may be
+    // "simplified" away:
+    //   1. GRAVITY — every oval is pulled toward the centroid in
+    //      proportion to its distance, so an unconnected estate settles
+    //      instead of expanding;
+    //   2. the FRAME — the explicit bounding square classic
+    //      Fruchterman–Reingold always had, sized from the area the
+    //      ovals genuinely need (not an arbitrary constant), clamped
+    //      every iteration. The frame is the hard guarantee; gravity is
+    //      the physics that makes the result look settled inside it.
+    function siteForceLayout(blocks, W, opts) {
+      const n = blocks.length;
+      let k = 0; blocks.forEach(b => { k += Math.max(b.rx, b.ry); });
+      k = (k / Math.max(1, n)) * 2.4;
+      let area = 0;
+      blocks.forEach(b => { area += (2 * b.rx) * (2 * b.ry); });
+      const SPREAD = (opts && opts.spread) || 4;
+      const GRAVITY = (opts && opts.gravity) || 0.06;
+      const half = Math.max(1, Math.sqrt(area * SPREAD) / 2);
+      let temp = k * 2.2;
+      for (let it = 0; it < 260 && n > 1; it++) {
+        const dx = new Array(n).fill(0), dy = new Array(n).fill(0);
+        for (let i = 0; i < n; i++) {
+          for (let j = i + 1; j < n; j++) {
+            let vx = blocks[j].cx - blocks[i].cx, vy = blocks[j].cy - blocks[i].cy;
+            let d = Math.hypot(vx, vy) || 0.01; const ux = vx / d, uy = vy / d;
+            const rep = (k * k) / d;                 // repel everyone
+            dx[i] -= ux * rep; dy[i] -= uy * rep;
+            dx[j] += ux * rep; dy[j] += uy * rep;
+            const w = W[i][blocks[j].idx] || 0;
+            if (w) {                                 // attract the connected
+              const att = (d * d / k) * Math.log2(2 + w);
+              dx[i] += ux * att; dy[i] += uy * att;
+              dx[j] -= ux * att; dy[j] -= uy * att;
+            }
+          }
+        }
+        // Gravity toward the centroid — the inward force that exists
+        // even when no site links to another.
+        let gx = 0, gy = 0;
+        for (let i = 0; i < n; i++) { gx += blocks[i].cx; gy += blocks[i].cy; }
+        gx /= Math.max(1, n); gy /= Math.max(1, n);
+        for (let i = 0; i < n; i++) {
+          dx[i] += (gx - blocks[i].cx) * GRAVITY;
+          dy[i] += (gy - blocks[i].cy) * GRAVITY;
+        }
+        for (let i = 0; i < n; i++) {
+          const dl = Math.hypot(dx[i], dy[i]) || 1;
+          const lim = Math.min(dl, temp);
+          // The frame clamp: the hard guarantee that no amount of
+          // repulsion can push the estate out of reach.
+          blocks[i].cx = Math.max(-half, Math.min(half,
+            blocks[i].cx + dx[i] / dl * lim));
+          blocks[i].cy = Math.max(-half, Math.min(half,
+            blocks[i].cy + dy[i] / dl * lim));
+        }
+        temp *= 0.972;
+      }
+      return { half: half, k: k };
+    }
+    // ---- ATLAS_SITE_FORCE_END ------------------------------------------
+
     function renderSiteOvalsGrid() {
       const memberOf = siteView.membership || {};
       const siteLabel = {};
@@ -2468,33 +2638,7 @@
       // Force pass (Fruchterman–Reingold with weighted attraction): connected
       // sites pull together, all sites repel, cooling to a stop. Seeded from
       // the circle, so it is deterministic — no randomness.
-      let k = 0; blocks.forEach(b => { k += Math.max(b.rx, b.ry); });
-      k = (k / Math.max(1, n)) * 2.4;
-      let temp = k * 2.2;
-      for (let it = 0; it < 260 && n > 1; it++) {
-        const dx = new Array(n).fill(0), dy = new Array(n).fill(0);
-        for (let i = 0; i < n; i++) {
-          for (let j = i + 1; j < n; j++) {
-            let vx = blocks[j].cx - blocks[i].cx, vy = blocks[j].cy - blocks[i].cy;
-            let d = Math.hypot(vx, vy) || 0.01; const ux = vx / d, uy = vy / d;
-            const rep = (k * k) / d;                 // repel everyone
-            dx[i] -= ux * rep; dy[i] -= uy * rep;
-            dx[j] += ux * rep; dy[j] += uy * rep;
-            const w = W[i][blocks[j].idx] || 0;
-            if (w) {                                 // attract the connected
-              const att = (d * d / k) * Math.log2(2 + w);
-              dx[i] += ux * att; dy[i] += uy * att;
-              dx[j] -= ux * att; dy[j] -= uy * att;
-            }
-          }
-        }
-        for (let i = 0; i < n; i++) {
-          const dl = Math.hypot(dx[i], dy[i]) || 1;
-          const lim = Math.min(dl, temp);
-          blocks[i].cx += dx[i] / dl * lim; blocks[i].cy += dy[i] / dl * lim;
-        }
-        temp *= 0.972;
-      }
+      siteForceLayout(blocks, W);
       // Now push any overlapping ovals apart (min-translation), keeping the
       // force pass's clustering but guaranteeing no oval covers another.
       for (let pass = 0; pass < 120; pass++) {
@@ -3172,6 +3316,7 @@
       if (window.__atlasSearchReapply) { window.__atlasSearchReapply(); }
       if (window.syncSummary) { window.syncSummary(viewMode); }
       syncOpenSiteChips();
+      runViewerDiagnostics('rebuild');
     }
 
     window.toggleSite = siteId => {
