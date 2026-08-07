@@ -332,15 +332,20 @@ class ViewerContractTests(unittest.TestCase):
     def test_zoom_moves_in_steps_the_operator_controls(self) -> None:
         """The wheel alone gave no way to land on a chosen scale and no way
         to know which scale you were on — one notch crossed most of the
-        range."""
+        range.
+
+        PR-174.1 (reviewed edit): this docstring always described the
+        DEFAULT wheel's defect, yet the test asserted wheelSensitivity
+        absent — enforcing the very jumpiness it names (Cytoscape's
+        default is a measured 2.512× per notch). The tuned 0.15 (one
+        notch ≈ 1.148×, finer than the deliberate 1.25× buttons) is now
+        pinned present alongside the stepped controls.
+        """
 
         self.assertIn('id="zoom-in"', self.viewer)
         self.assertIn('id="zoom-out"', self.viewer)
         self.assertIn('id="zoom-level"', self.viewer)
-        # Browser wheel/touchpad acceleration is hardware dependent. Atlas
-        # leaves Cytoscape's tested default intact and offers deterministic
-        # controls for operators who need an exact scale.
-        self.assertNotIn("wheelSensitivity:", self.viewer)
+        self.assertIn("wheelSensitivity: 0.15", self.viewer)
         # A fixed RATIO, because zoom is multiplicative: a constant
         # increment would crawl at the wide end and leap at the close end.
         self.assertIn("var STEP = 1.25", self.viewer)

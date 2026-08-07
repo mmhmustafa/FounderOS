@@ -22,10 +22,16 @@ class TopologyViewerStabilizationTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.viewer = VIEWER.read_text(encoding="utf-8")
 
-    def test_cytoscape_uses_attached_element_and_default_wheel_contract(self):
+    def test_cytoscape_uses_attached_element_and_tuned_wheel_contract(self):
         self.assertIn("graphContainer instanceof HTMLElement", self.viewer)
         self.assertIn("graphContainer.isConnected", self.viewer)
-        self.assertNotIn("wheelSensitivity:", self.viewer)
+        # PR-174.1 (reviewed edit): this line previously asserted
+        # wheelSensitivity ABSENT — codifying the 096f630 deletion that
+        # made one wheel notch a measured 2.512× jump (4.5 notches
+        # across the whole zoom range). The tuned value is now pinned
+        # PRESENT; test_topology_wheel_zoom.py asserts its band and
+        # consequences arithmetically.
+        self.assertIn("wheelSensitivity: 0.15", self.viewer)
         self.assertIn('id="zoom-out"', self.viewer)
         self.assertIn('id="zoom-in"', self.viewer)
 

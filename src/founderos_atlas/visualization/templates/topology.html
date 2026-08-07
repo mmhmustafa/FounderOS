@@ -795,9 +795,19 @@
       layout: { name: 'preset', fit: false },
       minZoom: MIN_ZOOM,
       maxZoom: 3,
-      // Keep Cytoscape's tested wheel/touchpad handling. Precise, predictable
-      // changes remain available through the stepped zoom controls; custom
-      // wheelSensitivity values are explicitly warned as hardware-dependent.
+      // MEASURED, not a preference (PR-174.1) — do not delete this line
+      // again without weighing these numbers. Cytoscape's wheel handler
+      // applies zoom × 10^(deltaY/−250 × wheelSensitivity). At the
+      // default sensitivity of 1, one 100-pixel wheel notch is a 2.512×
+      // jump and the whole 0.05–3 range is crossed in ~4.5 notches —
+      // there is no way to sit at a chosen scale, and the wheel ends up
+      // twice as coarse as the deliberate 1.25× step of the +/− buttons.
+      // At 0.15 a notch is ~1.148× (~30 notches across the range), so
+      // the wheel is the FINE control and the buttons the stepped one.
+      // Tuned in PR-117; deleted by 096f630 on the strength of a
+      // comment that argued taste — which is why this one argues
+      // arithmetic. A test pins the value to [0.05, 0.35].
+      wheelSensitivity: 0.15,
       pixelRatio: RENDER_PIXEL_RATIO,
       textureOnViewport: false,
       motionBlur: false,
