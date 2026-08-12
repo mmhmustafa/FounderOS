@@ -36,6 +36,7 @@ import json
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
+from time import perf_counter as _perf_counter
 from typing import Any
 
 from .models import (
@@ -62,20 +63,74 @@ class EnterpriseMemoryStore:
         self._blobs = self._evidence / "blobs"
         self._lock = threading.RLock()
         self._clock = clock or (lambda: datetime.now(timezone.utc))
+        # PR-176: STAT-VALIDATED memoisation. The policy engine asks for
+        # evidence once per device; without this, a store of D devices
+        # and R records parsed the whole file D times — a measured 125×
+        # amplification and the whole of the 10-second cold /policy
+        # render. Each memo entry carries the file's (mtime_ns, size)
+        # at parse time and is served only while the file still matches
+        # — one stat() call instead of one full parse — so a store
+        # handle can NEVER serve stale evidence, no matter who wrote
+        # the file or when. Behaviour is therefore identical to the
+        # re-read-every-call original; only the redundant parsing is
+        # gone. Derived per-device indexes are tied to the parsed
+        # object's identity and rebuild whenever it refreshes.
+        self._json_cache: dict[str, tuple[Any, Any]] = {}
+        self._records_source: Any = None
+        self._records_cache: tuple[RawEvidenceRecord, ...] = ()
+        self._records_by_device: dict[str, tuple[RawEvidenceRecord, ...]] = {}
+        self._snapshots_source: Any = None
+        self._snapshots_cache: tuple[ConfigurationSnapshot, ...] = ()
+        self._snapshots_by_device: dict[str, tuple[ConfigurationSnapshot, ...]] = {}
+        # Dev diagnostics (PR-176): how many times each derived index was
+        # actually (re)built, and how long the builds took. A healthy
+        # request shows ONE build per file no matter how many devices are
+        # queried; the counters are a couple of dict updates per rebuild,
+        # so they cost nothing next to the parse they time.
+        self.diagnostics: dict[str, Any] = {
+            "records_index_builds": 0,
+            "records_index_ms": 0.0,
+            "snapshots_index_builds": 0,
+            "snapshots_index_ms": 0.0,
+        }
 
     # -- small JSON helpers -----------------------------------------------
 
-    def _read(self, path: Path, default: Any) -> Any:
-        if not path.exists():
-            return default
+    @staticmethod
+    def _stat_signature(path: Path) -> tuple | None:
         try:
-            return json.loads(path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            return default
+            stat = path.stat()
+            return (stat.st_mtime_ns, stat.st_size)
+        except OSError:
+            return None
+
+    def _read(self, path: Path, default: Any) -> Any:
+        key = str(path)
+        signature = self._stat_signature(path)
+        with self._lock:
+            cached = self._json_cache.get(key)
+            if cached is not None and cached[0] == signature:
+                return cached[1]
+        if signature is None:
+            value: Any = default
+        else:
+            try:
+                value = json.loads(path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                value = default
+        with self._lock:
+            self._json_cache[key] = (signature, value)
+        return value
 
     def _write(self, path: Path, data: Any) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
+        with self._lock:
+            # Keep this instance's memo coherent with its own write:
+            # discovery appends record after record through ONE store,
+            # and a stale memo here would silently drop every record
+            # but the last.
+            self._json_cache[str(path)] = (self._stat_signature(path), data)
 
     def _now(self) -> str:
         return self._clock().isoformat(timespec="seconds")
@@ -121,7 +176,8 @@ class EnterpriseMemoryStore:
         the lock."""
 
         path = self._evidence / "observations.json"
-        data = self._read(path, {})
+        # Copy before mutating — the memoised object is shared (PR-176).
+        data = dict(self._read(path, {}))
         entry = data.get(digest)
         if entry is None:
             data[digest] = BlobObservation(
@@ -238,19 +294,51 @@ class EnterpriseMemoryStore:
 
     def _append_record(self, record: RawEvidenceRecord) -> None:
         path = self._evidence / "records.json"
-        data = self._read(path, [])
+        # Copy before mutating: the object _read returned lives in the
+        # memo, and the derived indexes detect refreshes BY IDENTITY —
+        # appending in place would keep the identity and silently serve
+        # a stale index on the next query (PR-176).
+        data = list(self._read(path, []))
         data.append(record.to_dict())
         self._write(path, data)
+
+    def _record_index(self) -> None:
+        """Parse the record file once per CONTENT VERSION and index by
+        device (PR-176). ``_read`` stat-validates the underlying file,
+        so comparing the returned object's identity against the one the
+        index was built from detects any refresh — external writers
+        included. Records are frozen dataclasses, so sharing the parsed
+        objects across calls is safe. Caller holds the lock."""
+
+        rows = self._read(self._evidence / "records.json", [])
+        if rows is self._records_source:
+            return
+        started = _perf_counter()
+        parsed = tuple(RawEvidenceRecord.from_dict(row) for row in rows)
+        index: dict[str, list[RawEvidenceRecord]] = {}
+        for record in parsed:
+            index.setdefault(record.device_id, []).append(record)
+        self._records_source = rows
+        self._records_cache = parsed
+        self._records_by_device = {
+            device: tuple(items) for device, items in index.items()
+        }
+        self.diagnostics["records_index_builds"] += 1
+        self.diagnostics["records_index_ms"] += (_perf_counter() - started) * 1000
 
     def evidence_records(
         self, *, device_id: str | None = None, discovery_session: str | None = None
     ) -> tuple[RawEvidenceRecord, ...]:
-        rows = self._read(self._evidence / "records.json", [])
-        records = [RawEvidenceRecord.from_dict(row) for row in rows]
-        if device_id is not None:
-            records = [r for r in records if r.device_id == device_id]
+        with self._lock:
+            self._record_index()
+            if device_id is not None:
+                records = self._records_by_device.get(device_id, ())
+            else:
+                records = self._records_cache
         if discovery_session is not None:
-            records = [r for r in records if r.discovery_session == discovery_session]
+            records = tuple(
+                r for r in records if r.discovery_session == discovery_session
+            )
         return tuple(records)
 
     def evidence_text(self, digest: str) -> str | None:
@@ -303,7 +391,8 @@ class EnterpriseMemoryStore:
                 fingerprint=print_.to_dict() if print_ else None,
             )
             path = self._root / "snapshots.json"
-            data = self._read(path, [])
+            # Copy before mutating — the memoised object is shared (PR-176).
+            data = list(self._read(path, []))
             # A snapshot is (device, session, content). The same device
             # reporting identical config in the SAME session is one snapshot;
             # a later session records another (history), even if the content
@@ -318,15 +407,37 @@ class EnterpriseMemoryStore:
                 self._write(path, data)
         return snapshot
 
+    def _snapshot_index(self) -> None:
+        """Parse and sort the snapshot file once per CONTENT VERSION and
+        index by device (PR-176). Sorting the whole set first means
+        every per-device slice inherits the captured_at order the
+        original per-call sort produced. Caller holds the lock."""
+
+        rows = self._read(self._root / "snapshots.json", [])
+        if rows is self._snapshots_source:
+            return
+        started = _perf_counter()
+        parsed = [ConfigurationSnapshot.from_dict(row) for row in rows]
+        parsed.sort(key=lambda s: s.captured_at)
+        index: dict[str, list[ConfigurationSnapshot]] = {}
+        for snap in parsed:
+            index.setdefault(snap.device_id, []).append(snap)
+        self._snapshots_source = rows
+        self._snapshots_cache = tuple(parsed)
+        self._snapshots_by_device = {
+            device: tuple(items) for device, items in index.items()
+        }
+        self.diagnostics["snapshots_index_builds"] += 1
+        self.diagnostics["snapshots_index_ms"] += (_perf_counter() - started) * 1000
+
     def configuration_snapshots(
         self, *, device_id: str | None = None
     ) -> tuple[ConfigurationSnapshot, ...]:
-        rows = self._read(self._root / "snapshots.json", [])
-        snaps = [ConfigurationSnapshot.from_dict(row) for row in rows]
-        if device_id is not None:
-            snaps = [s for s in snaps if s.device_id == device_id]
-        snaps.sort(key=lambda s: s.captured_at)
-        return tuple(snaps)
+        with self._lock:
+            self._snapshot_index()
+            if device_id is not None:
+                return self._snapshots_by_device.get(device_id, ())
+            return self._snapshots_cache
 
     def configuration_text(self, digest: str) -> str | None:
         return self.blob_text(digest)

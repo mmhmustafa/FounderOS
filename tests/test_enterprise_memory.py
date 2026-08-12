@@ -401,6 +401,104 @@ class DiscoveryIntegrationTests(unittest.TestCase):
             self.assertEqual(2, len({s.config_sha256 for s in history}))  # a new version
 
 
+# -- memoisation correctness (PR-176) ----------------------------------------
+
+
+class MemoisationCorrectnessTests(unittest.TestCase):
+    """PR-176 pins: the stat-validated memoisation must be OBSERVABLY
+    IDENTICAL to the re-read-every-call store it replaced. Only the
+    redundant parsing is allowed to disappear — never a write."""
+
+    def _evidence(self, store, device_id, output, session="sess-1"):
+        return store.store_evidence(
+            device_id=device_id, hostname=device_id, command="show version",
+            output=output, discovery_session=session,
+        )
+
+    def test_query_write_query_on_one_instance_sees_the_write(self) -> None:
+        # Regression: the derived index detects refreshes BY IDENTITY,
+        # so a writer that mutated the memoised list in place would keep
+        # its identity and the next query would serve the stale index.
+        with tempfile.TemporaryDirectory() as tmp:
+            store = _store(tmp)
+            self._evidence(store, "dev-a", "version 1")
+            self.assertEqual(1, len(store.evidence_records()))  # index built
+            self._evidence(store, "dev-b", "version 2")         # write AFTER build
+            self.assertEqual(2, len(store.evidence_records()))
+            self.assertEqual(1, len(store.evidence_records(device_id="dev-b")))
+            # The snapshot index has the same shape and the same risk.
+            store.store_configuration(
+                device_id="dev-a", hostname="dev-a", discovery_session="sess-1",
+                running_config="hostname a\n",
+            )
+            self.assertEqual(1, len(store.configuration_snapshots()))
+            store.store_configuration(
+                device_id="dev-b", hostname="dev-b", discovery_session="sess-1",
+                running_config="hostname b\n",
+            )
+            self.assertEqual(2, len(store.configuration_snapshots()))
+            self.assertEqual(
+                1, len(store.configuration_snapshots(device_id="dev-b")))
+
+    def test_a_handle_observes_evidence_written_by_another_instance(self) -> None:
+        # The freshness contract: memo entries are validated against the
+        # file's (mtime_ns, size) on EVERY query, so a long-lived handle
+        # can never serve stale evidence, no matter who wrote the file.
+        with tempfile.TemporaryDirectory() as tmp:
+            reader = _store(tmp)
+            writer = _store(tmp)
+            self._evidence(writer, "dev-a", "version 1")
+            self.assertEqual(1, len(reader.evidence_records()))  # memo primed
+            self._evidence(writer, "dev-b", "version 2")         # external write
+            self.assertEqual(2, len(reader.evidence_records()))
+            self.assertEqual(("dev-a", "dev-b"), reader.device_ids())
+            writer.store_configuration(
+                device_id="dev-a", hostname="dev-a", discovery_session="sess-1",
+                running_config="hostname a\n",
+            )
+            self.assertEqual(1, len(reader.configuration_snapshots()))
+
+    def test_repeated_queries_reuse_the_parsed_objects(self) -> None:
+        # The point of the memo: while the file is unchanged, queries
+        # share the SAME parsed record objects instead of re-parsing.
+        # (Records are frozen dataclasses, so sharing is safe.)
+        with tempfile.TemporaryDirectory() as tmp:
+            store = _store(tmp)
+            self._evidence(store, "dev-a", "version 1")
+            first = store.evidence_records()
+            second = store.evidence_records()
+            self.assertIs(first[0], second[0])
+            self.assertIs(first[0], store.evidence_records(device_id="dev-a")[0])
+
+    def test_per_device_queries_agree_with_the_bulk_query(self) -> None:
+        # The by-device index is a pure reorganisation of the bulk parse:
+        # same records, and snapshot slices keep the captured_at order.
+        moments = iter(
+            datetime(2026, 7, 14, 14, m, tzinfo=timezone.utc) for m in range(59)
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            store = _store(tmp, clock=lambda: next(moments))
+            for n, device in enumerate(("dev-a", "dev-b", "dev-a")):
+                session = f"sess-{n}"
+                self._evidence(store, device, f"version {n}", session=session)
+                store.store_configuration(
+                    device_id=device, hostname=device, discovery_session=session,
+                    running_config=f"hostname {device}\n! v{n}\n",
+                )
+            bulk = store.evidence_records()
+            for device in ("dev-a", "dev-b"):
+                self.assertEqual(
+                    tuple(r for r in bulk if r.device_id == device),
+                    store.evidence_records(device_id=device),
+                )
+            snaps = store.configuration_snapshots(device_id="dev-a")
+            self.assertEqual(2, len(snaps))
+            self.assertEqual(
+                sorted(s.captured_at for s in snaps),
+                [s.captured_at for s in snaps],
+            )
+
+
 # -- multi-platform ----------------------------------------------------------
 
 

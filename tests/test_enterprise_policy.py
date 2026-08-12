@@ -443,5 +443,98 @@ class PolicyEvaluationTests(unittest.TestCase):
         self.assertEqual(STATUS_PASSED, ntp_after.status)
 
 
+# -- Part: memoisation never changes a verdict (PR-176) -----------------------
+
+
+class MemoisedEvaluationPinTests(unittest.TestCase):
+    """PR-176 pins at the report level. The store now memoises its JSON
+    parses (stat-validated); these prove the optimisation is invisible:
+    warm and cold evaluations agree byte for byte, and fresh evidence is
+    always reflected in the very next report."""
+
+    def test_warm_and_cold_stores_produce_identical_reports(self) -> None:
+        memory, tmp = _seed_memory(
+            {"dev-core1": FRR_CONFIG, "dev-core2": FRR_CONFIG}
+        )
+        engine = PolicyEngine(clock=lambda: FIXED_CLOCK)
+        cold = engine.evaluate(memory, scope_label="Lab")       # parses files
+        warm = engine.evaluate(memory, scope_label="Lab")       # memo serves
+        fresh_instance = EnterpriseMemory(
+            EnterpriseMemoryStore(tmp / "enterprise-memory")
+        )
+        reparse = engine.evaluate(fresh_instance, scope_label="Lab")
+        self.assertEqual(cold.to_dict(), warm.to_dict())
+        self.assertEqual(cold.to_dict(), reparse.to_dict())
+
+    def test_amplification_is_linear_in_records_not_devices(self) -> None:
+        # T8 — the PR-176 root cause, pinned forever. Evaluating D devices
+        # over a store of R evidence records must parse about R rows, not
+        # R × D: the measured defect was 1.9 million from_dict calls for
+        # 9,054 records (125× amplification) — the whole of the 10-second
+        # cold /policy render. Budget: at most 2×R parses per evaluation.
+        from unittest.mock import patch
+
+        from founderos_atlas.enterprise_memory.models import RawEvidenceRecord
+
+        _memory, tmp = _seed_memory(
+            {f"dev-core{n}": FRR_CONFIG for n in range(1, 7)}
+        )
+        record_count = len(
+            EnterpriseMemoryStore(tmp / "enterprise-memory").evidence_records()
+        )
+        self.assertGreater(record_count, 0)
+        calls = [0]
+        original = RawEvidenceRecord.from_dict  # bound classmethod
+
+        def counting(value):
+            calls[0] += 1
+            return original(value)
+
+        fresh = EnterpriseMemory(
+            EnterpriseMemoryStore(tmp / "enterprise-memory")
+        )
+        engine = PolicyEngine(clock=lambda: FIXED_CLOCK)
+        with patch.object(
+            RawEvidenceRecord, "from_dict", staticmethod(counting)
+        ):
+            report = engine.evaluate(fresh, scope_label="Lab")
+        self.assertEqual(
+            6, len({e.device_id for e in report.evaluations})
+        )
+        self.assertGreater(calls[0], 0, "the evaluation must read evidence")
+        self.assertLessEqual(
+            calls[0], 2 * record_count,
+            f"parse amplification: {calls[0]} from_dict calls for "
+            f"{record_count} records — the per-device re-parse is back",
+        )
+
+    def test_evidence_written_after_a_report_appears_in_the_next(self) -> None:
+        # CRITICAL CORRECTNESS RULE (PR-176): never trade the performance
+        # defect for stale evidence. The same memory handle, evaluated
+        # again after ANOTHER instance stored new evidence, must see it.
+        memory, tmp = _seed_memory({"dev-core1": FRR_CONFIG})
+        engine = PolicyEngine(clock=lambda: FIXED_CLOCK)
+        before = engine.evaluate(memory, scope_label="Lab")
+        self.assertEqual(
+            {"dev-core1"}, {e.device_id for e in before.evaluations}
+        )
+        writer = EnterpriseMemoryStore(tmp / "enterprise-memory")
+        writer.store_evidence(
+            device_id="dev-core2", hostname="core2",
+            command="show running-config", output=FRR_CONFIG,
+            discovery_session="sess-1", transport="ssh", platform="FRRouting",
+        )
+        writer.store_configuration(
+            device_id="dev-core2", hostname="core2",
+            discovery_session="sess-1", running_config=FRR_CONFIG,
+            platform="FRRouting",
+        )
+        after = engine.evaluate(memory, scope_label="Lab")
+        self.assertEqual(
+            {"dev-core1", "dev-core2"},
+            {e.device_id for e in after.evaluations},
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

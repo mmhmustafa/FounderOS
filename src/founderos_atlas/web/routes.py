@@ -15,8 +15,10 @@ comparing one network against another.
 from __future__ import annotations
 
 import json
+import logging
 import threading
 
+from collections import OrderedDict
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -2785,17 +2787,42 @@ def register_routes(app) -> None:
     # -- Enterprise Policy (PR-047 SENTINEL; PR-053 scale) ------------------
 
     # The engine's report is deterministic over the memories it read, so
-    # one in-process cache entry keyed on the memory stamps keeps the page
-    # fast across the paginated/filtered requests an investigation makes.
-    _policy_report_cache: dict = {
-        "key": None,
-        "report": None,
-        "sites": None,
-        "platforms": None,
+    # an in-process cache keyed on the memory stamps keeps the page fast
+    # across the paginated/filtered requests an investigation makes.
+    # PR-176: a bounded LRU instead of a single entry — the measured cost
+    # of one entry was a full cold render (≈10 s on the reference estate)
+    # on EVERY scope switch, including switching straight back. Four
+    # entries hold Enterprise plus the scopes an operator is comparing;
+    # each is one report dict, so the bound is small and predictable.
+    _policy_report_cache: OrderedDict[tuple, dict] = OrderedDict()
+    _POLICY_REPORT_CACHE_ENTRIES = 4
+    _policy_cache_stats = {
+        "hits": 0,
+        "misses": 0,
+        "evictions": 0,
+        "invalidations": 0,
+        "last_invalidation": None,
     }
 
+    def _policy_cache_invalidate(reason: str) -> None:
+        """Drop every cached report. The stamps in the key make this
+        redundant for correctness; it exists so an explicit mutation
+        (e.g. a governance save) frees the memory immediately and the
+        diagnostics can say WHY the next render was cold."""
+
+        _policy_report_cache.clear()
+        _policy_cache_stats["invalidations"] += 1
+        _policy_cache_stats["last_invalidation"] = reason
+
     def _policy_cache_key(scopes, scope_id) -> tuple:
-        parts: list[tuple] = [("scope", scope_id)]
+        # Every dimension that can change the report is in the key:
+        # which scope, each scope's evidence stamps, the governance
+        # revision, and the Atlas version (PR-176) — an upgrade may
+        # change evaluation semantics, and a report computed by an
+        # older Atlas must never be served as if it were current.
+        from founderos_atlas.release import VERSION
+
+        parts: list[tuple] = [("scope", scope_id), ("atlas-version", VERSION)]
         for scope in memory_scopes(scopes, scope_id):
             records = (
                 scope.output_dir / "enterprise-memory" / "evidence"
@@ -2824,6 +2851,8 @@ def register_routes(app) -> None:
         return tuple(parts)
 
     def _policy_report_dict(scopes, scope_id, scope_label) -> dict:
+        import time as _time
+
         from hashlib import sha256
 
         from founderos_atlas.policy import PolicyEngine, default_pack
@@ -2833,8 +2862,13 @@ def register_routes(app) -> None:
         )
 
         key = _policy_cache_key(scopes, scope_id)
-        if _policy_report_cache["key"] == key:
-            return _policy_report_cache["report"]
+        cached = _policy_report_cache.get(key)
+        if cached is not None:
+            _policy_report_cache.move_to_end(key)
+            _policy_cache_stats["hits"] += 1
+            return cached["report"]
+        _policy_cache_stats["misses"] += 1
+        prep_started = _time.perf_counter()
         governance = PolicyGovernanceRepository(cfg("ATLAS_WORKSPACE_ROOT"))
         pack = effective_pack(default_pack(), governance.active())
         contexts = _policy_device_contexts()
@@ -2857,14 +2891,18 @@ def register_routes(app) -> None:
             )
             for value in unique_contexts.values()
         }
+        scope_memories = [
+            (scope, memory_service(scope))
+            for scope in memory_scopes(scopes, scope_id)
+        ]
         report = PolicyEngine(pack).evaluate_scopes(
             [
                 (
                     scope.label,
-                    memory_service(scope),
-                    _policy_contexts_for_scope(scope, contexts),
+                    memory,
+                    _policy_contexts_for_scope(scope, contexts, memory),
                 )
-                for scope in memory_scopes(scopes, scope_id)
+                for scope, memory in scope_memories
             ],
             scope_label=scope_label,
         )
@@ -2872,25 +2910,62 @@ def register_routes(app) -> None:
         report_dict["source_revision"] = sha256(
             repr(key).encode("utf-8")
         ).hexdigest()
-        _policy_report_cache.update(
-            key=key,
-            report=report_dict,
-            sites=cached_sites,
-            platforms=cached_platforms,
-        )
+        _policy_report_cache[key] = {
+            "report": report_dict,
+            "sites": cached_sites,
+            "platforms": cached_platforms,
+        }
+        while len(_policy_report_cache) > _POLICY_REPORT_CACHE_ENTRIES:
+            _policy_report_cache.popitem(last=False)   # evict least recent
+            _policy_cache_stats["evictions"] += 1
+        # Dev diagnostics (PR-176): debug level only, so a production log
+        # (INFO) never sees it. One line per COLD build — a healthy line
+        # shows one index build per store, parse time proportional to the
+        # store's records, and why any earlier cache content was dropped.
+        if app.logger.isEnabledFor(logging.DEBUG):
+            index_builds = index_ms = 0
+            for _scope, memory in scope_memories:
+                diag = getattr(
+                    getattr(memory, "_store", None), "diagnostics", None
+                )
+                if diag:
+                    index_builds += diag["records_index_builds"]
+                    index_builds += diag["snapshots_index_builds"]
+                    index_ms += diag["records_index_ms"]
+                    index_ms += diag["snapshots_index_ms"]
+            app.logger.debug(
+                "atlas.policy.report scope=%s prep_ms=%.0f evaluations=%d "
+                "devices=%d stores=%d index_builds=%d index_ms=%.0f "
+                "cache_hits=%d cache_misses=%d cache_evictions=%d "
+                "cache_invalidations=%d last_invalidation=%s",
+                scope_id,
+                (_time.perf_counter() - prep_started) * 1000,
+                len(report.evaluations),
+                len({e.device_id for e in report.evaluations}),
+                len(scope_memories),
+                index_builds,
+                index_ms,
+                _policy_cache_stats["hits"],
+                _policy_cache_stats["misses"],
+                _policy_cache_stats["evictions"],
+                _policy_cache_stats["invalidations"],
+                _policy_cache_stats["last_invalidation"],
+            )
         return report_dict
 
     def _device_maps() -> tuple[dict, dict]:
         """hostname → site and hostname → platform, from the graph."""
 
-        if (
-            _policy_report_cache.get("sites") is not None
-            and _policy_report_cache.get("platforms") is not None
-        ):
-            return (
-                dict(_policy_report_cache["sites"]),
-                dict(_policy_report_cache["platforms"]),
-            )
+        # The maps come from the whole enterprise graph, not from any one
+        # scope, so any cached report's copy is valid; the most recently
+        # used entry is the freshest.
+        if _policy_report_cache:
+            entry = _policy_report_cache[next(reversed(_policy_report_cache))]
+            if (
+                entry.get("sites") is not None
+                and entry.get("platforms") is not None
+            ):
+                return dict(entry["sites"]), dict(entry["platforms"])
         graph, _snapshot = enterprise_world()
         sites: dict[str, str] = {}
         platforms: dict[str, str] = {}
@@ -2951,14 +3026,17 @@ def register_routes(app) -> None:
                     contexts[str(key).casefold()] = context
         return contexts
 
-    def _policy_contexts_for_scope(scope, contexts: dict[str, dict]):
+    def _policy_contexts_for_scope(scope, contexts: dict[str, dict], memory=None):
         profile = profile_for_scope(scope.scope_id)
         tags = tuple(getattr(profile, "tags", ()) or ())
         environment = str(
             getattr(profile, "domain_hint", "") or ""
         )
         result: dict[str, dict] = {}
-        memory = memory_service(scope)
+        # PR-176: callers that already hold the scope's memory pass it in,
+        # so one request parses each store once — a second instance here
+        # meant a second full parse of the scope's evidence file.
+        memory = memory if memory is not None else memory_service(scope)
         for device_id in memory.device_ids():
             device = memory.get_device_memory(device_id)
             hostname = device.hostname if device else device_id
@@ -3426,12 +3504,7 @@ def register_routes(app) -> None:
         except ValueError as error:
             flash(str(error), "error")
         else:
-            _policy_report_cache.update(
-                key=None,
-                report=None,
-                sites=None,
-                platforms=None,
-            )
+            _policy_cache_invalidate("policy governance baseline saved")
             flash(
                 f"Policy baseline for {item.policy_id} saved as "
                 f"{item.state}; the change is audited.",
@@ -6717,10 +6790,13 @@ def register_routes(app) -> None:
             pairs = [
                 (
                     scope.label,
-                    memory_service(scope),
-                    _policy_contexts_for_scope(scope, contexts),
+                    memory,
+                    _policy_contexts_for_scope(scope, contexts, memory),
                 )
-                for scope in memory_scopes(known_scopes(), scope_id)
+                for scope, memory in (
+                    (scope, memory_service(scope))
+                    for scope in memory_scopes(known_scopes(), scope_id)
+                )
             ]
             if not pairs:
                 return None
