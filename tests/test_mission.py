@@ -184,7 +184,9 @@ class MissionGuiTests(unittest.TestCase):
             page = client.get("/?scope=all").data
             self.assertIn(b"Enterprise Health", page)
             self.assertIn(b"<strong>Networks</strong><span>2</span>", page)
-            self.assertIn(b"Canonical devices", page)
+            # PR-178: identity resolution reports as a sentence, not a
+            # duplicate-count tile in implementation vocabulary.
+            self.assertIn(b"Identity resolution merged", page)
             self.assertIn(b"Discovery freshness:", page)
             self.assertIn(b"Recent Activity", page)
             self.assertIn(b"Discovery completed", page)

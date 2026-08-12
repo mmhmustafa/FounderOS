@@ -45,8 +45,11 @@ class HomeHierarchyTests(unittest.TestCase):
             self.assertIn("Enterprise metrics", page)     # reachable
             self.assertNotIn("<h2>Enterprise Health</h2>", page)  # not inline
             self.assertIn("All workflows", page)
-            # The canonical counts are still IN the page, just collapsed.
-            self.assertIn("Canonical devices", page)
+            # PR-178: the estate counts are still IN the page, just
+            # collapsed — one number per label, no implementation
+            # vocabulary ("Canonical devices" duplicated Devices).
+            self.assertIn("<strong>Devices</strong>", page)
+            self.assertNotIn("Canonical devices", page)
 
     def test_expert_keeps_metrics_inline(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

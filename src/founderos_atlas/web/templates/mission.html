@@ -265,17 +265,22 @@
 <section class="card">
   <h2>Enterprise Health</h2>
 {% endif %}
+  {# PR-178: one estate number, one label. "Canonical devices" and
+     "Observations" repeated the Devices count under implementation
+     vocabulary; identity resolution keeps its ONE operator-meaningful
+     fact — how many duplicates were merged — as a sentence, because a
+     measured zero deserves its meaning, not a tile. #}
   <div class="tiles">
     <div class="tile"><strong>Networks</strong><span>{{ summary.network_count }}</span></div>
     <div class="tile"><strong>Devices</strong><span>{{ summary.device_count }}</span></div>
     <div class="tile"><strong>Relationships</strong><span>{{ summary.relationship_count }}</span></div>
     <div class="tile"><strong>Configurations</strong><span>{{ summary.configurations_collected }}</span></div>
-    {% if enterprise_contributions %}
-    <div class="tile"><strong>Canonical devices</strong><span>{{ enterprise_device_count }}</span></div>
-    <div class="tile"><strong>Observations</strong><span>{{ enterprise_observation_count }}</span></div>
-    <div class="tile"><strong>Merged devices</strong><span>{{ enterprise_merged_count }}</span></div>
-    {% endif %}
   </div>
+  {% if enterprise_contributions %}
+  <p class="muted">Identity resolution merged {{ enterprise_merged_count }} duplicate
+    device record(s) across profiles{% if enterprise_merged_count == 0 %} — every observation
+    matched exactly one device{% endif %}.</p>
+  {% endif %}
   <div class="table-scroll" role="region" aria-label="Networks" tabindex="0">
   <table class="grid">
     <thead>

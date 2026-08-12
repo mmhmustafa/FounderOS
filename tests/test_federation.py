@@ -520,7 +520,10 @@ class EnterpriseGuiTests(unittest.TestCase):
             # PR-040: All Networks lands on MISSION; the enterprise
             # summary lives in its Enterprise Health card.
             self.assertIn(b"Enterprise Health", page)
-            self.assertIn(b"Canonical devices", page)
+            # PR-178: "Canonical devices" duplicated the Devices count
+            # under implementation vocabulary; identity resolution now
+            # reports its one operator-meaningful fact as a sentence.
+            self.assertIn(b"Identity resolution merged", page)
             self.assertIn(b"Hyderabad", page)
             self.assertIn(b"Secunderabad", page)
             self.assertNotIn(PASSWORD.encode(), page)
