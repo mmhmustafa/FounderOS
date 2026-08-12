@@ -292,6 +292,17 @@ class PolicyReport:
     over the results where a verdict was actually reached. ``unknown`` results
     are excluded from the denominator — a policy Atlas could not judge must not
     silently count as a pass *or* a fail (never guess).
+
+    **PR-174.2 — not applicable is excluded too.** A rule that did not
+    apply to a device (its antecedent is absent, or a targeting selector
+    excluded it) used to be counted as a PASS, because the engine gives
+    the not-applicable outcome ``conclusion_kind = pass``. That inflated
+    the headline compliance number with devices nothing was checked on:
+    a fleet where one BGP speaker is broken and 81 devices never ran BGP
+    scored ~99%. Absence of a subject is not compliance, so it now has
+    its own count and appears in neither the numerator nor the
+    denominator. ``PolicyEvaluation.applicable`` (PR-172) is the
+    authority; ``status`` alone cannot distinguish the two.
     """
 
     pack: PolicyPack
@@ -300,7 +311,10 @@ class PolicyReport:
     evaluations: tuple[PolicyEvaluation, ...]
 
     def _count(self, status: str) -> int:
-        return sum(1 for e in self.evaluations if e.status == status)
+        return sum(
+            1 for e in self.evaluations
+            if e.status == status and e.applicable
+        )
 
     @property
     def passed(self) -> int:
@@ -316,7 +330,20 @@ class PolicyReport:
 
     @property
     def unknown(self) -> int:
-        return self._count(STATUS_UNKNOWN)
+        # Absent evidence outranks applicability: Atlas could not even
+        # establish whether the rule applies, so it stays unknown.
+        return sum(
+            1 for e in self.evaluations if e.status == STATUS_UNKNOWN
+        )
+
+    @property
+    def not_applicable(self) -> int:
+        """Evaluations the rule did not apply to — never a pass."""
+
+        return sum(
+            1 for e in self.evaluations
+            if e.status != STATUS_UNKNOWN and not e.applicable
+        )
 
     @property
     def total(self) -> int:
@@ -324,7 +351,8 @@ class PolicyReport:
 
     @property
     def judged(self) -> int:
-        """Evaluations where a real verdict was reached (excludes unknown)."""
+        """Evaluations where a real verdict was reached (excludes unknown
+        and not-applicable)."""
 
         return self.passed + self.failed + self.warnings
 
@@ -358,6 +386,7 @@ class PolicyReport:
             "failed": self.failed,
             "warnings": self.warnings,
             "unknown": self.unknown,
+            "not_applicable": self.not_applicable,
             "total": self.total,
             "judged": self.judged,
             "device_count": len(self.devices()),

@@ -58,14 +58,14 @@ def effective_status(
     if status == "unknown":
         gaps = (evaluation.get("result") or {}).get("evidence_missing") or ()
         return "missing-evidence" if gaps else "unknown"
-    if status == "pass":
-        result = evaluation.get("result") or {}
-        statements = " ".join(
-            str(step.get("statement") or "")
-            for step in result.get("reasoning_path") or ()
-        )
-        if "not applicable" in statements.casefold():
-            return "not-applicable"
+    # PR-174.2: read the AUTHORITATIVE flag (PR-172) rather than
+    # sniffing reasoning-path prose for "not applicable". The prose only
+    # carries that phrase for conditional_present; interfaces_shutdown's
+    # own not-applicable detail ("no non-loopback interfaces found to
+    # assess") never did, so those evaluations were bucketed as passes
+    # and inflated the posture score and the recorded trend.
+    if evaluation.get("applicable") is False:
+        return "not-applicable"
     return status
 
 
@@ -370,9 +370,13 @@ def posture_score(counts: Mapping[str, int]) -> dict[str, int]:
     """Score over the effective buckets the page itself displays.
 
     Judged = pass + fail + warning. Not-applicable, excepted,
-    missing-evidence, and unknown all stay out of the denominator —
-    the engine-level ``PolicyReport.score`` counts not-applicable
-    passes, so it would disagree with the tiles shown beside it.
+    missing-evidence, and unknown all stay out of the denominator.
+
+    PR-174.2: ``PolicyReport.score`` now excludes not-applicable too, so
+    the engine-level score and these tiles finally agree. They are still
+    computed separately — the page's buckets carry exceptions, which the
+    engine knows nothing about — but they can no longer disagree about
+    what "applicable" means.
     """
 
     judged = (

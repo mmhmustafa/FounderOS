@@ -161,23 +161,80 @@ class RuleOutcomeApplicabilityTests(unittest.TestCase):
         self.assertIn("applicable", evaluation.to_dict())
         self.assertIn("applicable", evaluation.result.to_dict())
 
-    def test_policy_report_counters_keep_todays_meaning(self) -> None:
-        """R2 — the business-visible /policy score is NOT silently
-        changed by this PR. Aligning it is the user's decision."""
+    def test_policy_report_excludes_not_applicable_from_the_score(
+        self,
+    ) -> None:
+        """R2, DECIDED (PR-174.2): the /policy headline number now
+        excludes not-applicable evaluations. PR-172 deliberately left
+        them counted as passes and reported the discrepancy rather than
+        changing a business-visible metric unasked; this asserts the
+        decision that followed."""
 
         memory, _tmp = _minority_estate()
         report = PolicyEngine(clock=lambda: FIXED_CLOCK).evaluate(
             memory, scope_label="Lab",
         )
-        status_pass = sum(1 for e in report.evaluations if e.status == "pass")
-        self.assertEqual(report.passed, status_pass)
-        # And the not-applicable evaluations are inside that number —
-        # the discrepancy this PR reports rather than hides.
+        raw_pass = sum(1 for e in report.evaluations if e.status == "pass")
         na = sum(
             1 for e in report.evaluations
             if e.status == "pass" and not e.applicable
         )
         self.assertGreaterEqual(na, 3)
+        # The headline no longer counts them...
+        self.assertEqual(raw_pass - na, report.passed)
+        self.assertEqual(na, report.not_applicable)
+        # ...and they are in neither the numerator nor the denominator.
+        self.assertEqual(
+            report.passed + report.failed + report.warnings, report.judged,
+        )
+        self.assertIn("not_applicable", report.to_dict())
+
+
+class PolicyPageScoreTests(unittest.TestCase):
+    """PR-174.2 — the /policy headline number and the page's own tiles
+    tell the same story, and neither counts absence as compliance."""
+
+    def test_the_engine_score_and_the_page_score_agree(self) -> None:
+        from founderos_atlas.policy.explorer import (
+            annotate_evaluations, posture_score, summarize,
+        )
+
+        memory, _tmp = _minority_estate()
+        report = PolicyEngine(clock=lambda: FIXED_CLOCK).evaluate(
+            memory, scope_label="Lab",
+        )
+        rows = annotate_evaluations(
+            [e.to_dict() for e in report.evaluations],
+            now=FIXED_CLOCK, sites_by_device={},
+        )
+        counts = summarize(rows)
+        posture = posture_score(counts)
+        self.assertGreater(report.not_applicable, 0)
+        self.assertEqual(report.not_applicable, counts["not-applicable"])
+        self.assertEqual(report.judged, posture["judged"])
+        self.assertEqual(report.score, posture["score"])
+
+    def test_an_estate_that_runs_nothing_scores_zero_not_a_hundred(
+        self,
+    ) -> None:
+        """The inversion R2 existed to close: an estate where the
+        subject is configured NOWHERE used to score 100% because every
+        not-applicable evaluation counted as a pass."""
+
+        memory, _tmp = _seed_memory({
+            "dev-edge1": NO_BGP, "dev-edge2": NO_BGP,
+        })
+        report = PolicyEngine(clock=lambda: FIXED_CLOCK).evaluate(
+            memory, scope_label="Lab",
+        )
+        bgp = [e for e in report.evaluations if "bgp" in set(e.policy.tags)]
+        self.assertTrue(bgp)
+        self.assertTrue(all(not e.applicable for e in bgp))
+        # Those evaluations are in neither the numerator nor the
+        # denominator of the headline score.
+        self.assertEqual(
+            0, sum(1 for e in bgp if e.applicable),
+        )
 
 
 class MinorityProtocolAggregationTests(unittest.TestCase):
@@ -554,19 +611,94 @@ class RefusalListTests(unittest.TestCase):
 
 
 class MaskBlindGuardTests(unittest.TestCase):
-    def test_the_guard_catches_the_starter_packs_blind_rule(self) -> None:
-        """STD-PWENC-001 hunts 'service password-encryption', but the
-        masked view erases every line containing 'password' before
-        matching — the rule is structurally blind and mis-judges
-        compliant devices. The guard names it."""
+    def test_the_starter_pack_now_has_no_blind_rule(self) -> None:
+        """STD-PWENC-001 hunted 'service password-encryption' while the
+        masked view erased every line containing 'password', so it
+        failed compliant devices. PR-174.2 fixed the CAUSE — the masker
+        no longer masks argument-free switches that carry no secret —
+        so the pack is clean and the guard has nothing to catch."""
 
         from founderos_atlas.investigation.validation import (
+            mask_blind_reason,
             mask_blind_rules,
         )
+        from founderos_atlas.policy.packs import default_pack
 
-        caught = dict(mask_blind_rules())
-        self.assertIn("STD-PWENC-001", caught)
-        self.assertIn("password", caught["STD-PWENC-001"])
+        self.assertEqual((), mask_blind_rules())
+        pwenc = next(
+            policy for policy in default_pack().policies
+            if policy.policy_id == "STD-PWENC-001"
+        )
+        self.assertIsNone(mask_blind_reason(pwenc))
+
+    def test_the_guard_still_catches_a_genuinely_blind_rule(self) -> None:
+        """Fixing the cause must not disarm the guard: a rule hunting a
+        secret's VALUE is still blind, because that line really is
+        masked."""
+
+        from founderos_atlas.investigation.validation import (
+            mask_blind_reason,
+        )
+
+        blind = Policy(
+            policy_id="BLD-003", name="Weak SNMP community",
+            description="", category="security", severity="high",
+            check=PolicyCheck(
+                evidence="running-config",
+                operator=OP_ANY_PRESENT,
+                patterns=("snmp-server community public",),
+            ),
+            evidence_required=("running-config",),
+            reasoning_strategy="", expected_state="absent",
+            recommendation="r", remediation="m", tags=("snmp",),
+        )
+        reason = mask_blind_reason(blind)
+        self.assertIsNotNone(reason)
+        self.assertIn("community", reason)
+
+    def test_the_masker_only_spares_argument_free_switches(self) -> None:
+        """The safe-directive allowlist is the security-sensitive part
+        of PR-174.2: every entry must be argument-free, matched WHOLE
+        LINE, and no secret-bearing line may survive it."""
+
+        from founderos_atlas.config_intelligence.diff import (
+            _SAFE_DIRECTIVES,
+            mask_line,
+        )
+
+        for directive in _SAFE_DIRECTIVES:
+            with self.subTest(directive=directive):
+                # Argument-free: the whole line is fixed keywords, so no
+                # instance of it can carry a secret.
+                self.assertTrue(
+                    all(part.isalpha() or "-" in part
+                        for part in directive.split()),
+                    directive,
+                )
+                self.assertEqual(directive, mask_line(directive))
+                # Indentation and case are normalised...
+                self.assertEqual(
+                    "  " + directive.upper(),
+                    mask_line("  " + directive.upper()),
+                )
+                # ...but anything APPENDED is a different line, and is
+                # masked. A prefix rule would have vouched for it.
+                appended = directive + " username admin password s3cret"
+                self.assertIn("masked", mask_line(appended))
+
+    def test_real_secrets_are_still_masked(self) -> None:
+        from founderos_atlas.config_intelligence.diff import mask_line
+
+        for line in (
+            "username admin secret 0 HUNTER2",
+            "snmp-server community SUPERSECRET RO",
+            " enable password 7 09424B1C",
+            "crypto key generate rsa modulus 2048",
+            "tacacs-server key MYTACACSKEY",
+        ):
+            with self.subTest(line=line):
+                self.assertIn("masked", mask_line(line))
+                self.assertNotIn("HUNTER2", mask_line(line))
 
     def test_blind_rules_never_enter_a_capability(self) -> None:
         from founderos_atlas.investigation.subjects import SubjectDescriptor

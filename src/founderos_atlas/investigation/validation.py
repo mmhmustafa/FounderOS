@@ -61,9 +61,17 @@ def mask_blind_reason(policy) -> str | None:
     check = getattr(policy, "check", None)
     if check is None or getattr(check, "evidence", "") != "running-config":
         return None
+    from founderos_atlas.config_intelligence.diff import _is_safe_directive
+
     for field_name in ("patterns", "antecedent"):
         for pattern in getattr(check, field_name, ()) or ():
-            match = _MASKED_TERM_PATTERN.search(str(pattern))
+            text = str(pattern)
+            # A pattern targeting one of the masker's argument-free safe
+            # directives is NOT blind — the masker leaves those intact
+            # precisely so a control's on/off state stays checkable.
+            if _is_safe_directive(text):
+                continue
+            match = _MASKED_TERM_PATTERN.search(text)
             if match:
                 return (
                     f"pattern {str(pattern)!r} contains the sensitive "

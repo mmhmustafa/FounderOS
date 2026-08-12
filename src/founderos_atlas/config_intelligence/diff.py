@@ -20,6 +20,27 @@ _SENSITIVE_PATTERN = re.compile(
     r"\b(" + "|".join(SENSITIVE_TERMS) + r")\b", re.IGNORECASE
 )
 
+# Directives that CONTAIN a sensitive word but provably carry no secret
+# VALUE: they are switches, with no argument to hide. Over-masking is
+# normally free, but not here — masking these destroys the only evidence
+# that the control is switched ON, and a policy asking "is password
+# encryption enabled?" then fails every device including the compliant
+# ones (PR-174.2; STD-PWENC-001 did exactly that).
+#
+# Membership is by WHOLE LINE, never by prefix: a prefix rule would let
+# "service password-encryption" vouch for whatever a device appended
+# after it. Every entry must be argument-free, so that no instance of it
+# can carry a secret — that is the property being relied on, and a test
+# asserts it for each entry.
+_SAFE_DIRECTIVES = frozenset((
+    "service password-encryption",
+    "no service password-encryption",
+))
+
+
+def _is_safe_directive(line: str) -> bool:
+    return " ".join(line.split()).casefold() in _SAFE_DIRECTIVES
+
 SECTION_ADDED = "added"
 SECTION_REMOVED = "removed"
 SECTION_MODIFIED = "modified"
@@ -62,8 +83,13 @@ class SectionDiff:
 
 
 def mask_line(line: str) -> str:
-    """Replace any line containing a sensitive term; over-masking is fine."""
+    """Replace any line containing a sensitive term; over-masking is fine
+    — except for the argument-free switches in ``_SAFE_DIRECTIVES``,
+    where it is not fine at all, because it hides whether a security
+    control is enabled while hiding nothing secret."""
 
+    if _is_safe_directive(line):
+        return line
     match = _SENSITIVE_PATTERN.search(line)
     if match is None:
         return line

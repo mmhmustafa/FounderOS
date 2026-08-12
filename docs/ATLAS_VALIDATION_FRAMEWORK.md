@@ -59,10 +59,19 @@ Now:
   evaluation(s) failed; 1 of 2 judged evaluation(s) pass. 3 device(s) in scope do not have BGP
   configured and were reported as not applicable, never as compliant."*
 
-**R2 — deliberately not changed:** the `/policy` page's headline compliance number still counts
-not-applicable evaluations as passes (`PolicyReport.passed` keeps its historical meaning). That is
-a business-visible metric; aligning it is a product decision, not an implementation side effect.
-The data to align it now exists on every evaluation (`applicable`).
+**R2 — DECIDED and aligned (PR-174.2).** PR-172 deliberately left the `/policy` headline compliance
+number counting not-applicable evaluations as passes, and reported the discrepancy rather than
+changing a business-visible metric unasked. That decision has since been taken: `PolicyReport.passed`
+now excludes them, `not_applicable` is its own count in the report and its `to_dict()`, and the
+score's numerator and denominator both ignore it. `PolicyEvaluation.applicable` is the authority —
+`status` alone cannot distinguish "passed" from "never applied", because the engine gives the
+not-applicable outcome `conclusion_kind = pass`.
+
+The page's own bucketing (`explorer.effective_status`) now reads that same flag instead of sniffing
+reasoning-path prose for the phrase *"not applicable"* — prose that only `conditional_present`
+produced, so `interfaces_shutdown`'s not-applicable detail (*"no non-loopback interfaces found to
+assess"*) was bucketed as a pass and inflated both the posture score and the recorded trend. Engine
+score and page score are now computed from the same definition and verified equal.
 
 ## The capability registry (`investigation/validation.py`)
 
@@ -120,11 +129,22 @@ The guard (`mask_blind_reason` / `mask_blind_rules`) refuses such rules **at the
 they never enter a capability, never shape a verdict, and are named as diagnostics. Scope:
 `running-config` evidence only — other evidence kinds are not rewritten by the masker.
 
-> Found on arrival: the starter pack's `STD-PWENC-001` ("service password-encryption") is
-> mask-blind and has always mis-judged — it fails compliant devices, because their
-> `service password-encryption` line is masked away before the matcher runs. Per R2 discipline the
-> pack was **not** silently edited; the rule is excluded from validation verdicts by the guard and
-> reported as a decision for the pack's owner.
+> Found on arrival, **now fixed at the cause (PR-174.2)**: the starter pack's `STD-PWENC-001`
+> ("service password-encryption") was mask-blind and had always mis-judged — it failed *compliant*
+> devices, because their `service password-encryption` line was masked away before the matcher ran.
+> PR-172 excluded it from verdicts and reported it rather than silently editing the pack.
+>
+> The rule was correct; the **masker** was wrong. `service password-encryption` is an argument-free
+> switch: it contains a sensitive word but carries no secret *value*, so masking it hid whether a
+> security control was enabled while hiding nothing worth hiding. `mask_line` now spares a small
+> allowlist of such directives (`_SAFE_DIRECTIVES`), matched **whole line** — never by prefix, so a
+> directive cannot vouch for whatever a device appends after it — and every entry must be
+> argument-free, which a test asserts per entry. Real secret-bearing lines are still masked, also
+> pinned by test. The R9 guard skips these directives, so it no longer flags the rule; a rule hunting
+> a secret's *value* is still refused, as before.
+>
+> This is why the guard reports rather than deletes: the diagnostic named a real defect, and the
+> defect turned out to be in the masker, not in the rule it flagged.
 
 ## One judgement, two surfaces (governance parity)
 

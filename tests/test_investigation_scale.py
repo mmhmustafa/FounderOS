@@ -70,7 +70,15 @@ def synthetic_policy_report(count: int) -> list[dict]:
                 if status == "unknown" and (index // 4) % 2 == 0 else []
             ),
         }
-        if status == "pass" and index % 24 == 0:
+        # A not-applicable evaluation carries conclusion_kind=pass and
+        # is distinguished by the AUTHORITATIVE `applicable` flag that
+        # PolicyEvaluation.to_dict() emits (PR-172). This fixture used
+        # to encode it only as reasoning-path prose, which is what the
+        # explorer used to sniff — a representation that missed every
+        # operator whose not-applicable detail is worded differently
+        # (PR-174.2). Real rows always carry the flag, so these do too.
+        applicable = not (status == "pass" and index % 24 == 0)
+        if not applicable:
             result["reasoning_path"] = [
                 {"statement": "not applicable — the antecedent "
                               "configuration is not present"}
@@ -82,6 +90,7 @@ def synthetic_policy_report(count: int) -> list[dict]:
             "network": "Scale Lab",
             "status": status,
             "status_label": status.title(),
+            "applicable": applicable,
             "result": result,
         })
     return rows
@@ -143,11 +152,30 @@ class PolicyExplorerScaleTests(unittest.TestCase):
         plain_passes = [
             row for row in self.rows if row["effective_status"] == "pass"
         ]
+        # PR-174.2: bucketing reads the authoritative flag, not prose.
+        for row in plain_passes:
+            self.assertIsNot(row.get("applicable"), False)
         for row in plain_passes[:20]:
             statements = " ".join(
                 step["statement"] for step in row["result"]["reasoning_path"]
             )
             self.assertNotIn("not applicable", statements)
+
+    def test_bucketing_does_not_depend_on_prose_wording(self) -> None:
+        """The defect PR-174.2 closed: interfaces_shutdown's own
+        not-applicable detail never contains the phrase 'not
+        applicable', so prose-sniffing bucketed it as a pass and
+        inflated both the posture score and the recorded trend."""
+
+        from founderos_atlas.policy.explorer import effective_status
+
+        self.assertEqual("not-applicable", effective_status({
+            "status": "pass",
+            "applicable": False,
+            "result": {"reasoning_path": [
+                {"statement": "no non-loopback interfaces found to assess"}
+            ]},
+        }))
 
     def test_displayed_score_reconciles_with_displayed_buckets(self) -> None:
         from founderos_atlas.policy.explorer import posture_score, summarize
