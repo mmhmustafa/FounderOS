@@ -42,7 +42,6 @@ class PolicyScoreBranchTests(unittest.TestCase):
                 "Not scored — no configurations have been evaluated in "
                 "this scope yet.", page,
             )
-            self.assertIn(">Not scored<", page)          # the score tile
             self.assertNotIn("0%", page)
             # Reassurance is a judgement; none was made.
             self.assertNotIn(

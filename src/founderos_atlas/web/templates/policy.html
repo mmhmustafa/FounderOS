@@ -1,35 +1,105 @@
 {% extends "base.html" %}
 {% from "_entity_actions.html" import entity_menu %}
 {% from "_telemetry_context.html" import operational_context %}
+{% import "_answer.html" as answer %}
+{% import "_fmt.html" as fmt %}
+{% import "_disclosure.html" as d with context %}
 {% block title %}Enterprise Policy{% endblock %}
 {% block content %}
+<div class="page-head">
+  <h1>Enterprise Policy</h1>
+</div>
+
+{# ══ ANSWER (PR-178 Band 1) ═══════════════════════════════════════════
+   Policy judges, so it leads with its verdict. Tone comes from the
+   page's OWN vocabulary (the effective-status buckets), never from the
+   health-state mapping. The score-derivation sentence lives INSIDE the
+   band, adjacent to the number it qualifies — it is the claim that
+   makes the headline honest, and it is never collapsed. The two absent
+   cases stay distinct: nothing evaluated at all ("Not scored") versus
+   evaluated-but-unjudgeable ("Not enough evidence") — the same line
+   health/assess.py draws. #}
+{% if overall.total == 0 %}
+{{ answer.answer_band('info', 'Not scored',
+    'Not scored — no configurations have been evaluated in this scope yet.',
+    note='Nothing has been evaluated in this scope, so there is no score to derive.') }}
+{% elif posture.judged == 0 %}
+{{ answer.answer_band('info', 'Not enough evidence',
+    overall.total ~ ' evaluation(s) produced no judgeable verdict.',
+    note=overall.total ~ ' evaluation(s) produced no judgeable verdict ('
+      ~ overall['missing-evidence'] ~ ' missing evidence, ' ~ overall.unknown
+      ~ ' inconclusive), so there is no denominator to score over.') }}
+{% elif overall.fail %}
+{% call answer.answer_band('attention', 'Attention required',
+    overall.fail ~ ' of ' ~ posture.judged ~ ' judged configuration checks fail across the '
+      ~ report.device_count ~ ' device(s) evaluated.',
+    note='Score is passed ÷ judged over ' ~ posture.judged ~ ' judged evaluation(s) of '
+      ~ overall.total ~ ' total; missing evidence, unknown, not-applicable, and excepted are excluded from the denominator, never counted as pass or fail.') %}
+<span class="badge hop-badge badge-muted">Compliance score {{ posture.score }}%</span>
+{% endcall %}
+{% elif overall.warning %}
+{% call answer.answer_band('warning', 'Warnings',
+    overall.warning ~ ' of ' ~ posture.judged ~ ' judged configuration checks carry warnings; none fail.',
+    note='Score is passed ÷ judged over ' ~ posture.judged ~ ' judged evaluation(s) of '
+      ~ overall.total ~ ' total; missing evidence, unknown, not-applicable, and excepted are excluded from the denominator, never counted as pass or fail.') %}
+<span class="badge hop-badge badge-muted">Compliance score {{ posture.score }}%</span>
+{% endcall %}
+{% else %}
+{% call answer.answer_band('ok', 'Compliant',
+    'All ' ~ posture.judged ~ ' judged configuration checks pass across the '
+      ~ report.device_count ~ ' device(s) evaluated.',
+    note='Score is passed ÷ judged over ' ~ posture.judged ~ ' judged evaluation(s) of '
+      ~ overall.total ~ ' total; missing evidence, unknown, not-applicable, and excepted are excluded from the denominator, never counted as pass or fail.') %}
+<span class="badge hop-badge badge-muted">Compliance score {{ posture.score }}%</span>
+{% endcall %}
+{% endif %}
+{{ fmt.basis('Configuration verdicts', scope=report.scope_label,
+             at=generated_at,
+             source=report.pack.name ~ ' v' ~ report.pack.version ~ ' · ' ~ report.pack.policy_count ~ ' policies') }}
+<p class="muted">Configuration validation says <strong>Compliant / Non-compliant</strong>;
+operational state says <strong>Healthy / Degraded / Failed</strong> — neither implies
+the other. This page judges configuration.</p>
+
 {{ operational_context(
   telemetry_context(active_scope_id, request.args.get('device', '')),
   'Operational conditions help prioritize review but do not alter a policy pass or failure.'
 ) }}
-<div class="page-head">
-  <h1>Enterprise Policy</h1>
-  <span class="actions muted">{{ report.pack.name }} v{{ report.pack.version }} · {{ report.pack.policy_count }} policies</span>
-</div>
-<p class="muted">
-  Every verdict is evidence-based and explained. This page is the investigation:
-  filter, group, page, assign, except, and export — the full reasoning behind any
-  verdict is one click away on its own page. Filters live in the URL, so a
-  filtered view is a shareable link.
-</p>
 
+{# ══ Priorities: three linked facts, not a tile wall. ═════════════════ #}
 <section class="card">
   <div class="page-head">
     <h2>Operational priorities</h2>
-    <a class="btn btn-sm" href="{{ scoped_url('/policy', active_scope_id, status='fail') }}#results">Review failures</a>
+    <a class="btn btn-primary btn-sm" href="{{ scoped_url('/policy', active_scope_id, status='fail') }}#results">Review failures</a>
   </div>
-  <div class="tiles">
-    <div class="tile"><strong>New regressions</strong><span>{{ priorities.new_regressions }}</span></div>
-    <div class="tile"><strong>Fresh confirmed findings</strong><span>{{ priorities.confirmed_failures }}</span></div>
-    <div class="tile"><strong>Verify evidence first</strong><span>{{ priorities.stale_or_unverified }}</span></div>
-    <div class="tile"><strong>Expiring deviations</strong><span>{{ expiring_deviations | length }}</span></div>
-  </div>
+  <ul class="mission-recs">
+    <li><span><a href="{{ scoped_url('/policy', active_scope_id, status='fail') }}#results">New regressions: {{ priorities.new_regressions }}</a></span>
+      <span class="muted">failing now, passing at the previous posture</span></li>
+    <li><span><a href="{{ scoped_url('/policy', active_scope_id, status='fail', freshness='fresh') }}#results">Fresh confirmed findings: {{ priorities.confirmed_failures }}</a></span>
+      <span class="muted">failures backed by fresh evidence</span></li>
+    <li><span><a href="{{ scoped_url('/policy', active_scope_id, freshness='stale') }}#results">Verify evidence first: {{ priorities.stale_or_unverified }}</a></span>
+      <span class="muted">stale or unverified evidence behind the verdict</span></li>
+  </ul>
+  {% if not priorities.top_themes and overall.total > 0 and posture.judged > 0 %}
+  <p class="muted">No active failure or warning requires attention.</p>
+  {% endif %}
+</section>
+
+{# ══ The seven status buckets as LINKED chips — each is a filter, not
+   a tile. Their definitions live in "About this page" below as real
+   text, never as hover-only title attributes. ═══════════════════════ #}
+<div class="filter-chips" role="group" aria-label="Results by status">
+  {% for status in statuses %}
+  <a class="filter-chip" href="{{ scoped_url('/policy', active_scope_id, status=status) }}#results">{{ status_labels[status] }}: {{ overall[status] }}</a>
+  {% endfor %}
+</div>
+
+{# ══ SUPPORTING DETAIL (PR-178 Band 3): reference material, one card,
+   counted disclosures, collapsed at every display level. ═════════════ #}
+<section class="card">
+  <h2>Supporting detail</h2>
+
   {% if priorities.top_themes %}
+  {% call d.supporting('Highest-risk policy themes — ' ~ (priorities.top_themes | length) ~ ' theme(s)') %}
   <div class="table-scroll" role="region" aria-label="Highest-risk policy themes" tabindex="0">
     <table class="grid">
       <thead><tr><th>Theme</th><th>Intent</th><th>Affected</th><th>Confirmed</th><th>New</th><th></th></tr></thead>
@@ -47,54 +117,11 @@
       </tbody>
     </table>
   </div>
-  {% else %}
-  {# PR-178: reassurance is a judgement, and with nothing evaluated no
-     judgement was made — the honest sentence names the absence. #}
-  {% if overall.total == 0 %}
-  <p class="muted">Not scored — no configurations have been evaluated in this scope yet.</p>
-  {% else %}
-  <p class="muted">No active failure or warning requires attention.</p>
+  {% endcall %}
   {% endif %}
-  {% endif %}
-</section>
 
-<div class="tiles">
-  {# PR-178: a score exists only when something was judged. The two
-     absent cases stay distinct: nothing evaluated at all ("Not
-     scored") versus evaluated-but-unjudgeable ("Not enough
-     evidence") — the same line health/assess.py draws. #}
-  <div class="tile"><strong>Compliance score</strong><span>
-    {%- if posture.score is not none -%}{{ posture.score }}%
-    {%- elif overall.total == 0 -%}<span class="badge hop-badge hop-badge-unknown">Not scored</span>
-    {%- else -%}<span class="badge hop-badge hop-badge-unknown">Not enough evidence</span>
-    {%- endif -%}</span></div>
-  <div class="tile"><strong>Passed</strong><span>{{ overall.pass }}</span></div>
-  <div class="tile"><strong>Failed</strong><span>{{ overall.fail }}</span></div>
-  <div class="tile"><strong>Warnings</strong><span>{{ overall.warning }}</span></div>
-  <div class="tile" title="The engine reached Unknown and recorded WHICH evidence is missing — collectable."><strong>Missing evidence</strong><span>{{ overall['missing-evidence'] }}</span></div>
-  <div class="tile" title="The engine reached Unknown with no recorded gap — evidence existed but was inconclusive."><strong>Unknown</strong><span>{{ overall.unknown }}</span></div>
-  <div class="tile" title="Failures covered by an active, audited exception."><strong>Excepted</strong><span>{{ overall.excepted }}</span></div>
-  <div class="tile" title="The policy's antecedent is absent on the device — never counted as compliance earned."><strong>Not applicable</strong><span>{{ overall['not-applicable'] }}</span></div>
-</div>
-<p class="muted" style="margin-top:-8px;">
-  {% if overall.total == 0 %}
-  Nothing has been evaluated in this scope, so there is no score to derive.
-  {% elif posture.judged == 0 %}
-  {{ overall.total }} evaluation(s) produced no judgeable verdict
-  ({{ overall['missing-evidence'] }} missing evidence, {{ overall.unknown }}
-  inconclusive), so there is no denominator to score over.
-  {% else %}
-  Score is passed ÷ judged over {{ posture.judged }} judged evaluation(s) of
-  {{ overall.total }} total; missing evidence, unknown, not-applicable, and
-  excepted are excluded from the denominator, never counted as pass or fail.
-  {% endif %}
-  Evaluated for
-  <strong>{{ report.scope_label }}</strong>{% if generated_at %} · {{ generated_at }}{% endif %}.
-</p>
-
-{% if trend | length > 1 %}
-<section class="card">
-  <h2>Compliance Trend</h2>
+  {% if trend | length > 1 %}
+  {% call d.supporting('Compliance trend — ' ~ (trend | length) ~ ' recorded point(s)') %}
   <p class="muted">A point is recorded whenever posture changes — never on mere page views.</p>
   <div class="trend-row" role="img" aria-label="Compliance trend: {% for point in trend %}{{ (point.score ~ '%') if point.score is not none else 'not scored' }}{{ ', ' if not loop.last }}{% endfor %}">
     {% for point in trend %}
@@ -106,11 +133,10 @@
     </div>
     {% endfor %}
   </div>
-</section>
-{% endif %}
+  {% endcall %}
+  {% endif %}
 
-<details class="card disclosure" {{ 'open' if display_level == 'expert' else '' }}>
-  <summary><strong>Full posture heatmap</strong></summary>
+  {% call d.supporting('Full posture heatmap — ' ~ (heatmap | length) ~ ' policy(ies)') %}
   <p class="muted">Every policy's posture at a glance, worst first. Numbers, never color alone.</p>
   <div class="table-scroll" role="region" aria-label="Policy failure heatmap" tabindex="0">
     <table class="grid heatmap">
@@ -129,7 +155,17 @@
       </tbody>
     </table>
   </div>
-</details>
+  {% endcall %}
+
+  {% call d.supporting('Installed policy packs — ' ~ (packs | length) ~ ' pack(s)') %}
+  <dl class="meta-list">
+    {% for p in packs %}
+    <dt>{{ p.name }} <span class="muted"><code>{{ p.pack_id }}</code></span></dt>
+    <dd class="mono">v{{ p.version }} · {{ p.author }} · {{ p.policy_count }} policies · {{ p.categories | map('title') | join(', ') }}</dd>
+    {% endfor %}
+  </dl>
+  {% endcall %}
+</section>
 
 <section class="card" id="results">
   <h2>Policy Results</h2>
@@ -247,26 +283,24 @@
       <input name="assignment" value="{{ filters.assignment }}" placeholder="bulk:… correlation id">
     </label>
     {% endif %}
-    <button class="btn btn-sm btn-primary" type="submit">Apply filters</button>
+    {# PR-178: one primary per page — "Review failures" owns it. #}
+    <button class="btn btn-sm" type="submit">Apply filters</button>
     <a class="btn btn-sm" href="{{ scoped_url('/policy', active_scope_id) }}">Clear</a>
     <a class="btn btn-sm" href="/policy/export.csv?{{ (filter_args | urlencode) }}&scope={{ active_scope_id }}"
        aria-label="Export the {{ page.total }} filtered results as CSV">Export CSV</a>
   </form>
   </details>
 
-  {% set chip_fields = [('owner', 'owner', filters.owner), ('mine', 'assigned to me', 'me' if filters.assigned_to_me else ''), ('assignment', 'assignment batch', filters.assignment)] %}
-  {% if filters.owner or filters.assigned_to_me or filters.assignment %}
-  <div class="filter-chips" role="group" aria-label="Active assignment filters">
-    {% for field, label, value in chip_fields %}
-    {% if value %}
-    {% set keep = {} %}
-    {% for key, arg in filter_args.items() %}{% if key != field %}{% set _ = keep.update({key: arg}) %}{% endif %}{% endfor %}
-    <a class="filter-chip" href="{{ scoped_url('/policy', active_scope_id, **keep) }}#results"
-       aria-label="Remove filter {{ label }}: {{ value }}">{{ label }}: {{ value }} <span aria-hidden="true">×</span></a>
-    {% endif %}
-    {% endfor %}
-  </div>
-  {% endif %}
+  {# PR-178: EVERY active filter renders as a removable chip, so a
+     collapsed filter form never means hidden state. Each chip's href
+     drops that one filter and keeps the rest. #}
+  {% set active_chips = [] %}
+  {% for field, value in filter_args.items() if value and field not in ('page',) %}
+  {% set keep = {} %}
+  {% for key, arg in filter_args.items() %}{% if key != field and key != 'page' and arg %}{% set _ = keep.update({key: arg}) %}{% endif %}{% endfor %}
+  {% set _ = active_chips.append({'field': field, 'value': value, 'href': scoped_url('/policy', active_scope_id, **keep) ~ '#results'}) %}
+  {% endfor %}
+  {{ fmt.filter_chips(active_chips, clear_href=scoped_url('/policy', active_scope_id)) }}
 
   <p class="muted" role="status" aria-live="polite">
     {{ page.total }} result(s) match{% if page.total != overall.total %} of {{ overall.total }} total{% endif %} —
@@ -410,23 +444,19 @@
 </section>
 {% endif %}
 
-<section class="card">
-  <h2>Installed Policy Packs</h2>
-  <div class="table-scroll" role="region" aria-label="Installed policy packs" tabindex="0">
-  <table class="grid" data-columns="policy-packs">
-    <thead><tr><th data-col="pack" data-col-preset="simple">Pack</th><th data-col="version">Version</th><th data-col="author" data-col-preset="expert">Author</th><th data-col="policies" data-col-preset="simple">Policies</th><th data-col="categories">Categories</th></tr></thead>
-    <tbody>
-      {% for p in packs %}
-      <tr>
-        <td><strong>{{ p.name }}</strong> <span class="muted"><code>{{ p.pack_id }}</code></span></td>
-        <td>{{ p.version }}</td>
-        <td>{{ p.author }}</td>
-        <td>{{ p.policy_count }}</td>
-        <td>{% for c in p.categories %}<span class="hop-badge badge-muted">{{ c | title }}</span> {% endfor %}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  </div>
-</section>
+{# ══ ABOUT (PR-178 Band 4): the prose that explains the page rather
+   than today's estate — including the four bucket definitions that
+   used to exist only as hover tooltips. ═══════════════════════════════ #}
+{% call d.contextual_help('About this page — what the verdicts and buckets mean') %}
+<p>Every verdict is evidence-based and explained. This page is the investigation:
+filter, group, page, assign, except, and export — the full reasoning behind any
+verdict is one click away on its own page. Filters live in the URL, so a
+filtered view is a shareable link.</p>
+<ul>
+  <li><strong>Missing evidence</strong> — the engine reached Unknown and recorded WHICH evidence is missing; it is collectable.</li>
+  <li><strong>Unknown</strong> — the engine reached Unknown with no recorded gap; evidence existed but was inconclusive.</li>
+  <li><strong>Excepted</strong> — failures covered by an active, audited exception.</li>
+  <li><strong>Not applicable</strong> — the policy's antecedent is absent on the device; never counted as compliance earned.</li>
+</ul>
+{% endcall %}
 {% endblock %}

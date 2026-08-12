@@ -33,7 +33,10 @@ ADOPTED = {
     "compass.html": ["compass-plans"],
     "retention.html": ["retention-preview"],
     "inbox.html": ["inbox"],
-    "policy.html": ["policy-results", "policy-packs"],
+    # PR-178: the packs table became a Supporting disclosure (author
+    # and categories preserved as text) — only the results table keeps
+    # per-user column customisation.
+    "policy.html": ["policy-results"],
     "evidence_index.html": ["evidence-devices"],
 }
 

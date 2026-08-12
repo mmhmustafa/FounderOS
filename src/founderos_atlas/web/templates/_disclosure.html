@@ -117,3 +117,17 @@
   <div class="disclosure-body muted">{{ caller() }}</div>
 </details>
 {%- endmacro %}
+
+{# Supporting detail (PR-178 Band 3): reference material — heatmaps,
+   trends, packs, storage, compare tools. Collapsed at EVERY display
+   level, deliberately: upgraded workspaces default to expert, and
+   expert means access to depth, not every depth expanded at once.
+   The label should carry a real count so the operator can decide
+   without opening. Never put a claim about what is on screen, or a
+   POST action form, inside one. #}
+{% macro supporting(label) -%}
+<details class="disclosure disclosure-advanced">
+  <summary>{{ label }}</summary>
+  <div class="disclosure-body">{{ caller() }}</div>
+</details>
+{%- endmacro %}
