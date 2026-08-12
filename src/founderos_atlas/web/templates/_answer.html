@@ -1,0 +1,55 @@
+{#- The answer band (PR-178): the one-glance verdict a judging page
+    leads with. Lifted from the Advisor verdict card (advisor.html,
+    PR-168) and parameterised — same .verdict-card / .verdict-chip /
+    .verdict-answer visual language, already dark-theme and mobile
+    audited in atlas.css.
+
+    ONLY pages that judge get one (Policy, Investigate, Advisor). Pages
+    that browse, search or narrate lead with _fmt.basis() plus one
+    page_summary sentence instead — forcing a verdict onto them would
+    invent a judgement Atlas never made.
+
+    ``tone`` MUST come from the vocabulary that OWNS the verdict — the
+    shipped suffixes are ok | warning | attention | info (atlas.css
+    .verdict-chip-*). It must NEVER be derived via
+    web.dashboard.readiness_for(), which knows only the six Atlas
+    HEALTH states and answers "Not enough evidence" for everything
+    else — Policy's pass/fail buckets and Investigate's hop verdicts
+    would all collapse into unknown.
+
+    ``answer`` is never a sentence Atlas composes fresh: it is an
+    existing string (investigation.failure_summary) or existing counts
+    formatted, exactly as Advisor promotes its engine's own first
+    sentence.
+
+    ``note`` renders inside the band, always visible: it is for the
+    qualifier that makes the headline honest (Policy's score-derivation
+    sentence). A claim about what is on screen is never collapsed.
+
+    The optional caller() block renders extra badges beside the status
+    chip (confidence, freshness warnings).
+-#}
+{%- macro answer_band(tone, status, answer, note=None, detail_bullets=[], context=[], answer_id='page-answer') -%}
+<section class="card verdict-card verdict-{{ tone }}" aria-labelledby="{{ answer_id }}">
+  <div class="verdict-status">
+    <span class="verdict-chip verdict-chip-{{ tone }}">
+      <span class="verdict-dot" aria-hidden="true"></span>{{ status }}
+    </span>
+    {% if caller is defined and caller %}{{ caller() }}{% endif %}
+  </div>
+  <h2 id="{{ answer_id }}" class="verdict-answer">{{ answer }}</h2>
+  {% if detail_bullets %}
+  <ul class="verdict-detail">
+    {% for bullet in detail_bullets %}<li>{{ bullet }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+  {% if note %}<p class="muted verdict-note">{{ note }}</p>{% endif %}
+  {% if context %}
+  <dl class="verdict-context">
+    {% for row in context %}
+    <div><dt>{{ row.label }}</dt><dd>{{ row.value }}</dd></div>
+    {% endfor %}
+  </dl>
+  {% endif %}
+</section>
+{%- endmacro -%}

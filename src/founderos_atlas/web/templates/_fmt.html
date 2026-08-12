@@ -19,3 +19,59 @@
 {%- macro confidence(band, percent) -%}
 <span class="confidence muted">Confidence: {{ (band | title) if band else 'Unknown' }}{% if percent is not none %} ({{ percent }}%){% endif %}</span>
 {%- endmacro -%}
+
+{#- measure(value, ...) — the honest-number renderer (PR-178).
+
+    EVERY NUMBER IS A MEASUREMENT, OR IT IS NOT RENDERED AS A NUMBER.
+
+    - value is a number      -> the number, plainly. A measured 0 prints
+                                as 0 — never an em-dash.
+    - value is none          -> the ``unknown`` words in a slate badge
+                                (never green, never red, never the digit
+                                0) plus the ``reason`` sentence.
+    - of is a number         -> "{value} of {of}" — a ratio reads as one
+                                fact, not two loose numbers.
+    - of == 'unavailable'    -> the shipped observed-value vocabulary:
+                                "{value} observed · denominator
+                                unavailable" (evidence_resolution_center
+                                already words it exactly this way).
+-#}
+{%- macro measure(value, of=None, unit='', unknown='Not measured', reason='') -%}
+{%- if value is none -%}
+<span class="badge hop-badge hop-badge-unknown">{{ unknown }}</span>{% if reason %} <span class="muted">{{ reason }}</span>{% endif %}
+{%- elif of == 'unavailable' -%}
+{{ value }} observed · denominator unavailable
+{%- elif of is not none -%}
+{{ value }} of {{ of }}{% if unit %} {{ unit }}{% endif %}
+{%- else -%}
+{{ value }}{% if unit %} {{ unit }}{% endif %}
+{%- endif -%}
+{%- endmacro -%}
+
+{#- basis(what, ...) — the page's one provenance line (PR-178): what the
+    numbers below describe, over which scope, as of when, from what
+    source. Missing clauses are omitted, never rendered empty. Every
+    page carries exactly one. -#}
+{%- macro basis(what, scope=None, at=None, source=None) -%}
+<p class="muted page-basis">{{ what }}{% if scope %} · {{ scope }}{% endif %}{% if at %} · as of {{ when(at) }}{% endif %}{% if source %} · {{ source }}{% endif %}</p>
+{%- endmacro -%}
+
+{#- filter_chips(chips, ...) — active filters as removable chips,
+    extracted from evidence_index.html (PR-178). Each chip's href drops
+    ONE filter and keeps the rest, so URLs stay shareable and it works
+    without JS. A collapsed filter form always has these above it:
+    collapsed never means hidden state.
+
+    ``chips`` is a list of {field, value, href}. -#}
+{%- macro filter_chips(chips, summary=None, clear_href=None, clear_label='Clear all') -%}
+{%- if chips or summary %}
+<div class="filter-chips" role="group" aria-label="Active filters">
+  {% if summary %}<span class="muted">{{ summary }}</span>{% endif %}
+  {% for chip in chips %}
+  <a class="filter-chip" href="{{ chip.href }}"
+     aria-label="Remove filter {{ chip.field }}: {{ chip.value }}">{{ chip.field }}: {{ chip.value }} <span aria-hidden="true">×</span></a>
+  {% endfor %}
+  {% if clear_href and chips %}<a class="filter-chip" href="{{ clear_href }}">{{ clear_label }}</a>{% endif %}
+</div>
+{%- endif %}
+{%- endmacro -%}
