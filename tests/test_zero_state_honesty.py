@@ -166,16 +166,14 @@ class ChangesPartialComparisonTests(unittest.TestCase):
                 page,
             )
             for kind in ("Topology", "Configuration", "Operational"):
-                row = re.search(
-                    rf"<strong>{kind}</strong><span>(.*?)</span>", page,
+                cell = re.search(
+                    rf"{kind}: (\d+|.{{0,120}}?Not compared)", page,
                     re.DOTALL,
                 )
-                self.assertIsNotNone(row, kind)
-                cell = row.group(1).strip()
-                self.assertTrue(
-                    re.fullmatch(r"\d+", cell) or "Not compared" in cell,
+                self.assertIsNotNone(
+                    cell,
                     f"{kind} rendered neither a measured number nor an "
-                    f"honest absence: {cell!r}",
+                    f"honest absence",
                 )
 
     def test_compare_mode_names_the_unmeasured_kinds(self) -> None:
@@ -188,12 +186,10 @@ class ChangesPartialComparisonTests(unittest.TestCase):
             self.assertIn("(measured kinds)", page)
             self.assertIn("not compared", page)
             for kind in ("Configuration", "Operational"):
-                row = re.search(
-                    rf"<strong>{kind}</strong><span>(.*?)</span>", page,
-                    re.DOTALL,
+                cell = re.search(
+                    rf"{kind}: .{{0,120}}?Not compared", page, re.DOTALL,
                 )
-                self.assertIsNotNone(row, kind)
-                self.assertIn("Not compared", row.group(1))
+                self.assertIsNotNone(cell, kind)
 
 
 class TimelineHonestyTests(unittest.TestCase):

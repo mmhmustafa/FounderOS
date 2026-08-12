@@ -33,6 +33,9 @@ ADOPTED = {
     "compass.html": ["compass-plans"],
     "retention.html": ["retention-preview"],
     "inbox.html": ["inbox"],
+    # PR-178: the chronology adopts the column-preset engine — Actor
+    # and Provenance hide at the simple level, never removed.
+    "timeline.html": ["timeline"],
     # PR-178: the packs table became a Supporting disclosure (author
     # and categories preserved as text) — only the results table keeps
     # per-user column customisation.

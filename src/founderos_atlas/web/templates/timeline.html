@@ -1,18 +1,15 @@
 {% extends "base.html" %}
 {% from "_entity_actions.html" import entity_menu %}
 {% import "_disclosure.html" as d with context %}
+{% import "_fmt.html" as fmt %}
 {% block title %}Timeline{% endblock %}
 {% block content %}
 <div class="page-head">
   <h1>Timeline</h1>
 </div>
-<p class="muted">
-  Everything Atlas remembers happening, in one chronology: discoveries,
-  configuration / topology / operational changes, incidents, predictions,
-  Compass activity, compliance posture shifts, and every audited operator
-  mutation — site and identity curation included, undo operations and all.
-  Each event links to its exact object and names its provenance.
-</p>
+{# PR-178: a chronology leads with recency, not an essay. The full
+   description of what the timeline records moved to About below. #}
+{{ fmt.basis('Operational chronology', scope=active_scope_label, at=newest_event_at) }}
 
 {# PR-178: two chronology facts, not five tiles — the inventory totals
    (devices remembered, configuration versions, evidence records) live
@@ -79,27 +76,47 @@
     <label>To (ISO date)
       <input name="to" value="{{ filters.date_to }}" placeholder="2026-07-17">
     </label>
+    <label class="checkbox" style="align-self:center;">
+      <input type="checkbox" name="system" value="1" {{ 'checked' if show_system }}> include system events
+    </label>
     <button class="btn btn-sm btn-primary" type="submit">Apply filters</button>
     <a class="btn btn-sm" href="{{ scoped_url('/timeline', active_scope_id) }}">Clear</a>
   </form>
   </details>
 
+  {# PR-178: hiding must name what it hides, counted over the SAME
+     filtered population this line describes — and one click shows it. #}
   <p class="muted" role="status" aria-live="polite">
     {{ page.total }} event(s) match — showing {{ page.start }}–{{ page.end }}{% if page.pages > 1 %} (page {{ page.page }} of {{ page.pages }}){% endif %}.
+    {% if system_hidden %}
+    {{ system_hidden }} system event(s) hidden —
+    <a href="{{ scoped_url('/timeline', active_scope_id, system=1, **filter_args) }}#events">show them</a>;
+    the complete audited record stays on <a href="/audit">Audit</a>.
+    {% endif %}
   </p>
 
   {% if activity %}
   <div class="table-scroll table-scroll-wide" role="region" aria-label="Timeline events" tabindex="0">
-    <table class="grid">
+    {# PR-178: day headers group the chronology for scanning; the
+       column-preset engine hides Actor and Provenance at the simple
+       level (they stay one preference away, never removed). #}
+    <table class="grid" data-columns="timeline">
       <thead>
-        <tr><th>When</th><th>Category</th><th>Event</th><th>Device</th><th>Actor</th><th>Provenance</th><th><span class="visually-hidden">Open</span></th></tr>
+        <tr><th data-col="when" data-col-preset="simple">When</th><th data-col="category" data-col-preset="simple">Category</th><th data-col="event" data-col-preset="simple">Event</th><th data-col="device" data-col-preset="simple">Device</th><th data-col="actor">Actor</th><th data-col="provenance">Provenance</th><th data-col="open" data-col-preset="simple" data-col-label="Open"><span class="visually-hidden">Open</span></th></tr>
       </thead>
       <tbody>
+        {% set day_state = namespace(last='') %}
         {% for entry in activity %}
+        {% set day = (entry.when or '').split(' ')[0] %}
+        {% if day and day != day_state.last %}
+        {% set day_state.last = day %}
+        <tr class="day-row"><th colspan="7" scope="colgroup">{{ day }}</th></tr>
+        {% endif %}
         <tr>
           <td>{{ entry.when }}</td>
           <td>
-            <span class="hop-badge badge-muted">{{ entry.kind }}</span>
+            <span class="hop-badge badge-muted">{{ entry.category or entry.kind }}</span>
+            {% if entry.system %}<div><span class="hop-badge badge-muted">system</span></div>{% endif %}
             {% if entry.severity and entry.severity not in ('info', 'low') %}
             <div><span class="badge hop-badge hop-badge-{{ 'failed' if entry.severity in ('high', 'critical') else 'warning' }}">{{ entry.severity }}</span></div>
             {% endif %}
@@ -150,9 +167,9 @@
   {% endif %}
 </section>
 
-<section class="card">
-  <h2>Views</h2>
-  <p class="muted">The same history, from five angles. Each answers a different question.</p>
+{# PR-178 Band 3: the five sibling views are reference material — kept
+   in full (every href intact), one disclosure away. #}
+{% call d.supporting('Views — the same history from 5 angles') %}
   <table class="grid">
     <tbody>
       <tr><td><strong><a href="/changes">Changes</a></strong></td><td>What the last discovery found different — filter, acknowledge, compare runs.</td></tr>
@@ -162,5 +179,15 @@
       <tr><td><strong><a href="/audit">Audit</a></strong></td><td>Every operator mutation: who, what, before/after, why — exportable.</td></tr>
     </tbody>
   </table>
-</section>
+{% endcall %}
+
+{% call d.contextual_help('About this page — what the timeline records') %}
+<p>Everything Atlas remembers happening, in one chronology: discoveries,
+configuration / topology / operational changes, incidents, predictions,
+Compass activity, compliance posture shifts, and every audited operator
+mutation — site and identity curation included, undo operations and all.
+Each event links to its exact object and names its provenance. System
+events (workspace migrations, startup bookkeeping) are hidden by default
+and one click away; the complete record stays on Audit.</p>
+{% endcall %}
 {% endblock %}

@@ -3847,6 +3847,19 @@ def register_routes(app) -> None:
         filters = ChronicleFilter.from_args(request.args)
         sites, _platforms = _device_maps()
         filtered = filter_events(events, filters, sites_by_device=sites)
+        # PR-178: the default view is the OPERATOR chronology; a
+        # machine's own writes (workspace migrations, startup
+        # bookkeeping) sit behind an explicit, URL-carried toggle. The
+        # hidden count is derived from the SAME filtered sequence the
+        # result line counts — the two halves of the sentence must
+        # describe one population. Nothing is deleted: /audit remains
+        # the complete record, and ?system=1 shows everything here.
+        show_system = request.args.get("system") == "1"
+        system_hidden = 0
+        if not show_system:
+            operator_view = [e for e in filtered if not e.get("system")]
+            system_hidden = len(filtered) - len(operator_view)
+            filtered = operator_view
         page = paginate(filtered, filters.page, filters.per_page)
         activity = []
         for entry in page.items:
@@ -3867,6 +3880,9 @@ def register_routes(app) -> None:
             option_sites=sorted(set(sites.values())),
             change_count=len(config_events),
             discovery_count=len(discovery_rows),
+            show_system=show_system,
+            system_hidden=system_hidden,
+            newest_event_at=(events[0]["occurred_at"] if events else None),
             **context,
         )
 

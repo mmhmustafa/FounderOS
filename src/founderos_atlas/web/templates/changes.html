@@ -4,13 +4,18 @@
 {% import "_disclosure.html" as d with context %}
 {% block title %}Changes{% endblock %}
 {% block content %}
-<h1>Change Intelligence — {{ active_scope_label }}</h1>
-<p class="muted">
-  Every difference the last discoveries found — topology, configuration, and
-  operational — as one filtered, pageable record. Acknowledge, assign, annotate,
-  or suppress a change (each action is audited); compare any two archived runs;
-  the filtered view is a shareable URL.
-</p>
+<div class="page-head">
+  <h1>Change Intelligence — {{ active_scope_label }}</h1>
+  {% if summary.total %}
+  <a class="btn btn-primary btn-sm" href="{{ scoped_url('/changes', active_scope_id, severity='high') }}#changes">Review high severity</a>
+  {% endif %}
+</div>
+{# PR-178: Changes does not judge — it leads with what was compared and
+   what differs. #}
+{{ fmt.basis('Differences between consecutive collections', scope=active_scope_label) }}
+{% if summary.total %}
+<p class="page-summary">{{ summary.total }} difference(s) — {{ summary.high }} high severity, {{ summary.total - summary.acknowledged }} unacknowledged.</p>
+{% endif %}
 
 {# PR-178: a number is a measurement, or it is not rendered as a number.
    A kind whose report was never produced (one collection, no baseline)
@@ -35,23 +40,36 @@
   of that kind in this scope), so totals cover only the kinds measured.
 </p>
 {% endif %}
-<div class="tiles">
-  <div class="tile"><strong>Changes{% if not all_measured %} (measured kinds){% endif %}</strong><span>{{ summary.total }}</span></div>
-  <div class="tile"><strong>Topology</strong><span>{% if kinds_measured.topology %}{{ summary.topology }}{% else %}{{ fmt.measure(None, unknown='Not compared') }}{% endif %}</span></div>
-  <div class="tile"><strong>Configuration</strong><span>{% if kinds_measured.configuration %}{{ summary.configuration }}{% else %}{{ fmt.measure(None, unknown='Not compared') }}{% endif %}</span></div>
-  <div class="tile"><strong>Operational</strong><span>{% if kinds_measured.operational %}{{ summary.operational }}{% else %}{{ fmt.measure(None, unknown='Not compared') }}{% endif %}</span></div>
-  <div class="tile"><strong>High severity{% if not all_measured %} (measured kinds){% endif %}</strong><span>{{ summary.high }}</span></div>
-  <div class="tile"><strong>Acknowledged</strong><span>{{ summary.acknowledged }}</span></div>
-  <div class="tile" title="Changes on devices named by the scope's incident report."><strong>Incident-linked</strong><span>{{ summary.incident_correlated }}</span></div>
-  <div class="tile"><strong>Suppressed</strong><span>{{ summary.suppressed }}</span></div>
+{# The kind and status counts are LINKS into their own filtered views,
+   not a tile wall. A kind whose report was never produced says so. #}
+<div class="filter-chips" role="group" aria-label="Changes by kind and status">
+  <span class="muted"><strong>Changes{% if not all_measured %} (measured kinds){% endif %}</strong>: {{ summary.total }}</span>
+  {% if kinds_measured.topology %}<a class="filter-chip" href="{{ scoped_url('/changes', active_scope_id, kind='topology') }}#changes">Topology: {{ summary.topology }}</a>{% else %}<span class="muted">Topology: {{ fmt.measure(None, unknown='Not compared') }}</span>{% endif %}
+  {% if kinds_measured.configuration %}<a class="filter-chip" href="{{ scoped_url('/changes', active_scope_id, kind='configuration') }}#changes">Configuration: {{ summary.configuration }}</a>{% else %}<span class="muted">Configuration: {{ fmt.measure(None, unknown='Not compared') }}</span>{% endif %}
+  {% if kinds_measured.operational %}<a class="filter-chip" href="{{ scoped_url('/changes', active_scope_id, kind='operational') }}#changes">Operational: {{ summary.operational }}</a>{% else %}<span class="muted">Operational: {{ fmt.measure(None, unknown='Not compared') }}</span>{% endif %}
+  <a class="filter-chip" href="{{ scoped_url('/changes', active_scope_id, severity='high') }}#changes">High severity{% if not all_measured %} (measured kinds){% endif %}: {{ summary.high }}</a>
+  <a class="filter-chip" href="{{ scoped_url('/changes', active_scope_id, status='acknowledged') }}#changes">Acknowledged: {{ summary.acknowledged }}</a>
+  <a class="filter-chip" href="{{ scoped_url('/changes', active_scope_id, suppressed=1) }}#changes">Suppressed: {{ summary.suppressed }}</a>
 </div>
+{% if summary.incident_correlated %}
+{# Incident linkage has no filter of its own — a sentence with its
+   destination, never a number the operator cannot then see. #}
+<p class="muted">{{ summary.incident_correlated }} change(s) touch devices named by
+  the scope's incident report — <a href="{{ scoped_url('/incidents', active_scope_id) }}">open Incidents</a>.</p>
+{% endif %}
 {% endif %}
 
-<section class="card">
-  <h2>Compare Two Runs</h2>
+{% if comparison %}
+{# An active comparison is the page's current basis — always visible. #}
+<p class="flash flash-info">Comparing <code>{{ comparison.left }}</code> → <code>{{ comparison.right }}</code>:
+  {{ comparison.count }} difference(s). <a href="{{ scoped_url('/changes', active_scope_id) }}">Back to current changes</a></p>
+{% endif %}
+
+{# PR-178: comparing an ARBITRARY archived pair is reference tooling —
+   the everyday question is the last two runs, which the page already
+   answers above. Supporting, with a count, collapsed at every level. #}
+{% call d.supporting('Compare two archived runs — ' ~ (run_options | length) ~ ' run(s) available') %}
   <p class="muted">The change reports compare consecutive runs; this compares ANY archived pair.</p>
-  <details class="disclosure disclosure-filters" {{ 'open' if display_level != 'simple' else '' }}>
-    <summary>Compare runs</summary>
   <form method="get" action="/changes/compare" class="filter-bar">
     <input type="hidden" name="scope" value="{{ active_scope_id }}">
     <label>Earlier run
@@ -72,18 +90,15 @@
     </label>
     <button class="btn btn-sm" type="submit">Compare</button>
   </form>
-  </details>
-  {% if comparison %}
-  <p class="flash flash-info">Comparing <code>{{ comparison.left }}</code> → <code>{{ comparison.right }}</code>:
-    {{ comparison.count }} difference(s). <a href="{{ scoped_url('/changes', active_scope_id) }}">Back to current changes</a></p>
-  {% endif %}
-</section>
+{% endcall %}
 
 <section class="card" id="changes">
   <h2>{{ 'Comparison Differences' if comparison else 'Detected Changes' }}</h2>
 
+  {# PR-178: this summary read "Compare runs" — the IDENTICAL label as
+     the comparison tool above it, on a details that holds the FILTERS. #}
   <details class="disclosure disclosure-filters" {{ 'open' if display_level != 'simple' else '' }}>
-    <summary>Compare runs</summary>
+    <summary>Filters</summary>
   <form method="get" action="{{ '/changes/compare' if comparison else '/changes' }}" class="filter-bar">
     <input type="hidden" name="scope" value="{{ active_scope_id }}">
     {% if comparison %}
@@ -124,7 +139,8 @@
     <label class="checkbox" style="align-self:center;">
       <input type="checkbox" name="suppressed" value="1" {{ 'checked' if filters.show_suppressed }}> show suppressed
     </label>
-    <button class="btn btn-sm btn-primary" type="submit">Apply filters</button>
+    {# PR-178: one primary per page — "Review high severity" owns it. #}
+    <button class="btn btn-sm" type="submit">Apply filters</button>
     <a class="btn btn-sm" href="{{ scoped_url('/changes', active_scope_id) }}">Clear</a>
     {% if not comparison %}
     <a class="btn btn-sm" href="/changes/export.csv?{{ (filter_args | urlencode) }}&scope={{ active_scope_id }}"
@@ -264,4 +280,11 @@
   </p>
   {% endif %}
 </section>
+
+{% call d.contextual_help('About this page — what Change Intelligence records') %}
+<p>Every difference the last discoveries found — topology, configuration, and
+operational — as one filtered, pageable record. Acknowledge, assign, annotate,
+or suppress a change (each action is audited); compare any two archived runs;
+the filtered view is a shareable URL.</p>
+{% endcall %}
 {% endblock %}

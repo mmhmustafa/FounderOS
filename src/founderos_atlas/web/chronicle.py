@@ -54,6 +54,7 @@ def _event(
     actor: str | None = None,
     provenance: str = "",
     system: bool = False,
+    category: str = "",
 ) -> dict[str, Any]:
     # ``system`` is EXPLICIT (PR-178): True only where a branch can
     # actually know it — the audit branch, whose records carry actor
@@ -65,6 +66,9 @@ def _event(
         "detail": detail, "href": href, "hostname": hostname,
         "device_id": device_id, "network": network, "severity": severity,
         "actor": actor, "provenance": provenance, "system": system,
+        # The precise class within a kind (PR-178): the 24 audit
+        # categories used to collapse into one "annotation" badge.
+        "category": category,
     }
 
 
@@ -210,6 +214,7 @@ def chronicle_events(
                 str(event.actor) == "system"
                 or str(event.source) in ("startup", "telemetry")
             ),
+            category=str(event.category),
         ))
     for scope_id, point in policy_trend:
         # PR-178: an unjudged posture point carries score None — "not

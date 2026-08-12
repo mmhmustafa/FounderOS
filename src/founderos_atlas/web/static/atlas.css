@@ -233,6 +233,10 @@ textarea:focus-visible, summary:focus-visible, [tabindex]:focus-visible {
 /* PR-178: a trend point recorded while nothing was judged has no score —
    slate, matching the product's unknown tone, never a 0% bar. */
 .trend-bar-unscored { background: var(--slate); opacity: 0.45; }
+/* PR-178: day headers group the chronology for scanning. */
+.day-row th { background: var(--panel); color: var(--muted); font-weight: 600;
+  font-size: 12px; text-transform: none; letter-spacing: 0.02em;
+  border-top: 2px solid var(--line-strong); text-align: left; }
 .btn-danger { background: var(--red-soft); border-color: #fecaca; color: var(--red-dark); }
 .btn-danger:hover { background: #fecaca; }
 .btn-sm { min-height: var(--control-height-sm); padding: 3px 10px; font-size: 13px; }
