@@ -1,17 +1,24 @@
 {% extends "base.html" %}
 {% block title %}Discover{% endblock %}
 {% block content %}
+{# PR-177: one state, one obvious primary action. With no profile the
+   dominant action is creating one; with profiles it is Run Discovery
+   (the form's submit below), so the wizard renders as the secondary
+   path here rather than a competing primary. The sample execution
+   console is a developer walkthrough and no longer part of the
+   operator workflow. #}
 <div class="page-head">
   <h1>Run Discovery</h1>
   <span class="actions">
-    <a class="btn" href="/discovery/console"
-       title="A sample walkthrough of the operational console — not a live run">Execution Console (sample)</a>
-    <a class="btn btn-primary" href="/discovery/wizard">Discovery Wizard</a>
+    {% if profiles %}
+    <a class="btn" href="/discovery/wizard">Discovery Wizard</a>
+    {% endif %}
   </span>
 </div>
-<p class="muted">Onboard an unknown network with the <a href="/discovery/wizard">Discovery Wizard</a> — seed device, management subnet, multiple seeds, or an imported device list.</p>
 
 {% if profiles %}
+<p class="muted">Onboard an unknown network with the <a href="/discovery/wizard">Discovery Wizard</a> — seed device, management subnet, multiple seeds, or an imported device list.</p>
+
 <section class="card">
   <h2>Networks</h2>
   {# This table is server-rendered at page load, so while a discovery runs
@@ -63,7 +70,18 @@
 </section>
 
 {% else %}
-<p class="muted">No profiles yet. <a href="/profiles/new">Add a profile</a> to run discovery.</p>
+<section class="card">
+  <h2>Connect Atlas to your first network</h2>
+  <p class="muted">A discovery profile tells Atlas where to connect and how — a seed
+  address or management subnet, and which credentials to use. Atlas connects
+  read-only; it never changes a device.</p>
+  <div class="actions">
+    <a class="btn btn-primary" href="/profiles/new">Add discovery profile</a>
+    <a class="btn" href="/discovery/wizard">Use the Discovery Wizard</a>
+  </div>
+  <p class="muted">The wizard is the guided alternative: it creates the profile
+  step by step and can start the discovery for you.</p>
+</section>
 {% endif %}
 
 <section class="card" id="job-panel"
@@ -84,28 +102,32 @@
   </ul>
   <div class="flash flash-error" id="job-failure" {% if not (job and job.error) %}hidden{% endif %}>{{ job.error if job else '' }}</div>
   <div id="job-summary" {% if not (job and job.summary) %}hidden{% endif %}>
-    <h2 id="job-summary-title">{{ job.message if job else 'Discovery result' }}</h2>
+    {# PR-177: the transition from setup to operations. The headline
+       and the three next actions are the moment; the evidence detail
+       below stays for the operator who wants the full accounting.
+       Rows without data are hidden, never rendered as dashes. #}
+    <h2 id="job-summary-title">{{ job.message if job else '' }}</h2>
+    <p class="muted" id="summary-headline">{% if job and job.summary %}{{ job.summary.devices }} devices · {{ job.summary.relationships }} relationships · {{ job.summary.configurations_collected }} configurations collected{% endif %}</p>
+    <div class="actions" id="job-actions">
+      <a class="btn btn-primary" id="action-topology" href="/topology{% if job %}?scope={{ job.profile_id | urlencode }}{% endif %}">View topology</a>
+      <a class="btn" id="action-health" href="/{% if job %}?scope={{ job.profile_id | urlencode }}{% endif %}">Review network health</a>
+      <a class="btn" id="action-advisor" href="/advisor{% if job %}?scope={{ job.profile_id | urlencode }}{% endif %}">Ask Atlas</a>
+    </div>
     <ul class="kv">
       <li><span>Network</span><span id="summary-network">{{ job.profile_name if job else '' }}</span></li>
       <li><span>Devices discovered</span><span id="summary-devices">{{ job.summary.devices if job and job.summary else '' }}</span></li>
-      <li><span>Addresses swept</span><span id="summary-sweep">{% if job and job.summary and job.summary.addresses_scanned %}{{ job.summary.addresses_scanned }} swept · {{ job.summary.devices }} answered{% if job.summary.addresses_without_device %} · {{ job.summary.addresses_without_device }} silent (no device answered){% endif %}{% if job.summary.auth_failed_devices %} · {{ job.summary.auth_failed_devices }} refused credentials{% endif %}{% else %}—{% endif %}</span></li>
+      <li id="row-sweep" {% if not (job and job.summary and job.summary.addresses_scanned) %}hidden{% endif %}><span>Addresses swept</span><span id="summary-sweep">{% if job and job.summary and job.summary.addresses_scanned %}{{ job.summary.addresses_scanned }} swept · {{ job.summary.devices }} answered{% if job.summary.addresses_without_device %} · {{ job.summary.addresses_without_device }} silent (no device answered){% endif %}{% if job.summary.auth_failed_devices %} · {{ job.summary.auth_failed_devices }} refused credentials{% endif %}{% endif %}</span></li>
       <li><span>Relationships</span><span id="summary-relationships">{{ job.summary.relationships if job and job.summary else '' }}</span></li>
       <li><span>Configurations collected</span><span id="summary-configs">{{ job.summary.configurations_collected if job and job.summary else '' }}</span></li>
-      <li><span>Platforms</span><span id="summary-platforms">{{ job.summary.platforms if job and job.summary and job.summary.platforms else '—' }}</span></li>
-      <li><span>Physical links verified</span><span id="summary-physical">{{ job.summary.physical_links if job and job.summary and job.summary.physical_links is not none else '—' }}</span></li>
-      <li><span>Routing adjacencies observed</span><span id="summary-adjacencies">{{ job.summary.routing_adjacencies if job and job.summary and job.summary.routing_adjacencies is not none else '—' }}</span></li>
-      <li><span>Protocol peers observed</span><span id="summary-peers">{{ job.summary.protocol_peers if job and job.summary and job.summary.protocol_peers is not none else '—' }}</span></li>
-      <li><span>Unresolved peer identities</span><span id="summary-unresolved">{{ job.summary.unresolved_peers if job and job.summary and job.summary.unresolved_peers is not none else '—' }}</span></li>
-      <li><span>Duration</span><span id="summary-duration">{% if job and job.summary %}{{ job.summary.duration_seconds }} seconds{% endif %}</span></li>
+      <li id="row-platforms" {% if not (job and job.summary and job.summary.platforms) %}hidden{% endif %}><span>Platforms</span><span id="summary-platforms">{{ job.summary.platforms if job and job.summary and job.summary.platforms else '' }}</span></li>
+      <li id="row-physical" {% if not (job and job.summary and job.summary.physical_links is not none) %}hidden{% endif %}><span>Physical links verified</span><span id="summary-physical">{{ job.summary.physical_links if job and job.summary and job.summary.physical_links is not none else '' }}</span></li>
+      <li id="row-adjacencies" {% if not (job and job.summary and job.summary.routing_adjacencies is not none) %}hidden{% endif %}><span>Routing adjacencies observed</span><span id="summary-adjacencies">{{ job.summary.routing_adjacencies if job and job.summary and job.summary.routing_adjacencies is not none else '' }}</span></li>
+      <li id="row-peers" {% if not (job and job.summary and job.summary.protocol_peers is not none) %}hidden{% endif %}><span>Protocol peers observed</span><span id="summary-peers">{{ job.summary.protocol_peers if job and job.summary and job.summary.protocol_peers is not none else '' }}</span></li>
+      <li id="row-unresolved" {% if not (job and job.summary and job.summary.unresolved_peers is not none) %}hidden{% endif %}><span>Unresolved peer identities</span><span id="summary-unresolved">{{ job.summary.unresolved_peers if job and job.summary and job.summary.unresolved_peers is not none else '' }}</span></li>
+      <li id="row-duration" {% if not (job and job.summary and job.summary.duration_seconds is not none) %}hidden{% endif %}><span>Duration</span><span id="summary-duration">{% if job and job.summary and job.summary.duration_seconds is not none %}{{ job.summary.duration_seconds }} seconds{% endif %}</span></li>
       <li id="summary-latency-row" {% if not (job and job.measure_latency) %}hidden{% endif %}><span>Link latency</span><span id="summary-latency">{% if job and job.measure_latency %}measuring after discovery — keep this page open{% else %}—{% endif %}</span></li>
     </ul>
     <div class="flash flash-error" id="job-warning" {% if not (job and job.warning) %}hidden{% endif %}>{{ job.warning if job else '' }}</div>
-    <div class="actions" id="job-actions">
-      <a class="btn" id="action-topology" href="/topology{% if job %}?scope={{ job.profile_id | urlencode }}{% endif %}">View Topology</a>
-      <a class="btn" id="action-changes" href="/changes{% if job %}?scope={{ job.profile_id | urlencode }}{% endif %}">View Changes</a>
-      <a class="btn" id="action-evidence" href="/evidence{% if job %}?scope={{ job.profile_id | urlencode }}{% endif %}">Review Evidence &amp; Gaps</a>
-      <a class="btn" id="action-dashboard" href="/{% if job %}?scope={{ job.profile_id | urlencode }}{% endif %}">View Dashboard</a>
-    </div>
   </div>
   <details class="log" data-remember="workflow:discovery-events"><summary>Recent events</summary>
     <pre id="job-events">{% if job %}{% for line in job.events %}{{ line }}

@@ -478,11 +478,18 @@ class ConsoleGuiTests(unittest.TestCase):
             self.assertGreater(snap["metrics"]["worker_utilization_percent"], 50)
             self.assertTrue(snap["nodes"])
 
-    def test_discovery_page_links_to_the_console(self) -> None:
+    def test_the_console_left_the_operator_workflow_but_kept_its_url(self) -> None:
+        # PR-177 reversed the old pin: the sample console is a developer
+        # walkthrough of FABRICATED data ("Delhi Lab"), and it rendered
+        # as the FIRST control an external evaluator saw on Discover.
+        # The page no longer links to it; the route itself stays for
+        # anyone who knows it.
         with tempfile.TemporaryDirectory() as tmp:
             client = self.build_client(Path(tmp))
             page = client.get("/discovery").data
-            self.assertIn(b'href="/discovery/console"', page)
+            self.assertNotIn(b'href="/discovery/console"', page)
+            self.assertNotIn(b"(sample)", page)
+            self.assertEqual(200, client.get("/discovery/console").status_code)
 
 
 if __name__ == "__main__":

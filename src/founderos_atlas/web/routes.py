@@ -456,7 +456,7 @@ def register_routes(app) -> None:
             ).preferences()
         except Exception:
             preferences = None
-        from .models import visible_nav_groups
+        from .models import render_nav_groups, workspace_has_discovery
         from . import workspace as ws
 
         # PR-170: the workspace layer. Every page gets its breadcrumbs,
@@ -471,7 +471,10 @@ def register_routes(app) -> None:
             favourites, recents = [], []
 
         return {
-            "nav_groups": visible_nav_groups(app),
+            # PR-177: the same guided builder as the app-wide context
+            # processor — one implementation, two call sites, no drift.
+            "nav_groups": render_nav_groups(app),
+            "nav_revealed": workspace_has_discovery(app),
             "active": active,
             "active_group": nav_group_for(active),
             "product": "Atlas",
@@ -489,6 +492,13 @@ def register_routes(app) -> None:
             "workspace_scope": scope_id,
             "workspace_here": ws.page(active) or {},
         }
+
+    # PR-177: routes registered in OTHER modules (ops.py's /inbox,
+    # telemetry_routes.py's /telemetry) need the same workspace
+    # wayfinding — breadcrumbs, Pin, favourites — or they render with no
+    # trail at all. base_context is a closure, so it is published here
+    # rather than imported there.
+    app.extensions["atlas_base_context"] = base_context
 
     # -- Scopes ---------------------------------------------------------------
 
@@ -1386,6 +1396,17 @@ def register_routes(app) -> None:
                 **base_context("profiles")
             )
         flash("Profile saved.", "success")
+        # PR-177: on a first-run workspace the only reason to create a
+        # profile is to discover with it — land on Discover with the new
+        # profile's scope active (?scope= is the honoured parameter). An
+        # operator curating profiles on a revealed workspace keeps the
+        # list they were working in.
+        from .models import workspace_has_discovery
+
+        if not workspace_has_discovery(app):
+            return redirect(
+                url_for("discovery", scope=created.profile_id)
+            )
         return redirect(url_for("profiles"))
 
     @app.route("/profiles/<name>/edit")
@@ -1792,7 +1813,11 @@ def register_routes(app) -> None:
 
     @app.route("/discovery")
     def discovery():
-        return discovery_page(discovery_rows())
+        # PR-177: the Profiles page's Run button has always passed
+        # ?profile=<name>; honour it so the chosen network arrives
+        # preselected instead of silently ignored.
+        requested = str(request.args.get("profile") or "").strip()
+        return discovery_page(discovery_rows(), selected=requested or None)
 
     # -- Discovery Wizard (PR-043.2: enterprise discovery modes) --------------
 
@@ -7388,10 +7413,21 @@ def register_routes(app) -> None:
         """Pages and commands matching ``query``, as a search group.
 
         Substring matching on the label and its area — deterministic and
-        explainable, like every other Atlas match. RBAC is respected by
-        construction: the index is built from the nav groups this
-        principal can actually see, so the palette can never offer a
-        page the sidebar would hide.
+        explainable, like every other Atlas match.
+
+        Visibility invariant (PR-177): this group follows RBAC/access
+        visibility ONLY — `visible_nav_groups`, never the guided
+        first-run filter. The sidebar may additionally apply contextual
+        guidance (`guided_nav_groups`), so a page can be intentionally
+        searchable here while omitted from the guided first-run sidebar.
+        Search is how a hidden-but-permitted page stays reachable;
+        narrowing it to match the sidebar would turn guidance into
+        access control.
+
+        The rows use the canonical search-hit shape (``title``,
+        ``subtitle``, ``href``) and the group carries ``count`` — the
+        same contract as ``SearchGroup.to_dict`` — because the palette
+        renderer reads exactly those keys.
         """
 
         from . import workspace as ws
@@ -7416,8 +7452,8 @@ def register_routes(app) -> None:
             haystack = f"{row['label']} {row['detail']}".casefold()
             if needle in haystack:
                 rows.append({
-                    "label": row["label"],
-                    "detail": row["detail"],
+                    "title": row["label"],
+                    "subtitle": row["detail"],
                     "href": row["href"],
                     "kind": row["kind"],
                 })
@@ -7427,7 +7463,7 @@ def register_routes(app) -> None:
             "id": "pages",
             "label": "Pages & commands",
             "results": rows[:limit],
-            "total": len(rows),
+            "count": len(rows),
         }
 
     @app.route("/devices/<path:enterprise_id>")

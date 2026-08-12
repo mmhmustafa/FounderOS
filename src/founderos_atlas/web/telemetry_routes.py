@@ -101,10 +101,12 @@ def register_telemetry_routes(app) -> None:
             all_facts, requested_page=requested_page, page_size=100
         )
         signals = derive_signals(all_facts)
+        # PR-177: full workspace context so a deep link keeps its
+        # breadcrumb trail even while guided navigation hides Signals.
+        base = app.extensions["atlas_base_context"]("telemetry")
         return render_template(
             "telemetry.html",
-            active="telemetry",
-            active_group="analyze",
+            **base,
             facts=page.items,
             fact_total=page.total,
             fact_page=page.number,

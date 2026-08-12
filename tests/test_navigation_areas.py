@@ -58,8 +58,21 @@ class AccordionTests(unittest.TestCase):
 
 
 class RbacFilteringTests(unittest.TestCase):
+    # PR-177 note: these tests prove RBAC filtering, so they run on a
+    # REVEALED workspace (the durable marker stands in for a completed
+    # discovery — production_world's workspace is empty, and guided
+    # first-run navigation would otherwise narrow the sidebar first and
+    # quietly turn these into progressive-navigation tests).
+
+    @staticmethod
+    def _reveal(app) -> None:
+        marker = Path(app.config["ATLAS_OUTPUT_DIR"]) / ".atlas" / "nav-revealed"
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.touch()
+
     def test_viewer_sidebar_omits_unauthorized_admin_items(self) -> None:
         with production_world() as (app, _):
+            self._reveal(app)
             viewer, _csrf = sign_in(app, "viewer")
             page = viewer.get("/").get_data(as_text=True)
             sidebar = page.split('id="atlas-sidebar"')[1].split("</nav>")[0]
@@ -71,6 +84,7 @@ class RbacFilteringTests(unittest.TestCase):
 
     def test_admin_sidebar_shows_administration_in_full(self) -> None:
         with production_world() as (app, _):
+            self._reveal(app)
             admin, _csrf = sign_in(app, "admin")
             sidebar = (
                 admin.get("/").get_data(as_text=True)

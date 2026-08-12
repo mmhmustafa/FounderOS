@@ -254,11 +254,22 @@ def create_app(
                 source_refs=(f"discovery-job:{job.job_id}",),
             )
 
+        def _reveal_navigation(job) -> None:
+            # PR-177: a completed discovery has already written its
+            # snapshot and history record, so the workspace is now
+            # operational — latch the guided-navigation reveal and drop
+            # the durable marker. Runs on the worker thread; both writes
+            # are safe there (dict assignment + touch).
+            from .models import mark_nav_revealed
+
+            mark_nav_revealed(app)
+
         job_manager = DiscoveryJobManager(
             runner=make_pipeline_runner(app),
             profile_service=profile_service,
             persist_path=resolved_output / ".atlas" / "jobs.json",
             on_failure=_notify_discovery_failure,
+            on_success=_reveal_navigation,
         )
     app.config["ATLAS_JOB_MANAGER"] = job_manager
 
@@ -300,7 +311,7 @@ def create_app(
         ),
     )
 
-    from .models import NAV_GROUPS
+    from .models import render_nav_groups, workspace_has_discovery
 
     @app.context_processor
     def _navigation_defaults():
@@ -351,7 +362,12 @@ def create_app(
             )
             display_level_explicit = True
         return {
-            "nav_groups": __import__("founderos_atlas.web.models", fromlist=["visible_nav_groups"]).visible_nav_groups(app),
+            # PR-177: RBAC first, first-run guidance second — the SAME
+            # builder base_context uses, so the two render sites cannot
+            # disagree. The second call is O(1): the readiness answer is
+            # memoised on `g` within the request.
+            "nav_groups": render_nav_groups(app),
+            "nav_revealed": workspace_has_discovery(app),
             "active": "",
             "active_group": "",
             "product": "Atlas",

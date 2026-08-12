@@ -82,9 +82,11 @@ class WebShellTests(unittest.TestCase):
             self.assertIn(b"Enterprise Network Intelligence", body)
             # PR-040: the landing page is the MISSION workspace.
             self.assertIn(b"Home", body)
-            # Simple mode keeps the workflow grid one disclosure away.
-            self.assertIn(b"All workflows", body)
-            self.assertIn(b"Run Discovery", body)
+            # PR-177: this client has never discovered, so Home frames
+            # the product and leads to discovery; the workflow grid
+            # ("All workflows") belongs to the revealed workspace.
+            self.assertIn(b"Run your first discovery", body)
+            self.assertNotIn(b"All workflows", body)
 
     def test_topology_alone_opts_into_the_wide_shell(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

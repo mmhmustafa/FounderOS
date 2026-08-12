@@ -34,6 +34,11 @@ LEGACY_ROUTES = (
     "/configuration", "/memory", "/policy", "/console", "/management",
     "/predict", "/paths", "/compass", "/history", "/changes", "/incidents",
     "/settings",
+    # PR-177: guided first-run navigation HIDES most destinations before
+    # a discovery — these prove every one of them stays directly
+    # reachable on a fresh workspace. Guidance, never access control.
+    "/timeline", "/evidence", "/inbox", "/telemetry", "/audit", "/users",
+    "/schedules", "/settings/ai", "/prism/playground",
 )
 
 
@@ -115,10 +120,22 @@ class NavigationStructureTests(unittest.TestCase):
                     f"{route} redirects nowhere",
                 )
 
+    @staticmethod
+    def _reveal(tmp: Path) -> None:
+        """Stand in for a completed discovery (PR-177's durable marker)."""
+
+        marker = tmp / ".atlas" / "nav-revealed"
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.touch()
+
     def test_sidebar_groups_every_view_under_its_workflow(self) -> None:
+        # PR-177: the full five-area sidebar is the POST-DISCOVERY shape;
+        # a fresh workspace shows guided navigation instead, so this
+        # structural test runs on a revealed workspace.
         with tempfile.TemporaryDirectory() as tmp:
+            self._reveal(Path(tmp))
             page = _client(Path(tmp)).get("/policy").get_data(as_text=True)
-            # Six workflow labels orient the reader...
+            # Five workflow labels orient the reader...
             for label in ("Home", "Network", "Operations", "Analyze", "Administration"):
                 self.assertIn(label, page)
             # ...and a single-view group is its own link, not a label above one
@@ -128,9 +145,18 @@ class NavigationStructureTests(unittest.TestCase):
 
     def test_expert_views_stay_one_click_away_from_anywhere(self) -> None:
         """Grouping organises the sidebar; it must not bury the tools an
-        engineer lives in. Mission is the front door, never a gate."""
+        engineer lives in.
+
+        PR-177 revised the old principle ("Mission is the front door,
+        never a gate"): before the FIRST discovery the sidebar now
+        guides — Home, Discover, Settings — because an empty workspace
+        has nothing behind the other doors. Every destination stays
+        directly reachable by URL and findable in Ctrl+K throughout.
+        This test therefore asserts the one-click promise on a REVEALED
+        workspace, where it still holds in full."""
 
         with tempfile.TemporaryDirectory() as tmp:
+            self._reveal(Path(tmp))
             page = _client(Path(tmp)).get("/").get_data(as_text=True)
             for href in (
                 "/predict", "/paths", "/topology", "/history", "/compass",

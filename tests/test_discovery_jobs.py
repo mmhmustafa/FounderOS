@@ -610,6 +610,7 @@ class SilentAddressesAreNotFailuresTests(unittest.TestCase):
         manager._persist = lambda: None
         manager._now = lambda: "2026-07-15T00:00:00+00:00"
         manager._elapsed = lambda _job: 72.4
+        manager._on_success = None      # PR-177: constructor wires this
         manager._finish_completed(job, summary)
         return job
 

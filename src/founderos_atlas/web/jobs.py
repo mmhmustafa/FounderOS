@@ -224,10 +224,12 @@ class DiscoveryJobManager:
         clock: Clock | None = None,
         thread_factory: Callable[..., threading.Thread] | None = None,
         on_failure: Callable[["DiscoveryJob"], None] | None = None,
+        on_success: Callable[["DiscoveryJob"], None] | None = None,
     ) -> None:
         self._runner = runner
         self._profiles = profile_service
         self._on_failure = on_failure
+        self._on_success = on_success
         self._persist_path = Path(persist_path) if persist_path is not None else None
         self._clock = clock or (lambda: datetime.now(timezone.utc))
         self._threads = thread_factory or (
@@ -396,6 +398,15 @@ class DiscoveryJobManager:
                 job.warning = None
                 job.message = "Discovery completed successfully"
             self._persist()
+        # PR-177: the success hook mirrors on_failure. It never lies —
+        # the runner has already written the topology snapshot and the
+        # history record before returning, so anything the hook reveals
+        # is genuinely on disk.
+        if self._on_success is not None:
+            try:
+                self._on_success(job)
+            except Exception:  # noqa: BLE001 - notify must not mask success
+                pass
 
     def _finish_cancelled(self, job: DiscoveryJob) -> None:
         with self._lock:

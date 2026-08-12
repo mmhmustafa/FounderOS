@@ -360,13 +360,22 @@ class WorkspaceWebTests(unittest.TestCase):
             self.assertLess(0, len(viewer_hrefs))
 
     def test_the_palette_finds_pages_as_well_as_devices(self) -> None:
+        # PR-177: the rows now use the CANONICAL search-hit shape
+        # (title/subtitle, group count) — the old label/detail/total
+        # shape was unreadable by the palette renderer, which crashed
+        # on result.title and reported "Search unavailable".
         with tempfile.TemporaryDirectory() as tmp:
             client = self.client(Path(tmp))
             payload = client.get("/api/search?q=policy").get_json()
             groups = {group["id"]: group for group in payload["groups"]}
             self.assertIn("pages", groups)
-            labels = [row["label"] for row in groups["pages"]["results"]]
-            self.assertIn("Policy", labels)
+            titles = [row["title"] for row in groups["pages"]["results"]]
+            self.assertIn("Policy", titles)
+            self.assertIn("count", groups["pages"])       # SearchGroup contract
+            self.assertNotIn("total", groups["pages"])
+            for row in groups["pages"]["results"]:
+                self.assertIn("subtitle", row)
+                self.assertNotIn("label", row)
 
     def test_a_one_character_query_does_not_list_every_page(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

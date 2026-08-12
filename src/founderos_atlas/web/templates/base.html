@@ -16,7 +16,7 @@
   itself needs stays, and RBAC is enforced per request regardless of what
   renders here, so this hides chrome and never a control that matters.
 #}
-<body data-theme="{{ ui_theme or 'system' }}" data-density="{{ ui_density or 'comfortable' }}" data-display-level="{{ display_level or 'simple' }}"{% if bare_chrome %} data-chrome="bare"{% endif %}>
+<body data-theme="{{ ui_theme or 'system' }}" data-density="{{ ui_density or 'comfortable' }}" data-display-level="{{ display_level or 'simple' }}" data-nav-revealed="{{ 'true' if nav_revealed else 'false' }}"{% if bare_chrome %} data-chrome="bare"{% endif %}>
 {% import "_icons.html" as icons %}
 {% import "_breadcrumbs.html" as crumb_macro %}
 {% if not bare_chrome %}
@@ -61,9 +61,14 @@
       </label>
       <noscript><button class="btn btn-sm" type="submit">Apply</button></noscript>
     </form>
+    {# PR-177: pre-reveal, Home's "Run your first discovery" is THE
+       primary action; a second primary in the topbar competed with it.
+       The shortcut returns with the rest of the workspace. #}
+    {% if nav_revealed %}
     <form class="run-form" method="get" action="/discovery">
       <button class="btn btn-primary" type="submit">Run Discovery</button>
     </form>
+    {% endif %}
     {% if current_principal %}
     <div class="user-chip">
       <a class="inbox-link" href="/inbox" aria-label="Inbox{% if inbox_unread %} — {{ inbox_unread }} unread{% endif %}">
@@ -97,10 +102,18 @@
       <ul>
         {% for group in nav_groups %}
         <li class="nav-group{{ ' nav-group-current' if group.key == active_group else '' }}">
-          <details class="nav-details" {{ 'open' if group.key == active_group else '' }}>
+          {# PR-177: before the first discovery only two groups survive the
+             guided filter; BOTH open, or the user sees one link and a
+             closed summary — and a deep link to a hidden page would open
+             nothing at all. After the reveal the accordion behaves as
+             before: the active group opens, atlas.js closes siblings. #}
+          <details class="nav-details" {{ 'open' if (group.key == active_group or not nav_revealed) else '' }}>
             <summary class="nav-group-label">
               {{ icons.icon(group.key) }}<span class="nav-group-name">{{ group.label }}</span>
-              {% if group.key == 'home' and inbox_unread %}<span class="nav-count" aria-label="{{ inbox_unread }} unread notifications">{{ inbox_unread }}</span>{% endif %}
+              {# The unread badge only means something while the Inbox
+                 destination it points at is actually in this group —
+                 guided navigation removes it pre-reveal (PR-177). #}
+              {% if group.key == 'home' and inbox_unread and (group.items | selectattr('key', 'equalto', 'inbox') | list) %}<span class="nav-count" aria-label="{{ inbox_unread }} unread notifications">{{ inbox_unread }}</span>{% endif %}
             </summary>
             <ul class="subnav">
               {% for item in group.items %}
@@ -116,6 +129,7 @@
         {% endfor %}
       </ul>
       <div class="sidebar-note">
+        {% if not nav_revealed %}More appears after your first discovery.<br>{% endif %}
         {% if auth_mode == 'local' %}Local development mode · loopback only
         {% else %}Authenticated · {{ auth_mode }} mode{% endif %}
       </div>

@@ -369,14 +369,29 @@ class MissionGuiTests(unittest.TestCase):
             # Enterprise-only cards stay off the scoped page.
             self.assertNotIn(b"Continue Working", page)
 
-    def test_empty_world_teaches_with_examples(self) -> None:
+    def test_empty_world_frames_and_points_to_discovery(self) -> None:
+        # PR-177 reversed the old teaching-by-example empty state: on a
+        # never-discovered workspace every example led to an empty page,
+        # so first-run Home now frames the product and leads to
+        # discovery instead. The examples still teach — after evidence
+        # exists (see the next test).
         with tempfile.TemporaryDirectory() as tmp:
             _, client = self.build_world(Path(tmp), discover=False)
             page = client.get("/?scope=all").data.decode("utf-8")
-            self.assertIn("What would you like to do?", page)
+            self.assertIn(
+                "Atlas explains your network from evidence it collects", page
+            )
             self.assertIn("No discovery has run yet", page)
-            self.assertIn("Run Discovery", page)
-            # The Continue Working empty state teaches by example.
+            self.assertIn("Run your first discovery", page)
+            self.assertNotIn("What would you like to do?", page)
+            self.assertNotIn("Start your first investigation", page)
+
+    def test_discovered_world_still_teaches_with_examples(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            _, client = self.build_world(Path(tmp))
+            page = client.get("/?scope=all").data.decode("utf-8")
+            # The Continue Working empty state teaches by example once
+            # the examples can actually be followed.
             self.assertIn("Start your first investigation", page)
             for example in ("Routing issue", "VLAN problem",
                             "Device unreachable", "Change tonight"):

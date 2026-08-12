@@ -21,11 +21,18 @@ def _at_level(client, level: str) -> None:
 
 class HomeHierarchyTests(unittest.TestCase):
     def test_no_discovery_states_unknown_with_first_action(self) -> None:
+        # PR-177 replaced the bare "state is unknown" callout with
+        # product framing; the honest no-evidence statement moved into
+        # the Needs-your-attention recommendation. The intent is
+        # unchanged: no data is stated as no data, never as healthy,
+        # and the first action is one obvious click.
         with tempfile.TemporaryDirectory() as tmp:
             _, client = build_world(Path(tmp), discover=False)
             page = client.get("/?scope=all").get_data(as_text=True)
-            self.assertIn("Network state is unknown", page)
-            self.assertIn("no discovery has run yet", page)
+            self.assertIn(
+                "Atlas explains your network from evidence it collects", page
+            )
+            self.assertIn("No discovery has run yet", page)
             self.assertIn("Run your first discovery", page)
             # Unknown is never dressed as healthy.
             self.assertNotIn("status-healthy", page)

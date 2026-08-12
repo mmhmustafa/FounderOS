@@ -155,10 +155,13 @@ def register_ops_routes(app) -> None:
                 for item in items
                 if item.notification_id == requested_notification
             ]
+        # PR-177: the full workspace context (breadcrumbs, Pin,
+        # favourites) — /inbox was one of two destinations with neither
+        # a nav entry nor a breadcrumb once guided navigation hid it.
+        context = app.extensions["atlas_base_context"]("inbox")
         return render_template(
             "inbox.html",
-            active="inbox",
-            active_group=nav_group_for("inbox"),
+            **context,
             notifications=items,
             include_done=include_done,
             selected_status=requested_status,

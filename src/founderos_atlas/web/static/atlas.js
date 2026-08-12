@@ -189,9 +189,27 @@
       }
       return parts.join(" · ");
     }
+    // A row with no data disappears instead of rendering an em-dash —
+    // the "Discovery result" scaffold of dashes read as a broken page
+    // to a first-run evaluator (PR-177).
+    function setRow(rowId, valueId, value) {
+      show(rowId, value !== null && value !== undefined && value !== "");
+      if (value !== null && value !== undefined && value !== "") {
+        setText(valueId, value);
+      }
+    }
     show("job-summary", done && Boolean(job.summary));
     if (done && job.summary) {
-      setText("job-summary-title", job.message);
+      // The first successful discovery is the transition from setup to
+      // operations: say so plainly. Later runs keep the factual message.
+      var firstReveal = document.body.dataset.navRevealed !== "true";
+      setText("job-summary-title", firstReveal ? "Atlas is ready." : job.message);
+      setText(
+        "summary-headline",
+        job.summary.devices + " devices · "
+          + job.summary.relationships + " relationships · "
+          + job.summary.configurations_collected + " configurations collected"
+      );
       setText("summary-network", job.profile_name);
       setText("summary-devices", job.summary.devices);
       // Twelve devices out of a swept /24 reads as a failure until the
@@ -199,25 +217,26 @@
       // address (no device there — coverage, not a fault) from a device
       // that refused credentials, so say both rather than leaving the
       // operator to wonder why a sweep "only contacted 12".
-      setText("summary-sweep", sweepSummary(job.summary));
+      setRow("row-sweep", "summary-sweep",
+             job.summary.addresses_scanned == null ? null : sweepSummary(job.summary));
       setText("summary-relationships", job.summary.relationships);
       setText("summary-configs", job.summary.configurations_collected);
-      setText("summary-platforms", job.summary.platforms || "—");
-      setText("summary-physical", job.summary.physical_links ?? "—");
-      setText("summary-adjacencies", job.summary.routing_adjacencies ?? "—");
-      setText("summary-peers", job.summary.protocol_peers ?? "—");
-      setText("summary-unresolved", job.summary.unresolved_peers ?? "—");
+      setRow("row-platforms", "summary-platforms", job.summary.platforms || null);
+      setRow("row-physical", "summary-physical", job.summary.physical_links ?? null);
+      setRow("row-adjacencies", "summary-adjacencies", job.summary.routing_adjacencies ?? null);
+      setRow("row-peers", "summary-peers", job.summary.protocol_peers ?? null);
+      setRow("row-unresolved", "summary-unresolved", job.summary.unresolved_peers ?? null);
       // "73s", to match the elapsed counter above it — not "72.366208 seconds".
       var secs = job.summary.duration_seconds;
-      setText("summary-duration", secs == null ? "—" : Math.round(secs) + "s");
+      setRow("row-duration", "summary-duration", secs == null ? null : Math.round(secs) + "s");
       show("job-warning", Boolean(job.warning));
       if (job.warning) setText("job-warning", job.warning);
       var topology = byId("action-topology");
-      var changes = byId("action-changes");
-      var dashboard = byId("action-dashboard");
+      var health = byId("action-health");
+      var advisor = byId("action-advisor");
       if (topology) topology.href = scopeHref("/topology", job.profile_id);
-      if (changes) changes.href = scopeHref("/changes", job.profile_id);
-      if (dashboard) dashboard.href = scopeHref("/", job.profile_id);
+      if (health) health.href = scopeHref("/", job.profile_id);
+      if (advisor) advisor.href = scopeHref("/advisor", job.profile_id);
     }
     var button = byId("discovery-run");
     if (button) {
@@ -227,24 +246,53 @@
     }
   }
 
-  // The Networks table is server-rendered at page load, so a run finishing
-  // beside it leaves it claiming "running" / "never". Re-fetch the page and
-  // swap in that table's fresh body — a full reload would be simpler but would
-  // throw away the results panel, which only exists because renderJob drew it.
-  function refreshNetworksTable() {
-    var body = byId("networks-body");
-    if (!body || !window.fetch || !window.DOMParser) return;
+  // A run finishing beside server-rendered chrome leaves that chrome
+  // stale: the Networks table claims "running" / "never", and — the
+  // PR-177 payoff — a FIRST successful discovery should reveal the full
+  // sidebar without a page load. One re-fetch, one parse, and each swap
+  // applies independently: an absent table must not skip the sidebar
+  // reveal (a full reload would be simpler but would throw away the
+  // results panel, which only exists because renderJob drew it).
+  function refreshAfterDiscovery() {
+    if (!window.fetch || !window.DOMParser) return;
     fetch(window.location.pathname + window.location.search, {
       credentials: "same-origin"
     })
       .then(function (response) { return response.text(); })
       .then(function (html) {
-        var fresh = new DOMParser()
-          .parseFromString(html, "text/html")
-          .getElementById("networks-body");
-        if (fresh) body.innerHTML = fresh.innerHTML;
+        var doc = new DOMParser().parseFromString(html, "text/html");
+        var body = byId("networks-body");
+        var freshBody = doc.getElementById("networks-body");
+        if (body && freshBody) body.innerHTML = freshBody.innerHTML;
+
+        // Reveal the workspace in place when the server now says the
+        // navigation is unlocked (a failed run never flips this). Swap
+        // the container's INNER HTML, never the element — the drawer
+        // and accordion handlers are delegated on #atlas-sidebar.
+        var nowRevealed = doc.body
+          && doc.body.getAttribute("data-nav-revealed") === "true";
+        var sidebar = document.getElementById("atlas-sidebar");
+        var freshSidebar = doc.getElementById("atlas-sidebar");
+        if (nowRevealed && sidebar && freshSidebar
+            && document.body.dataset.navRevealed !== "true") {
+          // Never skip the swap because focus sits in the sidebar —
+          // this branch fires exactly once, so skipping would cancel
+          // the reveal permanently. Capture, swap, restore.
+          var active = document.activeElement;
+          var hadFocus = sidebar.contains(active);
+          var focusedHref = hadFocus && active.getAttribute
+            ? active.getAttribute("href") : null;
+          sidebar.innerHTML = freshSidebar.innerHTML;
+          document.body.dataset.navRevealed = "true";
+          if (hadFocus) {
+            var again = (focusedHref
+              && sidebar.querySelector('a[href="' + focusedHref + '"]'))
+              || sidebar.querySelector("a");
+            if (again) again.focus();
+          }
+        }
       })
-      .catch(function () { /* the stale table is not worth an error */ });
+      .catch(function () { /* stale chrome is not worth an error */ });
   }
 
   // The opt-in active pass: once a read-only discovery finishes, and only
@@ -306,7 +354,7 @@
           window.setTimeout(function () { poll(jobId); }, POLL_MS);
         } else {
           // Terminal: the run just finished under this page.
-          refreshNetworksTable();
+          refreshAfterDiscovery();
           maybeMeasureLatency(payload.job);
         }
       })
@@ -556,6 +604,10 @@
     };
 
     var highlight = function (text, needle) {
+      // A malformed or optional field must never turn a healthy
+      // response into "Search unavailable" — one undefined title used
+      // to throw here and abort rendering mid-list (PR-177).
+      text = text == null ? "" : String(text);
       var target = document.createDocumentFragment();
       var lower = text.toLowerCase();
       var index = needle ? lower.indexOf(needle.toLowerCase()) : -1;

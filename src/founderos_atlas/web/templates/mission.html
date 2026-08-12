@@ -29,9 +29,17 @@
 {% if summary.networks %}
 {{ health_ui.banner(health) }}
 {% else %}
+{# PR-177: the first-run product framing — what Atlas is, what it
+   needs, and the one reassurance a network engineer asks for before
+   pointing an unfamiliar tool at production. Operator vocabulary,
+   no marketing, no architecture terms. #}
 <div class="callout" role="status">
-  <p class="callout-text">Network state is unknown — no discovery has run yet.</p>
-  <p class="muted">Atlas reports only what evidence proves. Run a discovery to give it something to reason about.</p>
+  <p class="callout-text"><strong>Atlas explains your network from evidence it collects
+  itself.</strong> Point it at one device and it discovers the rest, records exactly
+  what each device reported, and reasons only from that — nothing is inferred,
+  nothing is guessed.</p>
+  <p class="muted">To begin, Atlas needs one network to look at. Atlas connects
+  read-only; it never changes a device.</p>
 </div>
 {% endif %}
 
@@ -90,7 +98,7 @@
   {# 5 — One visually dominant primary action, chosen from real state. #}
   <div class="form-actions mission-primary">
     {% if not summary.networks %}
-    <a class="btn btn-primary" href="/discovery">Run your first discovery</a>
+    <a class="btn btn-primary btn-first-discovery" href="/discovery">Run your first discovery</a>
     {% elif recommendations %}
     <a class="btn btn-primary" href="{{ recommendations[0].href }}">{{ recommendations[0].action }}</a>
     {% else %}
@@ -139,6 +147,11 @@
   </div>
 </section>
 
+{# PR-177: before any evidence exists, "Continue Working" and the
+   workflow grid advertise work the operator cannot meaningfully start —
+   every path leads to an empty page. They appear with the first
+   evidence, alongside the rest of the workspace. #}
+{% if summary.networks %}
 <section class="card">
   <div class="page-head" style="margin-bottom:0;"><h2>Continue Working</h2>
     {% if continue_working and (continue_working.plan or continue_working.investigation or continue_working.prediction) %}
@@ -238,6 +251,7 @@
   </details>
 </section>
 {% else %}</section>{% endif %}
+{% endif %}{# summary.networks — Continue Working + workflow grid (PR-177) #}
 
 {# Enterprise metrics: canonical counts. Inline from Detailed up; one
    disclosure away in Simple. Expert adds provenance. #}

@@ -40,11 +40,18 @@ from typing import Any
 
 @dataclass(frozen=True)
 class NavItem:
-    """One view inside a workflow. ``key`` is what a route passes as ``active``."""
+    """One view inside a workflow. ``key`` is what a route passes as ``active``.
+
+    ``sidebar=False`` keeps a destination in the page model — breadcrumbs,
+    the Pin button, the Ctrl+K palette — while omitting it from the
+    rendered sidebar (PR-177). Deleting the NavItem instead would silently
+    take all three.
+    """
 
     key: str
     label: str
     href: str
+    sidebar: bool = True
 
 
 @dataclass(frozen=True)
@@ -95,7 +102,12 @@ NAV_GROUPS: tuple[NavGroup, ...] = (
         NavItem("audit", "Audit", "/audit"),
         NavItem("settings", "Settings", "/settings"),
         NavItem("ai", "PRISM", "/settings/ai"),
-        NavItem("prism-playground", "PRISM Playground", "/prism/playground"),
+        # The Playground is a system-admin demonstration tool, not a
+        # permanent operator destination (PR-177). It keeps its key, its
+        # URL, its breadcrumbs and its palette entry; its front door is
+        # the card on /settings/ai.
+        NavItem("prism-playground", "PRISM Playground", "/prism/playground",
+                sidebar=False),
         NavItem("schedules", "Schedules", "/schedules"),
     )),
 )
@@ -502,3 +514,206 @@ def visible_nav_groups(app) -> tuple[NavGroup, ...]:
         if items:
             groups.append(_dc_replace(group, items=items))
     return tuple(groups)
+
+
+# -- Progressive first-run navigation (PR-177) --------------------------------
+#
+# Before the workspace holds a usable discovery, the sidebar shows only
+# what a new operator can meaningfully act on. This is GUIDANCE layered
+# over RBAC, never access control: every route stays reachable, RBAC
+# stays the only authorization mechanism, and the Ctrl+K palette keeps
+# the full RBAC-visible page list so a hidden page is always findable.
+
+# Item KEYS (frozen by contract, see NAV_GROUPS) visible before the
+# first usable discovery. The set spans two groups — `dashboard` lives
+# in `home`; `discovery` and `settings` in `administration` — so the
+# filter is item-level and `guided_nav_groups` drops the emptied
+# Network/Operations/Analyze groups for free.
+PRE_DISCOVERY_ITEM_KEYS = frozenset({"dashboard", "discovery", "settings"})
+
+
+def _nav_reveal_marker(app) -> Path:
+    """The durable per-workspace reveal marker.
+
+    It exists for exactly one case: an already-operational workspace
+    must not silently re-enter first-run guidance because its only
+    discovery profile was later deleted or archived (the scope's data
+    stays on disk, but ``profile_scopes`` no longer names it). It lives
+    in the OUTPUT directory, which the backup manifest deliberately
+    does not carry — so a workspace restored onto a clean machine
+    correctly starts in first-run guidance.
+    """
+
+    return Path(app.config["ATLAS_OUTPUT_DIR"]) / ".atlas" / "nav-revealed"
+
+
+def mark_nav_revealed(app) -> None:
+    """Latch the reveal for this process and this workspace, best effort.
+
+    Called on a computed positive answer and by the discovery job
+    manager's success hook — both moments where usable artifacts are
+    already on disk. Never called from a fail-open path.
+    """
+
+    app.extensions["atlas_nav_revealed"] = True
+    try:
+        marker = _nav_reveal_marker(app)
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.touch(exist_ok=True)
+    except OSError:
+        # The in-process latch still holds; the marker is a durability
+        # nicety, not a source of truth.
+        app.logger.debug("could not write the nav-revealed marker",
+                         exc_info=True)
+
+
+def workspace_has_discovery(app) -> bool:
+    """Whether this workspace holds a usable discovery (PR-177).
+
+    The authoritative signal is the one Home already trusts:
+    ``active_scopes`` over ``DiscoveryScope.has_data()`` — a topology
+    snapshot or a discovery-history directory. A failed run writes
+    neither, so it never reveals; a partial run writes both, so it does.
+
+    Contract: A POSITIVE ANSWER IS NEVER INVALIDATED WITHIN A PROCESS;
+    A NEGATIVE ANSWER IS NEVER CACHED BEYOND ITS STAMP. The evaluation
+    order is load-bearing:
+
+      0. A principal without the discovery-run permission is never
+         guided — they could do nothing to leave SETUP, so for them the
+         answer is always "revealed".
+      1. The monotone in-process latch (only ever assigned True).
+      2. The per-request memo.
+      3. The durable marker file (one ``is_file``).
+      4. Short-circuit: no default-scope data and no profile-scopes
+         directory means no scope can possibly hold data.
+      5. A stamp-keyed negative memo — a workspace whose runs all fail
+         has a profile-scopes directory, and without this it would pay
+         a profiles.json parse on every render, forever.
+      6. The live filesystem signal.
+
+    Display fails open (the `allowed_nav_path` doctrine): any
+    unexpected error logs at debug and answers True WITHOUT writing the
+    latch, the marker, or any memo — a transient error must never
+    permanently reveal, and must never hide working navigation.
+    """
+
+    from flask import g
+
+    from founderos_atlas.access.models import DISCOVERY_RUN
+
+    try:
+        principal = getattr(g, "principal", None)
+        if principal is not None and DISCOVERY_RUN not in principal.permissions:
+            return True
+        if app.extensions.get("atlas_nav_revealed"):
+            return True
+        cached = getattr(g, "_atlas_nav_revealed", None)
+        if cached is not None:
+            return cached
+        if _nav_reveal_marker(app).is_file():
+            app.extensions["atlas_nav_revealed"] = True
+            g._atlas_nav_revealed = True
+            return True
+
+        out = Path(app.config["ATLAS_OUTPUT_DIR"])
+        history_root = Path(app.config["ATLAS_HISTORY_ROOT"])
+        profiles_dir = out / ".atlas" / "profiles"
+
+        from founderos_atlas.workspace.scopes import (
+            active_scopes,
+            default_scope,
+            profile_scopes,
+        )
+
+        base = default_scope(out, history_root)
+        if not base.has_data() and not profiles_dir.is_dir():
+            g._atlas_nav_revealed = False
+            return False
+
+        stamp = _nav_signal_stamp(app, profiles_dir)
+        memo = app.extensions.get("atlas_nav_stamp")
+        if memo is not None and memo == stamp:
+            g._atlas_nav_revealed = False
+            return False
+
+        profiles = app.config["ATLAS_PROFILE_SERVICE"].list_profiles()
+        revealed = bool(
+            active_scopes(base, profile_scopes(out, profiles))
+        )
+        if revealed:
+            mark_nav_revealed(app)
+        else:
+            app.extensions["atlas_nav_stamp"] = stamp
+        g._atlas_nav_revealed = revealed
+        return revealed
+    except Exception:  # noqa: BLE001 - display fails open, never caches
+        # Broad on purpose: ProfileRepository raises
+        # WorkspaceCorruptedError (an AtlasWorkspaceError, not OSError/
+        # ValueError), and this runs from a context processor that also
+        # fires on 404/500 pages — it must never raise, and it must
+        # never latch a fail-open answer.
+        app.logger.debug("nav readiness probe failed open", exc_info=True)
+        return True
+
+
+def _nav_signal_stamp(app, profiles_dir: Path) -> tuple:
+    """A cheap stamp that changes whenever a negative answer could.
+
+    New/edited profiles rewrite ``profiles.json``; a first artifact for
+    a scope creates its directory under the profile-scopes root (bumping
+    the root's mtime); and a successful WEB run flips the in-process
+    latch via the job manager's success hook before this memo is ever
+    consulted again.
+    """
+
+    profiles_json = (
+        Path(app.config["ATLAS_WORKSPACE_ROOT"]) / "profiles.json"
+    )
+    parts: list = []
+    for path in (profiles_json, profiles_dir):
+        try:
+            stat = path.stat()
+            parts.append((stat.st_mtime_ns, stat.st_size))
+        except OSError:
+            parts.append(None)
+    return tuple(parts)
+
+
+def guided_nav_groups(
+    groups: tuple[NavGroup, ...], *, revealed: bool
+) -> tuple[NavGroup, ...]:
+    """The contextual guidance filter (PR-177). Pure: tuple in, tuple out.
+
+    Always drops ``sidebar=False`` items; before the reveal also drops
+    items outside ``PRE_DISCOVERY_ITEM_KEYS``. Groups left empty
+    disappear, exactly as `visible_nav_groups` already does for RBAC.
+    Composes OVER the RBAC filter — it can only ever narrow what RBAC
+    allowed, never widen it.
+    """
+
+    from dataclasses import replace as _dc_replace
+
+    filtered = []
+    for group in groups:
+        items = tuple(
+            item for item in group.items
+            if item.sidebar
+            and (revealed or item.key in PRE_DISCOVERY_ITEM_KEYS)
+        )
+        if items:
+            filtered.append(_dc_replace(group, items=items))
+    return tuple(filtered)
+
+
+def render_nav_groups(app) -> tuple[NavGroup, ...]:
+    """The ONE builder both sidebar render sites use (PR-177).
+
+    RBAC first, guidance second. The Ctrl+K pages filter deliberately
+    keeps calling `visible_nav_groups` directly — search follows access,
+    not guidance, so a hidden-but-permitted page stays findable.
+    """
+
+    return guided_nav_groups(
+        visible_nav_groups(app), revealed=workspace_has_discovery(app)
+    )
