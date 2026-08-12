@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_entity_actions.html" import entity_menu %}
+{% import "_disclosure.html" as d with context %}
 {% block title %}Timeline{% endblock %}
 {% block content %}
 <div class="page-head">
@@ -13,13 +14,23 @@
   Each event links to its exact object and names its provenance.
 </p>
 
+{# PR-178: two chronology facts, not five tiles — the inventory totals
+   (devices remembered, configuration versions, evidence records) live
+   on /configuration and /evidence, where they describe the store
+   rather than the story. Before any discovery, zeros here were never
+   measurements: nothing had been collected to count. #}
+{% if discovery_count == 0 and change_count == 0 %}
+{{ d.empty_state(
+    "No operational chronology yet — no discovery has run in this scope.",
+    "Events appear as Atlas works: discoveries, configuration changes, incidents, predictions, plan activity, and audited operator actions.",
+    "Run a discovery", "/discovery"
+) }}
+{% else %}
 <div class="tiles">
   <div class="tile"><strong>Configuration changes</strong><span>{{ change_count }}</span></div>
   <div class="tile"><strong>Discoveries</strong><span>{{ discovery_count }}</span></div>
-  <div class="tile"><strong>Devices remembered</strong><span>{{ totals.devices }}</span></div>
-  <div class="tile"><strong>Configuration versions</strong><span>{{ totals.versions }}</span></div>
-  <div class="tile"><strong>Evidence records</strong><span>{{ evidence_totals.evidence_records }}</span></div>
 </div>
+{% endif %}
 
 <section class="card" id="events">
   <h2>Events</h2>

@@ -53,12 +53,18 @@ def _event(
     severity: str = "info",
     actor: str | None = None,
     provenance: str = "",
+    system: bool = False,
 ) -> dict[str, Any]:
+    # ``system`` is EXPLICIT (PR-178): True only where a branch can
+    # actually know it — the audit branch, whose records carry actor
+    # and source. It is never derived from an absent key: every
+    # configuration/discovery/incident/prediction row keeps the default
+    # False and stays in the operator chronology.
     return {
         "occurred_at": occurred_at, "kind": kind, "title": title,
         "detail": detail, "href": href, "hostname": hostname,
         "device_id": device_id, "network": network, "severity": severity,
-        "actor": actor, "provenance": provenance,
+        "actor": actor, "provenance": provenance, "system": system,
     }
 
 
@@ -196,12 +202,27 @@ def chronicle_events(
             severity="info",
             actor=str(event.actor),
             provenance=f"audit event {event.event_id}",
+            # A machine's own writes (workspace migrations, startup
+            # bookkeeping, telemetry ingestion) are provenance, not
+            # operator chronology. An operator's audited mutation
+            # (actor = a person, source = web/cli/api) stays.
+            system=(
+                str(event.actor) == "system"
+                or str(event.source) in ("startup", "telemetry")
+            ),
         ))
     for scope_id, point in policy_trend:
+        # PR-178: an unjudged posture point carries score None — "not
+        # scored", never "None%" and never 0%.
+        score = point.get("score")
         events.append(_event(
             occurred_at=str(point.get("recorded_at") or ""),
             kind="policy-trend",
-            title=f"Compliance posture changed: {point.get('score')}%",
+            title=(
+                f"Compliance posture changed: {score}%"
+                if score is not None
+                else "Compliance posture changed: not scored"
+            ),
             detail=(
                 f"{point.get('failed')} failed · {point.get('warnings')} "
                 f"warnings · {point.get('unknown')} unknown"

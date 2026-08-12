@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% from "_entity_actions.html" import entity_menu %}
 {% import "_fmt.html" as fmt %}
+{% import "_disclosure.html" as d with context %}
 {% block title %}Changes{% endblock %}
 {% block content %}
 <h1>Change Intelligence — {{ active_scope_label }}</h1>
@@ -11,16 +12,40 @@
   the filtered view is a shareable URL.
 </p>
 
+{# PR-178: a number is a measurement, or it is not rendered as a number.
+   A kind whose report was never produced (one collection, no baseline)
+   renders "Not compared" with its reason — never the digit 0. And a
+   cross-kind counter is honest only when ALL THREE kinds were measured;
+   otherwise it carries which kinds it actually covers. #}
+{% set all_measured = kinds_measured.topology and kinds_measured.configuration and kinds_measured.operational %}
+{% set no_kind_measured = not (kinds_measured.topology or kinds_measured.configuration or kinds_measured.operational) %}
+{% set measured_names = ['topology' if kinds_measured.topology else '', 'configuration' if kinds_measured.configuration else '', 'operational' if kinds_measured.operational else ''] | select | list %}
+{% set unmeasured_names = ['topology' if not kinds_measured.topology else '', 'configuration' if not kinds_measured.configuration else '', 'operational' if not kinds_measured.operational else ''] | select | list %}
+{% if no_kind_measured %}
+{{ d.empty_state(
+    "Not compared — change detection needs two collections in this scope.",
+    "Atlas compares each discovery against the previous one within the same observation point — topology, configuration, and operational state. Run a discovery at least twice for a profile to see what changed.",
+    "Run a discovery", "/discovery"
+) }}
+{% else %}
+{% if not all_measured %}
+<p class="muted">
+  Compared: {{ measured_names | join(', ') }} —
+  {{ unmeasured_names | join(', ') }} not compared (needs two collections
+  of that kind in this scope), so totals cover only the kinds measured.
+</p>
+{% endif %}
 <div class="tiles">
-  <div class="tile"><strong>Changes</strong><span>{{ summary.total }}</span></div>
-  <div class="tile"><strong>Topology</strong><span>{{ summary.topology }}</span></div>
-  <div class="tile"><strong>Configuration</strong><span>{{ summary.configuration }}</span></div>
-  <div class="tile"><strong>Operational</strong><span>{{ summary.operational }}</span></div>
-  <div class="tile"><strong>High severity</strong><span>{{ summary.high }}</span></div>
+  <div class="tile"><strong>Changes{% if not all_measured %} (measured kinds){% endif %}</strong><span>{{ summary.total }}</span></div>
+  <div class="tile"><strong>Topology</strong><span>{% if kinds_measured.topology %}{{ summary.topology }}{% else %}{{ fmt.measure(None, unknown='Not compared') }}{% endif %}</span></div>
+  <div class="tile"><strong>Configuration</strong><span>{% if kinds_measured.configuration %}{{ summary.configuration }}{% else %}{{ fmt.measure(None, unknown='Not compared') }}{% endif %}</span></div>
+  <div class="tile"><strong>Operational</strong><span>{% if kinds_measured.operational %}{{ summary.operational }}{% else %}{{ fmt.measure(None, unknown='Not compared') }}{% endif %}</span></div>
+  <div class="tile"><strong>High severity{% if not all_measured %} (measured kinds){% endif %}</strong><span>{{ summary.high }}</span></div>
   <div class="tile"><strong>Acknowledged</strong><span>{{ summary.acknowledged }}</span></div>
   <div class="tile" title="Changes on devices named by the scope's incident report."><strong>Incident-linked</strong><span>{{ summary.incident_correlated }}</span></div>
   <div class="tile"><strong>Suppressed</strong><span>{{ summary.suppressed }}</span></div>
 </div>
+{% endif %}
 
 <section class="card">
   <h2>Compare Two Runs</h2>

@@ -230,6 +230,9 @@ textarea:focus-visible, summary:focus-visible, [tabindex]:focus-visible {
 /* PR-177: the one visually dominant first-run action. Scoped to the
    first-discovery CTA only, so populated Home's primaries are untouched. */
 .btn-first-discovery { padding: 12px 26px; font-size: 16px; font-weight: 600; }
+/* PR-178: a trend point recorded while nothing was judged has no score —
+   slate, matching the product's unknown tone, never a 0% bar. */
+.trend-bar-unscored { background: var(--slate); opacity: 0.45; }
 .btn-danger { background: var(--red-soft); border-color: #fecaca; color: var(--red-dark); }
 .btn-danger:hover { background: #fecaca; }
 .btn-sm { min-height: var(--control-height-sm); padding: 3px 10px; font-size: 13px; }

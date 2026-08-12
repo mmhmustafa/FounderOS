@@ -48,12 +48,26 @@
     </table>
   </div>
   {% else %}
+  {# PR-178: reassurance is a judgement, and with nothing evaluated no
+     judgement was made — the honest sentence names the absence. #}
+  {% if overall.total == 0 %}
+  <p class="muted">Not scored — no configurations have been evaluated in this scope yet.</p>
+  {% else %}
   <p class="muted">No active failure or warning requires attention.</p>
+  {% endif %}
   {% endif %}
 </section>
 
 <div class="tiles">
-  <div class="tile"><strong>Compliance score</strong><span>{{ posture.score }}%</span></div>
+  {# PR-178: a score exists only when something was judged. The two
+     absent cases stay distinct: nothing evaluated at all ("Not
+     scored") versus evaluated-but-unjudgeable ("Not enough
+     evidence") — the same line health/assess.py draws. #}
+  <div class="tile"><strong>Compliance score</strong><span>
+    {%- if posture.score is not none -%}{{ posture.score }}%
+    {%- elif overall.total == 0 -%}<span class="badge hop-badge hop-badge-unknown">Not scored</span>
+    {%- else -%}<span class="badge hop-badge hop-badge-unknown">Not enough evidence</span>
+    {%- endif -%}</span></div>
   <div class="tile"><strong>Passed</strong><span>{{ overall.pass }}</span></div>
   <div class="tile"><strong>Failed</strong><span>{{ overall.fail }}</span></div>
   <div class="tile"><strong>Warnings</strong><span>{{ overall.warning }}</span></div>
@@ -63,9 +77,17 @@
   <div class="tile" title="The policy's antecedent is absent on the device — never counted as compliance earned."><strong>Not applicable</strong><span>{{ overall['not-applicable'] }}</span></div>
 </div>
 <p class="muted" style="margin-top:-8px;">
+  {% if overall.total == 0 %}
+  Nothing has been evaluated in this scope, so there is no score to derive.
+  {% elif posture.judged == 0 %}
+  {{ overall.total }} evaluation(s) produced no judgeable verdict
+  ({{ overall['missing-evidence'] }} missing evidence, {{ overall.unknown }}
+  inconclusive), so there is no denominator to score over.
+  {% else %}
   Score is passed ÷ judged over {{ posture.judged }} judged evaluation(s) of
   {{ overall.total }} total; missing evidence, unknown, not-applicable, and
   excepted are excluded from the denominator, never counted as pass or fail.
+  {% endif %}
   Evaluated for
   <strong>{{ report.scope_label }}</strong>{% if generated_at %} · {{ generated_at }}{% endif %}.
 </p>
@@ -74,11 +96,13 @@
 <section class="card">
   <h2>Compliance Trend</h2>
   <p class="muted">A point is recorded whenever posture changes — never on mere page views.</p>
-  <div class="trend-row" role="img" aria-label="Compliance trend: {% for point in trend %}{{ point.score }}%{{ ', ' if not loop.last }}{% endfor %}">
+  <div class="trend-row" role="img" aria-label="Compliance trend: {% for point in trend %}{{ (point.score ~ '%') if point.score is not none else 'not scored' }}{{ ', ' if not loop.last }}{% endfor %}">
     {% for point in trend %}
-    <div class="trend-point" title="{{ point.recorded_at }}: {{ point.score }}% ({{ point.failed }} failed)">
-      <div class="trend-bar" style="height: {{ [point.score, 4] | max }}%"></div>
-      <span class="trend-value">{{ point.score }}%</span>
+    {# PR-178: a point recorded while nothing was judged carries no
+       score — it renders as unscored, never as a 0% bar. #}
+    <div class="trend-point" title="{{ point.recorded_at }}: {{ (point.score ~ '%') if point.score is not none else 'not scored' }} ({{ point.failed }} failed)">
+      <div class="trend-bar{{ ' trend-bar-unscored' if point.score is none else '' }}" style="height: {{ [point.score, 4] | max if point.score is not none else 4 }}%"></div>
+      <span class="trend-value">{{ (point.score ~ '%') if point.score is not none else '—' }}</span>
     </div>
     {% endfor %}
   </div>

@@ -14,7 +14,10 @@
 <p class="muted">Pick a scope in the Scope selector above — predictions run against that scope's evidence.</p>
 {% else %}
 
-{% if enterprise %}
+{# PR-178: with no contributions there is nothing to predict against —
+   the zeros were never measurements. The empty notice at the form
+   carries the answer. #}
+{% if enterprise and enterprise_contributions %}
 <section class="card">
   <h2>Enterprise scope</h2>
   <p>
@@ -94,7 +97,8 @@
       <tr>
         <td>{{ scenario.generated_at | timestamp }}</td>
         <td>{{ scenario.change_type }} — {{ scenario.device }}{% if scenario.interface %} {{ scenario.interface }}{% endif %}</td>
-        <td><span class="badge hop-badge hop-badge-{{ 'failed' if scenario.risk in ('high', 'critical') else 'pass' }}">{{ scenario.risk or '—' }}</span></td>
+        {# PR-178: an unassessed risk is unknown (slate) — never green. #}
+        <td><span class="badge hop-badge hop-badge-{{ 'failed' if scenario.risk in ('high', 'critical') else ('warning' if scenario.risk == 'medium' else ('pass' if scenario.risk in ('low', 'none') else 'unknown')) }}">{{ scenario.risk or 'unknown' }}</span></td>
         <td>{{ scenario.confidence }}%</td>
         <td class="muted">{{ scenario.summary or '—' }}</td>
         <td class="row-actions">
@@ -127,7 +131,17 @@
 <section class="card root-cause">
   <h2>Prediction — {{ prediction.change_request.change_type }} {{ prediction.change_request.target_device }}{% if prediction.change_request.target_object %} {{ prediction.change_request.target_object }}{% endif %}</h2>
   <div class="job-head">
-    <span class="badge job-badge job-badge-{{ 'failed' if prediction.risk.level in ('high', 'critical') else 'completed' }}">Risk: {{ prediction.risk.level | title }}</span>
+    {# PR-178: medium risk is a warning and an unassessed risk is
+       unknown — neither may render as a green "completed". #}
+    {% if prediction.risk.level in ('high', 'critical') %}
+    <span class="badge job-badge job-badge-failed">Risk: {{ prediction.risk.level | title }}</span>
+    {% elif prediction.risk.level == 'medium' %}
+    <span class="badge hop-badge hop-badge-warning">Risk: {{ prediction.risk.level | title }}</span>
+    {% elif prediction.risk.level in ('low', 'none') %}
+    <span class="badge job-badge job-badge-completed">Risk: {{ prediction.risk.level | title }}</span>
+    {% else %}
+    <span class="badge hop-badge hop-badge-unknown">Risk: {{ (prediction.risk.level or 'unknown') | title }}</span>
+    {% endif %}
     <span>Confidence: {{ prediction.confidence.band | title }} ({{ prediction.confidence.percent }}%)</span>
   </div>
   {% if prediction.risk.explanation %}<p class="muted">{{ prediction.risk.explanation }}</p>{% endif %}

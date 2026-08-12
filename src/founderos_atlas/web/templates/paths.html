@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% from "_device_actions.html" import device_actions %}
 {% from "_telemetry_context.html" import operational_context %}
+{% import "_disclosure.html" as d with context %}
 {% block title %}Investigate{% endblock %}
 {% block content %}
 {# PR-047A: named for the question the operator is asking ("why can't A reach
@@ -17,7 +18,10 @@
 <p class="muted">Pick a scope in the Scope selector above — path investigations run against that scope's evidence.</p>
 {% else %}
 
-{% if enterprise %}
+{# PR-178: "0 canonical device(s) from 0 contributing profile(s)" was
+   never a measurement — with no contributions the card says nothing
+   and the empty state below carries the answer. #}
+{% if enterprise and enterprise_contributions %}
 <section class="card">
   <h2>Enterprise scope</h2>
   <p>
@@ -38,6 +42,15 @@
   {% if not can('investigate.run') %}
   <p class="muted">Your roles can review recorded investigations but not run
   one — that requires the investigate-run permission.</p>
+  {% elif not devices %}
+  {# PR-178: a fully enabled form that cannot possibly work is not a
+     tool — the empty state REPLACES the instrument and names the one
+     action that changes it. #}
+  {{ d.empty_state(
+      "No topology to investigate yet — Atlas has no devices in this scope.",
+      "Path investigation walks the discovered topology hop by hop and validates every hop against collected state. Run a discovery to give it a network.",
+      "Run a discovery", "/discovery"
+  ) }}
   {% else %}
   <form class="form" method="post" action="/paths/run">{{ csrf_field() }}
     {% if request.args.get('case_id') %}
@@ -83,9 +96,6 @@
     </div>
     <p class="muted">Deterministic and evidence-based: Atlas constructs the path from discovered topology (CDP/LLDP and known links), validates every hop against collected state, stops at the first deterministic failure, and explains why. No packets are sent; ambiguity and missing evidence are reported, never guessed through.</p>
   </form>
-  {% if not devices %}
-  <p class="muted">No topology yet — <a href="/discovery">run a discovery</a> first.</p>
-  {% endif %}
   {% endif %}
 </section>
 
@@ -93,7 +103,14 @@
 <section class="card root-cause">
   <h2>Investigation — {{ investigation.source }} → {{ investigation.destination }}</h2>
   <div class="job-head">
-    <span class="badge job-badge job-badge-{{ 'completed' if investigation.status == 'connected' else ('failed' if investigation.status == 'failed' else 'interrupted') }}">{{ investigation.status | title }}</span>
+    {# PR-178: unknown is not failure — it renders slate, never red. #}
+    {% if investigation.status == 'connected' %}
+    <span class="badge job-badge job-badge-completed">{{ investigation.status | title }}</span>
+    {% elif investigation.status == 'failed' %}
+    <span class="badge job-badge job-badge-failed">{{ investigation.status | title }}</span>
+    {% else %}
+    <span class="badge hop-badge hop-badge-unknown">{{ investigation.status | title }}</span>
+    {% endif %}
     <span>Confidence: {{ investigation.confidence_band | title }} ({{ investigation.confidence_percent }}%)</span>
     <span class="muted">{{ investigation.generated_at }}</span>
   </div>

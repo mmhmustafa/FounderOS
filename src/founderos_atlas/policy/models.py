@@ -357,11 +357,18 @@ class PolicyReport:
         return self.passed + self.failed + self.warnings
 
     @property
-    def score(self) -> int:
-        """Compliance score as a whole-number percent over judged evaluations."""
+    def score(self) -> int | None:
+        """Compliance score as a whole-number percent over judged evaluations.
+
+        ``None`` when nothing was judged (PR-178): a score of 0 asserts
+        "everything judged failed", which is a measurement; an absence
+        of judgeable evaluations is not. Mirrors ``posture_score`` so
+        the engine and the page can never disagree about what an
+        unjudged scope reads as.
+        """
 
         if self.judged == 0:
-            return 0
+            return None
         return int(round(100 * self.passed / self.judged))
 
     def devices(self) -> tuple[str, ...]:

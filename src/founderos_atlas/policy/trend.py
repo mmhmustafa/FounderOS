@@ -58,16 +58,22 @@ class PolicyTrend:
         *,
         scope_id: str,
         recorded_at: str,
-        score: int,
+        score: int | None,
         passed: int,
         failed: int,
         warnings: int,
         unknown: int,
     ) -> bool:
-        """Append a point if posture changed; returns whether it recorded."""
+        """Append a point if posture changed; returns whether it recorded.
+
+        ``score`` may be ``None`` (PR-178: nothing judged — there is no
+        score). The point is stored with ``score: null`` so the series
+        stays honest; the sparkline renders such points as unscored.
+        """
 
         point = {
-            "recorded_at": recorded_at, "score": int(score),
+            "recorded_at": recorded_at,
+            "score": int(score) if score is not None else None,
             "passed": int(passed), "failed": int(failed),
             "warnings": int(warnings), "unknown": int(unknown),
         }

@@ -383,8 +383,14 @@ def posture_score(counts: Mapping[str, int]) -> dict[str, int]:
         int(counts.get("pass", 0)) + int(counts.get("fail", 0))
         + int(counts.get("warning", 0))
     )
+    # PR-178: with nothing judged there IS no score — absence of
+    # measurement must never render as 0%. None here means "not a
+    # number"; the page words it as "Not scored" (nothing evaluated)
+    # or "Not enough evidence" (evaluated, nothing judgeable), the
+    # same distinction health/assess.py already draws.
     score = (
-        int(round(100 * int(counts.get("pass", 0)) / judged)) if judged else 0
+        int(round(100 * int(counts.get("pass", 0)) / judged))
+        if judged else None
     )
     return {"score": score, "judged": judged}
 

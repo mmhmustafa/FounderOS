@@ -3774,31 +3774,25 @@ def register_routes(app) -> None:
         tz = display_timezone()
         context, scopes, scope_id = scoped_context("timeline")
 
+        # PR-178: Timeline narrates chronology. The old five-tile strip
+        # mixed two chronology facts with three INVENTORY totals
+        # (devices remembered, configuration versions, evidence
+        # records) whose statistics() calls fully parsed every store on
+        # every render — inventory belongs to /configuration and
+        # /evidence, which still carry it. Dropping the two statistics
+        # passes is a genuine subtraction, not a <details>.
         config_events: list = []
-        totals = {
-            "devices": 0, "versions": 0, "unique_configurations": 0,
-            "deduplicated_observations": 0,
-        }
         for scope in config_memory_scopes(scopes, scope_id):
             store = config_memory_store(scope)
             histories = store.histories()
             config_events.extend(
                 enterprise_timeline(histories, config_text=store.config_text)
             )
-            for key, value in store.statistics().items():
-                if key in totals:
-                    totals[key] += value
 
         discovery_rows: list[dict] = []
         for scope in aggregation_scopes(scopes) if scope_id == GLOBAL_SCOPE_ID else (scopes[scope_id],):
             index = HistoryRepository(scope.history_root).load()
             discovery_rows.extend(history_rows(index, scope_label=scope.label))
-
-        evidence_totals = {"sessions": 0, "evidence_records": 0}
-        for scope in memory_scopes(scopes, scope_id):
-            for key, value in memory_store(scope).statistics().items():
-                if key in evidence_totals:
-                    evidence_totals[key] += value
 
         # PR-053: the unified chronology — every event source, one filter
         # model, server-side pagination, exact-object links, provenance.
@@ -3843,7 +3837,7 @@ def register_routes(app) -> None:
         events = chronicle_events(
             config_events=config_events,
             discovery_rows=discovery_rows,
-            change_rows=_change_rows_for(scopes, scope_id),
+            change_rows=_change_rows_for(scopes, scope_id)[0],
             incident_reports=incident_reports,
             prediction_reports=prediction_reports,
             compass_plans=plans,
@@ -3873,8 +3867,6 @@ def register_routes(app) -> None:
             option_sites=sorted(set(sites.values())),
             change_count=len(config_events),
             discovery_count=len(discovery_rows),
-            totals=totals,
-            evidence_totals=evidence_totals,
             **context,
         )
 
@@ -4894,13 +4886,28 @@ def register_routes(app) -> None:
             if scope_id == GLOBAL_SCOPE_ID else (scopes[scope_id],)
         )
         rows: list[dict] = []
+        # PR-178: which change KINDS were actually compared. load_json
+        # answers None for a missing report and unified_rows then yields
+        # no rows for that kind — indistinguishable from a measured
+        # zero. The flags carry the distinction to the page: a bare
+        # cross-kind integer is honest only when all three kinds were
+        # measured.
+        measured = {
+            "topology": False, "configuration": False, "operational": False,
+        }
         for scope in candidates:
             out = scope.output_dir
             incident = load_json(out / "incident_report.json") or {}
+            topology_report = load_json(out / "change_report.json")
+            config_report = load_json(out / "config_change_report.json")
+            state_report = load_json(out / "state_change_report.json")
+            measured["topology"] |= topology_report is not None
+            measured["configuration"] |= config_report is not None
+            measured["operational"] |= state_report is not None
             rows.extend(unified_rows(
-                topology_report=load_json(out / "change_report.json"),
-                config_report=load_json(out / "config_change_report.json"),
-                state_report=load_json(out / "state_change_report.json"),
+                topology_report=topology_report,
+                config_report=config_report,
+                state_report=state_report,
                 network=scope.label,
                 incident_devices=frozenset(
                     str(name) for name in incident.get("affected_devices") or ()
@@ -4913,7 +4920,7 @@ def register_routes(app) -> None:
             assignments=store.all("change-assignment"),
             notes=store.all("change-note"),
             suppressions=store.all("change-suppression"),
-        )
+        ), measured
 
     @app.route("/changes")
     def changes():
@@ -4931,7 +4938,7 @@ def register_routes(app) -> None:
         from founderos_atlas.listing import paginate
 
         context, scopes, scope_id = scoped_context("changes")
-        rows = _change_rows_for(scopes, scope_id)
+        rows, kinds_measured = _change_rows_for(scopes, scope_id)
         filters = ChangeFilter.from_args(request.args)
         filtered, hidden_suppressed = filter_rows(rows, filters)
         page = paginate(filtered, filters.page, filters.per_page)
@@ -4956,6 +4963,7 @@ def register_routes(app) -> None:
             filter_args=filters.to_args(),
             page=page,
             summary=summarize(rows),
+            kinds_measured=kinds_measured,
             hidden_suppressed=hidden_suppressed,
             option_kinds=sorted({str(r.get("kind")) for r in rows}),
             option_categories=sorted({str(r.get("category")) for r in rows}),
@@ -5040,6 +5048,13 @@ def register_routes(app) -> None:
             filter_args=filters.to_args(),
             page=page,
             summary=summarize(rows),
+            # An on-demand comparison diffs two TOPOLOGY snapshots only:
+            # configuration and operational changes were never measured
+            # for it, and the tiles must say so (PR-178).
+            kinds_measured={
+                "topology": True, "configuration": False,
+                "operational": False,
+            },
             hidden_suppressed=hidden_suppressed,
             option_kinds=sorted({str(r.get("kind")) for r in rows}),
             option_categories=sorted({str(r.get("category")) for r in rows}),
@@ -5061,7 +5076,7 @@ def register_routes(app) -> None:
         )
 
         context, scopes, scope_id = scoped_context("changes")
-        rows = _change_rows_for(scopes, scope_id)
+        rows, _kinds = _change_rows_for(scopes, scope_id)
         filters = ChangeFilter.from_args(request.args)
         filtered, _hidden = filter_rows(rows, filters)
         exported = export_rows(filtered)
@@ -5127,7 +5142,7 @@ def register_routes(app) -> None:
                 change_row = next(
                     (
                         row
-                        for row in _change_rows_for(known_scopes(), scope_id)
+                        for row in _change_rows_for(known_scopes(), scope_id)[0]
                         if str(row.get("subject") or "") == subject
                     ),
                     None,
