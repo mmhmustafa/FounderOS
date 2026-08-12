@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Evidence — System Details{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Enterprise Memory — System Details</h1>
+  <span class="actions"><a class="btn" href="/evidence">Back to Evidence</a></span>
+</div>
+{# PR-178: the storage engine's own numbers, on their own surface —
+   deferred from /evidence, never deleted. These describe how evidence
+   is stored, not the network. #}
+<section class="card">
+  <p class="muted">How the collected evidence is stored. These are properties of the storage
+    engine, not of your network.</p>
+  <ul class="kv">
+    <li><span>Discovery sessions</span><span>{{ totals.sessions }}</span></li>
+    <li><span>Devices remembered</span><span>{{ totals.devices }}</span></li>
+    <li><span>Evidence records</span><span>{{ totals.evidence_records }}</span></li>
+    <li><span>Configuration snapshots</span><span>{{ totals.configuration_snapshots }}</span></li>
+    <li><span>Unique blobs stored</span><span>{{ totals.unique_blobs }}</span></li>
+    <li><span>Duplicates suppressed</span><span>{{ totals.deduplicated }}</span></li>
+    <li><span>Stored bytes</span><span>{{ totals.stored_bytes }}</span></li>
+  </ul>
+  <p class="muted">Evidence is content-addressed: identical output collected twice is
+    stored once. Raw evidence is preserved verbatim so a future parser can reprocess
+    history without reconnecting to a device.</p>
+</section>
+{% endblock %}

@@ -2388,7 +2388,7 @@ def register_routes(app) -> None:
             return render_template(
                 "evidence_index.html", sessions=(), session=None, summary=None,
                 devices=(), filters=_evidence_filters(), options={},
-                totals=_evidence_storage_totals(scopes, scope_id), **context,
+                **context,
             )
 
         requested = (request.args.get("session") or "").strip()
@@ -2442,10 +2442,30 @@ def register_routes(app) -> None:
             device_count=len(devices), page=page, total_pages=total_pages,
             filtered=any(filters.values()),
             record_count=len(records), visible_count=len(visible),
-            totals=_evidence_storage_totals(scopes, scope_id),
+            # PR-178: the session's freshness, from the UNFILTERED
+            # records — the summary's contract is the whole discovery,
+            # and a basis line that narrowed with the filter would lie.
+            session_last_collected_at=max(
+                (str(r.get("collected_at") or "") for r in records),
+                default=None,
+            ) or None,
             saved_filters=[f.to_dict() for f in _saved_filter_store().list(
                 owner=current_actor(), surface="evidence")],
             current_query=_shareable_query(),
+            **context,
+        )
+
+    @app.route("/evidence/system-details")
+    def evidence_system_details():
+        """The storage engine's own numbers, on their own surface
+        (PR-178): every /evidence render used to pay two full
+        statistics() store passes for a drawer almost nobody opened.
+        Kept for administrators — deferred, never deleted."""
+
+        context, scopes, scope_id = scoped_context("memory")
+        return render_template(
+            "evidence_system.html",
+            totals=_evidence_storage_totals(scopes, scope_id),
             **context,
         )
 
@@ -3966,11 +3986,10 @@ def register_routes(app) -> None:
         context, scopes, scope_id = scoped_context("configuration")
         devices: list[dict] = []
         events: list = []
-        totals = {
-            "devices": 0, "versions": 0, "observations": 0,
-            "unique_configurations": 0, "stored_bytes": 0,
-            "deduplicated_observations": 0,
-        }
+        # PR-178: the six storage tiles (and the full statistics() pass
+        # that fed them) moved to /configuration/system-details — the
+        # page keeps the two facts an operator asks of a store, both
+        # free comprehensions over the histories already materialised.
         for scope in config_memory_scopes(scopes, scope_id):
             store = config_memory_store(scope)
             histories = store.histories()
@@ -3995,10 +4014,12 @@ def register_routes(app) -> None:
             events.extend(
                 enterprise_timeline(histories, config_text=store.config_text)
             )
-            for key, value in store.statistics().items():
-                if key in totals:
-                    totals[key] += value
         devices.sort(key=lambda row: row["hostname"].casefold())
+        store_device_count = len(devices)
+        version_total = sum(int(row["version_count"] or 0) for row in devices)
+        changed_devices = sum(
+            1 for row in devices if int(row["version_count"] or 0) > 1
+        )
         query = (request.args.get("q") or "").strip().casefold()
         platform_filter = (request.args.get("platform") or "").strip()
         all_platforms = sorted({row["platform"] for row in devices if row["platform"] != "—"})
@@ -4026,9 +4047,32 @@ def register_routes(app) -> None:
             platforms=all_platforms, platform_filter=platform_filter,
             timeline=days,
             change_count=len(events),
-            totals=totals,
+            store_device_count=store_device_count,
+            version_total=version_total,
+            changed_devices=changed_devices,
             search=request.args.get("q", "").strip(),
             **context,
+        )
+
+    @app.route("/configuration/system-details")
+    def configuration_system_details():
+        """Configuration Memory's storage numbers on their own deferred
+        surface (PR-178) — the same treatment the Evidence drawer got.
+        These render nowhere else, so this surface lands in the SAME
+        commit that retires the tiles: deferred, never deleted."""
+
+        context, scopes, scope_id = scoped_context("configuration")
+        totals = {
+            "devices": 0, "versions": 0, "observations": 0,
+            "unique_configurations": 0, "stored_bytes": 0,
+            "deduplicated_observations": 0,
+        }
+        for scope in config_memory_scopes(scopes, scope_id):
+            for key, value in config_memory_store(scope).statistics().items():
+                if key in totals:
+                    totals[key] += value
+        return render_template(
+            "configuration_system.html", totals=totals, **context,
         )
 
     def _find_history(scopes, scope_id, device_id):
@@ -4224,6 +4268,11 @@ def register_routes(app) -> None:
         text = store.version_text(device_id, version)
         if text is None:
             abort(404)
+        # PR-178: parity with the Evidence raw download — two doors to
+        # the same secret-bearing bytes carry the same audit record.
+        _audit_raw_export(
+            kind="configuration", subject=f"{device_id}:v{version}"
+        )
         filename = f"{safe_artifact_name(history.hostname)}-v{version}.txt"
         return Response(
             text,

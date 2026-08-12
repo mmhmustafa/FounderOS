@@ -1,26 +1,78 @@
 {% extends "base.html" %}
 {% from "_device_actions.html" import device_actions %}
+{% import "_fmt.html" as fmt %}
+{% import "_disclosure.html" as d with context %}
 {% block title %}Configuration{% endblock %}
 {% block content %}
 <div class="page-head">
-  <h1>Configuration Memory{% if scope_label %} — {{ scope_label }}{% endif %}</h1>
+  {# PR-178: the h1 interpolated `scope_label`, which the route never
+     supplies — `active_scope_label` is the variable that exists. #}
+  <h1>Configuration Memory — {{ active_scope_label }}</h1>
 </div>
-<p class="muted">Discovery tells Atlas what exists today; Configuration Memory tells Atlas what existed yesterday. Every collected configuration is remembered as a versioned, content-addressed observation — identical configuration is re-observed, never stored twice.</p>
 
-{% if devices %}
-<div class="tiles">
-  <div class="tile"><strong>Devices remembered</strong><span>{{ totals.devices }}</span></div>
-  <div class="tile"><strong>Versions</strong><span>{{ totals.versions }}</span></div>
-  <div class="tile"><strong>Observations</strong><span>{{ totals.observations }}</span></div>
-  <div class="tile"><strong>Unique configurations</strong><span>{{ totals.unique_configurations }}</span></div>
-  <div class="tile"><strong>Stored without duplication</strong><span>{{ totals.deduplicated_observations }} <span class="muted">(information)</span></span></div>
-  <div class="tile"><strong>Changes recorded</strong><span>{{ change_count }}</span></div>
-</div>
+{# PR-178: SEARCH is this page's job. Basis first, two operational
+   facts (not six storage tiles — those live on the system-details
+   surface), then the search instrument. The EMPTY-STORE state and the
+   ZERO-RESULT-FILTER state are distinct: a search that returns nothing
+   must never hide the search box. #}
+{% if store_device_count %}
+{{ fmt.basis('Remembered configurations', scope=active_scope_label,
+             source=store_device_count ~ ' device(s) · ' ~ version_total ~ ' version(s)') }}
+<p class="page-summary">{{ changed_devices }} device(s) have changed since their baseline;
+  {{ store_device_count - changed_devices }} still at baseline.</p>
 
 <section class="card">
+  <h2>Remembered Devices</h2>
+  <form class="form" method="get" action="/configuration"><div class="form-row"><label>Search<input type="search" name="q" value="{{ search }}" placeholder="Device, network, platform"></label><label>Platform<select name="platform"><option value="">All platforms</option>{% for platform in platforms %}<option value="{{ platform }}" {{ 'selected' if platform_filter == platform else '' }}>{{ platform }}</option>{% endfor %}</select></label></div><div class="form-actions"><button class="btn" type="submit">Filter</button><a class="btn" href="/configuration">Clear</a></div></form>
+  <p class="muted">{{ device_count }} matching device(s) · page {{ page }} of {{ total_pages }}</p>
+  {% if devices %}
+  <table class="grid" data-columns="config-devices">
+    {# `versions` joins the simple preset: a page called Configuration
+       Memory was hiding Versions at its default level. #}
+    <thead><tr><th data-col="device" data-col-preset="simple">Device</th><th data-col="network">Network</th><th data-col="platform" data-col-preset="simple">Platform</th><th data-col="versions" data-col-preset="simple">Versions</th><th data-col="observations" data-col-preset="expert">Observations</th><th data-col="last-seen" data-col-preset="simple">Last seen</th><th data-col="actions" data-col-preset="simple" data-col-label="Actions"></th></tr></thead>
+    <tbody>
+      {% for device in devices %}
+      <tr>
+        <td>{{ device.hostname }}</td>
+        <td>{{ device.network }}</td>
+        <td>{{ device.platform }}</td>
+        <td>{{ device.version_count }}</td>
+        <td>{{ device.observations }}</td>
+        <td>{{ device.last_seen }}</td>
+        <td class="row-actions">
+          {# "History" was the wrong verb for the primary action on a
+             page about configurations — and 50 rows of btn-primary
+             made 50 competing primaries. #}
+          <a class="btn btn-sm" href="/configuration/{{ device.device_id | urlencode }}">Open configuration</a>
+          {{ device_actions(device_target(device_id=device.device_id), compact=True, show_label=False,
+                            web=web_access(device_id=device.device_id)) }}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if total_pages > 1 %}<nav class="pagination" aria-label="Configuration device pages">{% if page > 1 %}<a class="btn" href="?q={{ search|urlencode }}&platform={{ platform_filter|urlencode }}&page={{ page-1 }}">Previous</a>{% endif %}{% if page < total_pages %}<a class="btn" href="?q={{ search|urlencode }}&platform={{ platform_filter|urlencode }}&page={{ page+1 }}">Next</a>{% endif %}</nav>{% endif %}
+  {% else %}
+  {{ d.empty_state(
+      "No device matches these filters.",
+      "The store still remembers " ~ store_device_count ~ " device(s) — clear the filters to see them all.",
+      "Clear filters", "/configuration"
+  ) }}
+  {% endif %}
+</section>
+
+{# The change chronology: one recency line always visible — with its
+   one-click version-pair diff preserved exactly — and the full per-day
+   tables one disclosure away. #}
+<section class="card">
   <h2>Change Timeline</h2>
-  <p class="muted">Every real configuration change Atlas remembers, newest first. A first sighting is a baseline, not a change.</p>
   {% if timeline %}
+  {% set newest = timeline[0].events[0] %}
+  <p>Most recent change: <strong>{{ newest.summary }}</strong> on {{ newest.hostname }}
+    <span class="muted">· {{ newest.occurred_at }}</span>
+    <a class="btn btn-sm" href="/configuration/{{ newest.device_id | urlencode }}?current={{ newest.version }}&previous={{ newest.previous_version or 1 }}">Compare</a></p>
+  {% call d.supporting('All remembered changes — ' ~ change_count ~ ' change(s), newest first') %}
+  <p class="muted">A first sighting is a baseline, not a change.</p>
     {% for day in timeline %}
     <h3>{{ day.day }} <span class="muted">— {{ day.change_count }} change(s)</span></h3>
     <table class="grid">
@@ -32,7 +84,9 @@
           <td>{{ event.hostname }}</td>
           <td>{{ event.network }}</td>
           <td>{{ event.summary }}</td>
-          <td><span class="badge hop-badge hop-badge-{{ 'failed' if event.highest_severity == 'high' else ('warning' if event.highest_severity == 'medium' else 'pass') }}">{{ event.highest_severity | title }}</span></td>
+          {# Severity ranks consequence, not compliance — it does not
+             borrow the verdict palette (PR-178). #}
+          <td><span class="hop-badge badge-muted">{{ event.highest_severity | title }}</span></td>
           <td class="row-actions">
             <a class="btn btn-sm" href="/configuration/{{ event.device_id | urlencode }}?current={{ event.version }}&previous={{ event.previous_version or 1 }}">Compare</a>
           </td>
@@ -41,36 +95,18 @@
       </tbody>
     </table>
     {% endfor %}
+  {% endcall %}
   {% else %}
   <p class="muted">No configuration changes remembered yet. Once a device's configuration changes between discoveries, the change appears here.</p>
   {% endif %}
 </section>
 
 <section class="card">
-  <h2>Remembered Devices</h2>
-  <form class="form" method="get" action="/configuration"><div class="form-row"><label>Search<input type="search" name="q" value="{{ search }}" placeholder="Device, network, platform"></label><label>Platform<select name="platform"><option value="">All platforms</option>{% for platform in platforms %}<option value="{{ platform }}" {{ 'selected' if platform_filter == platform else '' }}>{{ platform }}</option>{% endfor %}</select></label></div><div class="form-actions"><button class="btn" type="submit">Filter</button><a class="btn" href="/configuration">Clear</a></div></form>
-  <p class="muted">{{ device_count }} matching device(s) · page {{ page }} of {{ total_pages }}</p>
-  <table class="grid" data-columns="config-devices">
-    <thead><tr><th data-col="device" data-col-preset="simple">Device</th><th data-col="network">Network</th><th data-col="platform" data-col-preset="simple">Platform</th><th data-col="versions">Versions</th><th data-col="observations" data-col-preset="expert">Observations</th><th data-col="last-seen" data-col-preset="simple">Last seen</th><th data-col="actions" data-col-preset="simple" data-col-label="Actions"></th></tr></thead>
-    <tbody>
-      {% for device in devices %}
-      <tr>
-        <td>{{ device.hostname }}</td>
-        <td>{{ device.network }}</td>
-        <td>{{ device.platform }}</td>
-        <td>{{ device.version_count }}</td>
-        <td>{{ device.observations }}</td>
-        <td>{{ device.last_seen }}</td>
-        <td class="row-actions">
-          <a class="btn btn-sm btn-primary" href="/configuration/{{ device.device_id | urlencode }}">History</a>
-          {{ device_actions(device_target(device_id=device.device_id), compact=True, show_label=False,
-                            web=web_access(device_id=device.device_id)) }}
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  {% if total_pages > 1 %}<nav class="pagination" aria-label="Configuration device pages">{% if page > 1 %}<a class="btn" href="?q={{ search|urlencode }}&platform={{ platform_filter|urlencode }}&page={{ page-1 }}">Previous</a>{% endif %}{% if page < total_pages %}<a class="btn" href="?q={{ search|urlencode }}&platform={{ platform_filter|urlencode }}&page={{ page+1 }}">Next</a>{% endif %}</nav>{% endif %}
+  {% call d.supporting('Configuration Memory — System Details') %}
+    <p class="muted">How the store works — versions, observations, unique configurations,
+      deduplication and stored bytes.</p>
+    <a class="btn btn-sm" href="/configuration/system-details">Open storage details</a>
+  {% endcall %}
 </section>
 {% else %}
 <section class="card">
@@ -80,4 +116,11 @@
 </section>
 {% endif %}
 <p class="muted">Configuration text is stored locally and treated as sensitive. Diffs and semantic changes shown in Atlas are masked — a password, key, or community string never reaches a report or this page.</p>
+
+{% call d.contextual_help('About this page — what Configuration Memory is') %}
+<p>Discovery tells Atlas what exists today; Configuration Memory tells Atlas what
+existed yesterday. Every collected configuration is remembered as a versioned,
+content-addressed observation — identical configuration is re-observed, never
+stored twice.</p>
+{% endcall %}
 {% endblock %}

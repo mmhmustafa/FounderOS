@@ -1,5 +1,7 @@
 {% extends "base.html" %}
 {% from "_device_actions.html" import device_actions %}
+{% import "_fmt.html" as fmt %}
+{% import "_disclosure.html" as d with context %}
 {% block title %}Evidence{% endblock %}
 {% block content %}
 <div class="page-head">
@@ -28,9 +30,12 @@
 </section>
 
 {% else %}
-<p class="muted">What Atlas collected from this network, from which device, and whether it
-  worked. Every conclusion Atlas reaches rests on these records — open one to see the
-  device's own words and what depends on them.</p>
+{# PR-178: coverage and freshness first — from the UNFILTERED session
+   records, because the summary's contract is the whole discovery. The
+   what-this-page-is prose moved to About at the foot. #}
+{{ fmt.basis('Evidence collection', scope=(summary.network if summary else active_scope_label),
+             at=session_last_collected_at,
+             source=('session ' ~ session.session_id) if session else None) }}
 
 <section class="card">
   <form class="form" method="get" action="/evidence">
@@ -60,7 +65,7 @@
     <li><span>Devices authenticated</span><span>{{ summary.devices_authenticated }} / {{ summary.devices_reached }}</span></li>
     <li><span>Configurations collected</span><span>{{ summary.configurations_collected }} / {{ summary.devices_with_evidence }}</span></li>
     <li><span>Commands attempted</span><span>{{ summary.commands_attempted }}</span></li>
-    <li><span>Collected successfully</span><span>{{ summary.commands_collected }}</span></li>
+    <li><span>Collected successfully</span><span>{{ fmt.measure(summary.commands_collected, of=summary.commands_attempted) }}</span></li>
     <li><span>Empty responses</span><span>{{ summary.empty_responses }}</span></li>
     <li><span>Unsupported commands</span><span>{{ summary.unsupported_commands }}</span></li>
     <li><span>Failed collections</span><span>{{ summary.failed_collections }}</span></li>
@@ -123,21 +128,20 @@
     </div>
   </form>
 
-  {# Active filters as removable chips — each link drops ONE filter and
-     keeps the rest, so URLs stay shareable and it works without JS. #}
+  {# Active filters as removable chips — the shared macro this markup
+     was extracted into (PR-178). Each chip drops ONE filter and keeps
+     the rest, so URLs stay shareable and it works without JS. #}
   {% if filtered %}
   {% set base = "/evidence?session=" ~ (session.session_id | urlencode) %}
-  <div class="filter-chips" role="group" aria-label="Active filters">
-    <span class="muted">{{ visible_count }} of {{ record_count }} record(s) · Enterprise</span>
-    {% for field, value in [('q', filters.q), ('platform', filters.platform), ('command', filters.command), ('status', filters.status)] %}
-    {% if value %}
-    {% set keep = [] %}
-    {% for f, v in [('q', filters.q), ('platform', filters.platform), ('command', filters.command), ('status', filters.status)] if f != field and v %}{% set _ = keep.append(f ~ '=' ~ (v | urlencode)) %}{% endfor %}
-    <a class="filter-chip" href="{{ base }}{% if keep %}&{{ keep | join('&') }}{% endif %}"
-       aria-label="Remove filter {{ field }}: {{ value }}">{{ field }}: {{ value }} <span aria-hidden="true">×</span></a>
-    {% endif %}
-    {% endfor %}
-  </div>
+  {% set evidence_chips = [] %}
+  {% for field, value in [('q', filters.q), ('platform', filters.platform), ('command', filters.command), ('status', filters.status)] %}
+  {% if value %}
+  {% set keep = [] %}
+  {% for f, v in [('q', filters.q), ('platform', filters.platform), ('command', filters.command), ('status', filters.status)] if f != field and v %}{% set _ = keep.append(f ~ '=' ~ (v | urlencode)) %}{% endfor %}
+  {% set _ = evidence_chips.append({'field': field, 'value': value, 'href': base ~ ('&' ~ keep | join('&') if keep else '')}) %}
+  {% endif %}
+  {% endfor %}
+  {{ fmt.filter_chips(evidence_chips, summary=(visible_count ~ ' of ' ~ record_count ~ ' record(s) · Enterprise')) }}
   {% endif %}
 
   <section class="saved-filters" aria-label="Saved evidence filters">
@@ -181,10 +185,13 @@
   {% endif %}
 
   {% if devices %}
+  {# PR-178: the selection column exists only for users who can export
+     — 51 dead checkboxes were ~19% of this page's tab stops for
+     everyone else. Export itself is unchanged for authorized users. #}
   <form method="post" action="/evidence/bulk-export">{{ csrf_field() }}<input type="hidden" name="session" value="{{ session.session_id }}">{% if can('export.data') %}<div class="form-actions"><button class="btn" type="submit">Export selected (masked)</button></div>{% endif %}
-  <table class="grid" data-columns="evidence-devices" data-row-select="device_ids">
+  <table class="grid" data-columns="evidence-devices" {% if can('export.data') %}data-row-select="device_ids"{% endif %}>
     <thead>
-      <tr><th data-col="select" data-col-preset="simple" data-col-label="Select"><input type="checkbox" data-select-all aria-label="Select all devices"></th>
+      <tr>{% if can('export.data') %}<th data-col="select" data-col-preset="simple" data-col-label="Select"><input type="checkbox" data-select-all aria-label="Select all devices"></th>{% endif %}
           <th data-col="device" data-col-preset="simple">Device</th>
           <th data-col="platform" data-col-preset="detailed">Platform</th>
           <th data-col="commands" data-col-preset="detailed">Commands</th>
@@ -197,7 +204,7 @@
       {% for d in devices %}
       {% set target = device_target(device_id=d.device_id) %}
       <tr>
-        <td data-col="select"><input type="checkbox" name="device_ids" value="{{ d.device_id }}" aria-label="Select {{ d.hostname }} for masked export"></td>
+        {% if can('export.data') %}<td data-col="select"><input type="checkbox" name="device_ids" value="{{ d.device_id }}" aria-label="Select {{ d.hostname }} for masked export"></td>{% endif %}
         <td data-col="device">
           <strong>{{ d.hostname }}</strong>
           {% if target and target.management_ip %}<span class="muted">{{ target.management_ip }}</span>{% endif %}
@@ -208,7 +215,8 @@
         </td>
         <td data-col="platform">{{ d.platform or '—' }}</td>
         <td data-col="commands">{{ d.commands_collected }} / {{ d.commands_attempted }}</td>
-        <td data-col="empty">{{ d.empty_responses or '—' }}</td>
+        {# PR-178: a measured zero is a measurement — never an em-dash. #}
+        <td data-col="empty">{{ d.empty_responses if d.empty_responses is not none else '—' }}</td>
         <td data-col="configuration">{% if d.has_configuration %}<span class="badge">Collected</span>
             {% else %}<span class="muted">Not collected</span>{% endif %}</td>
         <td data-col="last">{{ d.last_collected_at or '—' }}</td>
@@ -265,26 +273,24 @@
 
 
 <section class="card">
-  <details>
-    <summary class="muted">Enterprise Memory — System Details</summary>
-    {# Kept for administrators, deliberately out of the way. These describe the
-       storage engine, not the network: they report that content-addressing is
-       working, which is a property of the design rather than a question an
-       operator asks. #}
-    <p class="muted">How the evidence above is stored. These are properties of the storage
-      engine, not of your network.</p>
-    <ul class="kv">
-      <li><span>Discovery sessions</span><span>{{ totals.sessions }}</span></li>
-      <li><span>Devices remembered</span><span>{{ totals.devices }}</span></li>
-      <li><span>Evidence records</span><span>{{ totals.evidence_records }}</span></li>
-      <li><span>Configuration snapshots</span><span>{{ totals.configuration_snapshots }}</span></li>
-      <li><span>Unique blobs stored</span><span>{{ totals.unique_blobs }}</span></li>
-      <li><span>Duplicates suppressed</span><span>{{ totals.deduplicated }}</span></li>
-      <li><span>Stored bytes</span><span>{{ totals.stored_bytes }}</span></li>
-    </ul>
-    <p class="muted">Evidence is content-addressed: identical output collected twice is
-      stored once. Raw evidence is preserved verbatim so a future parser can reprocess
-      history without reconnecting to a device.</p>
-  </details>
+  {# PR-178: the storage numbers moved to their own deferred surface —
+     every render of THIS page used to pay two full statistics() store
+     passes for a drawer almost nobody opened. Kept for administrators,
+     one click away, never deleted. #}
+  {% call d.supporting('Enterprise Memory — System Details') %}
+    <p class="muted">How the evidence above is stored — properties of the storage engine,
+      not of your network: sessions, devices remembered, evidence records, configuration
+      snapshots, unique blobs stored, duplicates suppressed, stored bytes.</p>
+    <a class="btn btn-sm" href="/evidence/system-details">Open storage details</a>
+  {% endcall %}
 </section>
+
+{% call d.contextual_help('About this page — what Evidence holds') %}
+<p>What Atlas collected from this network, from which device, and whether it
+worked. Every conclusion Atlas reaches rests on these records — open one to see the
+device's own words and what depends on them. Evidence is content-addressed:
+identical output collected twice is stored once, and raw evidence is preserved
+verbatim so a future parser can reprocess history without reconnecting to a
+device.</p>
+{% endcall %}
 {% endblock %}

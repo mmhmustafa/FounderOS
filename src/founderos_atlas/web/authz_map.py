@@ -103,6 +103,8 @@ ENDPOINT_PERMISSIONS: dict[str, str] = {
     "memory_session_page": EVIDENCE_VIEW,
     "memory_device_page": EVIDENCE_VIEW,
     "memory_evidence_view": EVIDENCE_VIEW,
+    "evidence_system_details": EVIDENCE_VIEW,
+    "configuration_system_details": EVIDENCE_VIEW,
     "evidence_saved_filter_create": EVIDENCE_VIEW,
     "evidence_saved_filter_rename": EVIDENCE_VIEW,
     "evidence_saved_filter_delete": EVIDENCE_VIEW,

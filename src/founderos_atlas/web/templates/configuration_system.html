@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Configuration Memory — System Details{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Configuration Memory — System Details</h1>
+  <span class="actions"><a class="btn" href="/configuration">Back to Configuration</a></span>
+</div>
+{# PR-178: the storage engine's own numbers, deferred from
+   /configuration — the content-addressing story lives here, where an
+   administrator asks it, not above the search box. #}
+<section class="card">
+  <p class="muted">How Configuration Memory stores what it remembers. These are properties
+    of the storage engine, not of your network.</p>
+  <ul class="kv">
+    <li><span>Devices remembered</span><span>{{ totals.devices }}</span></li>
+    <li><span>Versions</span><span>{{ totals.versions }}</span></li>
+    <li><span>Observations</span><span>{{ totals.observations }}</span></li>
+    <li><span>Unique configurations</span><span>{{ totals.unique_configurations }}</span></li>
+    <li><span>Stored without duplication</span><span>{{ totals.deduplicated_observations }}</span></li>
+    <li><span>Stored bytes</span><span>{{ totals.stored_bytes }}</span></li>
+  </ul>
+  <p class="muted">Every collected configuration is remembered as a versioned,
+    content-addressed observation — identical configuration is re-observed, never
+    stored twice.</p>
+</section>
+{% endblock %}

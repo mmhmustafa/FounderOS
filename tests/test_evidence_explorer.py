@@ -438,17 +438,30 @@ class ExplorerPageTests(unittest.TestCase):
             self.assertIn("/evidence?session=s1", body)
 
     def test_storage_internals_survive_but_only_under_system_details(self) -> None:
-        """Part 12: kept for administrators, not deleted -- and not in the way."""
+        """Part 12: kept for administrators, not deleted -- and not in the way.
+
+        PR-178 moved the numbers one step further: /evidence keeps the
+        labelled entry, and the statistics live on their own deferred
+        surface so no /evidence render pays the store-statistics passes
+        for a drawer almost nobody opened."""
 
         with tempfile.TemporaryDirectory() as tmp:
-            body = self._client(Path(tmp)).get("/evidence").get_data(as_text=True)
+            client = self._client(Path(tmp))
+            body = client.get("/evidence").get_data(as_text=True)
             self.assertIn("Enterprise Memory — System Details", body)
-            self.assertIn("Unique blobs stored", body)
-            # The storage numbers must sit inside the collapsed drawer, not
-            # above it where they used to define the page.
-            head, _, drawer = body.partition("<details>")
-            self.assertIn("Unique blobs stored", drawer)
-            self.assertNotIn("Unique blobs stored", head)
+            self.assertIn("/evidence/system-details", body)
+            # The numbers themselves no longer render (or cost) here…
+            self.assertNotIn("Unique blobs stored", body)
+            # …they live on the deferred surface, in full.
+            details = client.get(
+                "/evidence/system-details"
+            ).get_data(as_text=True)
+            for label in (
+                "Unique blobs stored", "Duplicates suppressed",
+                "Stored bytes", "Devices remembered", "Evidence records",
+                "Configuration snapshots",
+            ):
+                self.assertIn(label, details, label)
 
     def test_an_empty_response_renders_as_empty_and_never_as_failed(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
