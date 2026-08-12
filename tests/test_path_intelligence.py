@@ -497,7 +497,11 @@ class PathsGuiTests(unittest.TestCase):
                 data={"source": "A1", "destination": "A2"},
                 follow_redirects=True,
             )
-            self.assertIn(b"Where communication stops", response.data)
+            # PR-178: the failure summary IS the page's answer now — it
+            # renders as the answer band's headline instead of behind a
+            # "Where communication stops" label four elements down.
+            self.assertIn(b'id="investigation-answer"', response.data)
+            self.assertIn(b"verdict-attention", response.data)
             self.assertIn(b"administratively shut down", response.data)
             self.assertIn(b"hop-badge-failed", response.data)
             self.assertIn(b"Saved investigations", response.data)

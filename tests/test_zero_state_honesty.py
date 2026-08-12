@@ -287,15 +287,18 @@ class PathsPredictHonestyTests(unittest.TestCase):
             self.assertNotIn("0 contributing profile(s)", page)
 
     def test_unknown_tone_contract_in_the_templates(self) -> None:
-        # Source contract, in the PR-174.1 style: the investigation
-        # status badge maps its unknown branch to the slate unknown
-        # badge — never the red "interrupted" class it used before.
+        # Source contract, in the PR-174.1 style: an unknown
+        # investigation status must never map to a red class. The
+        # answer band maps it to the neutral 'info' tone and the saved
+        # table to the slate 'unknown' badge; the old red 'interrupted'
+        # mapping must not return.
         paths = Path(
             "src/founderos_atlas/web/templates/paths.html"
         ).read_text(encoding="utf-8")
-        self.assertIn("hop-badge-unknown", paths)
+        self.assertIn("else 'info'", paths)          # answer-band tone
+        self.assertIn("else 'unknown'", paths)       # saved-table badge
         self.assertNotIn(
-            "else 'interrupted'", paths,
+            "'interrupted'", paths,
             "the unknown investigation status is red again",
         )
 

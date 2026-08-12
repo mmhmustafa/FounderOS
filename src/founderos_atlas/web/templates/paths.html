@@ -2,6 +2,8 @@
 {% from "_device_actions.html" import device_actions %}
 {% from "_telemetry_context.html" import operational_context %}
 {% import "_disclosure.html" as d with context %}
+{% import "_answer.html" as answer %}
+{% import "_fmt.html" as fmt %}
 {% block title %}Investigate{% endblock %}
 {% block content %}
 {# PR-047A: named for the question the operator is asking ("why can't A reach
@@ -100,20 +102,36 @@
 </section>
 
 {% if investigation %}
+{# ══ ANSWER (PR-178 Band 1): the conclusion FIRST. The headline is the
+   engine's own sentence (failure_summary) — it used to render fourth,
+   behind the heading, the badge row and the observed path. Tone comes
+   from the investigation's own verdict vocabulary; unknown is slate,
+   never red. ═══════════════════════════════════════════════════════ #}
+{% set inv_tone = 'ok' if investigation.status == 'connected' else ('attention' if investigation.status == 'failed' else 'info') %}
+{% set inv_answer = investigation.failure_summary
+    if investigation.failure_summary
+    else ('Connected — every hop validated: ' ~ (investigation.path | join(' → '))
+          if investigation.status == 'connected' and investigation.path
+          else 'Verdict: ' ~ (investigation.status | title)) %}
+{% call answer.answer_band(inv_tone, investigation.status | title, inv_answer,
+                           answer_id='investigation-answer') %}
+<span class="confidence muted">Confidence: {{ investigation.confidence_band | title }} ({{ investigation.confidence_percent }}%)</span>
+{% if investigation.basis and investigation.basis.fresh is sameas false %}
+<span class="badge hop-badge hop-badge-warning">Evidence may be stale</span>
+{% endif %}
+{% endcall %}
+{{ fmt.basis('Path investigation · ' ~ investigation.source ~ ' → ' ~ investigation.destination,
+             scope=active_scope_label, at=investigation.generated_at) }}
+{% if investigation.basis and investigation.basis.snapshot_id %}
+{# PR-178: the provenance the report already carried but never showed. #}
+<p class="muted">Evidence basis: topology snapshot
+  <code>{{ investigation.basis.snapshot_id[:12] }}</code>
+  {%- if investigation.basis.snapshot_created_at %} · captured {{ fmt.when(investigation.basis.snapshot_created_at) }}{% endif %}
+  {%- if investigation.basis.fresh is sameas false %} · <span class="warn">stale — verify before acting</span>{% endif %}.</p>
+{% endif %}
+
 <section class="card root-cause">
   <h2>Investigation — {{ investigation.source }} → {{ investigation.destination }}</h2>
-  <div class="job-head">
-    {# PR-178: unknown is not failure — it renders slate, never red. #}
-    {% if investigation.status == 'connected' %}
-    <span class="badge job-badge job-badge-completed">{{ investigation.status | title }}</span>
-    {% elif investigation.status == 'failed' %}
-    <span class="badge job-badge job-badge-failed">{{ investigation.status | title }}</span>
-    {% else %}
-    <span class="badge hop-badge hop-badge-unknown">{{ investigation.status | title }}</span>
-    {% endif %}
-    <span>Confidence: {{ investigation.confidence_band | title }} ({{ investigation.confidence_percent }}%)</span>
-    <span class="muted">{{ investigation.generated_at }}</span>
-  </div>
   {% if investigation.path %}
   <p><strong>Observed path (from evidence):</strong> {{ investigation.path | join(' → ') }}</p>
   {% endif %}
@@ -125,13 +143,14 @@
   {% if investigation.case_id %}
   <p class="muted">Linked to incident case <a href="/incidents/case/{{ investigation.case_id }}">{{ investigation.case_id }}</a>.</p>
   {% endif %}
-  {% if investigation.failure_summary %}
-  <p class="hop-text-failed"><strong>Where communication stops:</strong> {{ investigation.failure_summary }}</p>
-  {% endif %}
 
   <h2>Investigation Story</h2>
+  {# PR-178: the per-device "Validate …" steps repeated the hop table
+     verbatim (same explanation, same evidence) — the hops below carry
+     MORE (interfaces, link/management state, device actions), so the
+     duplicates are gone, not the evidence. #}
   <ol class="path-timeline">
-    {% for step in investigation.steps %}
+    {% for step in investigation.steps if not (investigation.hops and (step.title or '').startswith('Validate ')) %}
     <li class="hop hop-{{ step.status }}">
       <details {% if step.status in ('failed', 'warning') %}open{% endif %}>
         <summary><span class="hop-dot"></span><strong>{{ step.title }}</strong>
@@ -208,7 +227,7 @@
     <tbody>
       {% for entry in past_investigations %}
       <tr>
-        <td>{{ entry.generated_at }}</td>
+        <td>{{ fmt.when(entry.generated_at) }}</td>
         <td>{{ entry.source }}</td>
         <td>{{ entry.destination }}</td>
         <td><span class="badge hop-badge hop-badge-{{ 'pass' if entry.status == 'connected' else ('failed' if entry.status == 'failed' else 'unknown') }}">{{ entry.status | title }}</span></td>
