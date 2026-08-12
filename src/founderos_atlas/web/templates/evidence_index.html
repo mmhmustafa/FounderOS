@@ -173,7 +173,9 @@
       <label>Save current filter as
         <input name="name" required placeholder="e.g. Failed collections, Chennai">
       </label>
-      <button class="btn btn-sm btn-primary" type="submit"
+      {# PR-178: one primary per page — the search input is Evidence's
+         instrument, and saving a filter is a secondary convenience. #}
+      <button class="btn btn-sm" type="submit"
               {{ 'disabled' if not current_query }}>Save filter</button>
       {% if not current_query %}<span class="muted">Apply a filter first, then save it.</span>{% endif %}
     </form>

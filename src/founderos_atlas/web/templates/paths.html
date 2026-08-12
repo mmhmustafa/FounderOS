@@ -96,8 +96,12 @@
     <div class="form-actions">
       <button class="btn btn-primary" type="submit">Investigate Path</button>
     </div>
-    <p class="muted">Deterministic and evidence-based: Atlas constructs the path from discovered topology (CDP/LLDP and known links), validates every hop against collected state, stops at the first deterministic failure, and explains why. No packets are sent; ambiguity and missing evidence are reported, never guessed through.</p>
   </form>
+  {# PR-178: the method explanation is About-layer prose — one click
+     away, not between the operator and the tool. #}
+  {% call d.contextual_help('How Atlas decides this') %}
+  <p>Deterministic and evidence-based: Atlas constructs the path from discovered topology (CDP/LLDP and known links), validates every hop against collected state, stops at the first deterministic failure, and explains why. No packets are sent; ambiguity and missing evidence are reported, never guessed through.</p>
+  {% endcall %}
   {% endif %}
 </section>
 

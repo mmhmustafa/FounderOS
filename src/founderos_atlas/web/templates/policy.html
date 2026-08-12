@@ -93,80 +93,6 @@ the other. This page judges configuration.</p>
   {% endfor %}
 </div>
 
-{# ══ SUPPORTING DETAIL (PR-178 Band 3): reference material, one card,
-   counted disclosures, collapsed at every display level. ═════════════ #}
-<section class="card">
-  <h2>Supporting detail</h2>
-
-  {% if priorities.top_themes %}
-  {% call d.supporting('Highest-risk policy themes — ' ~ (priorities.top_themes | length) ~ ' theme(s)') %}
-  <div class="table-scroll" role="region" aria-label="Highest-risk policy themes" tabindex="0">
-    <table class="grid">
-      <thead><tr><th>Theme</th><th>Intent</th><th>Affected</th><th>Confirmed</th><th>New</th><th></th></tr></thead>
-      <tbody>
-      {% for theme in priorities.top_themes %}
-        <tr>
-          <td><strong>{{ theme.name }}</strong><br><span class="muted">{{ theme.severity }} severity</span></td>
-          <td>{{ theme.intent | title }}</td>
-          <td>{{ theme.count }}</td>
-          <td>{{ theme.confirmed }}</td>
-          <td>{{ theme.new_regressions }}</td>
-          <td><a class="btn btn-sm" href="{{ scoped_url('/policy', active_scope_id, policy=theme.policy_id, status='fail') }}#results">Review exact results</a></td>
-        </tr>
-      {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  {% endcall %}
-  {% endif %}
-
-  {% if trend | length > 1 %}
-  {% call d.supporting('Compliance trend — ' ~ (trend | length) ~ ' recorded point(s)') %}
-  <p class="muted">A point is recorded whenever posture changes — never on mere page views.</p>
-  <div class="trend-row" role="img" aria-label="Compliance trend: {% for point in trend %}{{ (point.score ~ '%') if point.score is not none else 'not scored' }}{{ ', ' if not loop.last }}{% endfor %}">
-    {% for point in trend %}
-    {# PR-178: a point recorded while nothing was judged carries no
-       score — it renders as unscored, never as a 0% bar. #}
-    <div class="trend-point" title="{{ point.recorded_at }}: {{ (point.score ~ '%') if point.score is not none else 'not scored' }} ({{ point.failed }} failed)">
-      <div class="trend-bar{{ ' trend-bar-unscored' if point.score is none else '' }}" style="height: {{ [point.score, 4] | max if point.score is not none else 4 }}%"></div>
-      <span class="trend-value">{{ (point.score ~ '%') if point.score is not none else '—' }}</span>
-    </div>
-    {% endfor %}
-  </div>
-  {% endcall %}
-  {% endif %}
-
-  {% call d.supporting('Full posture heatmap — ' ~ (heatmap | length) ~ ' policy(ies)') %}
-  <p class="muted">Every policy's posture at a glance, worst first. Numbers, never color alone.</p>
-  <div class="table-scroll" role="region" aria-label="Policy failure heatmap" tabindex="0">
-    <table class="grid heatmap">
-      <thead><tr><th>Policy</th><th>Severity</th>{% for status in statuses %}<th>{{ status_labels[status] }}</th>{% endfor %}</tr></thead>
-      <tbody>
-        {% for cell in heatmap %}
-        <tr>
-          <td><a href="{{ scoped_url('/policy', link_scope(), policy=cell.policy_id) }}"
-                 aria-label="Filter results to policy {{ cell.name }}">{{ cell.name }}</a></td>
-          <td>{{ cell.severity }}</td>
-          {% for status in statuses %}
-          <td class="heat-{{ status }} {{ 'heat-zero' if not cell.counts[status] }}">{{ cell.counts[status] or '' }}</td>
-          {% endfor %}
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  {% endcall %}
-
-  {% call d.supporting('Installed policy packs — ' ~ (packs | length) ~ ' pack(s)') %}
-  <dl class="meta-list">
-    {% for p in packs %}
-    <dt>{{ p.name }} <span class="muted"><code>{{ p.pack_id }}</code></span></dt>
-    <dd class="mono">v{{ p.version }} · {{ p.author }} · {{ p.policy_count }} policies · {{ p.categories | map('title') | join(', ') }}</dd>
-    {% endfor %}
-  </dl>
-  {% endcall %}
-</section>
-
 <section class="card" id="results">
   <h2>Policy Results</h2>
 
@@ -293,12 +219,14 @@ the other. This page judges configuration.</p>
 
   {# PR-178: EVERY active filter renders as a removable chip, so a
      collapsed filter form never means hidden state. Each chip's href
-     drops that one filter and keeps the rest. #}
+     drops that one filter and keeps the rest. Field names are
+     humanised — "assigned to me", not "mine: 1". #}
+  {% set chip_labels = {'q': 'search', 'mine': 'assigned to me', 'assignment': 'assignment batch', 'freshness': 'evidence', 'group': 'group by'} %}
   {% set active_chips = [] %}
   {% for field, value in filter_args.items() if value and field not in ('page',) %}
   {% set keep = {} %}
   {% for key, arg in filter_args.items() %}{% if key != field and key != 'page' and arg %}{% set _ = keep.update({key: arg}) %}{% endif %}{% endfor %}
-  {% set _ = active_chips.append({'field': field, 'value': value, 'href': scoped_url('/policy', active_scope_id, **keep) ~ '#results'}) %}
+  {% set _ = active_chips.append({'field': chip_labels.get(field, field), 'value': 'me' if field == 'mine' else value, 'href': scoped_url('/policy', active_scope_id, **keep) ~ '#results'}) %}
   {% endfor %}
   {{ fmt.filter_chips(active_chips, clear_href=scoped_url('/policy', active_scope_id)) }}
 
@@ -443,6 +371,80 @@ the other. This page judges configuration.</p>
   {% endif %}
 </section>
 {% endif %}
+
+{# ══ SUPPORTING DETAIL (PR-178 Band 3): reference material, one card,
+   counted disclosures, collapsed at every display level. ═════════════ #}
+<section class="card">
+  <h2>Supporting detail</h2>
+
+  {% if priorities.top_themes %}
+  {% call d.supporting('Highest-risk policy themes — ' ~ (priorities.top_themes | length) ~ ' theme(s)') %}
+  <div class="table-scroll" role="region" aria-label="Highest-risk policy themes" tabindex="0">
+    <table class="grid">
+      <thead><tr><th>Theme</th><th>Intent</th><th>Affected</th><th>Confirmed</th><th>New</th><th></th></tr></thead>
+      <tbody>
+      {% for theme in priorities.top_themes %}
+        <tr>
+          <td><strong>{{ theme.name }}</strong><br><span class="muted">{{ theme.severity }} severity</span></td>
+          <td>{{ theme.intent | title }}</td>
+          <td>{{ theme.count }}</td>
+          <td>{{ theme.confirmed }}</td>
+          <td>{{ theme.new_regressions }}</td>
+          <td><a class="btn btn-sm" href="{{ scoped_url('/policy', active_scope_id, policy=theme.policy_id, status='fail') }}#results">Review exact results</a></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endcall %}
+  {% endif %}
+
+  {% if trend | length > 1 %}
+  {% call d.supporting('Compliance trend — ' ~ (trend | length) ~ ' recorded point(s)') %}
+  <p class="muted">A point is recorded whenever posture changes — never on mere page views.</p>
+  <div class="trend-row" role="img" aria-label="Compliance trend: {% for point in trend %}{{ (point.score ~ '%') if point.score is not none else 'not scored' }}{{ ', ' if not loop.last }}{% endfor %}">
+    {% for point in trend %}
+    {# PR-178: a point recorded while nothing was judged carries no
+       score — it renders as unscored, never as a 0% bar. #}
+    <div class="trend-point" title="{{ point.recorded_at }}: {{ (point.score ~ '%') if point.score is not none else 'not scored' }} ({{ point.failed }} failed)">
+      <div class="trend-bar{{ ' trend-bar-unscored' if point.score is none else '' }}" style="height: {{ [point.score, 4] | max if point.score is not none else 4 }}%"></div>
+      <span class="trend-value">{{ (point.score ~ '%') if point.score is not none else '—' }}</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% endcall %}
+  {% endif %}
+
+  {% call d.supporting('Full posture heatmap — ' ~ (heatmap | length) ~ ' policy(ies)') %}
+  <p class="muted">Every policy's posture at a glance, worst first. Numbers, never color alone.</p>
+  <div class="table-scroll" role="region" aria-label="Policy failure heatmap" tabindex="0">
+    <table class="grid heatmap">
+      <thead><tr><th>Policy</th><th>Severity</th>{% for status in statuses %}<th>{{ status_labels[status] }}</th>{% endfor %}</tr></thead>
+      <tbody>
+        {% for cell in heatmap %}
+        <tr>
+          <td><a href="{{ scoped_url('/policy', link_scope(), policy=cell.policy_id) }}"
+                 aria-label="Filter results to policy {{ cell.name }}">{{ cell.name }}</a></td>
+          <td>{{ cell.severity }}</td>
+          {% for status in statuses %}
+          <td class="heat-{{ status }} {{ 'heat-zero' if not cell.counts[status] }}">{{ cell.counts[status] or '' }}</td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endcall %}
+
+  {% call d.supporting('Installed policy packs — ' ~ (packs | length) ~ ' pack(s)') %}
+  <dl class="meta-list">
+    {% for p in packs %}
+    <dt>{{ p.name }} <span class="muted"><code>{{ p.pack_id }}</code></span></dt>
+    <dd class="mono">v{{ p.version }} · {{ p.author }} · {{ p.policy_count }} policies · {{ p.categories | map('title') | join(', ') }}</dd>
+    {% endfor %}
+  </dl>
+  {% endcall %}
+</section>
 
 {# ══ ABOUT (PR-178 Band 4): the prose that explains the page rather
    than today's estate — including the four bucket definitions that

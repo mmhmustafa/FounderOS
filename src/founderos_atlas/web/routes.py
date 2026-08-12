@@ -3313,7 +3313,9 @@ def register_routes(app) -> None:
             current_username=current_actor(),
             page=page,
             groups=groups,
-            summary=summarize(filtered),
+            # PR-178: summarize(filtered) fed a `summary` variable the
+            # template never rendered — one full O(n) pass per request,
+            # deleted (the third verified dead computation).
             overall=overall,
             posture=posture,
             heatmap=heatmap(rows),
