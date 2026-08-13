@@ -9234,11 +9234,53 @@ def register_routes(app) -> None:
         system_info = collect_system_information(
             app, credential_provider=provider, preferences=preferences,
         )
+        # PR-180 Step 0 (§26.1 standing rule): this payload is an
+        # EXPLICIT ALLOWLIST — every key named, never a spread, never
+        # __dict__ — because this file LEAVES the machine. A field
+        # added to collect_system_information or WorkspacePreferences
+        # must NOT ride into this artifact silently; the exact-key-set
+        # test (tests/test_diagnostics_contract.py) fails until the
+        # contract here is updated deliberately. It may never carry a
+        # filesystem path, a user account name, a hostname, a device
+        # or management address, or an operator-authored
+        # network/site/profile name — identity for support is
+        # fingerprints and correlation ids only.
         payload = {
-            **system_info,
+            "product": system_info["product"],
+            "version": system_info["version"],
+            "display_version": system_info["display_version"],
+            "build_commit": system_info["build_commit"],
+            "workspace_schema_version": system_info["workspace_schema_version"],
+            "workspace_schema_target": system_info["workspace_schema_target"],
+            "authentication_mode": system_info["authentication_mode"],
+            # The friendly provider NAME and availability — never the
+            # Python class, never the backend's own error text.
+            "credential_provider": system_info["credential_provider"],
+            "credential_provider_available": system_info[
+                "credential_provider_available"
+            ],
+            "tls_enabled": system_info["tls_enabled"],
+            "hsts_enabled": system_info["hsts_enabled"],
+            # A COUNT — the proxy addresses themselves stay on the
+            # admin's screen and out of any portable artifact.
+            "trusted_proxy_count": len(system_info["trusted_proxies"]),
+            "session_mode": system_info["session_mode"],
+            "logging_level": system_info["logging_level"],
+            "retention_policy": system_info["retention_policy"],
+            "update_provider": system_info["update_provider"],
             "python": __import__("sys").version.split()[0],
             "profile_count": len(profile_service().list_profiles(include_archived=True)),
-            "preferences": preferences.__dict__,
+            # Named preference fields only. updated_at is deliberately
+            # omitted (a timestamp of a local edit is not support
+            # context), as is anything a future field might carry.
+            "preferences": {
+                "timezone": preferences.timezone,
+                "theme": preferences.theme,
+                "density": preferences.density,
+                "retention_days": preferences.retention_days,
+                "log_level": preferences.log_level,
+                "state_horizon_minutes": preferences.state_horizon_minutes,
+            },
             "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         }
         _administration_audit("export-diagnostics", after={"fields": sorted(payload)})

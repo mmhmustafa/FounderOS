@@ -14,6 +14,7 @@ and any layer can import it without side effects.
 from __future__ import annotations
 
 import subprocess
+from functools import lru_cache
 from pathlib import Path
 
 PRODUCT_NAME = "FounderOS Atlas"
@@ -25,6 +26,15 @@ VERSION = "0.3.0a1"
 DISPLAY_VERSION = f"{PRODUCT_NAME} {VERSION}"
 
 
+# PR-180 §30 Step 0: the value is INTENTIONALLY frozen at first call.
+# `register_observability` (web/observability.py) primes this at
+# startup — before any request is served — so the cached identifier
+# describes the bytes the process actually loaded, not whatever HEAD
+# points at after a later `git pull`. A test pins that priming order;
+# do not remove the startup call or this cache without re-weighing
+# that honesty property. (Uncached, this was also a measured ~47 ms
+# subprocess paid twice per /settings render.)
+@lru_cache(maxsize=1)
 def build_commit() -> str | None:
     """The short git commit if running from a checkout, else None.
 

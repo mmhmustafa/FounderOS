@@ -131,6 +131,77 @@ class SystemInformationTests(unittest.TestCase):
             self.assertNotIn("local single-user", page)
 
 
+class BuildIdentityCacheTests(unittest.TestCase):
+    """PR-180 Step 0: the build identifier is frozen at first call.
+
+    The honesty property: the identifier the process reports must
+    describe the bytes the process loaded. `register_observability`
+    primes the cache during create_app — before any request — so the
+    frozen value is read at load time, not at whatever later moment a
+    page happens to render (by which time a `git pull` may have moved
+    HEAD under a running process). Deleting either the cache or the
+    startup priming silently inverts that property; these tests make
+    the deletion loud.
+    """
+
+    def test_create_app_primes_the_cache_before_any_request(self) -> None:
+        from founderos_atlas.release import build_commit
+
+        build_commit.cache_clear()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            service = ProfileService(
+                ProfileRepository(root / "workspace"),
+                InMemoryCredentialProvider(),
+            )
+            from founderos_atlas.web import create_app
+
+            create_app(
+                profile_service=service, workspace_root=root / "workspace",
+                output_dir=root / "output",
+            )
+            # No request was made; startup alone resolved the identity.
+            self.assertEqual(1, build_commit.cache_info().currsize)
+
+    def test_settings_render_spawns_no_subprocess_after_priming(self) -> None:
+        # Measured pre-PR-180: two uncached `git rev-parse` subprocesses
+        # per /settings render (~47 ms each, 5 s timeout worst case).
+        import founderos_atlas.release as release
+
+        release.build_commit.cache_clear()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            service = ProfileService(
+                ProfileRepository(root / "workspace"),
+                InMemoryCredentialProvider(),
+            )
+            from founderos_atlas.web import create_app
+
+            app = create_app(
+                profile_service=service, workspace_root=root / "workspace",
+                output_dir=root / "output",
+            )
+            app.config.update(TESTING=True)
+            with patch.object(release.subprocess, "run") as spawned:
+                response = app.test_client().get("/settings")
+                self.assertEqual(200, response.status_code)
+                diagnostics = app.test_client().get("/settings/diagnostics.json")
+                self.assertEqual(200, diagnostics.status_code)
+                spawned.assert_not_called()
+
+    def test_the_frozen_value_is_served_to_every_later_caller(self) -> None:
+        from founderos_atlas.release import build_commit
+
+        build_commit.cache_clear()
+        first = build_commit()
+        info_after_first = build_commit.cache_info()
+        second = build_commit()
+        self.assertEqual(first, second)
+        self.assertEqual(1, build_commit.cache_info().currsize)
+        self.assertGreater(build_commit.cache_info().hits,
+                           info_after_first.hits - 1)
+
+
 class ReleaseIdentityTests(unittest.TestCase):
     def test_installed_cli_supports_standard_version_flag(self) -> None:
         from contextlib import redirect_stdout
