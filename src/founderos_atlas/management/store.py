@@ -38,6 +38,14 @@ class ManagementServiceStore:
         self._path = Path(path)
         self._lock = threading.RLock()
         self._clock = clock or (lambda: datetime.now(timezone.utc))
+        # PR-178.1: read-path memo. Building the per-request web-access map
+        # called services_for() once per device, and every call re-read and
+        # re-parsed this file — 85 parses per Evidence render on the live
+        # estate. The memo is per INSTANCE (never process-global, the PR-176
+        # rule) and validated against the file's (mtime_ns, size) signature,
+        # so an external write is always noticed and never served stale.
+        self._memo_signature: tuple[int, int] | None = None
+        self._memo_data: dict[str, Any] | None = None
 
     # -- persistence ------------------------------------------------------
 
@@ -52,17 +60,45 @@ class ManagementServiceStore:
         data.setdefault("overrides", [])
         return data
 
+    def _signature(self) -> tuple[int, int] | None:
+        try:
+            stat = self._path.stat()
+        except OSError:
+            return None
+        return (stat.st_mtime_ns, stat.st_size)
+
+    def _read(self) -> dict[str, Any]:
+        """The memoised read path. Callers must treat the result as
+        read-only: it is shared between calls. Mutation paths keep using
+        ``_load()`` for a private copy and go through ``_save()``, which
+        drops the memo."""
+
+        signature = self._signature()
+        if signature is None:
+            # No file (or unstattable): nothing to memoise against.
+            self._memo_signature = None
+            self._memo_data = None
+            return {"services": [], "overrides": []}
+        if self._memo_data is None or signature != self._memo_signature:
+            self._memo_data = self._load()
+            self._memo_signature = signature
+        return self._memo_data
+
     def _save(self, data: dict[str, Any]) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
         self._path.write_text(
             json.dumps(data, indent=2, sort_keys=True), encoding="utf-8"
         )
+        # Invalidate rather than adopt: the next read re-parses what the
+        # file actually says, so memo and disk cannot drift apart.
+        self._memo_signature = None
+        self._memo_data = None
 
     # -- auto-verified services -------------------------------------------
 
     def services_for(self, device_id: str) -> tuple[ManagementService, ...]:
         with self._lock:
-            data = self._load()
+            data = self._read()
         found = [
             ManagementService.from_dict(item)
             for item in data["services"]
@@ -73,7 +109,7 @@ class ManagementServiceStore:
 
     def all_services(self) -> tuple[ManagementService, ...]:
         with self._lock:
-            data = self._load()
+            data = self._read()
         result = [ManagementService.from_dict(item) for item in data["services"]]
         for item in data["overrides"]:
             result.append(self._override_to_service(item))

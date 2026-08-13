@@ -194,5 +194,261 @@ class NoJsBaselineTests(unittest.TestCase):
             "-- Responsive navigation drawer")[0])
 
 
+class WebActionGroupTests(unittest.TestCase):
+    """linking.py's web group reproduces EVERY branch of the inline
+    device_actions web block — the one capability that was unique to the
+    inline buttons, and the reason retiring them loses nothing."""
+
+    HTTPS_WEB = {
+        "device_id": "cisco-ios:gw", "hostname": "GW",
+        "has_https": True, "http_only": False,
+        "https_url": "https://10.0.9.9:8443", "http_url": None,
+        "tls_summary": "Self-signed",
+        "certificate_warnings": [
+            "The certificate is self-signed — common on network equipment, "
+            "and not proof of identity."
+        ],
+        "reason": "",
+    }
+    HTTP_WEB = {
+        "device_id": "cisco-ios:sw", "hostname": "SW",
+        "has_https": False, "http_only": True,
+        "https_url": None, "http_url": "http://10.0.9.8",
+        "tls_summary": None, "certificate_warnings": [],
+        "reason": "",
+    }
+    UNVERIFIED_WEB = {
+        "device_id": "cisco-ios:rt", "hostname": "RT",
+        "has_https": False, "http_only": False,
+        "https_url": None, "http_url": None,
+        "tls_summary": None, "certificate_warnings": [],
+        "reason": "No web management endpoint is verified for this device.",
+    }
+
+    def _actions(self, web):
+        from founderos_atlas.web.linking import device_entity_actions
+
+        return device_entity_actions(
+            device_id="ent:gw", hostname="GW", scope_id="all",
+            ssh_target=None, web=web,
+        )
+
+    def test_https_offers_open_and_copy_with_the_certificate_flag(self) -> None:
+        actions = {a.key: a for a in self._actions(self.HTTPS_WEB)}
+        self.assertIn("web", actions)
+        self.assertIn("web-copy", actions)
+        self.assertNotIn("web-insecure", actions)
+        self.assertEqual("Open HTTPS", actions["web"].display_label)
+        self.assertEqual("https://10.0.9.9:8443", actions["web"].href)
+        self.assertTrue(actions["web"].external)
+        self.assertIn("self-signed", actions["web"].flag)
+        self.assertIn("certificate: Self-signed", actions["web"].title)
+        self.assertEqual("Copy HTTPS URL", actions["web-copy"].display_label)
+        self.assertIn("never includes a password", actions["web-copy"].title)
+
+    def test_a_clean_certificate_raises_no_flag(self) -> None:
+        clean = dict(self.HTTPS_WEB, certificate_warnings=[], tls_summary="Trusted")
+        actions = {a.key: a for a in self._actions(clean)}
+        self.assertIsNone(actions["web"].flag)
+        self.assertNotIn("certificate:", actions["web"].title)
+
+    def test_http_only_stays_explicitly_insecure(self) -> None:
+        """The exact wording survives: never a generic "Web" action that
+        hides the insecurity."""
+
+        actions = {a.key: a for a in self._actions(self.HTTP_WEB)}
+        self.assertIn("web-insecure", actions)
+        self.assertNotIn("web", actions)
+        self.assertEqual(
+            "Open HTTP — Insecure", actions["web-insecure"].display_label
+        )
+        self.assertIn("travels in the clear", actions["web-insecure"].title)
+        self.assertEqual("SW", actions["web-insecure"].hostname)
+        self.assertEqual("cisco-ios:sw", actions["web-insecure"].device_id)
+        self.assertEqual("Copy HTTP URL", actions["web-copy"].display_label)
+
+    def test_resolved_but_unverified_is_greyed_with_the_actual_reason(self) -> None:
+        """"Atlas checked, and here is why not" — never an empty cell."""
+
+        actions = {a.key: a for a in self._actions(self.UNVERIFIED_WEB)}
+        self.assertIn("web", actions)
+        self.assertFalse(actions["web"].available)
+        self.assertEqual(
+            "No web management endpoint is verified for this device.",
+            actions["web"].reason,
+        )
+
+    def test_unresolved_web_renders_no_web_item_at_all(self) -> None:
+        """web=None means the caller could not resolve web access —
+        exactly the inline macro's behaviour (it rendered nothing)."""
+
+        keys = {a.key for a in self._actions(None)}
+        self.assertFalse({"web", "web-insecure", "web-copy"} & keys)
+
+    def test_web_actions_sit_with_ssh_in_the_canonical_order(self) -> None:
+        from founderos_atlas.web.linking import ACTION_ORDER
+
+        keys = [a.key for a in self._actions(self.HTTPS_WEB)]
+        self.assertEqual(keys, [k for k in ACTION_ORDER if k in keys])
+        self.assertLess(keys.index("ssh"), keys.index("web"))
+        self.assertLess(keys.index("web"), keys.index("compass"))
+
+
+class HonestAvailabilityTests(unittest.TestCase):
+    """The menu may assert store absence ONLY when a caller consulted the
+    store. Before PR-178.1 the strong claim rendered whenever the record
+    id was missing — a stated reason nobody had checked."""
+
+    def _actions(self, **kwargs):
+        from founderos_atlas.web.linking import device_entity_actions
+
+        defaults = dict(
+            device_id=None, hostname="unresolved-peer", scope_id="all",
+            ssh_target=None,
+        )
+        defaults.update(kwargs)
+        return {a.key: a for a in device_entity_actions(**defaults)}
+
+    def test_unestablished_absence_states_only_the_addressing_fact(self) -> None:
+        actions = self._actions()  # no record id, flags not established
+        for key in ("evidence", "configuration"):
+            self.assertFalse(actions[key].available)
+            self.assertIn("cannot be opened from here", actions[key].reason)
+        self.assertNotIn("records are stored", actions["evidence"].reason)
+        self.assertNotIn("is held", actions["configuration"].reason)
+
+    def test_established_absence_keeps_the_strong_claim(self) -> None:
+        actions = self._actions(
+            memory_device_id="cisco-ios:gw",
+            has_evidence=False, has_configuration=False,
+        )
+        self.assertEqual(
+            "no evidence records are stored for unresolved-peer in this scope",
+            actions["evidence"].reason,
+        )
+        self.assertEqual(
+            "no configuration is held for unresolved-peer in this scope",
+            actions["configuration"].reason,
+        )
+
+    def test_a_record_id_alone_keeps_the_links_available(self) -> None:
+        """Tri-state None must not change what renders today: with an
+        addressable record the links stay live."""
+
+        actions = self._actions(memory_device_id="cisco-ios:gw")
+        self.assertTrue(actions["evidence"].available)
+        self.assertTrue(actions["configuration"].available)
+
+
+class RowMigrationTests(unittest.TestCase):
+    """Evidence and Configuration TABLE ROWS use the shared menu; detail
+    surfaces deliberately keep the inline buttons (one device, not fifty)."""
+
+    def test_evidence_and_configuration_rows_use_the_shared_menu(self) -> None:
+        for name in ("evidence_index.html", "configuration.html"):
+            body = (TEMPLATES / name).read_text(encoding="utf-8")
+            self.assertNotIn("device_actions(", body, name)
+            self.assertIn("entity_menu(device_menu(", body, name)
+
+    def test_the_two_dead_imports_are_gone(self) -> None:
+        changes = (TEMPLATES / "changes.html").read_text(encoding="utf-8")
+        self.assertNotIn('from "_entity_actions.html" import', changes)
+        topology = (TEMPLATES / "topology.html").read_text(encoding="utf-8")
+        self.assertNotIn('from "_device_actions.html" import', topology)
+
+    def test_detail_surfaces_keep_inline_device_actions(self) -> None:
+        for name in (
+            "device.html", "evidence_device.html", "configuration_device.html",
+            "paths.html", "advisor.html", "console_index.html",
+        ):
+            body = (TEMPLATES / name).read_text(encoding="utf-8")
+            self.assertIn("device_actions(", body, name)
+
+
+class StoreMemoisationTests(unittest.TestCase):
+    """ManagementServiceStore's read path parses once per file version —
+    per INSTANCE, stat-validated, never process-global (the PR-176 rule)."""
+
+    def _counting_store(self, path):
+        from founderos_atlas.management.store import ManagementServiceStore
+
+        store = ManagementServiceStore(path)
+        calls = []
+        original = store._load
+
+        def counted():
+            calls.append(1)
+            return original()
+
+        store._load = counted
+        return store, calls
+
+    def test_repeated_reads_parse_once(self) -> None:
+        import json
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "management-services.json"
+            path.write_text(json.dumps({"services": [], "overrides": []}))
+            store, calls = self._counting_store(path)
+            for _ in range(50):
+                store.services_for("cisco-ios:gw")
+            self.assertEqual(1, len(calls), "one parse per file version")
+
+    def test_a_write_through_the_store_is_never_served_stale(self) -> None:
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "management-services.json"
+            store, _ = self._counting_store(path)
+            self.assertEqual((), store.services_for("cisco-ios:gw"))
+            store.define_endpoint(
+                "cisco-ios:gw", url="https://10.0.9.9:8443", protocol="https",
+                address="10.0.9.9", port=8443, user="netops",
+            )
+            found = store.services_for("cisco-ios:gw")
+            self.assertEqual(1, len(found))
+            self.assertEqual("https://10.0.9.9:8443", found[0].url)
+
+    def test_an_external_write_is_noticed(self) -> None:
+        """Another process (or another store instance) rewriting the file
+        must be seen: the memo is validated against (mtime_ns, size)."""
+
+        import json
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "management-services.json"
+            path.write_text(json.dumps({"services": [], "overrides": []}))
+            store, _ = self._counting_store(path)
+            self.assertEqual((), store.services_for("cisco-ios:gw"))
+            path.write_text(json.dumps({
+                "services": [{
+                    "device_id": "cisco-ios:gw", "address": "10.0.9.9",
+                    "protocol": "https", "port": 443,
+                    "verification": "verified",
+                }],
+                "overrides": [],
+            }))
+            self.assertEqual(1, len(store.services_for("cisco-ios:gw")))
+
+    def test_a_missing_file_stays_empty_and_never_caches_a_ghost(self) -> None:
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "management-services.json"
+            store, _ = self._counting_store(path)
+            self.assertEqual((), store.services_for("cisco-ios:gw"))
+            store.define_endpoint(
+                "cisco-ios:gw", url="https://10.0.9.9", protocol="https",
+                address="10.0.9.9", port=443, user="netops",
+            )
+            self.assertEqual(1, len(store.services_for("cisco-ios:gw")))
+
+
 if __name__ == "__main__":
     unittest.main()

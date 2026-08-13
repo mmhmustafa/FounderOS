@@ -36,6 +36,28 @@
       <button type="button" class="action-menu-item js-copy-link"
               data-copy-url="{{ action.href }}"
               aria-label="{{ action.label }}">{{ action.label }}</button>
+      {# -- web management (PR-178.1): the same classes and data-*
+            attributes the inline device_actions buttons carried, so the
+            shared behaviour layer (atlas-device-actions.js) keeps the
+            open audit, the insecure-open confirmation, and the honest
+            copy feedback without a line of new script. -- #}
+      {% elif action.available and action.key == 'web' %}
+      <a class="action-menu-item js-web-open" href="{{ action.href }}"
+         target="_blank" rel="noopener noreferrer"
+         data-device-id="{{ action.device_id }}" data-protocol="https"
+         data-url="{{ action.href }}"
+         {% if action.title %}title="{{ action.title }}"{% endif %}>{{ action.label }}{% if action.flag %} <span class="cert-flag" title="{{ action.flag }}">⚠<span class="visually-hidden"> — certificate: {{ action.flag }}</span></span>{% endif %}</a>
+      {% elif action.available and action.key == 'web-insecure' %}
+      <button type="button" class="action-menu-item js-web-open-insecure"
+              data-device-id="{{ action.device_id }}" data-protocol="http"
+              data-url="{{ action.href }}" data-hostname="{{ action.hostname }}"
+              {% if action.title %}title="{{ action.title }}"{% endif %}
+              aria-label="{{ action.label }}">{{ action.label }}</button>
+      {% elif action.available and action.key == 'web-copy' %}
+      <button type="button" class="action-menu-item js-copy-url"
+              data-url="{{ action.href }}"
+              {% if action.title %}title="{{ action.title }}"{% endif %}
+              aria-label="{{ action.label }}">{{ action.label }}</button>
       {% elif action.available %}
       <a class="action-menu-item" href="{{ action.href }}"
          {% if action.external %}target="_blank" rel="noopener noreferrer"{% endif %}

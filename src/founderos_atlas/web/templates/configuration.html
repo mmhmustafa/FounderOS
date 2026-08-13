@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_device_actions.html" import device_actions %}
+{% from "_entity_actions.html" import entity_menu %}
 {% import "_fmt.html" as fmt %}
 {% import "_disclosure.html" as d with context %}
 {% block title %}Configuration{% endblock %}
@@ -43,9 +43,17 @@
           {# "History" was the wrong verb for the primary action on a
              page about configurations — and 50 rows of btn-primary
              made 50 competing primaries. #}
+          {# PR-178.1: one primary link + one disclosure. SSH, Copy SSH
+             and every web branch moved into the menu (linking.py web
+             group) — the inline accent buttons are retired with nothing
+             lost. version_count comes from the configuration store
+             itself, so has_configuration is an ESTABLISHED fact this
+             page may pass. #}
           <a class="btn btn-sm" href="/configuration/{{ device.device_id | urlencode }}">Open configuration</a>
-          {{ device_actions(device_target(device_id=device.device_id), compact=True, show_label=False,
-                            web=web_access(device_id=device.device_id)) }}
+          {{ entity_menu(device_menu(hostname=device.hostname, device_id=device.device_id,
+                                     memory_device_id=device.device_id,
+                                     has_configuration=(device.version_count | int(0)) > 0),
+                         device.hostname) }}
         </td>
       </tr>
       {% endfor %}

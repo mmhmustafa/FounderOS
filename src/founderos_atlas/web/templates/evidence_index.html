@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_device_actions.html" import device_actions %}
+{% from "_entity_actions.html" import entity_menu %}
 {% import "_fmt.html" as fmt %}
 {% import "_disclosure.html" as d with context %}
 {% block title %}Evidence{% endblock %}
@@ -210,10 +210,6 @@
         <td data-col="device">
           <strong>{{ d.hostname }}</strong>
           {% if target and target.management_ip %}<span class="muted">{{ target.management_ip }}</span>{% endif %}
-          {# Part 9: the same universal action every other device surface uses.
-             This page implements no action logic of its own. #}
-          {% if target %}<div>{{ device_actions(target, compact=True, show_label=False,
-                                                web=web_access(device_id=d.device_id)) }}</div>{% endif %}
         </td>
         <td data-col="platform">{{ d.platform or '—' }}</td>
         <td data-col="commands">{{ d.commands_collected }} / {{ d.commands_attempted }}</td>
@@ -223,7 +219,18 @@
             {% else %}<span class="muted">Not collected</span>{% endif %}</td>
         <td data-col="last">{{ d.last_collected_at or '—' }}</td>
         <td data-col="actions" class="row-actions">
+          {# PR-178.1: one primary link + one disclosure — the same shape
+             as every menu-bearing table. The menu carries SSH, Copy SSH
+             and every web-management branch (linking.py's web group), so
+             the fifty inline accent buttons this cell's neighbour used
+             to render are retired with nothing lost. The row's
+             has_configuration is a SESSION fact, so it is deliberately
+             NOT passed as the store-level flag — the menu must not
+             assert scope-wide absence from one session's view. #}
           <a class="btn btn-sm" href="/evidence/device/{{ d.device_id | urlencode }}?session={{ session.session_id | urlencode }}">Evidence</a>
+          {{ entity_menu(device_menu(hostname=d.hostname, device_id=d.device_id,
+                                     memory_device_id=d.device_id),
+                         d.hostname) }}
         </td>
       </tr>
       {% endfor %}

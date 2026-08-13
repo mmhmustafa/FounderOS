@@ -9254,30 +9254,66 @@ def register_routes(app) -> None:
                     found.append(target.to_dict())
             return found
 
-        def _web_access_for_request():
-            cache = getattr(g, "_web_access", None)
-            if cache is None:
+        def _web_access_index():
+            """One light pass over the scope's devices, once per request.
+
+            PR-178.1: the cache used to resolve web access EAGERLY for
+            every device in scope (~865 on the live estate) the first
+            time any page asked about one — ~30ms per render on pages
+            that show 50. The index pass only records where each device
+            lives (id → record/scope/store, hostname → id); the actual
+            ``resolve_web_access`` runs lazily, per device asked about,
+            memoised in ``g._web_access``. Duplicate-id semantics match
+            the eager build exactly: last scope wins for an id, first
+            insertion wins for a hostname.
+            """
+
+            index = getattr(g, "_web_access_index", None)
+            if index is None:
+                by_id: dict = {}
+                by_host: dict = {}
                 try:
                     _ctx, scopes, scope_id = scoped_context("topology")
-                    cache = {}
                     for scope in console_scopes(scopes, scope_id):
                         store = management_store(scope)
                         for device in _scope_devices(scope):
                             did = str(device.get("device_id") or "").strip()
                             if not did:
                                 continue
-                            from founderos_atlas.management import resolve_web_access
-
-                            cache[did] = resolve_web_access(
-                                device,
-                                network=scope.label,
-                                scope_id=scope.scope_id,
-                                services=store.services_for(did),
-                            )
+                            by_id[did] = (device, scope, store)
+                            host = str(
+                                device.get("hostname") or ""
+                            ).strip().casefold()
+                            if host and host not in by_host:
+                                by_host[host] = did
                 except Exception:  # noqa: BLE001 - a widget must not 500 a page
-                    cache = {}
-                g._web_access = cache
-            return cache
+                    by_id, by_host = {}, {}
+                index = {"by_id": by_id, "by_host": by_host}
+                g._web_access_index = index
+                g._web_access = {}
+            return index
+
+        def _web_access_resolve(did, index):
+            cache = g._web_access
+            if did in cache:
+                return cache[did]
+            access = None
+            entry = index["by_id"].get(did)
+            if entry is not None:
+                device, scope, store = entry
+                try:
+                    from founderos_atlas.management import resolve_web_access
+
+                    access = resolve_web_access(
+                        device,
+                        network=scope.label,
+                        scope_id=scope.scope_id,
+                        services=store.services_for(did),
+                    )
+                except Exception:  # noqa: BLE001 - a widget must not 500 a page
+                    access = None
+            cache[did] = access
+            return access
 
         def web_access(device_id=None, hostname=None):
             """Web-management actions for a device, for the action macro.
@@ -9287,17 +9323,16 @@ def register_routes(app) -> None:
             name yields nothing.
             """
 
-            cache = _web_access_for_request()
-            if device_id:
-                found = cache.get(str(device_id).strip())
-                if found is not None:
-                    return found.to_dict()
-            if hostname:
-                wanted = str(hostname).strip().casefold()
-                for access in cache.values():
-                    if access.hostname.casefold() == wanted:
-                        return access.to_dict()
-            return None
+            index = _web_access_index()
+            did = None
+            if device_id and str(device_id).strip() in index["by_id"]:
+                did = str(device_id).strip()
+            elif hostname:
+                did = index["by_host"].get(str(hostname).strip().casefold())
+            if not did:
+                return None
+            access = _web_access_resolve(did, index)
+            return access.to_dict() if access is not None else None
 
         # PR-047A: confidence presentation is a product decision, made once,
         # here — so no page invents its own idea of when a score is worth the
@@ -9331,13 +9366,22 @@ def register_routes(app) -> None:
                 g._link_draft_plan = cache
             return cache
 
-        def device_menu(hostname=None, device_id=None, name=None):
+        def device_menu(hostname=None, device_id=None, name=None,
+                        memory_device_id=None, has_evidence=None,
+                        has_configuration=None):
             """The canonical contextual-action menu for one device.
 
             The ONE builder every template uses (see web/linking.py): same
             actions, same order, same availability rules everywhere. The
             active scope is baked into every generated href so a copied
             link reopens the same entity in the same scope.
+
+            PR-178.1: the menu now answers the web question too — resolved
+            from the SAME per-request cache the inline buttons used, so
+            retiring them from table rows loses no capability and adds no
+            per-row lookup. ``has_evidence``/``has_configuration`` are
+            tri-state pass-throughs: only a caller that actually consulted
+            the store may assert absence (see linking.py).
             """
 
             hostname = str(hostname or "").strip()
@@ -9346,13 +9390,20 @@ def register_routes(app) -> None:
             target = device_target(device_id=device_id, hostname=hostname)
             if not hostname and target:
                 hostname = str(target.get("hostname") or "")
+            web = web_access(
+                device_id=memory_device_id or device_id, hostname=hostname
+            )
             actions = device_entity_actions(
                 device_id=str(device_id or "").strip() or hostname or None,
                 hostname=hostname or str(device_id or ""),
                 scope_id=_active_scope_for_links(),
                 ssh_target=target,
+                memory_device_id=memory_device_id,
+                has_evidence=has_evidence,
+                has_configuration=has_configuration,
                 draft_plan_id=_draft_plan_for_links(),
                 entity_label=name,
+                web=web,
             )
             return [action.to_dict() for action in actions]
 

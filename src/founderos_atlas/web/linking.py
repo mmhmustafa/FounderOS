@@ -152,6 +152,15 @@ ACTION_ORDER = (
     "predict",
     "ssh",
     "ssh-copy",
+    # PR-178.1: the web group sits with SSH — the other way INTO a device.
+    # It reproduces every branch of the inline device_actions web block
+    # (HTTPS preferred; HTTP only as an explicitly-labelled insecure
+    # alternative; a greyed item carrying the reason when neither is
+    # verified), so retiring the inline buttons from table rows loses
+    # nothing.
+    "web",
+    "web-insecure",
+    "web-copy",
     "compass",
     "copy-link",
 )
@@ -166,6 +175,9 @@ _ACTION_LABELS = {
     "predict": "Predict",
     "ssh": "Open SSH console",
     "ssh-copy": "Copy SSH command",
+    "web": "Open web interface",
+    "web-insecure": "Open HTTP — Insecure",
+    "web-copy": "Copy URL",
     "compass": "Add to Compass",
     "copy-link": "Copy link",
 }
@@ -188,6 +200,15 @@ class EntityAction:
     external: bool = False
     # For "ssh-copy": the exact command the button copies (never a secret).
     command: str | None = None
+    # PR-178.1, web group only. ``title`` is the control's tooltip;
+    # ``flag`` carries certificate warnings (rendered as the ⚠ marker with
+    # its expansion); ``device_id``/``hostname`` feed the data-* attributes
+    # the shared behaviour layer (atlas-device-actions.js) keys on for the
+    # open audit and the insecure-open confirmation.
+    title: str | None = None
+    flag: str | None = None
+    device_id: str | None = None
+    hostname: str | None = None
 
     def __post_init__(self) -> None:
         if self.key not in _ACTION_LABELS:
@@ -212,6 +233,10 @@ class EntityAction:
             "reason": self.reason,
             "external": self.external,
             "command": self.command,
+            "title": self.title,
+            "flag": self.flag,
+            "device_id": self.device_id,
+            "hostname": self.hostname,
         }
 
 
@@ -229,10 +254,11 @@ def device_entity_actions(
     scope_id: str | None = None,
     ssh_target: dict | None = None,
     memory_device_id: str | None = None,
-    has_evidence: bool = True,
-    has_configuration: bool = True,
+    has_evidence: bool | None = None,
+    has_configuration: bool | None = None,
     draft_plan_id: str | None = None,
     entity_label: str | None = None,
+    web: dict | None = None,
 ) -> list[EntityAction]:
     """The standard action set for a device, permission/availability aware.
 
@@ -242,6 +268,20 @@ def device_entity_actions(
     memory device id (``memory_device_id``, e.g. ``cisco-ios:gw``).
     ``ssh_target`` is console/resolve.py's target dict (or None when the
     device is not an eligible console target in this scope).
+
+    ``has_evidence`` / ``has_configuration`` are TRI-STATE (PR-178.1):
+    ``None`` means "not established" — the caller did not consult the
+    store, so an unavailable item states only the addressing fact, never
+    "no records are stored". ``False`` is an ESTABLISHED absence a caller
+    verified against the store, and only then does the reason assert it.
+    (Before this, the strong wording rendered whenever the record id was
+    missing — a stated reason no one had checked.)
+
+    ``web`` is a WebAccess.to_dict() (or None when the caller could not
+    resolve web access). Exactly the inline device_actions contract:
+    HTTPS preferred; HTTP offered only as an explicitly-labelled insecure
+    alternative; a resolved-but-unverified device gets a greyed item
+    carrying the reason; an unresolved one gets no web item at all.
     """
 
     name = entity_label or hostname
@@ -267,10 +307,16 @@ def device_entity_actions(
             key="evidence",
             href=entity_url(
                 "evidence_device", device_id=record_id, scope_id=scope_id
-            ) if record_id and has_evidence else None,
-            available=bool(record_id and has_evidence),
-            reason=None if (record_id and has_evidence) else (
+            ) if record_id and has_evidence is not False else None,
+            available=bool(record_id) and has_evidence is not False,
+            reason=None if (record_id and has_evidence is not False) else (
+                # Established absence (caller consulted the store) keeps
+                # the strong claim; a missing record id states only the
+                # addressing fact Atlas actually has.
                 f"no evidence records are stored for {name} in this scope"
+                if has_evidence is False else
+                f"{name} has no canonical device record in this scope, "
+                "so its evidence cannot be opened from here"
             ),
             label=f"Evidence for {name}",
         ),
@@ -278,10 +324,13 @@ def device_entity_actions(
             key="configuration",
             href=entity_url(
                 "configuration", device_id=record_id, scope_id=scope_id
-            ) if record_id and has_configuration else None,
-            available=bool(record_id and has_configuration),
-            reason=None if (record_id and has_configuration) else (
+            ) if record_id and has_configuration is not False else None,
+            available=bool(record_id) and has_configuration is not False,
+            reason=None if (record_id and has_configuration is not False) else (
                 f"no configuration is held for {name} in this scope"
+                if has_configuration is False else
+                f"{name} has no canonical device record in this scope, "
+                "so its configuration cannot be opened from here"
             ),
             label=f"Configuration of {name}",
         ),
@@ -319,6 +368,57 @@ def device_entity_actions(
             available=False,
             reason=(ssh_target or {}).get("reason")
             or f"{name} has no verified SSH endpoint in this scope",
+        ))
+    # -- web management (PR-178.1) -----------------------------------------
+    # Byte-for-byte the inline device_actions contract: HTTPS preferred,
+    # with the certificate flag when warnings exist; HTTP only as the
+    # explicitly-labelled insecure alternative; resolved-but-unverified
+    # renders greyed WITH the reason ("Atlas checked, and here is why
+    # not"); unresolved (web=None) renders nothing, exactly as before.
+    if web and web.get("has_https"):
+        warnings = [str(w) for w in (web.get("certificate_warnings") or []) if w]
+        https_url = str(web.get("https_url"))
+        actions.append(EntityAction(
+            key="web",
+            href=https_url,
+            external=True,
+            label="Open HTTPS",
+            title=f"Open {https_url} in a new tab" + (
+                f" — certificate: {web.get('tls_summary')}" if warnings else ""
+            ),
+            flag=" ".join(warnings) or None,
+            device_id=str(web.get("device_id") or "") or None,
+        ))
+        actions.append(EntityAction(
+            key="web-copy",
+            href=https_url,
+            label="Copy HTTPS URL",
+            title=f"Copy {https_url} — never includes a password",
+        ))
+    elif web and web.get("http_only"):
+        http_url = str(web.get("http_url"))
+        actions.append(EntityAction(
+            key="web-insecure",
+            href=http_url,
+            label="Open HTTP — Insecure",
+            title=f"{http_url} — HTTP is insecure; anything you type "
+                  "travels in the clear",
+            device_id=str(web.get("device_id") or "") or None,
+            hostname=str(web.get("hostname") or "") or hostname or None,
+        ))
+        actions.append(EntityAction(
+            key="web-copy",
+            href=http_url,
+            label="Copy HTTP URL",
+            title=f"Copy {http_url}",
+        ))
+    elif web:
+        actions.append(EntityAction(
+            key="web",
+            available=False,
+            reason=str(web.get("reason") or "")
+            or f"no verified web endpoint for {name} in this scope",
+            label="Open web interface",
         ))
     actions.append(EntityAction(
         key="compass",
