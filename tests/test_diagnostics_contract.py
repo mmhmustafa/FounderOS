@@ -27,14 +27,25 @@ import unittest
 from tests.test_web_app import build_client, make_service
 
 # The complete diagnostics contract. Every key deliberate; nothing
-# arrives by spread.
+# arrives by spread. (PR-180 Step 3 added the identity/state block —
+# _notice, prerelease, fingerprints, last_discovery,
+# failed_attempts_since_success, host_platform — as a DELIBERATE
+# contract change, which is exactly the workflow this pin forces.)
 EXPECTED_KEYS = frozenset({
+    "_notice",
     "product",
     "version",
     "display_version",
+    "prerelease",
     "build_commit",
     "workspace_schema_version",
     "workspace_schema_target",
+    "workspace_fingerprint",
+    "active_scope_fingerprint",
+    "active_scope_kind",
+    "last_discovery",
+    "failed_attempts_since_success",
+    "host_platform",
     "authentication_mode",
     "credential_provider",
     "credential_provider_available",
@@ -49,6 +60,15 @@ EXPECTED_KEYS = frozenset({
     "profile_count",
     "preferences",
     "generated_at",
+})
+
+# last_discovery is built by LITERAL construction from named fields —
+# never by serializing the job record — so a future DiscoveryJob field
+# cannot ride into the artifact.
+EXPECTED_LAST_DISCOVERY_KEYS = frozenset({
+    "status",
+    "finished_at",
+    "profile_fingerprint",
 })
 
 EXPECTED_PREFERENCE_KEYS = frozenset({
@@ -100,6 +120,9 @@ class DiagnosticsContractTests(unittest.TestCase):
             self.assertIsInstance(payload["trusted_proxy_count"], int)
 
     def test_no_secret_material_and_no_python_class_names(self) -> None:
+        # The WHOLE artifact — including the _notice — stays clean of
+        # secret-indicating substrings, so any naive scanner a support
+        # contact runs over it stays quiet too.
         with tempfile.TemporaryDirectory() as tmp:
             _, raw = self._payload(Path(tmp))
             lowered = raw.lower()
@@ -116,6 +139,95 @@ class DiagnosticsContractTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             payload, _ = self._payload(Path(tmp))
             self.assertNotIn("updated_at", payload["preferences"])
+
+    def test_notice_is_the_first_key_and_states_the_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            payload, raw = self._payload(Path(tmp))
+            self.assertIn("no filesystem paths", payload["_notice"])
+            self.assertIn("support contact you contacted first",
+                          payload["_notice"])
+            # jsonify sorts keys and "_" precedes every letter, so the
+            # artifact opens with its own description.
+            self.assertLess(raw.index('"_notice"'),
+                            raw.index('"active_scope_fingerprint"'))
+
+    def test_fingerprints_are_stable_nonreversible_and_workspace_bound(self) -> None:
+        import re
+
+        with tempfile.TemporaryDirectory() as tmp_a, \
+                tempfile.TemporaryDirectory() as tmp_b:
+            first, _ = self._payload(Path(tmp_a))
+            second_client_payload, _ = self._payload(Path(tmp_a))
+            other, _ = self._payload(Path(tmp_b))
+            for key in ("workspace_fingerprint", "active_scope_fingerprint"):
+                self.assertRegex(first[key], r"^[0-9a-f]{12}$", key)
+                # Stable across exports from one workspace...
+                self.assertEqual(first[key], second_client_payload[key], key)
+            # ...and different across workspaces.
+            self.assertNotEqual(first["workspace_fingerprint"],
+                                other["workspace_fingerprint"])
+            # The fingerprint is not the path in disguise.
+            self.assertNotIn(first["workspace_fingerprint"], tmp_a)
+
+    def test_last_discovery_is_literal_and_fingerprinted(self) -> None:
+        import json as _json
+
+        with tempfile.TemporaryDirectory() as tmp:
+            workdir = Path(tmp)
+            # A persisted job history from a prior process: one success
+            # then one failure, newest first after restore.
+            jobs_path = workdir / "out" / ".atlas" / "jobs.json"
+            jobs_path.parent.mkdir(parents=True, exist_ok=True)
+            jobs_path.write_text(_json.dumps({"jobs": [
+                {
+                    "job_id": "aaaaaaaaaaaa", "profile_id": "hyderabad",
+                    "profile_name": "Hyderabad", "management_ip": "10.0.0.1",
+                    "status": "completed",
+                    "completed_at": "2026-08-13T10:00:00+00:00",
+                },
+                {
+                    "job_id": "bbbbbbbbbbbb", "profile_id": "hyderabad",
+                    "profile_name": "Hyderabad", "management_ip": "10.0.0.1",
+                    "status": "failed",
+                    "completed_at": "2026-08-14T10:00:00+00:00",
+                    "error": "Authentication failed for 10.0.0.1.",
+                },
+            ]}), encoding="utf-8")
+            payload, raw = self._payload(workdir)
+            self.assertIsNotNone(payload["last_discovery"])
+            self.assertEqual(EXPECTED_LAST_DISCOVERY_KEYS,
+                             set(payload["last_discovery"]))
+            self.assertEqual("failed", payload["last_discovery"]["status"])
+            self.assertEqual(1, payload["failed_attempts_since_success"])
+            # The profile appears ONLY as a fingerprint — its id and
+            # display name stay out of the artifact, as does the
+            # management address the job record carries.
+            self.assertRegex(payload["last_discovery"]["profile_fingerprint"],
+                             r"^[0-9a-f]{12}$")
+            self.assertNotIn("hyderabad", raw.lower())
+            self.assertNotIn("Hyderabad", raw)
+            self.assertNotIn("10.0.0.1", raw)
+
+    def test_host_platform_is_the_pinned_expression(self) -> None:
+        import platform
+
+        with tempfile.TemporaryDirectory() as tmp:
+            payload, _ = self._payload(Path(tmp))
+            self.assertEqual(
+                f"{platform.system()} {platform.release()}",
+                payload["host_platform"],
+            )
+
+    def test_forbidden_identity_calls_never_enter_diagnostic_sources(self) -> None:
+        # §6 amendment: these four calls are forbidden by name in any
+        # diagnostic surface — a hostname or login name must never be
+        # computable into the artifact.
+        web = Path(__file__).resolve().parents[1] / "src" / "founderos_atlas" / "web"
+        for name in ("routes.py", "system_info.py"):
+            body = (web / name).read_text(encoding="utf-8")
+            for forbidden in ("platform.node(", "platform.uname(",
+                              "socket.gethostname(", "os.getlogin("):
+                self.assertNotIn(forbidden, body, f"{forbidden} in {name}")
 
     def test_the_export_is_still_audited(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

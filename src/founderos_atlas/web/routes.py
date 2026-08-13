@@ -9244,8 +9244,70 @@ def register_routes(app) -> None:
         # filesystem path, a user account name, a hostname, a device
         # or management address, or an operator-authored
         # network/site/profile name — identity for support is
-        # fingerprints and correlation ids only.
+        # fingerprints and correlation ids only. Platform node/uname,
+        # socket hostname and OS login-name lookups are FORBIDDEN in
+        # any diagnostic surface (grep-pinned by the contract test).
+        import hashlib
+        import platform as _platform
+
+        def _fingerprint(value: str) -> str:
+            # Stable across exports from one workspace, correlatable
+            # by support, non-reversible in practice, and free of the
+            # OS username a raw path carries.
+            return hashlib.sha256(value.encode("utf-8")).hexdigest()[:12]
+
+        scopes_for_export = known_scopes()
+        scope_id_for_export = active_scope_id(scopes_for_export)
+        scope_kind = (
+            "enterprise" if scope_id_for_export == GLOBAL_SCOPE_ID
+            else "default" if scope_id_for_export == DEFAULT_SCOPE_ID
+            else "profile"
+        )
+        # The last discovery OUTCOME — the exact subject of "topology
+        # is wrong" — built by literal construction from named fields.
+        # Never serialize the job record itself: a future DiscoveryJob
+        # field must not ride into this artifact.
+        last_discovery = None
+        failed_attempts_since_success = 0
+        terminal = [
+            job for job in job_manager().list_recent()
+            if job.get("status") in ("failed", "completed")
+        ]
+        if terminal:
+            newest = terminal[0]
+            last_discovery = {
+                "status": str(newest.get("status")),
+                "finished_at": newest.get("completed_at"),
+                "profile_fingerprint": _fingerprint(
+                    str(newest.get("profile_id") or "")
+                ),
+            }
+            for job in terminal:
+                if job.get("status") != "failed":
+                    break
+                failed_attempts_since_success += 1
         payload = {
+            # FIRST key (jsonify sorts; "_" precedes every letter): the
+            # artifact states what it is before anyone reads further,
+            # mirroring the backup archive's in-file notice.
+            "_notice": (
+                "This file describes how this Atlas is configured — "
+                "product version, build identity, workspace schema, "
+                "security posture, and the state of the last discovery. "
+                "It contains no credential material, no device data, "
+                "no filesystem paths, and no network, site or profile "
+                "names. Treat it as support material and share it only "
+                "with a support contact you contacted first."
+            ),
+            "prerelease": system_info["prerelease"],
+            "workspace_fingerprint": _fingerprint(
+                str(Path(cfg("ATLAS_WORKSPACE_ROOT")).resolve())
+            ),
+            "active_scope_fingerprint": _fingerprint(scope_id_for_export),
+            "active_scope_kind": scope_kind,
+            "last_discovery": last_discovery,
+            "failed_attempts_since_success": failed_attempts_since_success,
+            "host_platform": f"{_platform.system()} {_platform.release()}",
             "product": system_info["product"],
             "version": system_info["version"],
             "display_version": system_info["display_version"],

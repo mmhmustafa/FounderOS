@@ -84,6 +84,12 @@ table columns. These change nothing another operator sees, and follow your accou
 <section class="card">
   <h2>Backup, restore, and diagnostics</h2>
   <div class="form-actions"><a class="btn" href="/settings/backup">Download metadata backup</a><a class="btn" href="/settings/diagnostics.json">Download diagnostics</a><button class="btn" type="button" data-copy-url="/settings/diagnostics.json">Copy diagnostics</button></div>
+  {# PR-180: the tester knows what they are copying BEFORE the click,
+     in the same words the artifact's own _notice states. #}
+  <p class="muted">Diagnostics describe how this Atlas is configured — version, build
+  identity, security posture, and the state of the last discovery. They contain no
+  secrets, no filesystem paths, and no network, site or profile names; workspace and
+  scope appear only as non-reversible fingerprints.</p>
   <p class="muted">Backups include workspace JSON metadata and audit records. Credential-provider secrets and raw network evidence are deliberately excluded.</p>
   <details><summary>Restore metadata</summary><form class="form" method="post" action="/settings/restore" enctype="multipart/form-data">{{ csrf_field() }}<label>Atlas backup<input type="file" name="backup" accept=".zip" required></label><label>Reason<input name="reason" required></label><label>Confirmation<input name="confirm" required placeholder="RESTORE METADATA"></label><button class="btn btn-danger" type="submit">Restore metadata</button></form></details>
 </section>
