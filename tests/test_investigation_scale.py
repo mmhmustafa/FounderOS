@@ -331,9 +331,12 @@ class ChangesExplorerScaleTests(unittest.TestCase):
         from founderos_atlas.listing import paginate
 
         started = time.perf_counter()
+        # PR-178.2A: identity needs its observation point — scope_id is
+        # the stable id; network stays the display label.
         rows = annotate_rows(unified_rows(
             topology_report=self.synthetic_reports(5000),
-            config_report=None, state_report=None, network="Scale Lab",
+            config_report=None, state_report=None,
+            scope_id="scale-lab", network="Scale Lab",
         ))
         filtered, _hidden = filter_rows(rows, ChangeFilter(severity="high"))
         page = paginate(filtered, 3, 50)

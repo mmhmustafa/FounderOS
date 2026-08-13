@@ -75,6 +75,7 @@ class AnnotationStore:
         reason: str | None = None,
         correlation_id: str | None = None,
         occurred_at: str | None = None,
+        scope_id: str = "all",
     ) -> dict[str, Any]:
         stamp = occurred_at or datetime.now(timezone.utc).isoformat(
             timespec="seconds"
@@ -92,7 +93,7 @@ class AnnotationStore:
             self._write(data)
             self._audit.append(AuditEvent.create(
                 category=kind, operation="set" if not before else "update",
-                subject=subject, actor=actor,
+                subject=subject, actor=actor, scope_id=scope_id,
                 before=before, after=record, reason=reason,
                 correlation_id=correlation_id, occurred_at=stamp,
             ))
@@ -106,6 +107,7 @@ class AnnotationStore:
         actor: str = "local-operator",
         reason: str | None = None,
         occurred_at: str | None = None,
+        scope_id: str = "all",
     ) -> None:
         with self._lock:
             data = self._load()
@@ -118,8 +120,8 @@ class AnnotationStore:
             self._write(data)
             self._audit.append(AuditEvent.create(
                 category=kind, operation="clear", subject=subject,
-                actor=actor, before=before, after={}, reason=reason,
-                occurred_at=occurred_at,
+                actor=actor, scope_id=scope_id, before=before, after={},
+                reason=reason, occurred_at=occurred_at,
             ))
 
     def _write(self, data: dict) -> None:

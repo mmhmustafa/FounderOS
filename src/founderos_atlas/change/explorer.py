@@ -7,27 +7,36 @@ before/after, description, recommendation — plus deterministic subject
 fingerprints so acknowledgements, assignments, notes, and suppressions
 (audit/annotations.py) survive re-renders and re-discoveries of the
 same change.
+
+PR-178.2A: identity is SCOPED. A change is an observation made by one
+observation point, so the canonical subject is
+``change:v2:<scope_id>:<content-hash>`` (change/identity.py) — the
+identical delta reported by two profiles is two annotatable changes,
+and an action in one scope can never mutate another's record. Rows also
+carry ``subject_legacy`` (the pre-isolation content-only id) so reads
+can fall back to legacy annotations without ever writing through them.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from hashlib import sha256
 from typing import Any
+
+from .identity import resolve_annotation, subject_v1, subject_v2
 
 
 CHANGE_KINDS = ("topology", "configuration", "operational")
 
 
 def change_fingerprint(row: Mapping[str, Any]) -> str:
-    """A durable identity for one change: same change, same fingerprint."""
+    """The LEGACY (v1) identity: content only, scope-blind.
 
-    basis = "|".join(str(row.get(key) or "") for key in (
-        "kind", "category", "device", "field", "before", "after",
-        "description",
-    ))
-    return "change:" + sha256(basis.encode("utf-8")).hexdigest()[:20]
+    Kept for compatibility and for the v3 migration's classification;
+    new rows carry the scoped v2 subject as their canonical identity.
+    """
+
+    return subject_v1(row)
 
 
 def unified_rows(
@@ -35,16 +44,25 @@ def unified_rows(
     topology_report: Mapping[str, Any] | None,
     config_report: Mapping[str, Any] | None,
     state_report: Mapping[str, Any] | None,
+    scope_id: str,
     network: str = "",
     incident_devices: frozenset[str] = frozenset(),
 ) -> list[dict[str, Any]]:
-    """Every change of a scope as one investigation row shape."""
+    """Every change of a scope as one investigation row shape.
+
+    ``scope_id`` is the STABLE scope identifier (profile_id or
+    "default") and is required: identity needs its observation point.
+    ``network`` remains the display label and is deliberately NOT part
+    of identity — it changes on rename; the id does not.
+    """
 
     rows: list[dict[str, Any]] = []
 
     def finish(row: dict[str, Any]) -> None:
         row["network"] = network
-        row["subject"] = change_fingerprint(row)
+        row["subject"] = subject_v2(row, scope_id)
+        row["subject_legacy"] = subject_v1(row)
+        row["scope_id"] = scope_id
         row["incident_correlated"] = (
             str(row.get("device") or "").casefold()
             in {name.casefold() for name in incident_devices}
@@ -120,6 +138,18 @@ def annotate_rows(
     notes: Mapping[str, Mapping[str, Any]] | None = None,
     suppressions: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
+    """Attach operator state to rows via the canonical v2→v1 resolver.
+
+    PR-178.2A value semantics: a record's PRESENCE used to mean
+    acknowledged/suppressed. A scoped record can now carry an explicit
+    negative ({"acknowledged": False} / {"suppressed": False}) — written
+    when an operator un-acknowledges or un-suppresses a row whose state
+    came from a READ-ONLY legacy record. The scoped negative wins in its
+    scope; the legacy record keeps serving every other scope untouched.
+    Records without the key (all legacy and all normal positive writes)
+    keep meaning what they always did.
+    """
+
     acks = dict(acks or {})
     assignments = dict(assignments or {})
     notes = dict(notes or {})
@@ -128,13 +158,26 @@ def annotate_rows(
     for row in rows:
         entry = dict(row)
         subject = str(entry.get("subject"))
-        entry["acknowledged"] = subject in acks
-        entry["owner"] = str((assignments.get(subject) or {}).get("owner") or "")
-        entry["note"] = str((notes.get(subject) or {}).get("note") or "")
-        entry["suppressed"] = subject in suppressions
-        entry["suppression_reason"] = str(
-            (suppressions.get(subject) or {}).get("reason") or ""
+        legacy = str(entry.get("subject_legacy") or "")
+        ack = resolve_annotation(acks, subject, legacy)
+        entry["acknowledged"] = (
+            ack is not None and ack.get("acknowledged", True) is not False
         )
+        entry["owner"] = str(
+            (resolve_annotation(assignments, subject, legacy) or {})
+            .get("owner") or ""
+        )
+        entry["note"] = str(
+            (resolve_annotation(notes, subject, legacy) or {}).get("note") or ""
+        )
+        suppression = resolve_annotation(suppressions, subject, legacy)
+        entry["suppressed"] = (
+            suppression is not None
+            and suppression.get("suppressed", True) is not False
+        )
+        entry["suppression_reason"] = str(
+            (suppression or {}).get("reason") or ""
+        ) if entry["suppressed"] else ""
         out.append(entry)
     return out
 

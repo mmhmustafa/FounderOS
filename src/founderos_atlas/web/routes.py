@@ -4971,10 +4971,17 @@ def register_routes(app) -> None:
             measured["topology"] |= topology_report is not None
             measured["configuration"] |= config_report is not None
             measured["operational"] |= state_report is not None
+            # PR-178.2A: identity is the OBSERVATION POINT plus the
+            # difference. scope_id is the stable id (rename-proof);
+            # scope.label remains display-only. Enterprise never mints
+            # a subject of its own — each aggregated row keeps the
+            # scope that produced it, so the identical delta in two
+            # scopes is two subjects, two DOM ids, two annotations.
             rows.extend(unified_rows(
                 topology_report=topology_report,
                 config_report=config_report,
                 state_report=state_report,
+                scope_id=scope.scope_id,
                 network=scope.label,
                 incident_devices=frozenset(
                     str(name) for name in incident.get("affected_devices") or ()
@@ -5062,7 +5069,7 @@ def register_routes(app) -> None:
         rows: list[dict] = []
         if left_id and right_id:
             left_snapshot = right_snapshot = None
-            left_scope_label = ""
+            left_scope = None
             for scope in (
                 aggregation_scopes(scopes)
                 if scope_id == GLOBAL_SCOPE_ID else (scopes[scope_id],)
@@ -5071,7 +5078,7 @@ def register_routes(app) -> None:
                 left_path = repo.snapshot_path(left_id)
                 if left_path.is_file():
                     left_snapshot = load_json(left_path)
-                    left_scope_label = scope.label
+                    left_scope = scope
                 right_path = repo.snapshot_path(right_id)
                 if right_path.is_file():
                     right_snapshot = load_json(right_path)
@@ -5083,11 +5090,16 @@ def register_routes(app) -> None:
                 )
             else:
                 report = ChangeDetector().compare(left_snapshot, right_snapshot)
+                # PR-178.2A: the comparison's changes belong to the
+                # scope that owns the archived runs — the same identity
+                # rule as the live report, so an annotation made from a
+                # comparison view lands on the same scoped record.
                 rows = annotate_rows(unified_rows(
                     topology_report=report.to_dict(),
                     config_report=None,
                     state_report=None,
-                    network=left_scope_label,
+                    scope_id=left_scope.scope_id,
+                    network=left_scope.label,
                 ))
                 comparison = {"left": left_id, "right": right_id,
                               "count": len(rows)}
@@ -5167,9 +5179,24 @@ def register_routes(app) -> None:
 
     @app.route("/changes/annotate", methods=["POST"])
     def changes_annotate():
-        """Acknowledge, assign, note, or suppress one change — audited."""
+        """Acknowledge, assign, note, or suppress one change — audited.
+
+        PR-178.2A: the posted subject is the SCOPED v2 identity the row
+        rendered, so every write lands on exactly one scope's record —
+        an action in Hyderabad can no longer silently mutate
+        Secunderabad's. Pre-isolation (v1) records are READ-ONLY: when
+        an un-action targets state that only a legacy record asserts,
+        the route writes a scoped NEGATIVE shadow instead of touching
+        the legacy record, which keeps serving the scopes nobody has
+        acted in. New audit events carry the subject's real scope
+        instead of the historical constant "all".
+        """
 
         from founderos_atlas.audit import AnnotationStore
+        from founderos_atlas.change.identity import (
+            legacy_subject_of,
+            scope_of,
+        )
 
         action = str(request.form.get("action") or "").strip()
         subject = str(request.form.get("subject") or "").strip()
@@ -5183,15 +5210,43 @@ def register_routes(app) -> None:
             ))
         store = AnnotationStore(cfg("ATLAS_WORKSPACE_ROOT"))
         reason = str(request.form.get("reason") or "").strip() or None
+        # The subject itself names the scope being mutated — including
+        # from the Enterprise view, where `next` says "all" but the row
+        # belongs to exactly one observation point.
+        audit_scope = scope_of(subject) or "all"
+        legacy_subject = legacy_subject_of(subject)
+
+        def clear_or_shadow(kind: str, shadow_fields: dict) -> bool:
+            """Clear the scoped record; shadow a legacy-only one.
+
+            Returns True when the state was removed for this scope.
+            The legacy record is never written through — the scoped
+            negative takes precedence here and the legacy keeps serving
+            every other scope until someone acts there too.
+            """
+
+            try:
+                store.clear(actor=current_actor(), kind=kind,
+                            subject=subject, reason=reason,
+                            occurred_at=now_iso(), scope_id=audit_scope)
+                return True
+            except ValueError:
+                if legacy_subject and store.get(kind, legacy_subject):
+                    store.set(actor=current_actor(), kind=kind,
+                              subject=subject, fields=shadow_fields,
+                              reason=reason, occurred_at=now_iso(),
+                              scope_id=audit_scope)
+                    return True
+                raise
+
         try:
             if action == "acknowledge":
                 store.set(actor=current_actor(), kind="change-ack", subject=subject,
                           fields={"acknowledged": True}, reason=reason,
-                          occurred_at=now_iso())
+                          occurred_at=now_iso(), scope_id=audit_scope)
                 flash("Change acknowledged (audited).", "success")
             elif action == "unacknowledge":
-                store.clear(actor=current_actor(), kind="change-ack", subject=subject,
-                            reason=reason, occurred_at=now_iso())
+                clear_or_shadow("change-ack", {"acknowledged": False})
                 flash("Acknowledgement removed (audited).", "success")
             elif action == "assign":
                 owner = str(request.form.get("owner") or "").strip()
@@ -5214,10 +5269,19 @@ def register_routes(app) -> None:
                     ),
                     None,
                 )
+                # Previous owner through the canonical resolver: the
+                # scoped record wins; a pre-isolation record still
+                # counts as "already owned" so a repeat assignment does
+                # not spam the recipient.
+                from founderos_atlas.change.identity import (
+                    resolve_annotation,
+                )
+
                 previous_owner = str(
-                    (store.get("change-assignment", subject) or {}).get(
-                        "owner"
-                    ) or ""
+                    (resolve_annotation(
+                        store.all("change-assignment"), subject,
+                        legacy_subject,
+                    ) or {}).get("owner") or ""
                 )
                 if change_row is not None:
                     device = str(change_row.get("device") or "unknown")
@@ -5254,29 +5318,29 @@ def register_routes(app) -> None:
                     )
                 store.set(actor=current_actor(), kind="change-assignment", subject=subject,
                           fields={"owner": owner}, reason=reason,
-                          occurred_at=now_iso())
+                          occurred_at=now_iso(), scope_id=audit_scope)
                 flash(f"Change assigned to {owner} (audited).", "success")
             elif action == "note":
                 note = str(request.form.get("note") or "").strip()
                 if not note:
                     raise ValueError("a note needs text")
                 store.set(actor=current_actor(), kind="change-note", subject=subject,
-                          fields={"note": note}, occurred_at=now_iso())
+                          fields={"note": note}, occurred_at=now_iso(),
+                          scope_id=audit_scope)
                 flash("Note attached (audited).", "success")
             elif action == "suppress":
                 if not reason:
                     raise ValueError("suppressing a change requires a reason")
                 store.set(actor=current_actor(), kind="change-suppression", subject=subject,
                           fields={"reason": reason}, reason=reason,
-                          occurred_at=now_iso())
+                          occurred_at=now_iso(), scope_id=audit_scope)
                 flash(
                     "Change suppressed — hidden by default, always countable, "
                     "and audited.",
                     "success",
                 )
             elif action == "unsuppress":
-                store.clear(actor=current_actor(), kind="change-suppression", subject=subject,
-                            reason=reason, occurred_at=now_iso())
+                clear_or_shadow("change-suppression", {"suppressed": False})
                 flash("Suppression removed (audited).", "success")
         except ValueError as error:
             flash(str(error), "error")
