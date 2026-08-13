@@ -94,7 +94,14 @@ _ALLOWLIST: dict[type, tuple] = {
     CredentialStoreUnavailableError: (
         CLASS_USER_CORRECTABLE, SEVERITY_WARNING,
         "credential-provider-unavailable",
-        True, "Open Settings", "/settings", None,
+        # §6: the shipped copy for this condition was audited CORRECT
+        # and stays unchanged. Raise sites (including third-party
+        # keyring adapters) can be terse ("no secure credential
+        # store"), so the canonical sentence with its remedy wins.
+        False, "Open Settings", "/settings",
+        "Secure credential storage is unavailable. Check Atlas "
+        "Settings, or reinstall the credential backend with: pip "
+        'install "founderos-runtime[credentials]"',
     ),
     AuthenticationError: (
         CLASS_USER_CORRECTABLE, SEVERITY_WARNING, "authentication-failed",
@@ -160,6 +167,27 @@ def classify(
     """
 
     entry = _ALLOWLIST.get(type(error))
+    if entry is None:
+        # The live pipeline wraps failures before the job layer sees
+        # them — ``raise CliError(str(error)) from error`` — so on that
+        # path the wrapper's TYPE says nothing while the typed original
+        # still sits on the explicit-cause chain (measured: a live
+        # seed-connect AuthenticationError arrived here as CliError).
+        # Walk ``__cause__`` only — never ``__context__``, which is
+        # implicit and can be anything active during handling — and
+        # apply the same exact-type rule to what is found there. The
+        # cause instance IS the object the audited raise site created,
+        # so the trust decision is identical; inheritance still grants
+        # nothing at any depth.
+        seen: set[int] = set()
+        cause = getattr(error, "__cause__", None)
+        while cause is not None and id(cause) not in seen:
+            seen.add(id(cause))
+            entry = _ALLOWLIST.get(type(cause))
+            if entry is not None:
+                error = cause
+                break
+            cause = getattr(cause, "__cause__", None)
     if entry is not None:
         (failure_class, severity, code, trust_message,
          action_label, action_href, canonical) = entry

@@ -144,6 +144,72 @@ class ClassifierAllowlistTests(unittest.TestCase):
         self.assertNotIn("SuperSecret123", verdict.operator_message)
         self.assertNotIn("password=", verdict.operator_message)
 
+    def test_a_wrapper_yields_to_its_typed_cause(self) -> None:
+        """The live pipeline strips types: ``raise CliError(str(error))
+        from error`` (founderos_runtime/cli/commands.py) — measured on
+        the pr179 world, where a seed-connect AuthenticationError
+        arrived at the job layer as CliError and classified INTERNAL.
+        The typed original still sits on the explicit-cause chain, and
+        it is the very instance the audited raise site created — so the
+        exact-type trust decision is identical there."""
+
+        from founderos_runtime.cli.exceptions import CliError
+        from founderos_atlas.transport.exceptions import AuthenticationError
+        from founderos_atlas.workspace.exceptions import (
+            CredentialNotFoundError,
+        )
+
+        def wrap(cause):
+            try:
+                try:
+                    raise cause
+                except type(cause) as inner:
+                    raise CliError(str(inner)) from inner
+            except CliError as wrapper:
+                return wrapper
+
+        auth = wrap(AuthenticationError(
+            "Authentication failed for 10.0.0.1 after 1 credential "
+            "attempt(s); stopping to protect the account from lockout."
+        ))
+        verdict = self._classify(auth)
+        self.assertEqual("user-correctable", verdict.failure_class)
+        self.assertEqual("authentication-failed", verdict.diagnostic_code)
+        self.assertIn("protect the account from lockout",
+                      verdict.operator_message)
+        self.assertEqual("/credentials", verdict.next_action_href)
+
+        # The flagship case, wrapped exactly as the live credential
+        # resolution path wraps it (commands.py catches the workspace
+        # error and re-raises CliError from it).
+        missing = wrap(CredentialNotFoundError(
+            "No stored credential was found for this profile. "
+            "Update the profile to set the password again."
+        ))
+        verdict = self._classify(missing)
+        self.assertEqual("credential-missing", verdict.diagnostic_code)
+        self.assertEqual("/profiles", verdict.next_action_href)
+
+    def test_a_wrapped_hostile_subclass_is_still_not_trusted(self) -> None:
+        """The exact-type rule holds at every depth of the cause chain."""
+
+        from founderos_runtime.cli.exceptions import CliError
+        from founderos_atlas.transport.exceptions import AuthenticationError
+
+        class VendorAuthenticationError(AuthenticationError):
+            pass
+
+        secret = "password=SuperSecret123 from a vendor library"
+        try:
+            try:
+                raise VendorAuthenticationError(secret)
+            except VendorAuthenticationError as inner:
+                raise CliError("wrapped: " + str(inner)) from inner
+        except CliError as wrapper:
+            verdict = self._classify(wrapper)
+        self.assertNotIn("SuperSecret123", verdict.operator_message)
+        self.assertNotIn("password=", verdict.operator_message)
+
     def test_foreign_exception_text_never_reaches_the_operator(self) -> None:
         cases = [
             RuntimeError("token=abc123 at /private/path/secrets.pem"),

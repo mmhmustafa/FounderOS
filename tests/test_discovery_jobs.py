@@ -289,7 +289,14 @@ class DiscoveryJobFailureTests(unittest.TestCase):
             job = client.get(f"/api/discovery/jobs/{job_id}").get_json()["job"]
             self.assertEqual("failed", job["status"])
             self.assertIn("Authentication failed for 10.0.0.1", job["error"])
-            self.assertIn("Lab A profile", job["error"])
+            # PR-179: the pipeline wraps this in CliError, and the
+            # classifier now recovers the typed cause — the operator
+            # reads the transport's own canonical sentence (host-only
+            # interpolation) instead of the legacy generic, plus the
+            # one next action.
+            self.assertIn("credential", job["error"])
+            self.assertEqual("user-correctable", job["failure_class"])
+            self.assertEqual("/credentials", job["next_action_href"])
             self.assertNotIn("Traceback", job["error"])
 
     def test_connection_timeout_is_friendly(self) -> None:
