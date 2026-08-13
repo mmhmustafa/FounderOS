@@ -6,7 +6,12 @@ import logging
 from datetime import timedelta
 from typing import Any
 
-from founderos_atlas.release import DISPLAY_VERSION, VERSION, build_commit
+from founderos_atlas.release import (
+    DISPLAY_VERSION,
+    IS_PRERELEASE,
+    VERSION,
+    build_commit,
+)
 from founderos_atlas.workspace.migrations import (
     CURRENT_SCHEMA_VERSION,
     applied_version,
@@ -67,6 +72,7 @@ def collect_system_information(app, *, credential_provider, preferences) -> dict
         "product": "FounderOS Atlas",
         "version": VERSION,
         "display_version": DISPLAY_VERSION,
+        "prerelease": IS_PRERELEASE,
         "build_commit": build_commit(),
         "authentication_mode": auth_mode,
         "credential_provider": _provider_name(credential_provider),

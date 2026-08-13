@@ -209,6 +209,23 @@ def create_app(
 
     app.add_template_global(_asset_url, "asset_url")
 
+    # PR-180 §30 Step 2: the one line of product identity every
+    # identified operator can see — DISPLAY_VERSION plus the Beta
+    # token, NEVER the commit hash (that stays on the system.admin
+    # Settings card, the update page, diagnostics and the CLI). Guarded
+    # per request on an identified principal: an unauthenticated
+    # visitor (login page, pre-auth denials) learns nothing about the
+    # build. A context processor, not a template global, because the
+    # guard is request state.
+    @app.context_processor
+    def _product_identity():
+        from flask import g as _g
+
+        from founderos_atlas.release import IDENTITY_LINE
+
+        principal = getattr(_g, "principal", None)
+        return {"product_identity": IDENTITY_LINE if principal else None}
+
     if job_manager is None:
         # In-process background executor for GUI discoveries. Job history
         # persists under the output dir so interrupted runs are marked

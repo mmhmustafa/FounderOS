@@ -1,7 +1,10 @@
 {% extends "base.html" %}
 {% block title %}Settings & System Information{% endblock %}
 {% block content %}
-<div class="page-head"><div><h1>Settings</h1><p class="muted">Workspace preferences are persistent and secret-free.</p></div><a class="btn" href="#system-information">System information</a></div>
+{# PR-180: the jump link renders only for the roles that receive the
+   section — every other role was sent to an anchor that never
+   existed on their page. #}
+<div class="page-head"><div><h1>Settings</h1><p class="muted">Workspace preferences are persistent and secret-free.</p></div>{% if can('system.admin') %}<a class="btn" href="#system-information">System information</a>{% endif %}</div>
 
 <h2 class="settings-group">Personal preferences</h2>
 <p class="muted settings-group-note">Yours alone: the display level below, plus your saved topology layers and
@@ -112,7 +115,7 @@ table columns. These change nothing another operator sees, and follow your accou
 <section class="card" id="system-information">
   <h2>System information</h2>
   <ul class="kv">
-    <li><span>Atlas version</span><span>{{ system_info.display_version }}</span></li>
+    <li><span>Atlas version</span><span>{{ system_info.display_version }}{% if system_info.prerelease %} · Beta{% endif %}</span></li>
     {# PR-180 §3: the identifier renders only when it provably
        describes the running bytes; every other state — installed
        build, dirty tree, foreign repository, absent git — shares ONE

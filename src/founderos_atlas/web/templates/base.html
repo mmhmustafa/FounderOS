@@ -130,7 +130,10 @@
       </ul>
       <div class="sidebar-note">
         {% if not nav_revealed %}More appears after your first discovery.<br>{% endif %}
-        {% if auth_mode == 'local' %}Local development mode · loopback only
+        {# PR-180: this names a SECURITY POSTURE, not a build type —
+           "development mode" told every reader this was a dev build.
+           The load-bearing half is the loopback fact; keep it. #}
+        {% if auth_mode == 'local' %}Single-operator access · loopback only
         {% else %}Authenticated · {{ auth_mode }} mode{% endif %}
       </div>
     </nav>
@@ -233,6 +236,16 @@
         </ul>
         {% endif %}
       </section>
+      {% endif %}
+
+      {# PR-180 §30 Step 2: the one always-available product identity
+         line — every page, every identified role, including error
+         pages and bare-chrome surfaces (it lives inside <main>, which
+         every layout renders). DISPLAY_VERSION and the Beta token
+         only; the commit hash never enters shared chrome. Absent for
+         unauthenticated visitors by the context processor's guard. #}
+      {% if product_identity %}
+      <footer class="app-identity">{{ product_identity }}</footer>
       {% endif %}
     </main>
   </div>

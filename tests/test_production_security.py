@@ -142,7 +142,12 @@ class LocalModeTests(unittest.TestCase):
                 "/", environ_base={"REMOTE_ADDR": "127.0.0.1"}
             )
             self.assertEqual(200, page.status_code)
-            self.assertIn(b"Local development mode", page.data)
+            # PR-180: the chrome names the SECURITY POSTURE in operator
+            # words — "development mode" described a build type. The
+            # load-bearing loopback fact is preserved.
+            self.assertIn(
+                "Single-operator access · loopback only".encode(), page.data
+            )
 
     def test_remote_clients_are_refused_not_trusted(self) -> None:
         """Accidental exposure of unauthenticated local mode must fail

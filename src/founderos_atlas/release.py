@@ -14,6 +14,7 @@ and any layer can import it without side effects.
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 from functools import lru_cache
 from pathlib import Path
@@ -25,6 +26,27 @@ VERSION = "0.3.0a1"
 
 # The human-facing form used by Settings, backups, and reports.
 DISPLAY_VERSION = f"{PRODUCT_NAME} {VERSION}"
+
+# PR-180 §4: "0.3.0a1" is a Python packaging convention — a network
+# engineer does not read "a1" as pre-release. Detection is an ANCHORED
+# PEP 440 test over the release segment (local build metadata after
+# "+" stripped first): a naive substring scan would label 0.3.0.dev1 a
+# finished release and 1.0.0+build.5 a pre-release. The one word shown
+# is "Beta" — never "channel", which implies update infrastructure
+# Atlas deliberately does not have.
+def is_prerelease(version: str) -> bool:
+    return bool(
+        re.search(r"(?:(?:a|b|rc)\d+|\.dev\d+)$", version.split("+")[0])
+    )
+
+
+IS_PRERELEASE = is_prerelease(VERSION)
+
+# The one line of product identity the chrome carries — DISPLAY_VERSION
+# plus the Beta token. NEVER the commit hash: a commit pins an exact
+# source tree rather than a release, and belongs only on the
+# system.admin Settings card, the update page, diagnostics and the CLI.
+IDENTITY_LINE = f"{DISPLAY_VERSION} · Beta" if IS_PRERELEASE else DISPLAY_VERSION
 
 
 # PR-180 §30 Step 0: the value is INTENTIONALLY frozen at first call.

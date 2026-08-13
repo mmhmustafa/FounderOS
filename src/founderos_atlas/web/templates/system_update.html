@@ -12,7 +12,7 @@
 <section class="card">
   <h2>Installed</h2>
   <ul class="kv">
-    <li><span>Application version</span><span>{{ info.application_version }}</span></li>
+    <li><span>Application version</span><span>{{ info.application_version }}{% if info.prerelease %} · Beta{% endif %}</span></li>
     {# PR-180: one causeless fallback everywhere. The old wording here
        asserted the most specific of several states that all resolve to
        None (installed build, dirty tree, foreign repo, absent git). #}

@@ -190,6 +190,10 @@ textarea:focus-visible, summary:focus-visible, [tabindex]:focus-visible {
 .sidebar-note { padding: 12px 20px; font-size: 11px; color: #8b98ab; }
 .sidebar-backdrop { display: none; }
 
+/* PR-180: the one line of product identity at the foot of every page's
+   content. Deliberately quiet — identity, not a banner. */
+.app-identity { margin: 32px 0 4px; font-size: 11px; color: var(--muted); }
+
 /* Workflow navigation (PR-047A): views grouped under the question they answer.
    The group label orients; the views stay visible and one click away. */
 .sidebar .nav-group { margin-bottom: 10px; }

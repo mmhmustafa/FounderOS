@@ -15,7 +15,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from founderos_atlas.release import VERSION, build_commit
+from founderos_atlas.release import IS_PRERELEASE, VERSION, build_commit
 
 PROVIDER_UNCONFIGURED = "unconfigured"
 PROVIDER_UNAVAILABLE = "unavailable"
@@ -27,6 +27,7 @@ def update_information(workspace_root: str | Path) -> dict[str, Any]:
 
     info: dict[str, Any] = {
         "application_version": VERSION,
+        "prerelease": IS_PRERELEASE,
         "build_commit": build_commit(),
         "schema_version": applied_version(workspace_root),
         "schema_target": CURRENT_SCHEMA_VERSION,
