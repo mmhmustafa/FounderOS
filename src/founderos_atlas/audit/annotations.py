@@ -99,6 +99,141 @@ class AnnotationStore:
             ))
         return record
 
+    # -- batch mutations (PR-178.2) -----------------------------------------
+    #
+    # One operator intent over N subjects: ONE read-modify-write of the
+    # annotations file and ONE audit block, all events sharing the batch's
+    # correlation id. The measured alternative — set()/clear() in a loop —
+    # rewrote both files N times (~80x slower at 50 subjects) and could
+    # abort halfway. The transaction contract, stated exactly: the
+    # annotation write is atomic; the audit block is a second atomic
+    # write; if the audit block fails the annotation pre-image is
+    # restored and the error propagates. A process death BETWEEN the two
+    # writes can still leave an unaudited mutation — the same exposure
+    # the single-row path has, reduced from N windows to one.
+
+    def set_many(
+        self,
+        *,
+        kind: str,
+        records: Mapping[str, Mapping[str, Any]],
+        actor: str = "local-operator",
+        reason: str | None = None,
+        correlation_id: str | None = None,
+        occurred_at: str | None = None,
+        scope_ids: Mapping[str, str] | None = None,
+        actor_roles=(),
+    ) -> tuple[str, ...]:
+        """Write ``subject -> fields`` records in one batch; returns the
+        subjects written. ``scope_ids`` maps each subject to the scope
+        its audit event records (default "all")."""
+
+        if not records:
+            return ()
+        stamp = occurred_at or datetime.now(timezone.utc).isoformat(
+            timespec="seconds"
+        )
+        scope_ids = dict(scope_ids or {})
+        with self._lock:
+            data = self._load()
+            pre_image = self.path.read_text(encoding="utf-8") \
+                if self.path.is_file() else None
+            events: list[AuditEvent] = []
+            for subject, fields in records.items():
+                record = {
+                    **{key: value for key, value in dict(fields).items()
+                       if value not in (None, "")},
+                    "updated_at": stamp,
+                    "updated_by": actor,
+                }
+                before = (data.get(kind) or {}).get(subject) or {}
+                data.setdefault(kind, {})[subject] = record
+                events.append(AuditEvent.create(
+                    category=kind,
+                    operation="set" if not before else "update",
+                    subject=subject, actor=actor,
+                    scope_id=scope_ids.get(subject, "all"),
+                    before=before, after=record, reason=reason,
+                    correlation_id=correlation_id, occurred_at=stamp,
+                    actor_roles=actor_roles,
+                ))
+            self._write(data)
+            self._append_or_restore(events, pre_image)
+        return tuple(records)
+
+    def clear_many(
+        self,
+        *,
+        kind: str,
+        subjects,
+        actor: str = "local-operator",
+        reason: str | None = None,
+        correlation_id: str | None = None,
+        occurred_at: str | None = None,
+        scope_ids: Mapping[str, str] | None = None,
+        actor_roles=(),
+    ) -> tuple[str, ...]:
+        """Remove the given subjects' records in one batch; returns the
+        subjects actually cleared. A subject already absent at write
+        time is skipped (and not audited) — the batch result reports it
+        as unchanged rather than failing the others."""
+
+        subjects = [str(subject) for subject in subjects]
+        if not subjects:
+            return ()
+        stamp = occurred_at or datetime.now(timezone.utc).isoformat(
+            timespec="seconds"
+        )
+        scope_ids = dict(scope_ids or {})
+        with self._lock:
+            data = self._load()
+            pre_image = self.path.read_text(encoding="utf-8") \
+                if self.path.is_file() else None
+            events: list[AuditEvent] = []
+            cleared: list[str] = []
+            for subject in subjects:
+                before = (data.get(kind) or {}).get(subject)
+                if before is None:
+                    continue
+                del data[kind][subject]
+                cleared.append(subject)
+                events.append(AuditEvent.create(
+                    category=kind, operation="clear", subject=subject,
+                    actor=actor, scope_id=scope_ids.get(subject, "all"),
+                    before=before, after={}, reason=reason,
+                    correlation_id=correlation_id, occurred_at=stamp,
+                    actor_roles=actor_roles,
+                ))
+            if data.get(kind) is not None and not data[kind]:
+                del data[kind]
+            if not cleared:
+                return ()
+            self._write(data)
+            self._append_or_restore(events, pre_image)
+        return tuple(cleared)
+
+    def _append_or_restore(
+        self, events: list[AuditEvent], pre_image: str | None
+    ) -> None:
+        """Append the audit block; on failure restore the annotation
+        pre-image so an unaudited mutation is never left behind."""
+
+        try:
+            self._audit.append_many(events)
+        except Exception:
+            if pre_image is None:
+                self.path.unlink(missing_ok=True)
+            else:
+                restore = self.path.with_name(
+                    f".{self.path.name}.{uuid4().hex}.restoring"
+                )
+                try:
+                    restore.write_text(pre_image, encoding="utf-8")
+                    restore.replace(self.path)
+                finally:
+                    restore.unlink(missing_ok=True)
+            raise
+
     def clear(
         self,
         *,

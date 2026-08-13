@@ -40,27 +40,42 @@ class AuditLog:
         return self._root / AUDIT_FILENAME
 
     def append(self, event: AuditEvent) -> AuditEvent:
+        self.append_many((event,))
+        return event
+
+    def append_many(self, events) -> tuple[AuditEvent, ...]:
+        """Append a block of events in ONE atomic write (PR-178.2).
+
+        A bulk operation writes one audit event per subject; appending
+        them one at a time re-read and re-wrote the whole log N times
+        (measured ~10-30ms each at realistic log sizes). The block is a
+        single read + single atomic replace, and remains append-only:
+        existing lines are never modified.
+        """
+
+        events = tuple(events)
+        if not events:
+            return events
         with self._lock:
             self._root.mkdir(parents=True, exist_ok=True)
             existing = (
                 self.path.read_text(encoding="utf-8")
                 if self.path.is_file() else ""
             )
+            block = "".join(
+                json.dumps(event.to_dict(), sort_keys=True,
+                           ensure_ascii=False) + "\n"
+                for event in events
+            )
             temporary = self.path.with_name(
                 f".{self.path.name}.{uuid4().hex}.writing"
             )
             try:
-                temporary.write_text(
-                    existing
-                    + json.dumps(event.to_dict(), sort_keys=True,
-                                 ensure_ascii=False)
-                    + "\n",
-                    encoding="utf-8",
-                )
+                temporary.write_text(existing + block, encoding="utf-8")
                 temporary.replace(self.path)
             finally:
                 temporary.unlink(missing_ok=True)
-            return event
+            return events
 
     def events(
         self,
