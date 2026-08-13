@@ -40,6 +40,37 @@ _AUDIT_KIND_MAP = {
 _SEVERITY_ORDER = {"high": 0, "critical": 0, "medium": 1, "low": 2, "info": 3}
 
 
+def _bulk_verb(batch) -> str:
+    """The one action a correlated batch performed, as an operator verb.
+
+    A batch is one intent, but an un-action can mix ``clear`` events
+    (scoped records removed) with ``update`` events (scoped negatives
+    shadowing legacy records) — the AFTER state, not the operation name,
+    is what says which way the intent pointed.
+    """
+
+    category = str(batch[0].category)
+    negated = any(
+        item.operation == "clear"
+        or dict(item.after).get("acknowledged") is False
+        or dict(item.after).get("suppressed") is False
+        for item in batch
+    )
+    if category == "change-ack":
+        return "unacknowledged" if negated else "acknowledged"
+    if category == "change-suppression":
+        return "unsuppressed" if negated else "suppressed"
+    if category in ("change-assignment", "policy-assignment"):
+        owner = str(dict(batch[0].after).get("owner") or "")
+        return f"assigned to {owner}" if owner else "assigned"
+    return f"performed {category} {batch[0].operation} on"
+
+
+def _bulk_noun(category: str) -> str:
+    return "policy result(s)" if category == "policy-assignment" \
+        else "change(s)"
+
+
 def _event(
     *,
     occurred_at: str,
@@ -192,7 +223,45 @@ def chronicle_events(
             severity="info",
             provenance="compass plan repository",
         ))
+    # PR-178.2: one bulk operation writes one audit event per subject
+    # under one "bulk:" correlation id. The operator chronology shows
+    # that as ONE human-scale row ("ahmed acknowledged 12 changes") with
+    # a drill-down to the complete per-subject record in /audit —
+    # never 12 near-identical Timeline rows, and never a summary that
+    # replaces the audit truth. Events without a bulk correlation id
+    # (every single-row action) are untouched.
+    bulk_groups: dict[str, list] = {}
+    single_events = []
     for event in audit_events:
+        correlation = str(getattr(event, "correlation_id", "") or "")
+        if correlation.startswith("bulk:"):
+            bulk_groups.setdefault(correlation, []).append(event)
+        else:
+            single_events.append(event)
+    for correlation, batch in bulk_groups.items():
+        if len(batch) == 1:
+            single_events.append(batch[0])
+            continue
+        newest = max(batch, key=lambda item: str(item.occurred_at))
+        events.append(_event(
+            occurred_at=str(newest.occurred_at),
+            kind=_AUDIT_KIND_MAP.get(newest.category, "annotation"),
+            title=(
+                f"{newest.actor} {_bulk_verb(batch)} "
+                f"{len(batch)} {_bulk_noun(newest.category)}"
+            ),
+            detail=str(newest.reason or ""),
+            href=f"/audit?correlation={quote(correlation, safe='')}",
+            severity="info",
+            actor=str(newest.actor),
+            provenance=f"audit batch {correlation} ({len(batch)} events)",
+            system=(
+                str(newest.actor) == "system"
+                or str(newest.source) in ("startup", "telemetry")
+            ),
+            category=str(newest.category),
+        ))
+    for event in single_events:
         kind = _AUDIT_KIND_MAP.get(event.category, "annotation")
         title = f"{event.category} {event.operation}: {event.subject}"
         if event.operation == "undo":

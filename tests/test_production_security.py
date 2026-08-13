@@ -319,6 +319,11 @@ class RbacHttpTests(unittest.TestCase):
         ("POST", "/changes/annotate",
          {"action": "acknowledge", "subject": "change:x"},
          {"investigator", "admin"}, 302),
+        # PR-178.2: bulk change triage uses the SAME capability — bulk
+        # is a quantity, not a new privilege.
+        ("POST", "/changes/bulk",
+         {"bulk_action": "acknowledge", "subjects": "change:x"},
+         {"investigator", "admin"}, 302),
         ("GET", "/users", None, {"admin"}, 200),
         ("GET", "/settings/diagnostics.json", None, {"admin"}, 200),
         ("GET", "/system/integrity", None, {"admin"}, 200),

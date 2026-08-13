@@ -27,6 +27,9 @@ SELECTION_TABLES = {
     "incidents.html": "case_ids",
     "policy.html": "subjects",
     "evidence_index.html": "device_ids",
+    # PR-178.2: Changes joins with bulk triage. Its checkboxes bind to
+    # the SIBLING bulk form via form= — the table is never wrapped.
+    "changes.html": "subjects",
 }
 
 

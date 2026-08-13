@@ -35,6 +35,10 @@
     <label>Subject contains
       <input name="subject" value="{{ subject }}" placeholder="device, policy, peer…">
     </label>
+    {# PR-178.2: one bulk operation's complete per-subject record. #}
+    <label>Correlation
+      <input name="correlation" value="{{ correlation }}" placeholder="bulk:… batch id">
+    </label>
     <button class="btn btn-sm btn-primary" type="submit">Apply filters</button>
     <a class="btn btn-sm" href="/audit">Clear</a>
     <a class="btn btn-sm" href="/audit/export.csv?category={{ category | urlencode }}&actor={{ actor | urlencode }}&subject={{ subject | urlencode }}"

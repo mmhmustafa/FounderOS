@@ -298,6 +298,9 @@ textarea:focus-visible, summary:focus-visible, [tabindex]:focus-visible {
    sets the hidden ATTRIBUTE; flex display on .actions/.form-actions
    would silently win over the UA's [hidden] rule without this. */
 [data-bulk-bar][hidden] { display: none; }
+/* PR-178.2: Suppress is the bulk bar's one high-consequence action —
+   separated and marked, never a primary button. */
+.bulk-suppress { margin-left: 14px; border-color: var(--red); color: var(--red-dark); }
 .topology-controls { margin-bottom: 14px; }
 .topology-support-actions { margin: 10px 0 16px; align-items: center; }
 .pagination { display: flex; align-items: center; justify-content: center; gap: var(--space-3); margin-top: var(--space-3); }

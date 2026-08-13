@@ -191,6 +191,10 @@ class ChangeFilter:
     device: str = ""
     status: str = ""                # "", acknowledged, unacknowledged
     show_suppressed: bool = False
+    # PR-178.2: one bulk operation's correlation id. The route resolves
+    # it to the batch's subjects from the AUDIT log (durable for both
+    # set- and clear-type actions) — never a subject list in a URL.
+    batch: str = ""
     page: int = 1
     per_page: int = 50
 
@@ -206,6 +210,7 @@ class ChangeFilter:
             device=str(args.get("device", "") or "").strip(),
             status=str(args.get("status", "") or "").strip(),
             show_suppressed=str(args.get("suppressed", "")) == "1",
+            batch=str(args.get("batch", "") or "").strip(),
             page=int_arg(args, "page", 1, 100000),
             per_page=int_arg(args, "per_page", DEFAULT_PER_PAGE, MAX_PER_PAGE),
         )
@@ -216,6 +221,7 @@ class ChangeFilter:
             "severity": self.severity, "device": self.device,
             "status": self.status,
             "suppressed": "1" if self.show_suppressed else "",
+            "batch": self.batch,
         }
         return {key: value for key, value in pairs.items() if value}
 
@@ -224,15 +230,28 @@ _SEVERITY_ORDER = {"high": 0, "critical": 0, "medium": 1, "low": 2, "info": 3}
 
 
 def filter_rows(
-    rows: Sequence[Mapping[str, Any]], filters: ChangeFilter
+    rows: Sequence[Mapping[str, Any]],
+    filters: ChangeFilter,
+    *,
+    batch_subjects: frozenset[str] | set[str] | None = None,
 ) -> tuple[list[dict[str, Any]], int]:
-    """(matching rows, suppressed-and-hidden count)."""
+    """(matching rows, suppressed-and-hidden count).
+
+    ``batch_subjects`` is the resolved subject set of ``filters.batch``.
+    A batch view shows exactly the batch's rows — including suppressed
+    ones, because a suppression batch IS suppressed rows; hiding them
+    would make the review page show nothing.
+    """
 
     found: list[dict[str, Any]] = []
     hidden = 0
     needle = filters.query.casefold()
+    show_suppressed = filters.show_suppressed or bool(filters.batch)
     for row in rows:
-        if row.get("suppressed") and not filters.show_suppressed:
+        if filters.batch:
+            if str(row.get("subject")) not in (batch_subjects or ()):
+                continue
+        if row.get("suppressed") and not show_suppressed:
             hidden += 1
             continue
         if filters.kind and str(row.get("kind")) != filters.kind:

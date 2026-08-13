@@ -3922,12 +3922,21 @@ def register_routes(app) -> None:
         category = request.args.get("category", "").strip()
         actor = request.args.get("actor", "").strip()
         subject = request.args.get("subject", "").strip()
+        # PR-178.2: one bulk operation = one correlation id = N subject
+        # events. The Timeline shows the batch as ONE operator row; this
+        # filter is where the complete per-subject truth lives.
+        correlation = request.args.get("correlation", "").strip()
         events = unified_audit_events(
             cfg("ATLAS_WORKSPACE_ROOT"),
             category=category or None,
             actor=actor or None,
             subject_contains=subject or None,
         )
+        if correlation:
+            events = tuple(
+                event for event in events
+                if event.correlation_id == correlation
+            )
         page = paginate(
             [event.to_dict() for event in events],
             int_arg(request.args, "page", 1, 100000),
@@ -3940,6 +3949,7 @@ def register_routes(app) -> None:
             category=category,
             actor=actor,
             subject=subject,
+            correlation=correlation,
             option_categories=sorted({e.category for e in all_events}),
             option_actors=sorted({e.actor for e in all_events}),
             **context,
@@ -5014,7 +5024,22 @@ def register_routes(app) -> None:
         context, scopes, scope_id = scoped_context("changes")
         rows, kinds_measured = _change_rows_for(scopes, scope_id)
         filters = ChangeFilter.from_args(request.args)
-        filtered, hidden_suppressed = filter_rows(rows, filters)
+        # PR-178.2: a batch view resolves its subjects SERVER-SIDE from
+        # the audit log — durable for both set- and clear-type actions,
+        # and never a subject list in a URL.
+        batch_subjects = None
+        if filters.batch:
+            from founderos_atlas.audit.log import AuditLog
+
+            batch_subjects = {
+                event.subject
+                for event in AuditLog(cfg("ATLAS_WORKSPACE_ROOT")).events()
+                if event.correlation_id == filters.batch
+                and event.category.startswith("change-")
+            }
+        filtered, hidden_suppressed = filter_rows(
+            rows, filters, batch_subjects=batch_subjects
+        )
         page = paginate(filtered, filters.page, filters.per_page)
         run_options = []
         for scope in (
@@ -5068,39 +5093,16 @@ def register_routes(app) -> None:
         comparison = None
         rows: list[dict] = []
         if left_id and right_id:
-            left_snapshot = right_snapshot = None
-            left_scope = None
-            for scope in (
-                aggregation_scopes(scopes)
-                if scope_id == GLOBAL_SCOPE_ID else (scopes[scope_id],)
-            ):
-                repo = HistoryRepository(scope.history_root)
-                left_path = repo.snapshot_path(left_id)
-                if left_path.is_file():
-                    left_snapshot = load_json(left_path)
-                    left_scope = scope
-                right_path = repo.snapshot_path(right_id)
-                if right_path.is_file():
-                    right_snapshot = load_json(right_path)
-            if left_snapshot is None or right_snapshot is None:
+            compared = _comparison_change_rows(scopes, scope_id,
+                                               left_id, right_id)
+            if compared is None:
                 flash(
                     "One or both runs could not be found in this scope — "
                     "they may belong to another scope or have been removed.",
                     "warning",
                 )
             else:
-                report = ChangeDetector().compare(left_snapshot, right_snapshot)
-                # PR-178.2A: the comparison's changes belong to the
-                # scope that owns the archived runs — the same identity
-                # rule as the live report, so an annotation made from a
-                # comparison view lands on the same scoped record.
-                rows = annotate_rows(unified_rows(
-                    topology_report=report.to_dict(),
-                    config_report=None,
-                    state_report=None,
-                    scope_id=left_scope.scope_id,
-                    network=left_scope.label,
-                ))
+                rows = annotate_rows(compared)
                 comparison = {"left": left_id, "right": right_id,
                               "count": len(rows)}
         filters = ChangeFilter.from_args(request.args)
@@ -5177,6 +5179,248 @@ def register_routes(app) -> None:
             headers={"Content-Disposition": "attachment; filename=changes.csv"},
         )
 
+    def _comparison_change_rows(scopes, scope_id, left_id, right_id):
+        """The change rows of one archived run pair, or None when either
+        run cannot be found in the visible scope(s). The rows carry the
+        same scoped identity as the live report, so an annotation made
+        from a comparison view lands on the same scoped record."""
+
+        from founderos_atlas.change import ChangeDetector
+        from founderos_atlas.change.explorer import unified_rows
+
+        left_snapshot = right_snapshot = None
+        left_scope = None
+        for scope in (
+            aggregation_scopes(scopes)
+            if scope_id == GLOBAL_SCOPE_ID else (scopes[scope_id],)
+        ):
+            repo = HistoryRepository(scope.history_root)
+            left_path = repo.snapshot_path(left_id)
+            if left_path.is_file():
+                left_snapshot = load_json(left_path)
+                left_scope = scope
+            right_path = repo.snapshot_path(right_id)
+            if right_path.is_file():
+                right_snapshot = load_json(right_path)
+        if left_snapshot is None or right_snapshot is None:
+            return None
+        report = ChangeDetector().compare(left_snapshot, right_snapshot)
+        return unified_rows(
+            topology_report=report.to_dict(),
+            config_report=None,
+            state_report=None,
+            scope_id=left_scope.scope_id,
+            network=left_scope.label,
+        )
+
+    def _valid_change_subjects(next_value) -> dict:
+        """subject -> legacy twin, for every change the operator's
+        working context currently renders (PR-178.2).
+
+        The browser's posted subjects are a REQUEST, not truth: a
+        forged, stale, malformed or foreign-scope subject is simply not
+        in this mapping and is never mutated. The context is the scope
+        carried by the validated ``next`` URL — plus, when ``next`` is a
+        run comparison, that comparison's rows, because annotating from
+        the comparison view is an existing, intentional workflow.
+        """
+
+        from urllib.parse import parse_qs, urlsplit
+
+        scopes = known_scopes()
+        scope_id = _scope_from_next(next_value)
+        rows, _measured = _change_rows_for(scopes, scope_id)
+        valid = {
+            str(row.get("subject") or ""):
+                str(row.get("subject_legacy") or "") or None
+            for row in rows
+        }
+        valid.pop("", None)
+        try:
+            split = urlsplit(str(next_value or ""))
+            if split.path == "/changes/compare":
+                params = parse_qs(split.query)
+                left_id = str((params.get("left") or [""])[0]).strip()
+                right_id = str((params.get("right") or [""])[0]).strip()
+                if left_id and right_id:
+                    compared = _comparison_change_rows(
+                        scopes, scope_id, left_id, right_id
+                    )
+                    for row in compared or ():
+                        subject = str(row.get("subject") or "")
+                        if subject:
+                            valid.setdefault(
+                                subject,
+                                str(row.get("subject_legacy") or "") or None,
+                            )
+        except ValueError:
+            pass
+        return valid
+
+    @app.route("/changes/bulk", methods=["POST"])
+    def changes_bulk():
+        """One operator intent applied to many changes — honestly.
+
+        ONE endpoint for the five bulk actions, discriminated by the
+        submit button (a checkbox can associate with exactly one form,
+        so per-action endpoints could never share the selection). The
+        result is never a bare "Success": per-subject truth survives as
+        updated / already-in-state / no-longer-present counts, one
+        correlation id ties the batch together in the audit log, and
+        UNCHANGED subjects are neither mutated nor audited.
+
+        Assign and Suppress require input; a required field in the
+        shared bulk bar would block every other submit button (measured
+        in the architecture review), so they render a server-side
+        confirm page first. The confirm page is a PREVIEW — the
+        mutation-time classification is authoritative.
+        """
+
+        from founderos_atlas.audit import AnnotationStore
+        from founderos_atlas.change.bulk import (
+            BULK_ACTIONS,
+            MAX_BULK_SUBJECTS,
+            classify,
+            dedupe_subjects,
+            execute,
+            summary_sentence,
+        )
+
+        next_url = safe_redirect_target(
+            request.form.get("next"), scoped_url("/changes")
+        )
+        action = str(request.form.get("bulk_action") or "").strip()
+        if action not in BULK_ACTIONS:
+            flash("Unknown bulk action.", "error")
+            return redirect(next_url)
+        subjects = dedupe_subjects(request.form.getlist("subjects"))
+        if not subjects:
+            flash("Select at least one change.", "error")
+            return redirect(next_url)
+        if len(subjects) > MAX_BULK_SUBJECTS:
+            # Rejected, never truncated: processing the first N and
+            # saying nothing about the rest is the dishonesty this
+            # workflow exists to prevent.
+            flash(
+                f"{len(subjects)} changes selected — bulk actions are "
+                f"limited to {MAX_BULK_SUBJECTS} at a time. Nothing was "
+                "changed.",
+                "error",
+            )
+            return redirect(next_url)
+
+        owner = str(request.form.get("owner") or "").strip()
+        reason = str(request.form.get("reason") or "").strip()
+        requires = BULK_ACTIONS[action]["requires"]
+        confirmed = str(request.form.get("confirmed") or "") == "1"
+        store = AnnotationStore(cfg("ATLAS_WORKSPACE_ROOT"))
+        kind = BULK_ACTIONS[action]["kind"]
+        valid = _valid_change_subjects(request.form.get("next"))
+
+        def render_confirm(error: str | None = None):
+            """The server-rendered preview — mutates NOTHING.
+
+            The requested owner/reason is not known yet, so eligibility
+            is previewed against a sentinel no real value can equal:
+            what is certain now is who is unassigned / already owned /
+            already suppressed / no longer present. The confirmed
+            submission re-classifies against the real input, and THAT
+            result is the truth the operator is shown.
+            """
+
+            preview = classify(
+                action=action, subjects=subjects, valid_subjects=valid,
+                annotations=store.all(kind),
+                owner="\x00", reason="\x00",
+            )
+            context, _scopes, _scope_id = scoped_context("changes")
+            return render_template(
+                "changes_bulk_confirm.html",
+                action=action,
+                subjects=subjects,
+                selected=len(subjects),
+                detail_counts=preview.detail_counts(),
+                not_present=preview.counts().get("not-present", 0),
+                owner=owner,
+                reason=reason,
+                next_url=next_url,
+                error=error,
+                **context,
+            )
+
+        if requires and not confirmed:
+            return render_confirm()
+        if requires == "owner" and not owner:
+            return render_confirm("An owner is required.")
+        if requires == "reason" and not reason:
+            return render_confirm("A reason is required.")
+
+        plan = classify(
+            action=action, subjects=subjects, valid_subjects=valid,
+            annotations=store.all(kind),
+            owner=owner or None, reason=reason or None,
+        )
+        if plan.counts().get("updated", 0) == 0:
+            from founderos_atlas.change.bulk import BatchResult
+
+            flash(summary_sentence(BatchResult(
+                action=action, correlation_id="", counts=plan.counts(),
+                owner=owner or None, reason=reason or None,
+            )), "success")
+            return redirect(next_url)
+
+        principal = getattr(g, "principal", None)
+        try:
+            result = execute(
+                store, plan,
+                actor=current_actor(),
+                actor_roles=principal.roles if principal else (),
+                occurred_at=now_iso(),
+            )
+        except Exception:  # noqa: BLE001 - the batch must fail closed
+            # The store restored its pre-image; nothing was half-done.
+            flash(
+                "The bulk action failed and nothing was changed — the "
+                "audit record could not be written.",
+                "error",
+            )
+            return redirect(next_url)
+
+        if action == "assign" and result.updated:
+            # One notification per batch (the policy_assign precedent) —
+            # never one per subject to the same owner.
+            try:
+                from founderos_atlas.notifications import (
+                    KIND_ASSIGNMENT, NotificationStore,
+                )
+
+                scope_id = _scope_from_next(request.form.get("next"))
+                count = result.updated
+                NotificationStore(cfg("ATLAS_WORKSPACE_ROOT")).notify(
+                    kind=KIND_ASSIGNMENT,
+                    title=(
+                        f"{count} change(s) assigned to you"
+                        if count > 1 else "A change was assigned to you"
+                    ),
+                    detail=f"Assigned by {current_actor()}.",
+                    href=scoped_url(
+                        "/changes", scope_id, batch=result.correlation_id
+                    ),
+                    audience=owner,
+                    correlation_id=result.correlation_id,
+                )
+            except OSError:
+                pass
+
+        flash(summary_sentence(result), "success")
+        # The operator returns to their exact working context; the
+        # correlation id rides along as batch_done so the page can offer
+        # "Review this batch" — never a subject list in a URL.
+        separator = "&" if "?" in next_url else "?"
+        return redirect(
+            f"{next_url}{separator}batch_done={result.correlation_id}"
+        )
+
     @app.route("/changes/annotate", methods=["POST"])
     def changes_annotate():
         """Acknowledge, assign, note, or suppress one change — audited.
@@ -5205,6 +5449,20 @@ def register_routes(app) -> None:
             "unsuppress",
         ):
             flash("Unknown change action.", "error")
+            return redirect(safe_redirect_target(
+                request.form.get("next"), scoped_url("/changes")
+            ))
+        # PR-178.2 convergence: the posted subject must be a change the
+        # operator's working context currently renders. A forged, stale
+        # or foreign-scope subject used to write a durable orphan
+        # annotation (measured in the PR-178.2 architecture review);
+        # now it is refused before any store is touched.
+        if subject not in _valid_change_subjects(request.form.get("next")):
+            flash(
+                "That change is not part of this view any more — "
+                "nothing was modified.",
+                "error",
+            )
             return redirect(safe_redirect_target(
                 request.form.get("next"), scoped_url("/changes")
             ))

@@ -181,6 +181,9 @@ ENDPOINT_PERMISSIONS: dict[str, str] = {
 
     # -- annotations -------------------------------------------------------
     "changes_annotate": CHANGES_ANNOTATE,
+    # Bulk change triage (PR-178.2) uses the SAME capability as the
+    # single-row actions — bulk is a quantity, not a new privilege.
+    "changes_bulk": CHANGES_ANNOTATE,
     "configuration_annotation": CHANGES_ANNOTATE,
 
     # -- analysis ----------------------------------------------------------

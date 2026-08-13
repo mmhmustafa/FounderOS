@@ -64,6 +64,20 @@
   {{ comparison.count }} difference(s). <a href="{{ scoped_url('/changes', active_scope_id) }}">Back to current changes</a></p>
 {% endif %}
 
+{# PR-178.2: a bulk operation's review view. The subjects are resolved
+   server-side from the audit log by correlation id — the URL carries
+   only the short id, never a subject list — and suppressed rows are
+   included, because a suppression batch IS suppressed rows. #}
+{% if filters.batch %}
+<p class="flash flash-info">Showing the changes of batch <code>{{ filters.batch }}</code>.
+  <a href="{{ scoped_url('/changes', active_scope_id) }}">Back to current changes</a> ·
+  <a href="/audit?correlation={{ filters.batch | urlencode }}">Audit detail — every subject event</a></p>
+{% elif request.args.get('batch_done') %}
+<p class="flash flash-info">
+  <a href="{{ scoped_url('/changes', active_scope_id, batch=request.args.get('batch_done')) }}">Review this batch</a> —
+  the exact changes it touched, including any that left the current filter.</p>
+{% endif %}
+
 {# PR-178: comparing an ARBITRARY archived pair is reference tooling —
    the everyday question is the last two runs, which the page already
    answers above. Supporting, with a count, collapsed at every level. #}
@@ -154,10 +168,18 @@
   </p>
 
   {% if page.items %}
+  {# PR-178.2: selection renders only for principals who can perform the
+     bulk actions (changes.annotate) — and so does the per-row Act menu,
+     which was previously offered to five roles whose every submit would
+     403 (the D3 defect). Data stays readable for everyone. The row
+     checkboxes belong to the SIBLING bulk form below via form= — the
+     table is never wrapped in a form, so the per-row POST forms inside
+     it stay valid. #}
   <div class="table-scroll table-scroll-wide" role="region" aria-label="Detected changes" tabindex="0">
-    <table class="grid" data-columns="changes">
+    <table class="grid" data-columns="changes" {% if can('changes.annotate') %}data-row-select="subjects"{% endif %}>
       <thead>
         <tr>
+          {% if can('changes.annotate') %}<th data-col="select" data-col-preset="simple" data-col-label="Select"><input type="checkbox" data-select-all aria-label="Select all {{ page.items | length }} changes on this page"></th>{% endif %}
           <th data-col="severity" data-col-preset="simple">Severity</th><th data-col="kind">Kind</th><th data-col="device" data-col-preset="simple">Device</th><th data-col="what" data-col-preset="simple">What changed</th>
           <th data-col="delta">Before → After</th><th data-col="owner">Owner</th>
           <th data-col="actions" data-col-preset="simple" data-col-label="Actions"><span class="visually-hidden">Actions</span></th>
@@ -166,6 +188,8 @@
       <tbody>
         {% for change in page.items %}
         <tr id="{{ change.subject }}" {% if change.suppressed %}class="row-archived"{% endif %}>
+          {% if can('changes.annotate') %}<td data-col="select"><input type="checkbox" form="changes-bulk" name="subjects" value="{{ change.subject }}"
+                     aria-label="Select the {{ change.severity }} {{ change.kind }} change on {{ change.device or 'the network' }}"></td>{% endif %}
           <td><span class="badge hop-badge hop-badge-{{ 'failed' if change.severity in ('high', 'critical') else ('warning' if change.severity == 'medium' else 'unknown') }}">{{ change.severity }}</span></td>
           <td>{{ change.kind }}<div class="muted">{{ change.category }}</div></td>
           <td>{{ change.device or '—' }}
@@ -185,6 +209,7 @@
           </td>
           <td>{{ change.owner or '—' }}{% if change.acknowledged %}<div class="ok">acknowledged</div>{% endif %}</td>
           <td class="row-actions">
+            {% if can('changes.annotate') %}
             <details class="action-menu">
               {# PR-178.1: native disclosure semantics — same rule as
                  _entity_actions.html. No role override, no aria-haspopup. #}
@@ -245,12 +270,38 @@
                 {% endif %}
               </ul>
             </details>
+            {% endif %}
           </td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
+
+  {% if can('changes.annotate') %}
+  {# PR-178.2: the bulk form — a SIBLING of the table, never a wrapper
+     (nesting would swallow the per-row forms). Row checkboxes join it
+     via form=. One endpoint, five submit buttons; Assign… and Suppress…
+     mutate nothing on first POST — they open the server-rendered
+     confirm page that carries their required field. JS hides the bar
+     while nothing is selected; without JS it stays visible and
+     individually checked subjects submit normally. #}
+  <form id="changes-bulk" method="post" action="/changes/bulk"
+        class="actions" data-bulk-bar role="group"
+        aria-label="Bulk actions for the selected changes">
+    {{ csrf_field() }}
+    <input type="hidden" name="next" value="{{ request.full_path }}">
+    <span class="muted selection-count" data-selection-count
+          data-selection-phrase="{checked} of {total} on this page selected"
+          aria-live="polite"></span>
+    <button class="btn btn-sm" type="submit" name="bulk_action" value="acknowledge">Acknowledge</button>
+    <button class="btn btn-sm" type="submit" name="bulk_action" value="unacknowledge">Unacknowledge</button>
+    <button class="btn btn-sm" type="submit" name="bulk_action" value="assign">Assign…</button>
+    <button class="btn btn-sm" type="submit" name="bulk_action" value="unsuppress">Unsuppress</button>
+    <button class="btn btn-sm bulk-suppress" type="submit" name="bulk_action" value="suppress">Suppress…</button>
+    <button class="btn btn-sm" type="button" data-clear-selection>Clear selection</button>
+  </form>
+  {% endif %}
 
   {% if page.pages > 1 %}
   <nav class="pager" aria-label="Change pages">

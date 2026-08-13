@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Confirm bulk change action{% endblock %}
+{% block content %}
+{# PR-178.2: the server-rendered confirm step for input-taking bulk
+   actions. A required field in the shared bulk bar would block every
+   other submit button (measured), so Assign and Suppress land here:
+   an ordinary page, no modal framework, native required validation,
+   and NO mutation — this is a preview; the confirmed submission
+   re-classifies against the live stores and THAT result is what the
+   operator is told. #}
+<div class="page-head">
+  <h1>{% if action == 'assign' %}Assign {{ selected }} change(s){% else %}Suppress {{ selected }} change(s){% endif %}</h1>
+</div>
+
+{% if error %}
+<div class="flash flash-error" role="alert">{{ error }}</div>
+{% endif %}
+
+<section class="card">
+  {% if action == 'assign' %}
+  <p>
+    {% if detail_counts.get('unassigned') %}{{ detail_counts['unassigned'] }} are unassigned.{% endif %}
+    {% if detail_counts.get('other-owner') %}
+    {{ detail_counts['other-owner'] }} already have an owner — kept if it
+    matches the owner you enter, <strong>replaced</strong> otherwise.
+    {% endif %}
+    {% if not_present %}{{ not_present }} are no longer part of this view and will not be touched.{% endif %}
+  </p>
+  {% else %}
+  <p>
+    {% if detail_counts.get('new') %}{{ detail_counts['new'] }} will be newly suppressed — hidden by default, always countable, and audited.{% endif %}
+    {% if detail_counts.get('different-reason') %}
+    {{ detail_counts['different-reason'] }} are already suppressed — their
+    reason is kept if it matches what you enter, <strong>updated</strong> otherwise.
+    {% endif %}
+    {% if not_present %}{{ not_present }} are no longer part of this view and will not be touched.{% endif %}
+  </p>
+  <p class="muted">Suppression hides changes from the default view in their
+    scope. It is reversible (Unsuppress), and every suppression carries its
+    reason in the audit record.</p>
+  {% endif %}
+
+  <form method="post" action="/changes/bulk" class="form">
+    {{ csrf_field() }}
+    <input type="hidden" name="bulk_action" value="{{ action }}">
+    <input type="hidden" name="confirmed" value="1">
+    <input type="hidden" name="next" value="{{ next_url }}">
+    {% for subject in subjects %}
+    <input type="hidden" name="subjects" value="{{ subject }}">
+    {% endfor %}
+    <div class="form-row">
+      {% if action == 'assign' %}
+      <label>Owner
+        <input name="owner" value="{{ owner }}" required autofocus
+               placeholder="owner (e.g. netops)"
+               aria-label="Owner for the selected changes">
+      </label>
+      {% else %}
+      <label>Reason
+        <input name="reason" value="{{ reason }}" required autofocus
+               placeholder="reason (required)"
+               aria-label="Reason for suppressing the selected changes">
+      </label>
+      {% endif %}
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-sm" type="submit">
+        {% if action == 'assign' %}Assign {{ selected }} change(s){% else %}Suppress {{ selected }} change(s){% endif %}
+      </button>
+      <a class="btn btn-sm" href="{{ next_url }}">Cancel — back to your filtered view</a>
+    </div>
+  </form>
+</section>
+{% endblock %}

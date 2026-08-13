@@ -1571,9 +1571,13 @@
       var scope = table.closest("form") || document;
       var count = scope.querySelector("[data-selection-count]");
       if (count) {
-        count.textContent = checked
-          ? checked + " of " + boxes.length + " selected"
-          : "";
+        // PR-178.2: a page may declare its own phrasing — Changes says
+        // "N of M on this page selected" so a 312-match filter can
+        // never read as 312 selected. Everyone else keeps the default.
+        var phrase = count.getAttribute("data-selection-phrase");
+        count.textContent = !checked ? "" : phrase
+          ? phrase.replace("{checked}", checked).replace("{total}", boxes.length)
+          : checked + " of " + boxes.length + " selected";
       }
       // PR-178.1: surfaces that opt in via data-bulk-bar appear only
       // while the selection is non-empty. This is NEW behaviour — the
@@ -1657,6 +1661,21 @@
         syncHeader(table, master);
         resyncs.push(function () { syncHeader(table, master); });
       }
+    });
+
+    // PR-178.2: "Clear selection" in a bulk bar — unchecks every
+    // selection table's boxes, which re-syncs count, row styling and
+    // bar visibility through the same code path as any other change.
+    document.addEventListener("click", function (event) {
+      if (!event.target.closest ||
+          !event.target.closest("[data-clear-selection]")) { return; }
+      document.querySelectorAll("table[data-row-select]").forEach(
+        function (table) {
+          boxesOf(table).forEach(function (box) { setChecked(box, false); });
+          var master = table.querySelector("[data-select-all]");
+          if (master) { syncHeader(table, master); }
+        }
+      );
     });
   })();
 })();
