@@ -492,8 +492,10 @@ class OneServerPerPortTests(unittest.TestCase):
             self._start(probe=lambda host, port: True)
         message = str(caught.exception)
         self.assertIn("already serving", message)
-        # The refusal must say what to do about it, and offer a real way out.
-        self.assertIn("--port", message)
+        # PR-180: the way out must be a command the shell actually has —
+        # the only console script is `founderos`, and the old wording
+        # recommended a bare `atlas` that produced "command not found".
+        self.assertIn("founderos atlas web --port", message)
 
     def test_starts_normally_when_the_port_is_free(self) -> None:
         started: dict = {}
@@ -504,6 +506,73 @@ class OneServerPerPortTests(unittest.TestCase):
         )
         self.assertEqual(0, code)
         self.assertEqual({"host": "127.0.0.1", "port": 8799}, started)
+
+    def test_startup_states_where_results_live_and_how_to_stop(self) -> None:
+        # PR-180 Step 5: output_dir defaults to the directory the
+        # tester happened to start from — Monday-from-Desktop and
+        # Tuesday-from-Documents silently produce two estates. The
+        # terminal (and the admin Settings card) are the ONLY approved
+        # surfaces for this path; it never enters diagnostics, flashes,
+        # error pages or log lines.
+        from contextlib import redirect_stdout
+        from io import StringIO
+
+        output = StringIO()
+        with redirect_stdout(output):
+            code, _ = self._start(
+                port=8798, probe=lambda host, port: False,
+                runner=lambda **kwargs: None,
+            )
+        self.assertEqual(0, code)
+        printed = output.getvalue()
+        self.assertIn("Atlas web UI running at:", printed)
+        self.assertIn("Results are stored in:", printed)
+        self.assertIn("Press Ctrl+C to stop Atlas.", printed)
+
+    def test_a_startup_failure_is_canonical_never_a_traceback(self) -> None:
+        # PR-180 Step 5: the old guard caught only (RuntimeError,
+        # OSError) — anything else escaped as a raw Python traceback —
+        # and interpolated {error}, whose OSError str() carries a
+        # filename. Canonical copy to the human; the detail to the log.
+        import logging as _logging
+        from unittest.mock import patch as _patch
+
+        import founderos_atlas.web as web_module
+        from founderos_runtime.cli.commands import CliError
+
+        with _patch.object(
+            web_module, "create_app",
+            side_effect=ValueError(r"bad value at C:\Users\ops\.atlas"),
+        ), self.assertLogs("atlas", level=_logging.ERROR) as logs, \
+                self.assertRaises(CliError) as caught:
+            self._start(probe=lambda host, port: False)
+        message = str(caught.exception)
+        self.assertIn("could not start the web GUI", message)
+        self.assertIn("founderos atlas web", message)
+        self.assertNotIn("ValueError", message)
+        self.assertNotIn("C:\\Users", message)
+        self.assertIn("atlas web failed to start", "\n".join(logs.output))
+
+    def test_a_bind_failure_names_errno_never_a_path(self) -> None:
+        import errno as _errno
+        import logging as _logging
+
+        from founderos_runtime.cli.commands import CliError
+
+        def failing_runner(**kwargs):
+            raise OSError(_errno.EACCES, "Permission denied",
+                          r"C:\secret\socket\path")
+
+        with self.assertLogs("atlas", level=_logging.ERROR), \
+                self.assertRaises(CliError) as caught:
+            self._start(port=8797, probe=lambda host, port: False,
+                        runner=failing_runner)
+        message = str(caught.exception)
+        self.assertIn("could not listen on 127.0.0.1:8797", message)
+        self.assertIn(f"(error {_errno.EACCES})", message)
+        self.assertIn("founderos atlas web --port 8798", message)
+        self.assertNotIn("secret", message)
+        self.assertNotIn("Permission denied", message)
 
     def test_the_escape_hatch_the_message_offers_actually_exists(self) -> None:
         """The refusal recommends `atlas web --port N`; that must dispatch."""

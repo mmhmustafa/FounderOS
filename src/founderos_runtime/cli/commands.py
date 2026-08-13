@@ -7,6 +7,7 @@ from dataclasses import replace
 from datetime import datetime, timezone
 import getpass
 import json
+import logging
 from pathlib import Path
 import webbrowser
 
@@ -1458,14 +1459,19 @@ def atlas_web_command(
     # operator sees rather than a GUI that looks started and is not theirs.
     probe = port_probe or port_is_serving
     if probe(host, port):
+        # PR-180 Step 5: the recovery command must be one the shell
+        # actually has — the only console script is `founderos`, and
+        # the old wording told the tester to type a command that does
+        # not exist (the most expensive support ticket a nine-character
+        # omission can buy).
         raise CliError(
             f"Something is already serving http://{host}:{port} — "
-            f"most likely another 'atlas web'.\n"
+            f"most likely another Atlas.\n"
             f"Atlas will not start a second server on the same port: on "
             f"Windows both would bind, and the GUI would answer from "
             f"whichever won — possibly one running older code.\n"
             f"Stop the running server, or start this one elsewhere: "
-            f"atlas web --port {port + 1}"
+            f"founderos atlas web --port {port + 1}"
         )
 
     try:
@@ -1474,8 +1480,19 @@ def atlas_web_command(
         raise CliError(str(error)) from error
     try:
         app = create_app(output_dir=output_dir, history_root=history_root)
-    except (RuntimeError, OSError) as error:
-        raise CliError(f"Could not start the Atlas web GUI: {error}") from error
+    except Exception as error:
+        # PR-180 Step 5: canonical copy to the human, the detail to the
+        # log. The old guard caught only (RuntimeError, OSError) — so a
+        # ValueError or KeyError during startup escaped as a raw Python
+        # traceback — and it interpolated {error}, whose str() for an
+        # OSError carries a filename: a live path leak onto the
+        # terminal. Neither survives the §26.1 standing rule.
+        logging.getLogger("atlas").exception("atlas web failed to start")
+        raise CliError(
+            "Atlas could not start the web GUI — the workspace could "
+            "not be prepared. Run 'founderos atlas web' again, and if "
+            "it repeats, quote this message in a report."
+        ) from error
     app.config["ATLAS_HOST"] = host
     app.config["ATLAS_PORT"] = port
 
@@ -1496,11 +1513,34 @@ def atlas_web_command(
     url = f"http://{host}:{port}"
     print("Atlas web UI running at:")
     print(url)
+    # PR-180 Step 5: where results land was never stated — output_dir
+    # defaults to the directory the tester happened to start from, so
+    # Monday-from-Desktop and Tuesday-from-Documents silently produce
+    # two different estates. This path is printed HERE and rendered on
+    # the system.admin Settings card, and nowhere else: never into
+    # diagnostics, a flash, an error page, or a log line (§26.1).
+    print(f"Results are stored in: {app.config['ATLAS_OUTPUT_DIR']}")
+    print("Press Ctrl+C to stop Atlas.")
     (browser_opener or webbrowser.open)(url)
     run = server_runner or app.run
-    # host is fixed to loopback; never bind to 0.0.0.0.
+    # host is fixed to loopback; never bind to 0.0.0.0. The framework's
+    # own startup banner (including its development-server warning)
+    # prints after this point — the warning is TRUE and deliberately
+    # not suppressed; Atlas's own lines above carry what the operator
+    # needs before the scroll begins.
     try:
         run(host=host, port=port)
+    except OSError as error:
+        # A bind failure the probe cannot predict: a privileged port, an
+        # exclusively-held socket, a race with another process. errno is
+        # a number and carries no filename; the full detail goes to the
+        # log, never the terminal (§26.1).
+        logging.getLogger("atlas").exception("atlas web bind failed")
+        raise CliError(
+            f"Atlas could not listen on {host}:{port} (error "
+            f"{error.errno}). Try another port: "
+            f"founderos atlas web --port {port + 1}"
+        ) from error
     finally:
         schedule_worker.stop()
     return 0, ""
