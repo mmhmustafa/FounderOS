@@ -294,6 +294,10 @@ textarea:focus-visible, summary:focus-visible, [tabindex]:focus-visible {
 .card.plane-no_known_impact { border-left: 6px solid var(--green); }
 .card-warn { border-left: 4px solid var(--amber-fill); }
 .actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+/* PR-178.1: bulk-action surfaces hide while nothing is selected. The JS
+   sets the hidden ATTRIBUTE; flex display on .actions/.form-actions
+   would silently win over the UA's [hidden] rule without this. */
+[data-bulk-bar][hidden] { display: none; }
 .topology-controls { margin-bottom: 14px; }
 .topology-support-actions { margin: 10px 0 16px; align-items: center; }
 .pagination { display: flex; align-items: center; justify-content: center; gap: var(--space-3); margin-top: var(--space-3); }

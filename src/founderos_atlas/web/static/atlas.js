@@ -1575,6 +1575,15 @@
           ? checked + " of " + boxes.length + " selected"
           : "";
       }
+      // PR-178.1: surfaces that opt in via data-bulk-bar appear only
+      // while the selection is non-empty. This is NEW behaviour — the
+      // count hook above only ever set text. JS-only by design: without
+      // JavaScript the bar is server-rendered visible and the
+      // checkboxes submit normally.
+      Array.prototype.forEach.call(
+        scope.querySelectorAll("[data-bulk-bar]"),
+        function (bar) { bar.hidden = checked === 0; }
+      );
       boxes.forEach(function (box) {
         var row = box.closest("tr");
         if (row) { row.classList.toggle("row-selected", box.checked); }
@@ -1587,6 +1596,15 @@
       // Anything listening for a real user change must still hear it.
       box.dispatchEvent(new Event("change", { bubbles: true }));
     }
+
+    // PR-178.1: a bfcache restore (browser Back) brings checked boxes
+    // back WITHOUT firing change events, leaving the count, the row
+    // outlines and the bulk bar stale. Every table's sync re-runs on
+    // pageshow — cheap on a normal load, correct on a restore.
+    var resyncs = [];
+    window.addEventListener("pageshow", function () {
+      resyncs.forEach(function (sync) { sync(); });
+    });
 
     document.querySelectorAll("table[data-row-select]").forEach(function (table) {
       var master = table.querySelector("[data-select-all]");
@@ -1635,7 +1653,10 @@
         if (master) { syncHeader(table, master); }
       });
 
-      if (master) { syncHeader(table, master); }
+      if (master) {
+        syncHeader(table, master);
+        resyncs.push(function () { syncHeader(table, master); });
+      }
     });
   })();
 })();

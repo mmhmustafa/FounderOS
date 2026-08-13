@@ -190,7 +190,9 @@
   {# PR-178: the selection column exists only for users who can export
      — 51 dead checkboxes were ~19% of this page's tab stops for
      everyone else. Export itself is unchanged for authorized users. #}
-  <form method="post" action="/evidence/bulk-export">{{ csrf_field() }}<input type="hidden" name="session" value="{{ session.session_id }}">{% if can('export.data') %}<div class="form-actions"><button class="btn" type="submit">Export selected (masked)</button></div>{% endif %}
+  {# PR-178.1: the export surface reports its selection and hides while
+     nothing is selected (data-bulk-bar; JS-only, no-JS keeps it visible). #}
+  <form method="post" action="/evidence/bulk-export">{{ csrf_field() }}<input type="hidden" name="session" value="{{ session.session_id }}">{% if can('export.data') %}<div class="form-actions" data-bulk-bar><span class="muted selection-count" data-selection-count aria-live="polite"></span><button class="btn" type="submit">Export selected (masked)</button></div>{% endif %}
   <table class="grid" data-columns="evidence-devices" {% if can('export.data') %}data-row-select="device_ids"{% endif %}>
     <thead>
       <tr>{% if can('export.data') %}<th data-col="select" data-col-preset="simple" data-col-label="Select"><input type="checkbox" data-select-all aria-label="Select all devices"></th>{% endif %}

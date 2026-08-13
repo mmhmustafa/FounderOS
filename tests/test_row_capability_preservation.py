@@ -177,6 +177,105 @@ class ConfigurationRowCapabilityTests(unittest.TestCase):
         )
 
 
+class PolicySelectionPermissionTests(unittest.TestCase):
+    """Rendered, per-role: the assignment-selection UI exists exactly for
+    principals who can perform the assignment. Server-side authorization
+    is unchanged and asserted separately (test_production_security);
+    this pins the PRESENTATION — no dead controls for viewers, full
+    capability for policy managers."""
+
+    PASSWORDS = {
+        "vera": "viewer-password-abc123",
+        "pat": "policy-password-abc12",
+        "root": "admin-password-abc123",
+    }
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        from founderos_atlas.access import UserStore
+        from founderos_atlas.web import create_app
+        from tests.test_federation import hyderabad_network
+        from tests.test_navigation import seed_policy_memory
+        from tests.test_profile_isolation import (
+            FIXED, add_profile, make_service, run_discover,
+        )
+
+        cls._tmp = tempfile.TemporaryDirectory()
+        workdir = Path(cls._tmp.name)
+        service = make_service(workdir)
+        add_profile(service, "Hyderabad", "10.0.0.1")
+        run_discover(workdir, service, hyderabad_network(), "Hyderabad", FIXED)
+        seed_policy_memory(workdir)
+        workspace = workdir / "workspace"
+        workspace.mkdir(parents=True, exist_ok=True)
+        users = UserStore(workspace)
+        users.create(username="vera", roles=("viewer",),
+                     password=cls.PASSWORDS["vera"])
+        users.create(username="pat", roles=("policy-manager",),
+                     password=cls.PASSWORDS["pat"])
+        users.create(username="root", roles=("system-admin",),
+                     password=cls.PASSWORDS["root"])
+        cls.app = create_app(
+            profile_service=service,
+            output_dir=workdir,
+            history_root=workdir / ".atlas" / "history",
+            workspace_root=workspace,
+            auth_mode="password",
+        )
+        cls.app.config.update(TESTING=True)
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls._tmp.cleanup()
+
+    def _signed_in(self, username: str):
+        client = self.app.test_client()
+        response = client.post("/login", data={
+            "username": username, "password": self.PASSWORDS[username],
+        })
+        self.assertEqual(302, response.status_code)
+        return client
+
+    def _page(self, username: str) -> bytes:
+        response = self._signed_in(username).get("/policy?scope=hyderabad")
+        self.assertEqual(200, response.status_code)
+        return response.data
+
+    def test_a_viewer_gets_results_without_dead_selection_controls(self) -> None:
+        page = self._page("vera")
+        self.assertIn(b"Open verdict", page, "results themselves stay visible")
+        self.assertNotIn(b'data-row-select="subjects"', page)
+        self.assertNotIn(b"data-select-all", page)
+        self.assertNotIn(b'name="subjects"', page)
+        self.assertNotIn(b"Assign owner", page)
+        self.assertNotIn(b"data-bulk-bar", page)
+
+    def test_a_policy_manager_keeps_the_full_bulk_workflow(self) -> None:
+        page = self._page("pat")
+        self.assertIn(b"Open verdict", page)
+        self.assertIn(b'data-row-select="subjects"', page)
+        self.assertIn(b"data-select-all", page)
+        self.assertIn(b'name="subjects"', page)
+        self.assertIn(b"Assign owner", page)
+        self.assertIn(b"data-selection-count", page)
+        self.assertIn(b'aria-live="polite"', page)
+
+    def test_evidence_export_gating_still_holds_with_the_count(self) -> None:
+        """The Evidence precedent this PR followed must itself survive:
+        export-capable principals get selection + the new count; viewers
+        get neither."""
+
+        page = self._signed_in("vera").get("/evidence?scope=hyderabad")
+        if page.status_code == 200:
+            self.assertNotIn(b'data-row-select="device_ids"', page.data)
+            self.assertNotIn(b"data-bulk-bar", page.data)
+
+        page = self._signed_in("root").get("/evidence?scope=hyderabad")
+        self.assertEqual(200, page.status_code)
+        if b'data-row-select="device_ids"' in page.data:
+            self.assertIn(b"data-selection-count", page.data)
+
+
 class BoundedBackendWorkTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:

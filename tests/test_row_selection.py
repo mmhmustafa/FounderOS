@@ -97,6 +97,25 @@ class ScriptContractTests(unittest.TestCase):
         self.assertIn("table[data-row-select] tbody tr { cursor: pointer; }", css)
         self.assertIn("row-selected", css)
 
+    def test_bulk_bars_hide_while_nothing_is_selected(self) -> None:
+        """PR-178.1, and explicitly NEW behaviour: the count hook only
+        ever set text — nothing controlled visibility. Surfaces opt in
+        with data-bulk-bar; the sync sets the hidden attribute, and the
+        stylesheet stops flex layouts from silently overriding it."""
+
+        self.assertIn('scope.querySelectorAll("[data-bulk-bar]")', self.js)
+        self.assertIn("bar.hidden = checked === 0;", self.js)
+        css = (STATIC / "atlas.css").read_text(encoding="utf-8")
+        self.assertIn("[data-bulk-bar][hidden] { display: none; }", css)
+
+    def test_a_bfcache_restore_resyncs_the_selection(self) -> None:
+        """Browser Back can restore checked boxes without change events,
+        leaving count, row outlines and the bulk bar stale. Every
+        table's sync re-runs on pageshow."""
+
+        self.assertIn('window.addEventListener("pageshow"', self.js)
+        self.assertIn("resyncs.push(function () { syncHeader(table, master); });", self.js)
+
 
 class TemplateAdoptionTests(unittest.TestCase):
     def test_every_selection_table_opts_in(self) -> None:
@@ -135,6 +154,40 @@ class TemplateAdoptionTests(unittest.TestCase):
             self.assertIn(
                 f'name="{field}"', body,
                 f"{name} declares data-row-select={field} but no row uses it",
+            )
+
+    def test_policy_and_evidence_render_the_selection_count(self) -> None:
+        """PR-178.1: the bulk surfaces finally report their selection.
+        Same accessible pattern as storage.html: [data-selection-count]
+        with aria-live="polite", sitting with the submit control."""
+
+        for name in ("policy.html", "evidence_index.html"):
+            body = (TEMPLATES / name).read_text(encoding="utf-8")
+            match = re.search(r"<span[^>]*data-selection-count[^>]*>", body)
+            self.assertIsNotNone(match, f"{name} renders no selection count")
+            self.assertIn('aria-live="polite"', match.group(0), name)
+
+    def test_policy_selection_ui_is_gated_on_policy_manage(self) -> None:
+        """policy_assign requires policy.manage; a viewer was rendered 50
+        dead checkboxes, a select-all and a form that would 403. Every
+        piece of the assignment-selection UI sits behind can()."""
+
+        body = (TEMPLATES / "policy.html").read_text(encoding="utf-8")
+        for fragment in (
+            'data-row-select="subjects"',
+            "data-select-all",
+            'name="subjects"',
+            "data-bulk-bar",
+        ):
+            index = body.index(fragment)
+            guard = body.rfind("{% if can('policy.manage') %}", 0, index)
+            closing = body.rfind("{% endif %}", 0, index)
+            self.assertGreater(
+                guard, -1, f"{fragment} is not behind can('policy.manage')"
+            )
+            self.assertGreater(
+                guard, closing,
+                f"{fragment} sits outside the nearest can('policy.manage') guard",
             )
 
     def test_no_selection_table_was_missed(self) -> None:
