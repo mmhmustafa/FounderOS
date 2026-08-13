@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import threading
 
 from collections import OrderedDict
@@ -1786,7 +1787,13 @@ def register_routes(app) -> None:
             row["job_status"] = latest.status if latest is not None else "—"
         return rows
 
-    def discovery_page(rows, *, result=None, selected: str | None = None):
+    # Sentinel: "resolve the panel's job as usual" versus an explicit
+    # override (a requested job, or explicitly NO job after an honest
+    # miss — a silently substituted job is worse than a dead link).
+    _RESOLVE_JOB = object()
+
+    def discovery_page(rows, *, result=None, selected: str | None = None,
+                       job=_RESOLVE_JOB):
         """The Discover page. When All Networks is active there is no
         implicit choice: the user explicitly selects the profile to run."""
 
@@ -1794,14 +1801,15 @@ def register_routes(app) -> None:
         scope_id = active_scope_id(scopes)
         if selected is None and scope_id not in (GLOBAL_SCOPE_ID, DEFAULT_SCOPE_ID):
             selected = scopes[scope_id].label  # scope label == profile name
-        job = None
-        if selected:
-            for row in rows:
-                if row["name"] == selected:
-                    latest = job_manager().latest_for_profile(row["profile_id"])
-                    if latest is not None:
-                        job = job_manager().snapshot(latest)
-                    break
+        if job is _RESOLVE_JOB:
+            job = None
+            if selected:
+                for row in rows:
+                    if row["name"] == selected:
+                        latest = job_manager().latest_for_profile(row["profile_id"])
+                        if latest is not None:
+                            job = job_manager().snapshot(latest)
+                        break
         return render_template(
             "discovery.html",
             profiles=rows,
@@ -1811,12 +1819,40 @@ def register_routes(app) -> None:
             **base_context("discovery"),
         )
 
+    # jobs.py mints ids as uuid4().hex[:12]; anything else is not a job
+    # id and is never handed to the manager.
+    _JOB_ID_PATTERN = re.compile(r"^[0-9a-f]{12}$")
+
     @app.route("/discovery")
     def discovery():
         # PR-177: the Profiles page's Run button has always passed
         # ?profile=<name>; honour it so the chosen network arrives
         # preselected instead of silently ignored.
         requested = str(request.args.get("profile") or "").strip()
+        # PR-180 Step 4: the product has always EMITTED job deep links —
+        # the discovery-failed notification's href is
+        # /discovery?job=<id> — while this route ignored the parameter,
+        # so "Open source" landed on an empty panel or on a DIFFERENT
+        # job (a later success under a "Discovery failed" notification).
+        # A well-formed id that resolves shows exactly that job; one
+        # that no longer exists says so and shows NO substitute; a
+        # malformed value is treated as absent.
+        job_param = str(request.args.get("job") or "").strip()
+        if job_param and _JOB_ID_PATTERN.fullmatch(job_param):
+            job = job_manager().get(job_param)
+            if job is not None:
+                snapshot = job_manager().snapshot(job)
+                return discovery_page(
+                    discovery_rows(),
+                    selected=str(snapshot.get("profile_name") or "") or None,
+                    job=snapshot,
+                )
+            flash(
+                "That discovery run is no longer in this Atlas's job "
+                "history.",
+                "warning",
+            )
+            return discovery_page(discovery_rows(), job=None)
         return discovery_page(discovery_rows(), selected=requested or None)
 
     # -- Discovery Wizard (PR-043.2: enterprise discovery modes) --------------
@@ -5606,9 +5642,22 @@ def register_routes(app) -> None:
             return redirect(next_url)
         except Exception:  # noqa: BLE001 - the batch must fail closed
             # The store restored its pre-image; nothing was half-done.
+            # PR-180 Step 4: an INTERNAL failure must be reportable —
+            # the discovery contract (log the detail, hand the operator
+            # a resolvable id) finally applies here too. The id is
+            # interpolated AT FLASH TIME because the flash renders on
+            # the NEXT request, which carries a different correlation
+            # id; and the copy invents no cause — the
+            # WorkspaceCorruptedError branch above is the one entitled
+            # to name one.
+            logging.getLogger("atlas").exception(
+                "bulk change action failed correlation=%s",
+                getattr(g, "correlation_id", ""),
+            )
             flash(
-                "The bulk action failed and nothing was changed — the "
-                "audit record could not be written.",
+                "The bulk action failed and nothing was changed. Quote "
+                f"{getattr(g, 'correlation_id', 'the correlation id')} "
+                "when reporting this.",
                 "error",
             )
             return redirect(next_url)

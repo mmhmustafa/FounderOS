@@ -271,6 +271,10 @@ def register_security(app, *, auth_mode: str | None = None) -> None:
             render_template(
                 template, status=status, message=message,
                 correlation_id=g.correlation_id,
+                # PR-180 §8: a rate-limit is user-correctable — "wait a
+                # minute" needs no identifier. Denials (403) keep the
+                # id: the attempt is audited under it.
+                hide_correlation=(status == 429),
             ),
             status,
         )
@@ -540,6 +544,9 @@ def register_security(app, *, auth_mode: str | None = None) -> None:
             render_template(
                 "error.html", status=400, message=str(description),
                 correlation_id=getattr(g, "correlation_id", ""),
+                # PR-180 §8: a malformed request is user-correctable —
+                # the id is noise a tester may waste a paragraph on.
+                hide_correlation=True,
             ),
             400,
         )
@@ -588,6 +595,9 @@ def register_security(app, *, auth_mode: str | None = None) -> None:
                 "error.html", status=404,
                 message=str(description),
                 correlation_id=getattr(g, "correlation_id", ""),
+                # PR-180 §8: "no page at this address" is
+                # user-correctable; no identifier.
+                hide_correlation=True,
             ),
             404,
         )

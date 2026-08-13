@@ -17,7 +17,13 @@
     your roles. The attempt has been recorded in the audit log.
   </p>
   {% endif %}
-  {% if correlation_id %}
+  {# PR-180 §8: an identifier is shown iff the failure is
+     internal-class AND Atlas can resolve it later. 400/404/429 name
+     user-correctable conditions — an id there is noise a tester may
+     waste a paragraph quoting. The flag is INVERTED (hide, not show)
+     so a missed or future call site fails toward showing a resolvable
+     id rather than hiding one. #}
+  {% if correlation_id and not hide_correlation %}
   <p class="muted">Correlation id: <code>{{ correlation_id }}</code></p>
   {% endif %}
   <p><a class="btn" href="/">Back to the overview</a></p>
