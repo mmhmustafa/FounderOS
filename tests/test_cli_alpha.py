@@ -27,7 +27,19 @@ class FounderOSAlphaCliTests(unittest.TestCase):
     def test_version_command(self) -> None:
         code, output, error = self.invoke("version")
         self.assertEqual(0, code)
-        self.assertEqual(f"{DISPLAY_VERSION}\n", output)
+        # PR-180: `founderos version` appends " (build <id>)" when —
+        # and only when — the identifier provably describes the running
+        # bytes (clean own-repo checkout, env injection, or a generated
+        # build id). This pin accepts both lawful states, so it passes
+        # identically on a dirty tree, a clean checkout, and an
+        # installed build; the trust-rule states themselves are pinned
+        # exactly in test_release_trust.py.
+        import re as _re
+
+        self.assertRegex(
+            output,
+            rf"^{_re.escape(DISPLAY_VERSION)}( \(build [^)\n]+\))?\n$",
+        )
         self.assertEqual("", error)
 
     def test_help_command(self) -> None:
