@@ -68,7 +68,12 @@ table columns. These change nothing another operator sees, and follow your accou
     <div class="form-actions"><button class="btn btn-primary" type="submit">Save settings</button></div>
   </form>
   {% endif %}
-  <p class="muted">Retention is policy metadata in this phase; Atlas does not silently delete evidence. A future scheduled retention job must require an audited preview.</p>
+  {# PR-180: the old sentence described the SHIPPED retention feature
+     as unimplemented future work while the control that runs it sat
+     one card below. One page must not tell two stories. #}
+  <p class="muted">This window only marks discovery-history records as eligible. Nothing is
+  removed until an administrator runs Administration → Data retention, which previews
+  the exact records and requires a typed confirmation. Atlas never deletes on its own.</p>
 </section>
 
 {# Administrator surface: rendering a page of buttons that all answer
@@ -90,8 +95,22 @@ table columns. These change nothing another operator sees, and follow your accou
   identity, security posture, and the state of the last discovery. They contain no
   secrets, no filesystem paths, and no network, site or profile names; workspace and
   scope appear only as non-reversible fingerprints.</p>
-  <p class="muted">Backups include workspace JSON metadata and audit records. Credential-provider secrets and raw network evidence are deliberately excluded.</p>
-  <details><summary>Restore metadata</summary><form class="form" method="post" action="/settings/restore" enctype="multipart/form-data">{{ csrf_field() }}<label>Atlas backup<input type="file" name="backup" accept=".zip" required></label><label>Reason<input name="reason" required></label><label>Confirmation<input name="confirm" required placeholder="RESTORE METADATA"></label><button class="btn btn-danger" type="submit">Restore metadata</button></form></details>
+  {# PR-180: the blurb listed exclusions and omitted the one inclusion
+     an attacker would want — worded from backup.py's own notice. #}
+  <p class="muted">Backups include workspace JSON metadata and audit records — including
+  user accounts (with password hashes only); protect the archive accordingly.
+  Credential-provider secrets and raw network evidence are deliberately excluded.</p>
+  <details><summary>Restore metadata</summary>
+    {# PR-180: every disclosure about what restore destroys used to
+       arrive AFTER the destruction, in the success flash. Categories,
+       not filenames; the facts come from backup.INCLUDED_FILES and
+       restore.py's staged commit. #}
+    <p class="muted">Restoring replaces the current workspace metadata with the archive's
+    versions — your accounts (with password hashes), the audit log, annotations,
+    incidents, profiles, policy exceptions and schedules. Atlas snapshots the current
+    files first (kept under the workspace for recovery), and a restart is required
+    afterwards.</p>
+    <form class="form" method="post" action="/settings/restore" enctype="multipart/form-data">{{ csrf_field() }}<label>Atlas backup<input type="file" name="backup" accept=".zip" required></label><label>Reason<input name="reason" required></label><label>Confirmation<input name="confirm" required placeholder="RESTORE METADATA"></label><button class="btn btn-danger" type="submit">Restore metadata</button></form></details>
 </section>
 {% endif %}
 

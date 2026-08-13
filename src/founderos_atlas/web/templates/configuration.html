@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_degraded.html" as degraded with context %}
 {% from "_entity_actions.html" import entity_menu %}
 {% import "_fmt.html" as fmt %}
 {% import "_disclosure.html" as d with context %}
@@ -19,7 +20,7 @@
   {{ unreadable_scopes | join(', ') }} could not be read — remembered
   configurations for {{ 'that scope' if unreadable_scopes | length == 1 else 'those scopes' }}
   are not shown. Nothing has been repaired or deleted.
-  <a href="/system/integrity">Check System Integrity</a>
+  {{ degraded.integrity_link() }}
 </div>
 {% endif %}
 

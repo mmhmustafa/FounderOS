@@ -11,12 +11,24 @@
     System Integrity is the one place that explains the state.
 -#}
 
+{#- PR-180: five degraded banners offered "Check System Integrity"
+    ungated while the route requires system.admin — a 403 dead end at
+    the exact moment something is wrong. ONE macro carries the gate;
+    callers must import this file `with context` so can() resolves. -#}
+{%- macro integrity_link() -%}
+{%- if can('system.admin') -%}
+<a href="/system/integrity">Check System Integrity</a>
+{%- else -%}
+Ask an administrator to open System Integrity.
+{%- endif -%}
+{%- endmacro -%}
+
 {%- macro annotations_unreadable(what="Acknowledgements, owners, notes and suppressions") -%}
 <div class="flash flash-error" role="alert" data-degraded="annotations">
   Operator annotations could not be read. {{ what }} are not shown, and
   annotation actions are disabled so nothing overwrites the stored
   file. The rows below are complete — only the annotations are missing.
-  <a href="/system/integrity">Check System Integrity</a>
+  {{ integrity_link() }}
 </div>
 {%- endmacro -%}
 
@@ -42,14 +54,14 @@
 <div class="flash flash-error" role="alert" data-degraded="audit">
   The audit log could not be read — operator history is not shown.
   Nothing has been repaired or deleted.
-  <a href="/system/integrity">Check System Integrity</a>
+  {{ integrity_link() }}
 </div>
 {%- elif skipped -%}
 <div class="flash flash-warning" role="alert" data-degraded="audit">
   {{ skipped }} audit entr{{ 'y' if skipped == 1 else 'ies' }} could not
   be read and {{ 'is' if skipped == 1 else 'are' }} not shown — every
   other entry is. Nothing has been repaired or deleted.
-  <a href="/system/integrity">Check System Integrity</a>
+  {{ integrity_link() }}
 </div>
 {%- endif -%}
 {%- endmacro -%}

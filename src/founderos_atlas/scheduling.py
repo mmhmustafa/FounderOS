@@ -1122,10 +1122,8 @@ class ScheduleWorker:
                         run_id,
                         status=RUN_FAILED,
                         now=now,
-                        error=(
-                            "The discovery job backend could not be read: "
-                            f"{type(error).__name__}"
-                        ),
+                        # PR-180: canonical sentence, no class-name suffix.
+                        error="The discovery job backend could not be read.",
                     )
                 self._active.pop(job_id, None)
                 continue
@@ -1189,7 +1187,7 @@ class ScheduleWorker:
                     run.run_id,
                     status=RUN_FAILED,
                     now=now,
-                    error=f"Discovery could not be started: {type(error).__name__}",
+                    error="Discovery could not be started.",
                 )
                 continue
             try:
@@ -1208,10 +1206,7 @@ class ScheduleWorker:
                     run.run_id,
                     status=RUN_FAILED,
                     now=now,
-                    error=(
-                        "The discovery job could not be attached safely: "
-                        f"{type(error).__name__}"
-                    ),
+                    error="The discovery job could not be attached safely.",
                 )
                 continue
             self._active.setdefault(job.job_id, set()).add(run.run_id)
@@ -1229,8 +1224,13 @@ class ScheduleWorker:
             while not self._stop.is_set():
                 try:
                     self.tick()
-                except Exception as error:  # worker remains alive and observable
-                    self.last_error = type(error).__name__
+                except Exception:  # worker remains alive and observable
+                    # PR-180: a canonical state, not a Python class name
+                    # — this string reaches the admin Settings card.
+                    self.last_error = (
+                        "the last scheduler pass failed; the worker is "
+                        "retrying"
+                    )
                 self._stop.wait(self.poll_seconds)
 
         self._thread = Thread(

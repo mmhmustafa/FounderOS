@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_degraded.html" as degraded with context %}
 {% from "_breadcrumbs.html" import breadcrumbs %}
 {% from "_device_actions.html" import device_actions %}
 {% block title %}Configuration — {{ history.hostname }}{% endblock %}
@@ -230,7 +231,7 @@
   The stored annotations could not be read — any saved baseline or
   deviation note for this device is not shown, and saving is disabled
   so nothing overwrites the stored file.
-  <a href="/system/integrity">Check System Integrity</a>
+  {{ degraded.integrity_link() }}
 </div>
 {% else %}
 {% if annotation %}<p><span class="badge">{{ annotation.status }}</span> {{ annotation.note }}</p><p class="muted">Updated {{ annotation.updated_at }} by {{ annotation.updated_by }}</p>{% endif %}<form class="form" method="post" action="/configuration/{{ history.device_id|urlencode }}/annotation">{{ csrf_field() }}<label>Status<select name="status"><option value="note">Note</option><option value="approved-baseline">Approved baseline</option><option value="approved-deviation">Approved deviation</option><option value="needs-review">Needs review</option></select></label><label>Annotation<textarea name="note" required></textarea></label><label>Reason<input name="reason" required></label><button class="btn" type="submit">Save audited annotation</button></form>

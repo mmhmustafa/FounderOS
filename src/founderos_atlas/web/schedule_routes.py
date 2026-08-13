@@ -53,10 +53,11 @@ def register_schedule_routes(app) -> None:
             runs = []
             maintenance_windows = []
             schedule_revision = 0
+            # PR-180: the canonical sentence stands alone — a Python
+            # class name is developer vocabulary on an operator page.
             catalog_error = (
                 "The schedule catalog could not be read safely. Atlas did "
-                "not overwrite it; open System Integrity for recovery steps "
-                f"({type(error).__name__})."
+                "not overwrite it; open System Integrity for recovery steps."
             )
         return render_template(
             "schedules.html",

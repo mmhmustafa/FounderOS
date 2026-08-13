@@ -1638,11 +1638,19 @@ def register_routes(app) -> None:
             provider_available = provider.available()
         except Exception:
             provider_available = False
+        # PR-180: the page a tester actually uses when saving a device
+        # password named its secure store as a Python class; Settings
+        # already had the operator wording. One mapping, both pages —
+        # and the in-memory provider finally says "non-persistent"
+        # where it matters.
+        from .system_info import provider_display_name
+
         return render_template(
             "credentials.html", credential_sets=rows,
             profiles=profile_service().list_profiles(include_archived=True),
             profiles_using=profiles_using, conflicts=conflicts,
-            provider_name=type(provider).__name__, provider_available=provider_available,
+            provider_name=provider_display_name(provider),
+            provider_available=provider_available,
             **base_context("credentials")
         )
 

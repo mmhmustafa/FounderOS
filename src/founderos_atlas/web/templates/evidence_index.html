@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_degraded.html" as degraded with context %}
 {% from "_entity_actions.html" import entity_menu %}
 {% import "_fmt.html" as fmt %}
 {% import "_disclosure.html" as d with context %}
@@ -27,7 +28,7 @@
   {{ unreadable_count }} stored evidence file(s) could not be read and
   {{ 'is' if unreadable_count == 1 else 'are' }} not shown below — every
   readable record is. Nothing has been repaired or deleted.
-  <a href="/system/integrity">Check System Integrity</a>
+  {{ degraded.integrity_link() }}
 </div>
 {% endif %}
 

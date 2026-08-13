@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% import "_fmt.html" as fmt %}
 {% import "_disclosure.html" as d with context %}
-{% import "_degraded.html" as degraded %}
+{% import "_degraded.html" as degraded with context %}
 {% block title %}Changes{% endblock %}
 {% block content %}
 {# PR-179 §30.3: while the annotation store is unreadable, every

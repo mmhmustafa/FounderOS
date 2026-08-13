@@ -127,13 +127,19 @@ def _provider_available(provider) -> bool:
         return False
 
 
-def _provider_name(provider) -> str:
+# PR-180: public — the Credentials page rendered the raw Python class
+# name while Settings named the identical object in operator words.
+# One mapping, both pages.
+def provider_display_name(provider) -> str:
     names = {
         "KeyringCredentialProvider": "OS keyring",
         "EncryptedFileCredentialProvider": "AES-256-GCM encrypted file",
         "InMemoryCredentialProvider": "in-memory (non-persistent; test/development only)",
     }
     return names.get(type(provider).__name__, type(provider).__name__)
+
+
+_provider_name = provider_display_name
 
 
 def _session_expiry(store) -> str:

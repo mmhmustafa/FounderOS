@@ -50,7 +50,14 @@
         <td>{{ item.operator }}</td>
         <td class="row-actions">
           <a class="btn btn-sm" href="/console/{{ item.device_id | urlencode }}">Open</a>
-          <button class="btn btn-sm js-disconnect" data-session="{{ item.session_id }}">Disconnect</button>
+          {# PR-180: this ends ANOTHER NAMED OPERATOR's live terminal
+             mid-command — the control names whose session dies and
+             where, instead of a bare verb styled like "Open". (The
+             separate ownership/authz question is recorded as deferred
+             in the PR-180 handover; copy does not close an authz gap.) #}
+          <button class="btn btn-sm js-disconnect" data-session="{{ item.session_id }}"
+                  title="Ends {{ item.operator }}'s live SSH session on {{ item.hostname }} immediately — their terminal dies mid-command"
+                  aria-label="Disconnect {{ item.operator }}'s live SSH session on {{ item.hostname }}">Disconnect</button>
         </td>
       </tr>
       {% endfor %}
