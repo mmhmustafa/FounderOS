@@ -5289,6 +5289,19 @@ def register_routes(app) -> None:
         next_url = safe_redirect_target(
             request.form.get("next"), scoped_url("/changes")
         )
+        # A previous batch's review marker must not ride along into the
+        # next redirect — the banner would link the WRONG batch.
+        from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
+        split = urlsplit(next_url)
+        cleaned = [(key, value)
+                   for key, value in parse_qsl(split.query,
+                                               keep_blank_values=True)
+                   if key != "batch_done"]
+        next_url = urlunsplit((
+            split.scheme, split.netloc, split.path,
+            urlencode(cleaned), split.fragment,
+        ))
         action = str(request.form.get("bulk_action") or "").strip()
         if action not in BULK_ACTIONS:
             flash("Unknown bulk action.", "error")
