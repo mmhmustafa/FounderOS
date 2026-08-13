@@ -14,9 +14,14 @@
 -#}
 {% macro entity_menu(actions, name, label='Actions') %}
 {% if actions %}
+{#- PR-178.1: native disclosure semantics, deliberately. The summary
+    carries NO role override and NO aria-haspopup: <details>/<summary>
+    already announce expanded/collapsed, and the list is ordinary links —
+    not an ARIA menu widget, so no menu/menuitem roles and no arrow-key
+    navigation. Half of one pattern plus half of the other is worse than
+    all of either. -#}
 <details class="action-menu">
-  <summary class="btn btn-sm" role="button"
-           aria-haspopup="menu" aria-label="{{ label }} for {{ name }}">
+  <summary class="btn btn-sm" aria-label="{{ label }} for {{ name }}">
     {{ label }} <svg class="icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m6 9 6 6 6-6"/></svg>
   </summary>
   <ul class="action-menu-list">

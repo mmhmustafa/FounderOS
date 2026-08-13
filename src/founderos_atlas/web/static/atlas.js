@@ -96,6 +96,70 @@
       if (menu) menu.removeAttribute("open");
     }
   });
+  // -- PR-178.1: keep an OPEN menu visible -----------------------------------
+  // The list is position:absolute inside .table-scroll, and an absolutely
+  // positioned box cannot escape an overflow ancestor on its containing-
+  // block chain — a last-row menu rendered 570px of unreachable items.
+  // Settled by hit test, not by reasoning about the cascade: only
+  // position:fixed paints outside the scroller (and no transform/filter/
+  // contain ancestor exists to re-anchor it). So on open the list switches
+  // to fixed at viewport-clamped coordinates; any scroll CLOSES the menu
+  // rather than letting it drift; close resets every inline style. Without
+  // JavaScript none of this runs and the menu keeps today's baseline —
+  // it opens, and may be clipped. Never load-bearing.
+  var resetMenuList = function (list) {
+    list.style.position = "";
+    list.style.top = "";
+    list.style.left = "";
+    list.style.right = "";
+    list.style.width = "";
+  };
+  var positionMenuList = function (menu) {
+    var summary = menu.querySelector("summary");
+    var list = menu.querySelector(".action-menu-list");
+    if (!summary || !list) { return; }
+    // Measure while still absolute: clipping hides pixels, not geometry.
+    var size = list.getBoundingClientRect();
+    var anchor = summary.getBoundingClientRect();
+    var margin = 8, gap = 4;
+    var viewWidth = document.documentElement.clientWidth;
+    var viewHeight = document.documentElement.clientHeight;
+    // Right-aligned to its trigger, flipped left/clamped at the edges.
+    var left = anchor.right - size.width;
+    if (left + size.width > viewWidth - margin) { left = viewWidth - margin - size.width; }
+    if (left < margin) { left = margin; }
+    // Below the trigger; flipped above it when the bottom edge is near.
+    var top = anchor.bottom + gap;
+    if (top + size.height > viewHeight - margin) { top = anchor.top - gap - size.height; }
+    if (top < margin) {
+      // Taller than fits either way: pin it inside the viewport. It may
+      // then cover its trigger — visible beats reachable-by-nobody.
+      top = Math.max(margin, viewHeight - margin - size.height);
+    }
+    list.style.width = size.width + "px";
+    list.style.position = "fixed";
+    list.style.right = "auto";
+    list.style.left = left + "px";
+    list.style.top = top + "px";
+  };
+  // toggle does not bubble; capture reaches it from the document anyway.
+  document.addEventListener("toggle", function (event) {
+    var menu = event.target;
+    if (!menu.matches || !menu.matches("details.action-menu")) { return; }
+    var list = menu.querySelector(".action-menu-list");
+    if (!list) { return; }
+    if (menu.open) { positionMenuList(menu); } else { resetMenuList(list); }
+  }, true);
+  // A fixed-position list no longer follows its trigger, so the first
+  // scroll — page or table container — closes it instead of tracking it.
+  document.addEventListener("scroll", function (event) {
+    var open = document.querySelector("details.action-menu[open]");
+    if (!open) { return; }
+    var list = open.querySelector(".action-menu-list");
+    if (list && event.target && event.target.nodeType === 1 &&
+        list.contains(event.target)) { return; }
+    closeMenus();
+  }, true);
   // Escape handling lives in the SINGLE document-level keydown handler in
   // the search section below (one handler, one lifecycle).
 

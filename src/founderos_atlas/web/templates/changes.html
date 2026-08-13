@@ -187,7 +187,9 @@
           <td>{{ change.owner or '—' }}{% if change.acknowledged %}<div class="ok">acknowledged</div>{% endif %}</td>
           <td class="row-actions">
             <details class="action-menu">
-              <summary class="btn btn-sm" role="button" aria-haspopup="menu"
+              {# PR-178.1: native disclosure semantics — same rule as
+                 _entity_actions.html. No role override, no aria-haspopup. #}
+              <summary class="btn btn-sm"
                        aria-label="Actions for this change on {{ change.device or 'the network' }}">Act
                 <svg class="icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m6 9 6 6 6-6"/></svg>
               </summary>
