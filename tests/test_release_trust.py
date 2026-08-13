@@ -131,6 +131,126 @@ class SystemInformationTests(unittest.TestCase):
             self.assertNotIn("local single-user", page)
 
 
+class BuildIdentityTrustTests(unittest.TestCase):
+    """PR-180 §3: an identifier is printed only when it provably
+    describes the running bytes. A dirty tree describes bytes the
+    commit does not; a foreign parent repository describes another
+    project entirely. Both are worse than absence — a missing value
+    announces its own absence, a wrong value announces confidence —
+    so both resolve to None and share one causeless sentence.
+    """
+
+    def setUp(self) -> None:
+        from founderos_atlas.release import build_commit
+
+        build_commit.cache_clear()
+        self.addCleanup(build_commit.cache_clear)
+
+    def test_a_dirty_tree_suppresses_the_identifier(self) -> None:
+        import founderos_atlas.release as release
+
+        with patch.object(release, "_run_git",
+                          return_value="abc1234-dirty"):
+            self.assertIsNone(release.build_commit())
+
+    def test_a_foreign_parent_repository_suppresses_the_identifier(self) -> None:
+        import founderos_atlas.release as release
+
+        def fake_git(repo, *args):
+            if args[0] == "describe":
+                return "b503ca1"
+            # ls-files --error-unmatch: this file is NOT tracked by
+            # the repository found two levels up — someone else's.
+            return None
+
+        with patch.object(release, "_run_git", side_effect=fake_git):
+            self.assertIsNone(release.build_commit())
+
+    def test_a_clean_own_repository_yields_the_described_identifier(self) -> None:
+        import founderos_atlas.release as release
+
+        def fake_git(repo, *args):
+            if args[0] == "describe":
+                return "bd50303"
+            return "src/founderos_atlas/release.py"
+
+        with patch.object(release, "_run_git", side_effect=fake_git):
+            self.assertEqual("bd50303", release.build_commit())
+
+    def test_absent_git_never_raises_and_yields_none(self) -> None:
+        import founderos_atlas.release as release
+
+        with patch.object(release.subprocess, "run",
+                          side_effect=OSError("git is not installed")):
+            self.assertIsNone(release.build_commit())
+
+    def test_env_injection_wins_and_needs_no_git(self) -> None:
+        import founderos_atlas.release as release
+
+        environment = {"ATLAS_BUILD_ID": "beta.7+20260814"}
+        with patch.dict(os.environ, environment, clear=False), \
+                patch.object(release.subprocess, "run",
+                             side_effect=AssertionError("git must not run")):
+            self.assertEqual("beta.7+20260814", release.build_commit())
+
+    def test_generated_module_seam_is_honoured(self) -> None:
+        import sys as _sys
+        import types
+
+        import founderos_atlas.release as release
+
+        stub = types.ModuleType("founderos_atlas._build_id")
+        stub.BUILD_ID = "pkg-2026.08.14"
+        with patch.dict(_sys.modules,
+                        {"founderos_atlas._build_id": stub}), \
+                patch.dict(os.environ, {"ATLAS_BUILD_ID": ""}), \
+                patch.object(release.subprocess, "run",
+                             side_effect=AssertionError("git must not run")):
+            self.assertEqual("pkg-2026.08.14", release.build_commit())
+
+    def test_cli_version_carries_the_identifier_and_help_does_not(self) -> None:
+        from contextlib import redirect_stdout
+        from io import StringIO
+
+        import founderos_atlas.release as release
+        from founderos_runtime.cli import main
+
+        with patch.object(release, "build_commit",
+                          return_value="bd50303"):
+            version_out, help_out = StringIO(), StringIO()
+            with redirect_stdout(version_out):
+                self.assertEqual(0, main(["version"]))
+            with redirect_stdout(help_out):
+                self.assertEqual(0, main(["help"]))
+        self.assertIn(f"{DISPLAY_VERSION} (build bd50303)",
+                      version_out.getvalue())
+        self.assertNotIn("bd50303", help_out.getvalue())
+
+    def test_cli_version_stays_clean_when_nothing_is_provable(self) -> None:
+        from contextlib import redirect_stdout
+        from io import StringIO
+
+        import founderos_atlas.release as release
+        from founderos_runtime.cli import main
+
+        with patch.object(release, "build_commit", return_value=None):
+            output = StringIO()
+            with redirect_stdout(output):
+                self.assertEqual(0, main(["--version"]))
+        self.assertIn(DISPLAY_VERSION, output.getvalue())
+        self.assertNotIn("(build", output.getvalue())
+
+    def test_both_templates_share_the_causeless_fallback(self) -> None:
+        templates = (Path(__file__).resolve().parents[1]
+                     / "src" / "founderos_atlas" / "web" / "templates")
+        for name in ("settings.html", "system_update.html"):
+            body = (templates / name).read_text(encoding="utf-8")
+            self.assertIn("not available in this build", body, name)
+            self.assertNotIn("not a git checkout", body, name)
+            self.assertNotIn("not observable in this installed build",
+                             body, name)
+
+
 class BuildIdentityCacheTests(unittest.TestCase):
     """PR-180 Step 0: the build identifier is frozen at first call.
 

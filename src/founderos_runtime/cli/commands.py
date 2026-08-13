@@ -145,6 +145,17 @@ Clock = Callable[[], datetime]
 
 
 def version_command() -> tuple[int, str]:
+    # PR-180: the one surface where "paste your version" is a single
+    # command. The identifier obeys the release-module trust rule —
+    # dirty trees and foreign repositories resolve to None — so the
+    # suffix appears only when it provably describes the running bytes.
+    # render_help() deliberately does NOT gain this suffix: help is not
+    # a support artifact.
+    from founderos_atlas.release import build_commit
+
+    identifier = build_commit()
+    if identifier:
+        return 0, f"{VERSION_TEXT} (build {identifier})"
     return 0, VERSION_TEXT
 
 

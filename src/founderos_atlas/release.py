@@ -13,6 +13,7 @@ and any layer can import it without side effects.
 
 from __future__ import annotations
 
+import os
 import subprocess
 from functools import lru_cache
 from pathlib import Path
@@ -36,21 +37,81 @@ DISPLAY_VERSION = f"{PRODUCT_NAME} {VERSION}"
 # subprocess paid twice per /settings render.)
 @lru_cache(maxsize=1)
 def build_commit() -> str | None:
-    """The short git commit if running from a checkout, else None.
+    """The build identifier, or None when none can be PROVEN.
 
-    Best-effort and side-effect-free: installed (non-checkout)
-    deployments simply have no observable commit, and this never raises
-    into the caller.
+    PR-180 §3 trust rule: Atlas prints a build identifier only when it
+    can prove the identifier describes the running bytes. A hash from a
+    dirty tree describes code the process may never have run; a hash
+    from a repository that merely CONTAINS an installed Atlas describes
+    someone else's project entirely. Both are worse than no identifier
+    — a missing value announces its own absence, a wrong value
+    announces confidence — so both resolve to None, and every surface
+    renders the one causeless sentence "not available in this build".
+
+    Resolution order (the packaging seam, not packaging itself):
+    1. ``ATLAS_BUILD_ID`` — a packaged build injects its identity via
+       the environment;
+    2. ``founderos_atlas._build_id`` — a build step may generate this
+       module with a ``BUILD_ID`` constant;
+    3. a git derivation trusted only when the tree is clean
+       (``describe --dirty`` has no suffix) AND the repository is this
+       package's own (this very file is tracked by it);
+    4. None.
+
+    Best-effort and side-effect-free: this never raises into the
+    caller.
     """
+
+    injected = os.environ.get("ATLAS_BUILD_ID", "").strip()
+    if injected:
+        return injected
+    generated = _generated_build_id()
+    if generated:
+        return generated
+    return _git_identifier()
+
+
+def _generated_build_id() -> str | None:
+    """The BUILD_ID a packaging step generated into the package."""
+
+    try:
+        from founderos_atlas import _build_id  # type: ignore[attr-defined]
+    except ImportError:
+        return None
+    value = str(getattr(_build_id, "BUILD_ID", "") or "").strip()
+    return value or None
+
+
+def _git_identifier() -> str | None:
+    """A git identifier, only when it provably describes this code."""
 
     repo = Path(__file__).resolve().parents[2]
     if not (repo / ".git").exists():
         return None
+    described = _run_git(repo, "describe", "--always", "--dirty")
+    if described is None or described.endswith("-dirty"):
+        # A dirty tree: the commit does not describe the running bytes.
+        return None
+    try:
+        mine = Path(__file__).resolve().relative_to(repo).as_posix()
+    except ValueError:  # pragma: no cover - resolve() moved us outside
+        return None
+    if _run_git(repo, "ls-files", "--error-unmatch", mine) is None:
+        # The repository two levels up is NOT this package's — an Atlas
+        # installed inside another project's checkout must not report
+        # that project's HEAD as its own build.
+        return None
+    return described
+
+
+def _run_git(repo: Path, *args: str) -> str | None:
     try:
         result = subprocess.run(
-            ["git", "-C", str(repo), "rev-parse", "--short", "HEAD"],
+            ["git", "-C", str(repo), *args],
             capture_output=True, text=True, timeout=5,
         )
-        return result.stdout.strip() or None if result.returncode == 0 else None
     except (OSError, subprocess.SubprocessError):
         return None
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip() or None

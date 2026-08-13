@@ -13,7 +13,10 @@
   <h2>Installed</h2>
   <ul class="kv">
     <li><span>Application version</span><span>{{ info.application_version }}</span></li>
-    <li><span>Build commit</span><span>{{ info.build_commit or 'not a git checkout' }}</span></li>
+    {# PR-180: one causeless fallback everywhere. The old wording here
+       asserted the most specific of several states that all resolve to
+       None (installed build, dirty tree, foreign repo, absent git). #}
+    <li><span>Build identifier</span><span>{{ info.build_commit or 'not available in this build' }}</span></li>
     <li><span>Workspace schema</span><span>
       v{{ info.schema_version }} of v{{ info.schema_target }}
       {% if info.schema_current %}<span class="badge hop-badge">current</span>

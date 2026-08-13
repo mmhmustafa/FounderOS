@@ -113,7 +113,12 @@ table columns. These change nothing another operator sees, and follow your accou
   <h2>System information</h2>
   <ul class="kv">
     <li><span>Atlas version</span><span>{{ system_info.display_version }}</span></li>
-    <li><span>Build commit</span><span><code>{{ system_info.build_commit or 'not observable in this installed build' }}</code></span></li>
+    {# PR-180 §3: the identifier renders only when it provably
+       describes the running bytes; every other state — installed
+       build, dirty tree, foreign repository, absent git — shares ONE
+       causeless sentence, because asserting a cause would be wrong in
+       at least one of them. #}
+    <li><span>Build identifier</span><span><code>{{ system_info.build_commit or 'not available in this build' }}</code></span></li>
     <li><span>Workspace schema</span><span>v{{ system_info.workspace_schema_version }} of v{{ system_info.workspace_schema_target }}</span></li>
     <li><span>Workspace root</span><span><code>{{ workspace_root }}</code></span></li>
     <li><span>Output directory</span><span><code>{{ output_dir }}</code></span></li>
