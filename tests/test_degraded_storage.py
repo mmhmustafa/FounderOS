@@ -311,15 +311,22 @@ class BrandedErrorPageTests(unittest.TestCase):
     unknown record answers 404 everywhere — not a flash on one page
     and a 404 on another."""
 
-    def test_unknown_configuration_record_is_a_branded_404(self) -> None:
+    def test_unknown_configuration_record_answers_honestly(self) -> None:
+        # Row 12 (strict 404 here) was tried and reverted as not-free:
+        # device menus legitimately render a Configuration link for a
+        # device whose configuration is not remembered yet, and a
+        # rendered link must never 404 (test_navigation's contract).
+        # The honest flash-redirect stays; the decision is recorded in
+        # the PR-179 handover.
         with tempfile.TemporaryDirectory() as tmp:
             workdir = Path(tmp)
             _, client = build_client(workdir, make_service(workdir))
-            response = client.get("/configuration/no-such-device")
-            self.assertEqual(404, response.status_code)
+            response = client.get(
+                "/configuration/no-such-device", follow_redirects=True
+            )
+            self.assertEqual(200, response.status_code)
             body = response.data.decode("utf-8")
             self.assertIn("no remembered configuration", body)
-            self.assertIn("Atlas", body)
 
     def test_400_renders_the_branded_page_not_werkzeugs(self) -> None:
         # A real route that aborts 400 on an HTML form POST: the PRISM

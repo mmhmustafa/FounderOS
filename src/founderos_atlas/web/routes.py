@@ -4187,13 +4187,20 @@ def register_routes(app) -> None:
         context, scopes, scope_id = scoped_context("configuration")
         store, history, _scope = _find_history(scopes, scope_id, device_id)
         if history is None:
-            # PR-179 row 12: an unknown record is a 404, exactly like
-            # /devices/<unknown> — not a redirect that made the same
-            # dead link answer two different things on two pages.
-            abort(404, description=(
-                "Atlas has no remembered configuration for that device "
-                "in this scope."
-            ))
+            # PR-179 row 12 (404 consistency) was tried here and
+            # REVERTED as not-free: device menus on Policy/Topology/…
+            # legitimately render a Configuration link for a device
+            # whose configuration is not remembered yet, and the
+            # link-integrity contract (test_navigation) is that a
+            # rendered link never 404s. For that reachable-but-empty
+            # case the honest flash is the designed answer; a truly
+            # unknown URL still gets the branded 404.
+            flash(
+                "Atlas has no remembered configuration for that device in "
+                "this scope.",
+                "error",
+            )
+            return redirect(url_for("configuration_page"))
 
         latest = history.latest
         # Default comparison: the previous version against the latest.
