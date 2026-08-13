@@ -173,9 +173,18 @@ class TemplateAdoptionTests(unittest.TestCase):
     def test_policy_selection_ui_is_gated_on_policy_manage(self) -> None:
         """policy_assign requires policy.manage; a viewer was rendered 50
         dead checkboxes, a select-all and a form that would 403. Every
-        piece of the assignment-selection UI sits behind can()."""
+        piece of the assignment-selection UI sits behind the writable
+        gate — PR-179 widened it to `assignments_writable`, which is
+        can('policy.manage') AND a readable annotation store (a write
+        could overwrite the file Atlas could not parse)."""
 
         body = (TEMPLATES / "policy.html").read_text(encoding="utf-8")
+        self.assertIn(
+            "{% set assignments_writable = can('policy.manage') "
+            "and not annotations_degraded %}",
+            body,
+            "the writable gate lost its permission or integrity half",
+        )
         for fragment in (
             'data-row-select="subjects"',
             "data-select-all",
@@ -183,14 +192,14 @@ class TemplateAdoptionTests(unittest.TestCase):
             "data-bulk-bar",
         ):
             index = body.index(fragment)
-            guard = body.rfind("{% if can('policy.manage') %}", 0, index)
+            guard = body.rfind("{% if assignments_writable %}", 0, index)
             closing = body.rfind("{% endif %}", 0, index)
             self.assertGreater(
-                guard, -1, f"{fragment} is not behind can('policy.manage')"
+                guard, -1, f"{fragment} is not behind assignments_writable"
             )
             self.assertGreater(
                 guard, closing,
-                f"{fragment} sits outside the nearest can('policy.manage') guard",
+                f"{fragment} sits outside the nearest assignments_writable guard",
             )
 
     def test_no_selection_table_was_missed(self) -> None:

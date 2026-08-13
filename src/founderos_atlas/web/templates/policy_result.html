@@ -236,6 +236,17 @@
 
 <section class="card">
   <h2>Ownership</h2>
+  {# PR-179 §30.3: while the annotation store is unreadable, the
+     current owner is UNREADABLE (never "unassigned") and assigning is
+     withheld so a write cannot overwrite the stored file. #}
+  {% if annotations_degraded %}
+  <div class="flash flash-error" role="alert" data-degraded="annotations">
+    The stored annotations could not be read — this result's owner is
+    not shown, and assignment is disabled so nothing overwrites the
+    stored file.
+    <a href="/system/integrity">Check System Integrity</a>
+  </div>
+  {% else %}
   <form method="post" action="/policy/assign" class="actions">{{ csrf_field() }}
     <input type="hidden" name="expected_revision" value="{{ exception_revision }}">
     <input type="hidden" name="subjects" value="{{ e.subject }}">
@@ -244,5 +255,6 @@
     <button class="btn btn-sm" type="submit" aria-label="Assign an owner to this result">Assign</button>
     <span class="muted">Assignment is audited with before/after.</span>
   </form>
+  {% endif %}
 </section>
 {% endblock %}

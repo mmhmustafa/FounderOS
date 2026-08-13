@@ -4,11 +4,18 @@
 {% import "_answer.html" as answer %}
 {% import "_fmt.html" as fmt %}
 {% import "_disclosure.html" as d with context %}
+{% import "_degraded.html" as degraded %}
 {% block title %}Enterprise Policy{% endblock %}
 {% block content %}
+{# PR-179 §30.3: verdicts stay authoritative while the annotation
+   store is unreadable; ownership is withheld as UNREADABLE (never
+   "unassigned") and assignment controls are disabled so nothing
+   overwrites the stored file. #}
+{% set assignments_writable = can('policy.manage') and not annotations_degraded %}
 <div class="page-head">
   <h1>Enterprise Policy</h1>
 </div>
+{% if annotations_degraded %}{{ degraded.annotations_unreadable("Result owners and assignments") }}{% endif %}
 
 {# ══ ANSWER (PR-178 Band 1) ═══════════════════════════════════════════
    Policy judges, so it leads with its verdict. Tone comes from the
@@ -262,10 +269,10 @@ the other. This page judges configuration.</p>
   <form method="post" action="/policy/assign">{{ csrf_field() }}
     <input type="hidden" name="next" value="{{ request.full_path }}">
     <div class="table-scroll table-scroll-wide" role="region" aria-label="Policy results" tabindex="0">
-      <table class="grid" data-columns="policy-results" {% if can('policy.manage') %}data-row-select="subjects"{% endif %}>
+      <table class="grid" data-columns="policy-results" {% if assignments_writable %}data-row-select="subjects"{% endif %}>
         <thead>
           <tr>
-            {% if can('policy.manage') %}<th data-col="select" data-col-preset="simple" data-col-label="Select"><input type="checkbox" data-select-all aria-label="Select all results"></th>{% endif %}
+            {% if assignments_writable %}<th data-col="select" data-col-preset="simple" data-col-label="Select"><input type="checkbox" data-select-all aria-label="Select all results"></th>{% endif %}
             <th data-col="status" data-col-preset="simple">Status</th><th data-col="policy" data-col-preset="simple">Policy</th><th data-col="device" data-col-preset="simple">Device</th><th data-col="site">Site</th>
             <th data-col="severity" data-col-preset="simple">Severity</th><th data-col="evidence">Evidence</th><th data-col="owner">Owner</th>
             <th data-col="actions" data-col-preset="simple" data-col-label="Actions"><span class="visually-hidden">Actions</span></th>
@@ -275,7 +282,7 @@ the other. This page judges configuration.</p>
           {% for e in page.items %}
           <tr id="result-{{ e.policy.policy_id }}-{{ e.hostname }}"
               {% if filters.assignment and e.assignment_correlation == filters.assignment %}class="row-assigned"{% endif %}>
-            {% if can('policy.manage') %}<td><input type="checkbox" name="subjects" value="{{ e.subject }}"
+            {% if assignments_writable %}<td><input type="checkbox" name="subjects" value="{{ e.subject }}"
                        aria-label="Select {{ e.policy.name }} on {{ e.hostname }}"></td>{% endif %}
             <td><span class="badge hop-badge status-chip-{{ e.effective_status }}">{{ status_labels[e.effective_status] }}</span>
               {% if filters.assignment and e.assignment_correlation == filters.assignment %}
@@ -298,7 +305,7 @@ the other. This page judges configuration.</p>
         </tbody>
       </table>
     </div>
-    {% if can('policy.manage') %}
+    {% if assignments_writable %}
     {# PR-178.1: the bulk surface finally reports its selection ("N of M
        selected", aria-live, same pattern as storage.html), and JS hides
        the whole bar while nothing is selected — data-bulk-bar is NEW

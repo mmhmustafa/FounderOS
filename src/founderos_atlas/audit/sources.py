@@ -70,19 +70,13 @@ def _identity_resolution_events(workspace_root: Path) -> list[AuditEvent]:
     return unified
 
 
-def unified_audit_events(
-    workspace_root: str | Path,
+def _filtered(
+    events: list[AuditEvent],
     *,
-    category: str | None = None,
-    actor: str | None = None,
-    subject_contains: str | None = None,
+    category: str | None,
+    actor: str | None,
+    subject_contains: str | None,
 ) -> tuple[AuditEvent, ...]:
-    """Every audit event Atlas holds, newest first, optionally filtered."""
-
-    root = Path(workspace_root)
-    events: list[AuditEvent] = list(AuditLog(root).events())
-    events.extend(_site_override_events(root))
-    events.extend(_identity_resolution_events(root))
     if category:
         events = [e for e in events if e.category == category]
     if actor:
@@ -97,6 +91,49 @@ def unified_audit_events(
         ]
     events.sort(key=lambda e: e.occurred_at, reverse=True)
     return tuple(events)
+
+
+def unified_audit_events(
+    workspace_root: str | Path,
+    *,
+    category: str | None = None,
+    actor: str | None = None,
+    subject_contains: str | None = None,
+) -> tuple[AuditEvent, ...]:
+    """Every audit event Atlas holds, newest first, optionally filtered."""
+
+    root = Path(workspace_root)
+    events: list[AuditEvent] = list(AuditLog(root).events())
+    events.extend(_site_override_events(root))
+    events.extend(_identity_resolution_events(root))
+    return _filtered(
+        events, category=category, actor=actor,
+        subject_contains=subject_contains,
+    )
+
+
+def unified_audit_events_tolerant(
+    workspace_root: str | Path,
+    *,
+    category: str | None = None,
+    actor: str | None = None,
+    subject_contains: str | None = None,
+) -> tuple[tuple[AuditEvent, ...], int | None]:
+    """``(events, skipped)`` for RENDERING (PR-179 row 8): a corrupt
+    line in the unified log is skipped and counted instead of taking
+    down the whole chronology. ``skipped`` is ``None`` when the log
+    file itself could not be read. The strict ``unified_audit_events``
+    stays for callers that must not tolerate a partial record."""
+
+    root = Path(workspace_root)
+    log_events, skipped = AuditLog(root).events_tolerant()
+    events: list[AuditEvent] = list(log_events)
+    events.extend(_site_override_events(root))
+    events.extend(_identity_resolution_events(root))
+    return _filtered(
+        events, category=category, actor=actor,
+        subject_contains=subject_contains,
+    ), skipped
 
 
 def export_rows(events) -> list[dict[str, Any]]:

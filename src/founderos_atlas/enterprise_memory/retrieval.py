@@ -52,6 +52,14 @@ class EnterpriseMemory:
     def __init__(self, store: EnterpriseMemoryStore) -> None:
         self._store = store
 
+    @property
+    def unreadable_count(self) -> int:
+        """Stored files this scope's handle failed to parse (PR-179
+        row 18) — the count a page must state instead of rendering a
+        quietly narrowed table as complete."""
+
+        return self._store.unreadable_count
+
     # -- discovery sessions ------------------------------------------------
 
     def list_discovery_sessions(self) -> tuple[DiscoverySession, ...]:

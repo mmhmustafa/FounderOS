@@ -65,6 +65,29 @@ class AnnotationStore:
     def all(self, kind: str) -> dict[str, dict[str, Any]]:
         return dict(self._load().get(kind) or {})
 
+    def read_all(
+        self, *kinds: str
+    ) -> tuple[dict[str, dict[str, dict[str, Any]]], bool]:
+        """``({kind: {subject: fields}}, degraded)`` — the render-path
+        reader (PR-179 §30.3).
+
+        A corrupt store yields EMPTY maps and ``degraded=True`` instead
+        of raising into the request: the page keeps its primary data and
+        says loudly that annotations are missing, rather than 500ing.
+        Callers must treat ``degraded=True`` as "unknown", never as
+        "empty" — controls that would WRITE annotations must be
+        withheld, because every write path re-reads the file first and
+        will refuse rather than overwrite what it could not parse. One
+        load serves every requested kind (the old per-kind ``all()``
+        calls re-read the file each time).
+        """
+
+        try:
+            data = self._load()
+        except WorkspaceCorruptedError:
+            return {kind: {} for kind in kinds}, True
+        return {kind: dict(data.get(kind) or {}) for kind in kinds}, False
+
     def set(
         self,
         *,

@@ -10,6 +10,19 @@
   <h1>Configuration Memory — {{ active_scope_label }}</h1>
 </div>
 
+{# PR-179 row 18: an unreadable index and an empty store are different
+   states — this page must never present "could not be read" as
+   "nothing is remembered". #}
+{% if unreadable_scopes %}
+<div class="flash flash-error" role="alert" data-degraded="configuration">
+  The configuration memory index for
+  {{ unreadable_scopes | join(', ') }} could not be read — remembered
+  configurations for {{ 'that scope' if unreadable_scopes | length == 1 else 'those scopes' }}
+  are not shown. Nothing has been repaired or deleted.
+  <a href="/system/integrity">Check System Integrity</a>
+</div>
+{% endif %}
+
 {# PR-178: SEARCH is this page's job. Basis first, two operational
    facts (not six storage tiles — those live on the system-details
    surface), then the search instrument. The EMPTY-STORE state and the

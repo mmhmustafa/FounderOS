@@ -16,7 +16,11 @@ field names as a second line of defence.
 from .models import AuditEvent, redact_payload
 from .log import AuditLog
 from .annotations import AnnotationStore
-from .sources import export_rows, unified_audit_events
+from .sources import (
+    export_rows,
+    unified_audit_events,
+    unified_audit_events_tolerant,
+)
 
 __all__ = [
     "AnnotationStore",
@@ -25,4 +29,5 @@ __all__ = [
     "export_rows",
     "redact_payload",
     "unified_audit_events",
+    "unified_audit_events_tolerant",
 ]

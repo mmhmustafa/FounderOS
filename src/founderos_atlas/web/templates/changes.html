@@ -1,14 +1,21 @@
 {% extends "base.html" %}
 {% import "_fmt.html" as fmt %}
 {% import "_disclosure.html" as d with context %}
+{% import "_degraded.html" as degraded %}
 {% block title %}Changes{% endblock %}
 {% block content %}
+{# PR-179 §30.3: while the annotation store is unreadable, every
+   annotation control is withheld — a write could overwrite the file
+   Atlas could not parse — and the acks/owners/notes/suppressions
+   shown as absent are UNREADABLE, not "nobody acted". #}
+{% set annotations_writable = can('changes.annotate') and not annotations_degraded %}
 <div class="page-head">
   <h1>Change Intelligence — {{ active_scope_label }}</h1>
   {% if summary.total %}
   <a class="btn btn-primary btn-sm" href="{{ scoped_url('/changes', active_scope_id, severity='high') }}#changes">Review high severity</a>
   {% endif %}
 </div>
+{% if annotations_degraded %}{{ degraded.annotations_unreadable() }}{% endif %}
 {# PR-178: Changes does not judge — it leads with what was compared and
    what differs. #}
 {{ fmt.basis('Differences between consecutive collections', scope=active_scope_label) }}
@@ -176,10 +183,10 @@
      table is never wrapped in a form, so the per-row POST forms inside
      it stay valid. #}
   <div class="table-scroll table-scroll-wide" role="region" aria-label="Detected changes" tabindex="0">
-    <table class="grid" data-columns="changes" {% if can('changes.annotate') %}data-row-select="subjects"{% endif %}>
+    <table class="grid" data-columns="changes" {% if annotations_writable %}data-row-select="subjects"{% endif %}>
       <thead>
         <tr>
-          {% if can('changes.annotate') %}<th data-col="select" data-col-preset="simple" data-col-label="Select"><input type="checkbox" data-select-all aria-label="Select all {{ page.items | length }} changes on this page"></th>{% endif %}
+          {% if annotations_writable %}<th data-col="select" data-col-preset="simple" data-col-label="Select"><input type="checkbox" data-select-all aria-label="Select all {{ page.items | length }} changes on this page"></th>{% endif %}
           <th data-col="severity" data-col-preset="simple">Severity</th><th data-col="kind">Kind</th><th data-col="device" data-col-preset="simple">Device</th><th data-col="what" data-col-preset="simple">What changed</th>
           <th data-col="delta">Before → After</th><th data-col="owner">Owner</th>
           <th data-col="actions" data-col-preset="simple" data-col-label="Actions"><span class="visually-hidden">Actions</span></th>
@@ -188,7 +195,7 @@
       <tbody>
         {% for change in page.items %}
         <tr id="{{ change.subject }}" {% if change.suppressed %}class="row-archived"{% endif %}>
-          {% if can('changes.annotate') %}<td data-col="select"><input type="checkbox" form="changes-bulk" name="subjects" value="{{ change.subject }}"
+          {% if annotations_writable %}<td data-col="select"><input type="checkbox" form="changes-bulk" name="subjects" value="{{ change.subject }}"
                      aria-label="Select the {{ change.severity }} {{ change.kind }} change on {{ change.device or 'the network' }}"></td>{% endif %}
           <td><span class="badge hop-badge hop-badge-{{ 'failed' if change.severity in ('high', 'critical') else ('warning' if change.severity == 'medium' else 'unknown') }}">{{ change.severity }}</span></td>
           <td>{{ change.kind }}<div class="muted">{{ change.category }}</div></td>
@@ -209,7 +216,7 @@
           </td>
           <td>{{ change.owner or '—' }}{% if change.acknowledged %}<div class="ok">acknowledged</div>{% endif %}</td>
           <td class="row-actions">
-            {% if can('changes.annotate') %}
+            {% if annotations_writable %}
             <details class="action-menu">
               {# PR-178.1: native disclosure semantics — same rule as
                  _entity_actions.html. No role override, no aria-haspopup. #}
@@ -278,7 +285,7 @@
     </table>
   </div>
 
-  {% if can('changes.annotate') %}
+  {% if annotations_writable %}
   {# PR-178.2: the bulk form — a SIBLING of the table, never a wrapper
      (nesting would swallow the per-row forms). Row checkboxes join it
      via form=. One endpoint, five submit buttons; Assign… and Suppress…

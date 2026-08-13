@@ -1,0 +1,38 @@
+{#- Degraded-storage banners (PR-179 §30.3 / row 8).
+
+    A page that keeps its primary data while one of its stores is
+    unreadable must say so LOUDLY and SPECIFICALLY — silence here is
+    how an operator mistakes "unreadable" for "empty": a vanished
+    suppression makes hidden rows reappear and look like new problems.
+
+    These banners never offer a repair and the pages that show them
+    withhold every control that would WRITE to the unreadable store:
+    a write could overwrite the very bytes Atlas could not parse.
+    System Integrity is the one place that explains the state.
+-#}
+
+{%- macro annotations_unreadable(what="Acknowledgements, owners, notes and suppressions") -%}
+<div class="flash flash-error" role="alert" data-degraded="annotations">
+  Operator annotations could not be read. {{ what }} are not shown, and
+  annotation actions are disabled so nothing overwrites the stored
+  file. The rows below are complete — only the annotations are missing.
+  <a href="/system/integrity">Check System Integrity</a>
+</div>
+{%- endmacro -%}
+
+{%- macro audit_lines_skipped(skipped) -%}
+{%- if skipped is none -%}
+<div class="flash flash-error" role="alert" data-degraded="audit">
+  The audit log could not be read — operator history is not shown.
+  Nothing has been repaired or deleted.
+  <a href="/system/integrity">Check System Integrity</a>
+</div>
+{%- elif skipped -%}
+<div class="flash flash-warning" role="alert" data-degraded="audit">
+  {{ skipped }} audit entr{{ 'y' if skipped == 1 else 'ies' }} could not
+  be read and {{ 'is' if skipped == 1 else 'are' }} not shown — every
+  other entry is. Nothing has been repaired or deleted.
+  <a href="/system/integrity">Check System Integrity</a>
+</div>
+{%- endif -%}
+{%- endmacro -%}

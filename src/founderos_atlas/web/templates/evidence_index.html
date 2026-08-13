@@ -20,6 +20,17 @@
   </span>
 </div>
 
+{# PR-179 row 18: a corrupt stored file must be a stated omission,
+   never a quietly narrower table presented as complete. #}
+{% if unreadable_count %}
+<div class="flash flash-warning" role="alert" data-degraded="evidence">
+  {{ unreadable_count }} stored evidence file(s) could not be read and
+  {{ 'is' if unreadable_count == 1 else 'are' }} not shown below — every
+  readable record is. Nothing has been repaired or deleted.
+  <a href="/system/integrity">Check System Integrity</a>
+</div>
+{% endif %}
+
 {% if not sessions %}
 {# Part 10: an empty page must say what to do, not just that it is empty. #}
 <section class="card">

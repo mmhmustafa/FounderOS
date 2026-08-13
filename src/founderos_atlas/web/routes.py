@@ -2442,6 +2442,10 @@ def register_routes(app) -> None:
             device_count=len(devices), page=page, total_pages=total_pages,
             filtered=any(filters.values()),
             record_count=len(records), visible_count=len(visible),
+            # PR-179 row 18: stored files this scope's handle failed to
+            # parse while serving reads — a corrupt record must be a
+            # stated omission, never a quietly narrower table.
+            unreadable_count=store.unreadable_count,
             # PR-178: the session's freshness, from the UNFILTERED
             # records — the summary's contract is the whole discovery,
             # and a basis line that narrowed with the filter would lie.
@@ -3103,7 +3107,16 @@ def register_routes(app) -> None:
         return result
 
     def _policy_rows(scopes, scope_id, scope_label):
-        """Annotated, investigation-ready rows plus their supporting state."""
+        """``(rows, report_dict, exception_repo, annotations_degraded)``
+        — annotated, investigation-ready rows plus their supporting
+        state.
+
+        PR-179 §30.3: a corrupt annotations file no longer 500s the
+        Policy pages. The engine's verdicts render as usual, ownership
+        comes back empty, and the flag tells the caller to say so and
+        to withhold assignment controls — no owner shown must read as
+        "unreadable", never as "unassigned".
+        """
 
         from founderos_atlas.audit import AnnotationStore
         from founderos_atlas.policy.exceptions import PolicyExceptionRepository
@@ -3118,7 +3131,10 @@ def register_routes(app) -> None:
         now = now_iso()
         exception_repo = PolicyExceptionRepository(workspace)
         active_subjects = exception_repo.active_subjects(now)
-        assignments = AnnotationStore(workspace).all("policy-assignment")
+        annotations, annotations_degraded = AnnotationStore(
+            workspace
+        ).read_all("policy-assignment")
+        assignments = annotations["policy-assignment"]
         owners = {
             subject: str(fields.get("owner") or "")
             for subject, fields in assignments.items()
@@ -3145,7 +3161,7 @@ def register_routes(app) -> None:
             for row in rows
         ]
         rows = prioritize(rows)
-        return rows, report_dict, exception_repo
+        return rows, report_dict, exception_repo, annotations_degraded
 
     def _resolve_identity_filters(filters):
         """"Assigned to me" resolves from the authenticated principal on
@@ -3192,7 +3208,7 @@ def register_routes(app) -> None:
         from .timefmt import format_timestamp
 
         context, scopes, scope_id = scoped_context("policy")
-        rows, report_dict, _repo = _policy_rows(
+        rows, report_dict, _repo, annotations_degraded = _policy_rows(
             scopes, scope_id, context["active_scope_label"]
         )
         filters = ResultFilter.from_args(request.args)
@@ -3213,10 +3229,17 @@ def register_routes(app) -> None:
                 if str(row.get("assignment_correlation") or "")
                 == filters.assignment
             ]
+            # PR-179: one tolerant read — the per-row .get() calls
+            # re-loaded the file for every row and raised on a corrupt
+            # store, 500ing the page for a URL-carried batch marker.
+            batch_annotations, _deg = AnnotationStore(
+                cfg("ATLAS_WORKSPACE_ROOT")
+            ).read_all("policy-assignment")
+            batch_assignments = batch_annotations["policy-assignment"]
             original = max(
                 (
-                    int((AnnotationStore(cfg("ATLAS_WORKSPACE_ROOT")).get(
-                        "policy-assignment", str(row.get("subject") or "")
+                    int((batch_assignments.get(
+                        str(row.get("subject") or "")
                     ) or {}).get("batch_size") or 0)
                     for row in in_batch
                 ),
@@ -3309,6 +3332,7 @@ def register_routes(app) -> None:
             report=report_dict,
             filters=filters,
             filter_args=filters.to_args(),
+            annotations_degraded=annotations_degraded,
             assignment_context=assignment_context,
             current_username=current_actor(),
             page=page,
@@ -3350,7 +3374,7 @@ def register_routes(app) -> None:
         the list page deliberately no longer renders."""
 
         context, scopes, scope_id = scoped_context("policy")
-        rows, _report, exception_repo = _policy_rows(
+        rows, _report, exception_repo, annotations_degraded = _policy_rows(
             scopes, scope_id, context["active_scope_label"]
         )
         wanted = hostname.casefold()
@@ -3386,6 +3410,7 @@ def register_routes(app) -> None:
         return render_template(
             "policy_result.html",
             e=evaluation,
+            annotations_degraded=annotations_degraded,
             exception=exception.to_dict() if exception else None,
             exception_active=(
                 exception.is_active(now_iso()) if exception else False
@@ -3412,7 +3437,7 @@ def register_routes(app) -> None:
         )
 
         context, scopes, scope_id = scoped_context("policy")
-        rows, _report, _repo = _policy_rows(
+        rows, _report, _repo, _degraded = _policy_rows(
             scopes, scope_id, context["active_scope_label"]
         )
         filters = _resolve_identity_filters(ResultFilter.from_args(request.args))
@@ -3458,7 +3483,7 @@ def register_routes(app) -> None:
         from founderos_atlas.policy.governance import calibration_preview
 
         context, scopes, scope_id = scoped_context("policy")
-        rows, _report, _repo = _policy_rows(
+        rows, _report, _repo, _degraded = _policy_rows(
             scopes, scope_id, context["active_scope_label"]
         )
         policy_id = str(request.form.get("policy_id") or "").strip()
@@ -3681,8 +3706,25 @@ def register_routes(app) -> None:
             GLOBAL_SCOPE_LABEL if scope_id == GLOBAL_SCOPE_ID
             else scopes[scope_id].label
         )
-        rows, _report, _repo = _policy_rows(scopes, scope_id, scope_label)
+        rows, _report, _repo, annotations_degraded = _policy_rows(
+            scopes, scope_id, scope_label
+        )
         by_subject = {str(row.get("subject") or ""): row for row in rows}
+
+        # PR-179 §30.3: while the annotation store is unreadable, a
+        # write could overwrite the very file Atlas could not parse.
+        # Refuse before touching anything; the file's bytes stay as
+        # they are and System Integrity explains the state.
+        if annotations_degraded:
+            flash(
+                "Atlas cannot save assignments right now: the stored "
+                "annotations could not be read. Nothing was changed — "
+                "check System Integrity.",
+                "error",
+            )
+            return redirect(safe_redirect_target(
+                request.form.get("next"), scoped_url("/policy")
+            ))
 
         store = AnnotationStore(cfg("ATLAS_WORKSPACE_ROOT"))
         correlation = f"bulk:{uuid4().hex}"
@@ -3818,7 +3860,7 @@ def register_routes(app) -> None:
 
         # PR-053: the unified chronology — every event source, one filter
         # model, server-side pagination, exact-object links, provenance.
-        from founderos_atlas.audit import unified_audit_events
+        from founderos_atlas.audit import unified_audit_events_tolerant
         from founderos_atlas.compass import PlanRepository
         from founderos_atlas.policy.trend import PolicyTrend
 
@@ -3856,14 +3898,24 @@ def register_routes(app) -> None:
             for scope in report_scopes
             for point in trend_store.series(scope.scope_id)
         ]
+        # PR-179 §30.3 / row 8: a corrupt annotations file or a bad
+        # audit line degrades this page loudly instead of 500ing it —
+        # the chronology renders everything still readable and the
+        # banner states exactly what is not.
+        change_rows, _kinds, annotations_degraded = _change_rows_for(
+            scopes, scope_id
+        )
+        audit_events, audit_skipped = unified_audit_events_tolerant(
+            cfg("ATLAS_WORKSPACE_ROOT")
+        )
         events = chronicle_events(
             config_events=config_events,
             discovery_rows=discovery_rows,
-            change_rows=_change_rows_for(scopes, scope_id)[0],
+            change_rows=change_rows,
             incident_reports=incident_reports,
             prediction_reports=prediction_reports,
             compass_plans=plans,
-            audit_events=unified_audit_events(cfg("ATLAS_WORKSPACE_ROOT")),
+            audit_events=audit_events,
             policy_trend=trend_points,
         )
         filters = ChronicleFilter.from_args(request.args)
@@ -3905,6 +3957,8 @@ def register_routes(app) -> None:
             show_system=show_system,
             system_hidden=system_hidden,
             newest_event_at=(events[0]["occurred_at"] if events else None),
+            annotations_degraded=annotations_degraded,
+            audit_skipped=audit_skipped,
             **context,
         )
 
@@ -3915,7 +3969,7 @@ def register_routes(app) -> None:
         through adapters (their undo semantics stay in their own files),
         everything newer straight from the unified log."""
 
-        from founderos_atlas.audit import unified_audit_events
+        from founderos_atlas.audit import unified_audit_events_tolerant
         from founderos_atlas.listing import int_arg, paginate
 
         context, _scopes, _scope_id = scoped_context("audit")
@@ -3926,7 +3980,10 @@ def register_routes(app) -> None:
         # events. The Timeline shows the batch as ONE operator row; this
         # filter is where the complete per-subject truth lives.
         correlation = request.args.get("correlation", "").strip()
-        events = unified_audit_events(
+        # PR-179 row 8: one bad line used to lose the WHOLE record. The
+        # page now shows every event still readable and states how many
+        # are not — it never silently narrows the audit trail.
+        events, audit_skipped = unified_audit_events_tolerant(
             cfg("ATLAS_WORKSPACE_ROOT"),
             category=category or None,
             actor=actor or None,
@@ -3942,7 +3999,9 @@ def register_routes(app) -> None:
             int_arg(request.args, "page", 1, 100000),
             int_arg(request.args, "per_page", 50, 200),
         )
-        all_events = unified_audit_events(cfg("ATLAS_WORKSPACE_ROOT"))
+        all_events, _all_skipped = unified_audit_events_tolerant(
+            cfg("ATLAS_WORKSPACE_ROOT")
+        )
         return render_template(
             "audit.html",
             page=page,
@@ -3950,6 +4009,7 @@ def register_routes(app) -> None:
             actor=actor,
             subject=subject,
             correlation=correlation,
+            audit_skipped=audit_skipped,
             option_categories=sorted({e.category for e in all_events}),
             option_actors=sorted({e.actor for e in all_events}),
             **context,
@@ -3960,9 +4020,14 @@ def register_routes(app) -> None:
         import csv
         import io
 
-        from founderos_atlas.audit import export_rows, unified_audit_events
+        from founderos_atlas.audit import (
+            export_rows,
+            unified_audit_events_tolerant,
+        )
 
-        events = unified_audit_events(
+        # PR-179: the export carries every line still readable; the
+        # /audit page itself states how many are not.
+        events, _skipped = unified_audit_events_tolerant(
             cfg("ATLAS_WORKSPACE_ROOT"),
             category=request.args.get("category", "").strip() or None,
             actor=request.args.get("actor", "").strip() or None,
@@ -3998,12 +4063,18 @@ def register_routes(app) -> None:
         context, scopes, scope_id = scoped_context("configuration")
         devices: list[dict] = []
         events: list = []
+        # PR-179 row 18: a corrupt index answers "no devices" from the
+        # tolerant loader — which this page must present as UNREADABLE,
+        # never as "nothing is remembered".
+        unreadable_scopes: list[str] = []
         # PR-178: the six storage tiles (and the full statistics() pass
         # that fed them) moved to /configuration/system-details — the
         # page keeps the two facts an operator asks of a store, both
         # free comprehensions over the histories already materialised.
         for scope in config_memory_scopes(scopes, scope_id):
             store = config_memory_store(scope)
+            if store.index_unreadable():
+                unreadable_scopes.append(scope.label)
             histories = store.histories()
             for history in histories:
                 latest = history.latest
@@ -4059,6 +4130,7 @@ def register_routes(app) -> None:
             platforms=all_platforms, platform_filter=platform_filter,
             timeline=days,
             change_count=len(events),
+            unreadable_scopes=unreadable_scopes,
             store_device_count=store_device_count,
             version_total=version_total,
             changed_devices=changed_devices,
@@ -4115,12 +4187,13 @@ def register_routes(app) -> None:
         context, scopes, scope_id = scoped_context("configuration")
         store, history, _scope = _find_history(scopes, scope_id, device_id)
         if history is None:
-            flash(
-                "Atlas has no remembered configuration for that device in "
-                "this scope.",
-                "error",
-            )
-            return redirect(url_for("configuration_page"))
+            # PR-179 row 12: an unknown record is a 404, exactly like
+            # /devices/<unknown> — not a redirect that made the same
+            # dead link answer two different things on two pages.
+            abort(404, description=(
+                "Atlas has no remembered configuration for that device "
+                "in this scope."
+            ))
 
         latest = history.latest
         # Default comparison: the previous version against the latest.
@@ -4183,6 +4256,15 @@ def register_routes(app) -> None:
             row["occurred_at"] = format_timestamp(event.occurred_at, tz=tz)
             return row
 
+        # PR-179 §30.3: a corrupt annotations file must not 500 the
+        # configuration detail — the note comes back absent, marked
+        # unreadable, and the annotation form is withheld.
+        from founderos_atlas.audit import AnnotationStore as _AnnotationStore
+
+        config_annotations, config_annotations_degraded = _AnnotationStore(
+            cfg("ATLAS_WORKSPACE_ROOT")
+        ).read_all("configuration-annotation")
+
         return render_template(
             "configuration_device.html",
             history=history.to_dict(),
@@ -4194,9 +4276,10 @@ def register_routes(app) -> None:
             facts=facts,
             viewer=viewer,
             config_query=(request.args.get("config_q") or "").strip(),
-            annotation=__import__("founderos_atlas.audit", fromlist=["AnnotationStore"]).AnnotationStore(
-                cfg("ATLAS_WORKSPACE_ROOT")
-            ).get("configuration-annotation", device_id),
+            annotation=config_annotations["configuration-annotation"].get(
+                device_id
+            ),
+            annotations_degraded=config_annotations_degraded,
             timeline=[
                 _timeline_row(event)
                 for event in device_timeline(history, config_text=store.config_text)
@@ -4232,16 +4315,30 @@ def register_routes(app) -> None:
     @app.route("/configuration/<path:device_id>/annotation", methods=["POST"])
     def configuration_annotation(device_id: str):
         from founderos_atlas.audit import AnnotationStore
+        from founderos_atlas.workspace.exceptions import (
+            WorkspaceCorruptedError,
+        )
         note = request.form.get("note", "").strip()
         if not note:
             flash("An annotation note is required.", "error")
         else:
-            AnnotationStore(cfg("ATLAS_WORKSPACE_ROOT")).set(
-                kind="configuration-annotation", subject=device_id,
-                fields={"note": note, "status": request.form.get("status", "note")},
-                reason=request.form.get("reason") or "Configuration annotation",
-            )
-            flash("Configuration annotation saved and audited.", "success")
+            try:
+                AnnotationStore(cfg("ATLAS_WORKSPACE_ROOT")).set(
+                    kind="configuration-annotation", subject=device_id,
+                    fields={"note": note, "status": request.form.get("status", "note")},
+                    reason=request.form.get("reason") or "Configuration annotation",
+                )
+            except WorkspaceCorruptedError:
+                # PR-179 §30.3: never write over a file Atlas could not
+                # read — the store already refused before touching it.
+                flash(
+                    "Atlas cannot save this annotation right now: the "
+                    "stored annotations could not be read. Nothing was "
+                    "changed — check System Integrity.",
+                    "error",
+                )
+            else:
+                flash("Configuration annotation saved and audited.", "success")
         return redirect(url_for("configuration_device", device_id=device_id))
 
     @app.route("/configuration/<path:device_id>/export/<int:version>/redacted")
@@ -4953,7 +5050,16 @@ def register_routes(app) -> None:
     )
 
     def _change_rows_for(scopes, scope_id):
-        """Unified, annotated change rows across the visible scope(s)."""
+        """``(rows, kinds_measured, annotations_degraded)`` — unified,
+        annotated change rows across the visible scope(s).
+
+        PR-179 §30.3: a corrupt annotations file no longer 500s the
+        page. The rows render from the change reports as usual, the
+        annotation overlays (acks, owners, notes, suppressions) come
+        back EMPTY, and the third element tells the caller to say so
+        loudly and to withhold every annotation control — absent
+        overlays must read as "unreadable", never as "nobody acted".
+        """
 
         from founderos_atlas.audit import AnnotationStore
         from founderos_atlas.change.explorer import annotate_rows, unified_rows
@@ -4998,13 +5104,17 @@ def register_routes(app) -> None:
                 ),
             ))
         store = AnnotationStore(cfg("ATLAS_WORKSPACE_ROOT"))
+        annotations, degraded = store.read_all(
+            "change-ack", "change-assignment", "change-note",
+            "change-suppression",
+        )
         return annotate_rows(
             rows,
-            acks=store.all("change-ack"),
-            assignments=store.all("change-assignment"),
-            notes=store.all("change-note"),
-            suppressions=store.all("change-suppression"),
-        ), measured
+            acks=annotations["change-ack"],
+            assignments=annotations["change-assignment"],
+            notes=annotations["change-note"],
+            suppressions=annotations["change-suppression"],
+        ), measured, degraded
 
     @app.route("/changes")
     def changes():
@@ -5022,7 +5132,9 @@ def register_routes(app) -> None:
         from founderos_atlas.listing import paginate
 
         context, scopes, scope_id = scoped_context("changes")
-        rows, kinds_measured = _change_rows_for(scopes, scope_id)
+        rows, kinds_measured, annotations_degraded = _change_rows_for(
+            scopes, scope_id
+        )
         filters = ChangeFilter.from_args(request.args)
         # PR-178.2: a batch view resolves its subjects SERVER-SIDE from
         # the audit log — durable for both set- and clear-type actions,
@@ -5031,9 +5143,14 @@ def register_routes(app) -> None:
         if filters.batch:
             from founderos_atlas.audit.log import AuditLog
 
+            # PR-179: tolerant read — a corrupt audit line must not 500
+            # the Changes page just because a batch marker rode the URL.
+            batch_events, _skipped = AuditLog(
+                cfg("ATLAS_WORKSPACE_ROOT")
+            ).events_tolerant()
             batch_subjects = {
                 event.subject
-                for event in AuditLog(cfg("ATLAS_WORKSPACE_ROOT")).events()
+                for event in batch_events
                 if event.correlation_id == filters.batch
                 and event.category.startswith("change-")
             }
@@ -5063,6 +5180,7 @@ def register_routes(app) -> None:
             page=page,
             summary=summarize(rows),
             kinds_measured=kinds_measured,
+            annotations_degraded=annotations_degraded,
             hidden_suppressed=hidden_suppressed,
             option_kinds=sorted({str(r.get("kind")) for r in rows}),
             option_categories=sorted({str(r.get("category")) for r in rows}),
@@ -5123,12 +5241,21 @@ def register_routes(app) -> None:
                     ),
                     "scope_id": scope.scope_id,
                 })
+        # PR-179: the comparison view renders no stored annotations, but
+        # its row menus can WRITE them — withhold those too while the
+        # store is unreadable (the write route also refuses on its own).
+        from founderos_atlas.audit import AnnotationStore
+
+        _health, annotations_degraded = AnnotationStore(
+            cfg("ATLAS_WORKSPACE_ROOT")
+        ).read_all()
         return render_template(
             "changes.html",
             filters=filters,
             filter_args=filters.to_args(),
             page=page,
             summary=summarize(rows),
+            annotations_degraded=annotations_degraded,
             # An on-demand comparison diffs two TOPOLOGY snapshots only:
             # configuration and operational changes were never measured
             # for it, and the tiles must say so (PR-178).
@@ -5157,7 +5284,7 @@ def register_routes(app) -> None:
         )
 
         context, scopes, scope_id = scoped_context("changes")
-        rows, _kinds = _change_rows_for(scopes, scope_id)
+        rows, _kinds, _degraded = _change_rows_for(scopes, scope_id)
         filters = ChangeFilter.from_args(request.args)
         filtered, _hidden = filter_rows(rows, filters)
         exported = export_rows(filtered)
@@ -5229,7 +5356,7 @@ def register_routes(app) -> None:
 
         scopes = known_scopes()
         scope_id = _scope_from_next(next_value)
-        rows, _measured = _change_rows_for(scopes, scope_id)
+        rows, _measured, _degraded = _change_rows_for(scopes, scope_id)
         valid = {
             str(row.get("subject") or ""):
                 str(row.get("subject_legacy") or "") or None
@@ -5285,6 +5412,9 @@ def register_routes(app) -> None:
             execute,
             summary_sentence,
         )
+        from founderos_atlas.workspace.exceptions import (
+            WorkspaceCorruptedError,
+        )
 
         next_url = safe_redirect_target(
             request.form.get("next"), scoped_url("/changes")
@@ -5328,6 +5458,18 @@ def register_routes(app) -> None:
         confirmed = str(request.form.get("confirmed") or "") == "1"
         store = AnnotationStore(cfg("ATLAS_WORKSPACE_ROOT"))
         kind = BULK_ACTIONS[action]["kind"]
+        # PR-179 §30.3: while the annotation store is unreadable, a
+        # bulk write could overwrite the very file Atlas could not
+        # parse. Refuse up front — the file's bytes stay untouched.
+        annotations_by_kind, store_degraded = store.read_all(kind)
+        if store_degraded:
+            flash(
+                "Atlas cannot apply bulk actions right now: the stored "
+                "annotations could not be read. Nothing was changed — "
+                "check System Integrity.",
+                "error",
+            )
+            return redirect(next_url)
         valid = _valid_change_subjects(request.form.get("next"))
 
         def render_confirm(error: str | None = None):
@@ -5343,7 +5485,7 @@ def register_routes(app) -> None:
 
             preview = classify(
                 action=action, subjects=subjects, valid_subjects=valid,
-                annotations=store.all(kind),
+                annotations=annotations_by_kind[kind],
                 owner="\x00", reason="\x00",
             )
             context, _scopes, _scope_id = scoped_context("changes")
@@ -5370,7 +5512,7 @@ def register_routes(app) -> None:
 
         plan = classify(
             action=action, subjects=subjects, valid_subjects=valid,
-            annotations=store.all(kind),
+            annotations=annotations_by_kind[kind],
             owner=owner or None, reason=reason or None,
         )
         if plan.counts().get("updated", 0) == 0:
@@ -5390,6 +5532,17 @@ def register_routes(app) -> None:
                 actor_roles=principal.roles if principal else (),
                 occurred_at=now_iso(),
             )
+        except WorkspaceCorruptedError:
+            # The store re-reads before writing and refused: the file
+            # became unreadable between our check and the write. Its
+            # bytes are untouched.
+            flash(
+                "Atlas cannot apply bulk actions right now: the stored "
+                "annotations could not be read. Nothing was changed — "
+                "check System Integrity.",
+                "error",
+            )
+            return redirect(next_url)
         except Exception:  # noqa: BLE001 - the batch must fail closed
             # The store restored its pre-image; nothing was half-done.
             flash(
@@ -5453,6 +5606,9 @@ def register_routes(app) -> None:
         from founderos_atlas.change.identity import (
             legacy_subject_of,
             scope_of,
+        )
+        from founderos_atlas.workspace.exceptions import (
+            WorkspaceCorruptedError,
         )
 
         action = str(request.form.get("action") or "").strip()
@@ -5615,6 +5771,16 @@ def register_routes(app) -> None:
                 flash("Suppression removed (audited).", "success")
         except ValueError as error:
             flash(str(error), "error")
+        except WorkspaceCorruptedError:
+            # PR-179 §30.3: the store refuses to write what it could
+            # not read — the annotations file's bytes stay untouched
+            # and this route reports the refusal instead of 500ing.
+            flash(
+                "Atlas cannot save this annotation right now: the "
+                "stored annotations could not be read. Nothing was "
+                "changed — check System Integrity.",
+                "error",
+            )
         return redirect(safe_redirect_target(
             request.form.get("next"), scoped_url("/changes")
         ))

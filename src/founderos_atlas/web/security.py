@@ -511,8 +511,73 @@ def register_security(app, *, auth_mode: str | None = None) -> None:
 
     # -- error handling (no stack traces, no internal detail) --------------
 
+    # PR-179: 400 and 403 raised OUTSIDE the before_request gate (an
+    # abort() in a route, a malformed request body) fell through to
+    # werkzeug's unbranded default page — the only two unbranded error
+    # surfaces left (measured in the failure-paths review, row 18).
+    # Atlas-authored descriptions pass through; werkzeug's canned 400
+    # copy ("The browser (or proxy) sent a request…") is replaced with
+    # Atlas's own sentence.
+
+    @app.errorhandler(400)
+    def _bad_request(error):
+        description = getattr(error, "description", "") or ""
+        if not description or description.startswith(
+            "The browser (or proxy)"
+        ):
+            description = (
+                "Atlas could not understand this request. Nothing was "
+                "changed."
+            )
+        if _wants_json(request):
+            return Response(
+                json.dumps({"error": str(description),
+                            "correlation_id": getattr(g, "correlation_id",
+                                                      "")}),
+                status=400, mimetype="application/json",
+            )
+        return (
+            render_template(
+                "error.html", status=400, message=str(description),
+                correlation_id=getattr(g, "correlation_id", ""),
+            ),
+            400,
+        )
+
+    @app.errorhandler(403)
+    def _forbidden(error):
+        description = getattr(error, "description", "") or ""
+        if not description or description.startswith(
+            "You don't have the permission"
+        ):
+            description = (
+                "Your roles do not allow this action. Nothing was changed."
+            )
+        _audit_denial("forbidden", str(description))
+        if _wants_json(request):
+            return Response(
+                json.dumps({"error": str(description),
+                            "correlation_id": getattr(g, "correlation_id",
+                                                      "")}),
+                status=403, mimetype="application/json",
+            )
+        return (
+            render_template(
+                "error.html", status=403, message=str(description),
+                correlation_id=getattr(g, "correlation_id", ""),
+            ),
+            403,
+        )
+
     @app.errorhandler(404)
-    def _not_found(_error):
+    def _not_found(error):
+        # PR-179: an Atlas-authored abort(404, description=...) names
+        # the missing record; werkzeug's canned copy never surfaces.
+        description = getattr(error, "description", "") or ""
+        if not description or description.startswith(
+            "The requested URL was not found"
+        ):
+            description = "Atlas has no page or record at this address."
         if _wants_json(request):
             return Response(
                 json.dumps({"error": "not found"}), status=404,
@@ -521,7 +586,7 @@ def register_security(app, *, auth_mode: str | None = None) -> None:
         return (
             render_template(
                 "error.html", status=404,
-                message="Atlas has no page or record at this address.",
+                message=str(description),
                 correlation_id=getattr(g, "correlation_id", ""),
             ),
             404,

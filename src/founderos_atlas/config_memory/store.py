@@ -93,6 +93,24 @@ class ConfigMemoryStore:
             return {"schema_version": CONFIG_MEMORY_SCHEMA_VERSION, "devices": {}}
         return data
 
+    def index_unreadable(self) -> bool:
+        """True when an index FILE EXISTS but cannot be parsed.
+
+        ``_load`` answers an empty index for a corrupt file so no read
+        path crashes — but a page must not present that as "nothing is
+        remembered" (PR-179 row 18): an unreadable store and an empty
+        store are different states, and only this probe tells them
+        apart. A missing file is genuinely empty, not unreadable.
+        """
+
+        if not self.index_path.is_file():
+            return False
+        try:
+            data = json.loads(self.index_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return True
+        return not isinstance(data.get("devices"), dict)
+
     def _write(self, data: dict[str, Any]) -> None:
         self._root.mkdir(parents=True, exist_ok=True)
         self.index_path.write_text(

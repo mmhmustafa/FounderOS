@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% import "_fmt.html" as fmt %}
+{% import "_degraded.html" as degraded %}
 {% block title %}Audit{% endblock %}
 {% block content %}
 <h1>Audit</h1>
@@ -11,6 +12,9 @@
   acknowledgements, notes, and suppressions write here directly. Secret
   values never enter an audit event — references only.
 </p>
+{# PR-179 row 8: one bad line no longer loses the whole record — the
+   page shows every entry still readable and says how many are not. #}
+{{ degraded.audit_lines_skipped(audit_skipped) }}
 
 <section class="card" id="audit-events">
   <details class="disclosure disclosure-filters" {{ 'open' if display_level != 'simple' else '' }}>

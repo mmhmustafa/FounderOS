@@ -93,6 +93,12 @@ class EnterpriseMemoryStore:
             "snapshots_index_builds": 0,
             "snapshots_index_ms": 0.0,
         }
+        # PR-179 row 18: files that EXIST but could not be parsed. A
+        # corrupt store file silently became its default and rendered
+        # as a complete-looking (but quietly narrowed) page; the set
+        # lets the page count and state the omission instead. A file
+        # recovers its membership the moment it parses again.
+        self._unreadable: set[str] = set()
 
     # -- small JSON helpers -----------------------------------------------
 
@@ -111,16 +117,34 @@ class EnterpriseMemoryStore:
             cached = self._json_cache.get(key)
             if cached is not None and cached[0] == signature:
                 return cached[1]
+        parse_failed = False
         if signature is None:
+            # Absent is a STATE (nothing stored), never an omission.
             value: Any = default
         else:
             try:
                 value = json.loads(path.read_text(encoding="utf-8"))
             except (json.JSONDecodeError, OSError):
                 value = default
+                parse_failed = True
         with self._lock:
             self._json_cache[key] = (signature, value)
+            if parse_failed:
+                self._unreadable.add(key)
+            else:
+                self._unreadable.discard(key)
         return value
+
+    @property
+    def unreadable_count(self) -> int:
+        """How many stored files this handle failed to parse (PR-179).
+
+        Counts only files touched by reads so far — exactly the files
+        whose absence from the current page would otherwise be silent.
+        """
+
+        with self._lock:
+            return len(self._unreadable)
 
     def _write(self, path: Path, data: Any) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)

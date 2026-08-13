@@ -108,3 +108,50 @@ class AuditLog:
                 f"The audit log {self.path} could not be read: {error}"
             ) from error
         return tuple(found)
+
+    def events_tolerant(
+        self,
+        *,
+        category: str | None = None,
+        subject: str | None = None,
+        actor: str | None = None,
+        scope_id: str | None = None,
+    ) -> tuple[tuple[AuditEvent, ...], int | None]:
+        """``(events, skipped)`` — the render-path reader (PR-179 row 8).
+
+        One unparseable line used to raise and lose the WHOLE
+        chronology; here it is skipped and COUNTED, so the page shows
+        every event that is still readable and states how many are not.
+        ``skipped`` is ``None`` when the file itself could not be read
+        at all — a different, fully-degraded statement. Nothing here
+        repairs, rewrites or deletes: the file's bytes are untouched.
+        `events()` keeps its strict contract for non-render callers.
+        """
+
+        if not self.path.is_file():
+            return (), 0
+        try:
+            lines = self.path.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            return (), None
+        found: list[AuditEvent] = []
+        skipped = 0
+        for line in lines:
+            if not line.strip():
+                continue
+            try:
+                event = AuditEvent.from_dict(json.loads(line))
+            except (ValueError, TypeError, KeyError,
+                    json.JSONDecodeError):
+                skipped += 1
+                continue
+            if category is not None and event.category != category:
+                continue
+            if subject is not None and event.subject != subject:
+                continue
+            if actor is not None and event.actor != actor:
+                continue
+            if scope_id is not None and event.scope_id != scope_id:
+                continue
+            found.append(event)
+        return tuple(found), skipped
