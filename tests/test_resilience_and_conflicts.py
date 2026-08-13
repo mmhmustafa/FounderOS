@@ -227,7 +227,9 @@ class MigrationTests(unittest.TestCase):
             self.assertTrue(
                 (root / "migration-backups" / "v1" / "profiles.json").is_file()
             )
-            self.assertEqual(2, applied_version(root))
+            # PR-178.2A added v3 (scoped change-annotation identity);
+            # with no change annotations it applies as a no-op.
+            self.assertEqual(3, applied_version(root))
             # v2: a workspace with prior activity gains the pre-disclosure
             # expert-default marker.
             self.assertTrue((root / "ux-defaults.json").is_file())

@@ -283,10 +283,13 @@ def create_app(
     )
 
     # Ordered, backed-up schema migrations run before anything reads the
-    # workspace; each is idempotent and audited.
+    # workspace; each is idempotent and audited. The output directory is
+    # passed so migrations that classify against current discovery
+    # artifacts (v3: scoped change-annotation identity) can attribute —
+    # and they stay safe without it (PR-178.2A).
     from founderos_atlas.workspace.migrations import migrate_workspace
 
-    migrate_workspace(resolved_workspace)
+    migrate_workspace(resolved_workspace, output_dir=resolved_output)
 
     # Operational providers are injected explicitly.  The registry and
     # collection service never resolve credentials themselves; each adapter
