@@ -100,7 +100,20 @@
     <li><span>Current device</span><span id="job-device">{{ (job.current_device or '—') if job else '—' }}</span></li>
     <li><span>Elapsed</span><span id="job-elapsed">{% if job and job.elapsed_seconds is not none %}{{ job.elapsed_seconds }}s{% else %}—{% endif %}</span></li>
   </ul>
-  <div class="flash flash-error" id="job-failure" {% if not (job and job.error) %}hidden{% endif %}>{{ job.error if job else '' }}</div>
+  {# PR-179: the failure carries its class. Severity follows the
+     approved contract — user-correctable/environmental warn, an
+     unsupported platform is neutral (Atlas knowing it cannot collect
+     something is not an Atlas fault), internal defects are errors —
+     and a user-correctable failure carries its one next action.
+     role="status": an asynchronous outcome, not an interruption. #}
+  <div class="flash flash-{{ {'warning': 'warning', 'neutral': 'info'}.get(job.failure_severity, 'error') if job else 'error' }}"
+       id="job-failure" role="status"
+       {% if not (job and job.error) %}hidden{% endif %}>
+    <span id="job-failure-text">{{ job.error if job else '' }}</span>
+    <a class="btn btn-sm" id="job-failure-action"
+       href="{{ job.next_action_href if job and job.next_action_href else '#' }}"
+       {% if not (job and job.error and job.next_action_href) %}hidden{% endif %}>{{ job.next_action_label if job and job.next_action_label else '' }}</a>
+  </div>
   <div id="job-summary" {% if not (job and job.summary) %}hidden{% endif %}>
     {# PR-177: the transition from setup to operations. The headline
        and the three next actions are the moment; the evidence detail

@@ -265,7 +265,9 @@ class DiscoveryJobFailureTests(unittest.TestCase):
             for value in (canary, "private-token", "password="):
                 self.assertNotIn(value, serialized)
                 self.assertNotIn(value, durable)
-            self.assertIn("error: discovery-failed", serialized)
+            # PR-179: an unclassifiable foreign failure is an INTERNAL
+            # verdict now — same leak protection, honest code.
+            self.assertIn("error: internal-error", serialized)
 
     def test_authentication_failure_is_friendly(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

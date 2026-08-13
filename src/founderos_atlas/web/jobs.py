@@ -28,11 +28,14 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import json
+import logging
 from pathlib import Path
 import re
 import threading
 from typing import Any
 import uuid
+
+logger = logging.getLogger("atlas")
 
 
 STATUS_QUEUED = "queued"
@@ -100,6 +103,13 @@ class DiscoveryJob:
     completed_at: str | None = None
     error: str | None = None
     warning: str | None = None
+    # PR-179: the failure's semantic class and next action, from the
+    # typed classifier (web/failures.py). Older persisted records lack
+    # these fields and load as None — never a migration, never a reset.
+    failure_class: str | None = None
+    failure_severity: str | None = None
+    next_action_label: str | None = None
+    next_action_href: str | None = None
     summary: dict[str, Any] | None = None
     # An opt-in the operator set in the wizard: after this read-only
     # discovery finishes, measure link latency (an ACTIVE, console-gated
@@ -154,6 +164,10 @@ class DiscoveryJob:
             "elapsed_seconds": round(elapsed, 1) if elapsed is not None else None,
             "error": self.error,
             "warning": self.warning,
+            "failure_class": self.failure_class,
+            "failure_severity": self.failure_severity,
+            "next_action_label": self.next_action_label,
+            "next_action_href": self.next_action_href,
             "cancel_requested": self.cancel_requested,
             "summary": self.summary,
             "measure_latency": self.measure_latency,
@@ -419,21 +433,41 @@ class DiscoveryJobManager:
             self._persist()
 
     def _finish_failed(self, job: DiscoveryJob, error: Exception) -> None:
-        detail = str(error) or type(error).__name__
-        operator_message, diagnostic_code = friendly_failure(
-            detail,
-            job.profile_name,
-            job.management_ip,
+        # PR-179: the typed classifier decides what the operator is told.
+        # Only exact-type allowlisted Atlas exceptions surface their own
+        # message; everything else selects canonical copy or lands in the
+        # INTERNAL class — whose traceback is logged here, because a
+        # defect nobody can diagnose is a defect that never gets fixed.
+        from .failures import CLASS_INTERNAL, classify
+
+        verdict = classify(
+            error,
+            profile_name=job.profile_name,
+            management_ip=job.management_ip,
         )
+        operator_message = verdict.operator_message
+        if verdict.failure_class == CLASS_INTERNAL:
+            operator_message += (
+                f" Quote job {job.job_id} when reporting this."
+            )
+            logger.error(
+                "discovery job failed with an internal error "
+                "job_id=%s profile=%s",
+                job.job_id, job.profile_name, exc_info=error,
+            )
         with self._lock:
             job.status = STATUS_FAILED
             job.completed_at = self._now()
             job._elapsed_seconds = self._elapsed(job)
             job.error = operator_message
+            job.failure_class = verdict.failure_class
+            job.failure_severity = verdict.severity
+            job.next_action_label = verdict.next_action_label
+            job.next_action_href = verdict.next_action_href
             job.message = "Discovery failed"
             # A stable diagnostic category remains available for support.
             # Persist only the allowlisted category, never raw exception text.
-            job.log.append(f"error: {diagnostic_code}")
+            job.log.append(f"error: {verdict.diagnostic_code}")
             self._persist()
         if self._on_failure is not None:
             try:
@@ -585,6 +619,10 @@ class DiscoveryJobManager:
                 completed_at=entry.get("completed_at"),
                 error=entry.get("error"),
                 warning=entry.get("warning"),
+                failure_class=entry.get("failure_class"),
+                failure_severity=entry.get("failure_severity"),
+                next_action_label=entry.get("next_action_label"),
+                next_action_href=entry.get("next_action_href"),
                 summary=entry.get("summary"),
                 measure_latency=bool(entry.get("measure_latency")),
             )

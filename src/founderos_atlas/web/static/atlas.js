@@ -236,8 +236,28 @@
     if (bar) bar.style.width = job.percent + "%";
     var events = byId("job-events");
     if (events && job.events) events.textContent = job.events.join("\n");
+    // PR-179: the failure text lives in its own span so the next-action
+    // link beside it survives updates; the box's flash class follows
+    // the verdict's severity (unsupported is neutral, never red).
     show("job-failure", Boolean(job.error));
-    if (job.error) setText("job-failure", job.error);
+    if (job.error) setText("job-failure-text", job.error);
+    var failureBox = byId("job-failure");
+    if (failureBox && job.error) {
+      var severity = job.failure_severity;
+      failureBox.className = "flash flash-" + (
+        severity === "warning" ? "warning"
+          : severity === "neutral" ? "info" : "error"
+      );
+    }
+    var failureAction = byId("job-failure-action");
+    if (failureAction) {
+      var actionable = Boolean(job.error && job.next_action_href);
+      failureAction.hidden = !actionable;
+      if (actionable) {
+        failureAction.href = job.next_action_href;
+        failureAction.textContent = job.next_action_label || "Open";
+      }
+    }
     var done = job.status === "completed";
     function sweepSummary(summary) {
       var swept = summary.addresses_scanned;
