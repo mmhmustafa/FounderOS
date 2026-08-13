@@ -249,6 +249,13 @@ textarea:focus-visible, summary:focus-visible, [tabindex]:focus-visible {
 @media (pointer: coarse) {
   .btn, .btn-sm { min-height: var(--touch-target); }
   .form input, .form select, .form textarea, .scope-form select { min-height: var(--touch-target); }
+  /* PR-180: the two controls below the 24px minimum in BOTH
+     dimensions, and neither was in any coarse rule. The grid
+     checkbox is the entry point to bulk triage (13x13 native UA box);
+     .chip-remove is destructive at 16x17. Coarse pointers only —
+     desktop density is untouched. */
+  .grid input[type="checkbox"] { width: var(--control-height-sm); height: var(--control-height-sm); }
+  .chip-remove { min-width: var(--control-height-sm); min-height: var(--control-height-sm); }
 }
 
 /* -- 7. Status, badges, tiles, cards ---------------------------------------- */
@@ -987,12 +994,21 @@ body[data-theme="dark"] .ops-chip-attention .ops-chip-mark { color: #fca5a5; }
    means gone: no paint, no layout, no pointer events. */
 .search-overlay[hidden] { display: none; }
 .search-panel { width: min(680px, 100%); max-height: 74vh; display: flex; flex-direction: column; background: var(--panel); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); overflow: hidden; }
+/* PR-180: `outline: none` here beat the global :focus-visible ring —
+   the ONE control whose focus indicator was suppressed. The panel edge
+   already frames the input, so the ring is an inset accent line. */
 .search-panel input { border: none; border-bottom: 1px solid var(--line); border-radius: 0; padding: 16px 18px; font-size: 16px; font-family: inherit; outline: none; width: 100%; }
+.search-panel input:focus-visible { outline: none; box-shadow: inset 0 -2px 0 var(--accent); }
 .search-status { padding: 8px 18px 0; font-size: 13px; }
 .search-results, .search-recent { overflow-y: auto; padding: 8px 10px 10px; }
 .search-group-head { font-size: 11px; font-weight: var(--weight-semibold); text-transform: uppercase; letter-spacing: .4px; color: var(--muted); padding: 10px 8px 4px; }
 .search-result { display: block; padding: 8px 10px; border-radius: var(--radius); text-decoration: none; color: inherit; }
-.search-result:hover, .search-result.active { background: var(--accent-soft); }
+/* PR-180: the arrow-key selection was a ~1.1:1 background tint and
+   nothing else — invisible on a laptop at an angle. Hover keeps the
+   tint; the ACTIVE row (what Enter will open) adds a perceivable
+   non-colour indicator. */
+.search-result:hover { background: var(--accent-soft); }
+.search-result.active { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
 .search-result-title { font-size: 14px; font-weight: var(--weight-semibold); }
 .search-result-title mark { background: #fde68a; border-radius: 3px; padding: 0 1px; }
 .search-result-meta { font-size: 12px; }
@@ -1503,9 +1519,12 @@ body[data-density="compact"] .advisor-conf-fresh { padding: 8px; gap: 10px; }
 /* Touch targets never shrink below the accessible minimum on coarse
    pointers, whatever the density. */
 @media (pointer: coarse) {
+  /* PR-180: a checkbox-sibling selector that matched nothing was
+     removed from this list (no checkbox in the product has a span
+     sibling, and min-height would not size a native checkbox anyway);
+     the working checkbox rule lives in the main coarse block above. */
   body[data-density="compact"] .btn,
   body[data-density="compact"] select,
-  body[data-density="compact"] input[type="checkbox"] + span,
   body[data-density="compact"] .subnav a { min-height: var(--touch-target); }
 }
 

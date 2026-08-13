@@ -42,7 +42,10 @@
     Copy SSH Command
   </button>
   {% else %}
-  <span class="badge badge-muted" title="{{ target.reason }}">SSH unavailable</span>
+  {# PR-180: the computed reason was hover-only — a keyboard or
+     screen-reader user heard "SSH unavailable" and nothing else.
+     Same visually-hidden pattern as _entity_actions.html. #}
+  <span class="badge badge-muted" title="{{ target.reason }}">SSH unavailable<span class="visually-hidden"> — {{ target.reason }}</span></span>
   {% endif %}
 
   {# -- web management (PORTAL). HTTPS preferred; HTTP only when insecure is the only way. -- #}
@@ -51,7 +54,7 @@
      href="{{ web.https_url }}" target="_blank" rel="noopener noreferrer"
      data-device-id="{{ target.device_id }}" data-protocol="https" data-url="{{ web.https_url }}"
      title="Open {{ web.https_url }} in a new tab{% if web.certificate_warnings %} — certificate: {{ web.tls_summary }}{% endif %}">
-    Open HTTPS{% if web.certificate_warnings %} <span class="cert-flag" title="{{ web.certificate_warnings | join(' ') }}">⚠</span>{% endif %}
+    Open HTTPS{% if web.certificate_warnings %} <span class="cert-flag" title="{{ web.certificate_warnings | join(' ') }}">⚠<span class="visually-hidden"> — certificate: {{ web.certificate_warnings | join(' ') }}</span></span>{% endif %}
   </a>
   <button class="btn btn-sm js-copy-url" type="button" data-url="{{ web.https_url }}"
           title="Copy {{ web.https_url }} — never includes a password">Copy HTTPS URL</button>
@@ -68,9 +71,12 @@
   {% elif web %}
   {# Asking about web access is answered either way: a live button, or this —
      greyed, never clickable, and carrying the reason. An empty cell would read
-     as "Atlas didn't check"; this reads as "Atlas checked, and here is why not". #}
+     as "Atlas didn't check"; this reads as "Atlas checked, and here is why not".
+     PR-180: `disabled` removes the button from the tab order, so its
+     title can NEVER fire for a keyboard user — the reason rides a
+     visually-hidden span instead of hover alone. #}
   <button class="btn btn-sm" type="button" disabled
-          title="{{ web.reason }}">{% if compact %}Web{% else %}Web unavailable{% endif %}</button>
+          title="{{ web.reason }}">{% if compact %}Web{% else %}Web unavailable{% endif %}<span class="visually-hidden"> — {{ web.reason }}</span></button>
   {% endif %}
 
   {% if not compact %}

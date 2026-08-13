@@ -1256,6 +1256,12 @@ class TopologyRenderer:
                 f"{TOPOLOGY_VISUAL_STYLE_MARKER}\n{curation_marker}\n{template}"
             )
         elements_json = _script_json(elements)
+        # PR-180: the header's most-asked term travels with its
+        # CANONICAL definition (topology/vocabulary.py) — one source,
+        # no drift; the viewer sets it as the summary's title via a
+        # property assignment.
+        from founderos_atlas.topology.vocabulary import DEFINITIONS
+
         summary_json = _script_json(
             {
                 "snapshot_id": self._snapshot.snapshot_id,
@@ -1267,6 +1273,9 @@ class TopologyRenderer:
                 "device_count": self._snapshot.device_count,
                 "edge_count": self._snapshot.edge_count,
                 "warning_count": len(self._snapshot.warnings),
+                "unresolved_definition": DEFINITIONS[
+                    "unresolved_peer_identities"
+                ],
                 **self.relationship_summary(
                     elements, site_membership=site_view.get("membership")
                 ),

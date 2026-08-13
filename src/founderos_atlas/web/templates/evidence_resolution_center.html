@@ -206,7 +206,7 @@
             <a class="btn btn-sm" href="{{ item.href }}">Source</a>
             {% if can('topology.edit') and item.status == 'open' and item.kind == 'identity' and item.proposals %}
             <details>
-              <summary class="btn btn-sm" role="button">Review &amp; confirm</summary>
+              <summary class="btn btn-sm">Review &amp; confirm</summary>
               <form method="post" action="/evidence/resolution-center/identity/confirm" class="form">{{ csrf_field() }}
                 <input type="hidden" name="item_key" value="{{ item.item_key }}">
                 <input type="hidden" name="session" value="{{ session.session_id }}">
@@ -231,7 +231,7 @@
             {% endif %}
             {% if can('topology.edit') and item.status == 'open' %}
             <details>
-              <summary class="btn btn-sm" role="button">Defer or reject</summary>
+              <summary class="btn btn-sm">Defer or reject</summary>
               <form method="post" action="/evidence/resolution-center/decision" class="form">{{ csrf_field() }}
                 <input type="hidden" name="item_key" value="{{ item.item_key }}">
                 <input type="hidden" name="session" value="{{ session.session_id }}">

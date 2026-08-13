@@ -296,10 +296,15 @@
     body[data-theme="dark"] .layers-reset { background: #1a2740; }
     body[data-theme="dark"] .layers-status { color: #fbbf24; }
     body[data-theme="dark"] #legend .divider { background: #28364b; }
-    /* Simple display level: the full legend and edit affordance stay
-       out of the first glance; everything remains reachable. */
-    body[data-level="simple"] #legend { display: none; }
+    /* Simple display level: the edit affordance stays out of the first
+       glance. The legend is a <details> — CLOSED at simple (PR-180: a
+       fresh workspace resolves to simple, and display:none here left
+       the first-time tester with solid/dashed/dotted lines and six
+       node colours and no key anywhere on screen), open otherwise. */
     body[data-level="simple"] #edit-mode { display: none; }
+    #legend > summary { cursor: pointer; margin: 0; font-size: 12px;
+      text-transform: uppercase; letter-spacing: .04em; color: var(--subtle); }
+    #legend[open] > summary { margin-bottom: 7px; }
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; }
     }
@@ -456,7 +461,12 @@
         <label><input type="checkbox" data-layer="ospf" checked> OSPF</label>
         <label><input type="checkbox" data-layer="bgp" checked> BGP</label>
         <label><input type="checkbox" data-layer="protocolRegions" checked> Protocol regions</label>
-        <label><input type="checkbox" data-layer="unresolved"> Unresolved identities</label>
+        <label><input type="checkbox" data-layer="unresolved"> Unresolved identities
+          <!-- PR-180: the header counts unresolved peers while this
+               layer ships OFF; the state is stated HERE, beside the
+               switch, derived from LIVE checkbox state in apply() —
+               never a static parenthetical baked in at load. -->
+          <span id="unresolved-note" class="layers-status"></span></label>
         <label><input type="checkbox" data-layer="interfaceLabels"> Interface labels</label>
         <label><input type="checkbox" data-layer="evidenceLabels"> Evidence labels</label>
         <button type="button" id="layers-reset" class="layers-reset">Reset to recommended</button>
@@ -565,7 +575,8 @@
       </div>
       <div id="open-sites" aria-label="Open sites"></div>
       <div id="viewport-hint" role="status" aria-live="polite" hidden></div>
-      <div id="legend" aria-label="Legend">
+      <details id="legend" aria-label="Legend" open>
+        <summary>Legend</summary>
         <h3>Links</h3>
         <div class="row"><span class="swatch"><span class="line" style="border-top-style:solid;border-top-color:var(--edge-physical)"></span></span> Physical</div>
         <div class="row"><span class="swatch"><span class="line" style="border-top-style:dashed;border-top-color:var(--edge-routed)"></span></span> Verified routed</div>
@@ -582,7 +593,7 @@
         <div class="row" id="legend-site" style="display:none"><span class="dot" style="background:transparent;border:1px solid var(--role-site)"></span> Site (double-click to open)</div>
         <div class="row" id="legend-ospf" style="display:none"><span class="dot" style="background:#eff6ff;border:1px solid #60a5fa"></span> OSPF area boundary</div>
         <div class="row" id="legend-bgp" style="display:none"><span class="dot" style="background:#f5f3ff;border:1px solid #a78bfa"></span> BGP AS boundary</div>
-      </div>
+      </details>
     </div>
     <!--
       Holds the rendered map while the print dialog is open; empty at every
@@ -626,6 +637,21 @@
     if (snapshotSummary.unresolved_peers) summaryParts.push(`${snapshotSummary.unresolved_peers} unresolved peer identities`);
     const fullSummaryText = summaryParts.join(' · ');
     document.getElementById('summary').textContent = fullSummaryText;
+    // PR-180: the canonical definition of the header's most-asked term,
+    // injected by the renderer from topology/vocabulary.py — one source,
+    // no drift, and a PROPERTY assignment (innerHTML is forbidden in
+    // this viewer, where data is device-controlled).
+    if (snapshotSummary.unresolved_peers && snapshotSummary.unresolved_definition) {
+      document.getElementById('summary').title = snapshotSummary.unresolved_definition;
+    }
+    // The legend is a <details>: closed at the simple level (reachable,
+    // never gone), open at detailed/expert.
+    (function () {
+      var legend = document.getElementById('legend');
+      if (legend && document.body.getAttribute('data-level') === 'simple') {
+        legend.removeAttribute('open');
+      }
+    })();
     (function () {
       var el = document.getElementById('print-provenance');
       if (!el) { return; }
@@ -4412,6 +4438,17 @@
           edge.toggleClass('layer-iface-labels', !!(iface && iface.checked));
           edge.toggleClass('layer-evidence-labels', !!(evid && evid.checked));
         });
+        // PR-180: the header counts unresolved peers while this layer
+        // ships OFF — the truth of whether they are DRAWN is stated
+        // beside the switch, derived from the live checkbox each time
+        // this runs. textContent only; innerHTML is forbidden here.
+        var unresolvedBox = panel.querySelector('[data-layer="unresolved"]');
+        var unresolvedNote = document.getElementById('unresolved-note');
+        if (unresolvedBox && unresolvedNote) {
+          unresolvedNote.textContent = unresolvedBox.checked
+            ? '(shown on the map)'
+            : '(counted in the header; not drawn until switched on)';
+        }
         // A layer toggle repaints its whole category; the operator's
         // per-node hidden set must win again afterwards.
         if (window.__atlasHiddenApply) { window.__atlasHiddenApply(); }

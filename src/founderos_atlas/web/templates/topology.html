@@ -99,11 +99,16 @@
   <p class="muted">One enterprise observed from multiple discovery points. Profiles are observation points, not network boundaries; their isolated per-profile evidence is federated here after discovery.</p>
 </section>
 
+{# PR-180: the active site is stated, not just coloured —
+   aria-current carries the state colour alone was carrying. #}
 {% if site_options %}
 <div class="actions topology-controls">
-  <a class="btn btn-sm {{ '' if site_filter else 'btn-primary' }}" href="/topology?support=1">All sites</a>
+  <a class="btn btn-sm {{ '' if site_filter else 'btn-primary' }}"
+     {% if not site_filter %}aria-current="true"{% endif %}
+     href="/topology?support=1">All sites</a>
   {% for option in site_options %}
   <a class="btn btn-sm {{ 'btn-primary' if site_filter == option else '' }}"
+     {% if site_filter == option %}aria-current="true"{% endif %}
      href="/topology?support=1&amp;site={{ option | urlencode }}">{{ option }}</a>
   {% endfor %}
 </div>

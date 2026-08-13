@@ -519,7 +519,7 @@
           <a class="btn btn-sm" href="/advisor/conversations/{{ item.index }}/export"
              aria-label="Export this conversation as JSON">Export</a>
           <details class="advisor-inline-details">
-            <summary class="btn btn-sm" role="button">Rename</summary>
+            <summary class="btn btn-sm">Rename</summary>
             <form method="post" action="/advisor/conversations/{{ item.index }}/rename" class="filter-bar advisor-rename">{{ csrf_field() }}
               <label class="visually-hidden" for="rename-{{ item.index }}">New name</label>
               <input id="rename-{{ item.index }}" name="label" value="{{ entry.label or '' }}" placeholder="name">

@@ -9,8 +9,12 @@
 {%- macro counts(facts) -%}
 <section class="card">
   <h2>Topology Counts</h2>
-  <p class="muted">Canonical definitions — hover any tile for the exact rule.
-    Counted {{ fmt.when(facts.observed_at) }} from the same calculation the viewer uses.</p>
+  {# PR-180: the canonical definitions were reachable only by HOVER on
+     a non-focusable div — unreachable by keyboard, screen reader, and
+     touch — and the intro copy told users to hover for them. One
+     accessible disclosure now carries all seven; the title= stays as a
+     convenience for mouse users, no longer the only way in. #}
+  <p class="muted">Counted {{ fmt.when(facts.observed_at) }} from the same calculation the viewer uses.</p>
   <div class="tiles">
     <div class="tile" title="{{ facts.definitions.relationships }}"><strong>Relationships</strong><span>{{ facts.counts.relationships }}</span></div>
     <div class="tile" title="{{ facts.definitions.physical_links }}"><strong>Physical links</strong><span>{{ facts.counts.physical_links }}</span></div>
@@ -20,6 +24,18 @@
     <div class="tile" title="{{ facts.definitions.inter_site_links }}"><strong>Inter-site links</strong><span>{{ facts.counts.inter_site_links }}</span></div>
     <div class="tile" title="{{ facts.definitions.unresolved_peer_identities }}"><strong>Unresolved identities</strong><span>{{ facts.counts.unresolved_peer_identities }}</span></div>
   </div>
+  <details class="disclosure">
+    <summary>Canonical definitions</summary>
+    <dl class="verdict-context">
+      <div><dt>Relationships</dt><dd class="muted">{{ facts.definitions.relationships }}</dd></div>
+      <div><dt>Physical links</dt><dd class="muted">{{ facts.definitions.physical_links }}</dd></div>
+      <div><dt>Logical adjacencies</dt><dd class="muted">{{ facts.definitions.logical_adjacencies }}</dd></div>
+      <div><dt>Routing adjacencies</dt><dd class="muted">{{ facts.definitions.routing_adjacencies }}</dd></div>
+      <div><dt>BGP peerings</dt><dd class="muted">{{ facts.definitions.bgp_peerings }}</dd></div>
+      <div><dt>Inter-site links</dt><dd class="muted">{{ facts.definitions.inter_site_links }}</dd></div>
+      <div><dt>Unresolved identities</dt><dd class="muted">{{ facts.definitions.unresolved_peer_identities }}</dd></div>
+    </dl>
+  </details>
 </section>
 {%- endmacro -%}
 

@@ -50,7 +50,7 @@
           <td>{{ account.updated_at | timestamp }}</td>
           <td class="row-actions">
             <details>
-              <summary class="btn btn-sm" role="button">Edit</summary>
+              <summary class="btn btn-sm">Edit</summary>
               <form method="post" action="/users/{{ account.username }}" class="form" style="min-width:260px;">{{ csrf_field() }}
                 <input type="hidden" name="expected_revision" value="{{ revision }}">
                 {% if account.is_me %}

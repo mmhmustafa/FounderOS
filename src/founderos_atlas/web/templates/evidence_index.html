@@ -163,7 +163,7 @@
       <li>
         <a class="btn btn-sm" href="/evidence?{{ saved.query }}" aria-label="Apply saved filter {{ saved.name }}">{{ saved.name }}</a>
         <details style="display:inline-block">
-          <summary class="btn btn-sm" role="button" aria-label="Rename {{ saved.name }}">Rename</summary>
+          <summary class="btn btn-sm" aria-label="Rename {{ saved.name }}">Rename</summary>
           <form method="post" action="/evidence/saved-filters/{{ saved.filter_id }}/rename" class="filter-bar" style="padding:4px;border:0;">{{ csrf_field() }}
             <label class="visually-hidden" for="rename-{{ saved.filter_id }}">New name for {{ saved.name }}</label>
             <input id="rename-{{ saved.filter_id }}" name="name" value="{{ saved.name }}" required>

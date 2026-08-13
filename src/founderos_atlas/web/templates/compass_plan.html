@@ -175,7 +175,7 @@
             <button class="btn btn-sm" name="direction" value="down" type="submit" aria-label="Move {{ change.title }} later" {{ 'disabled' if loop.last }}>↓</button>
           </form>
           <details style="display:inline-block">
-            <summary class="btn btn-sm" role="button">Dependencies</summary>
+            <summary class="btn btn-sm">Dependencies</summary>
             <form method="post" action="/compass/{{ plan.plan_id }}/dependencies" class="form" style="min-width:220px;">{{ csrf_field() }}
               <input type="hidden" name="expected_revision" value="{{ plan.revision }}">
               <input type="hidden" name="change_id" value="{{ change.change_id }}">
