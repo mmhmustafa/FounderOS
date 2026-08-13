@@ -3,6 +3,7 @@
 {% import "_topology_facts.html" as topo with context %}
 {% import "_fmt.html" as fmt %}
 {% from "_telemetry_context.html" import operational_context %}
+{% import "_degraded.html" as degraded %}
 {% block title %}Topology{% endblock %}
 {% block content_class %} content-wide content-topology{% endblock %}
 {% block content %}
@@ -10,6 +11,10 @@
   telemetry_context(active_scope_id),
   'Signals are a read-only overlay. They do not create links, infer sites, or change discovered topology.'
 ) }}
+{# PR-179 §30.4: a last-known-good graph carries its age and the
+   failed attempts since — old data must never read as current on the
+   most authoritative visual Atlas renders. #}
+{{ degraded.stale_topology(freshness) }}
 {% if global_view %}
 <div class="page-head topology-page-head">
   <h1>Topology — Enterprise</h1>

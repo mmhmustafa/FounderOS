@@ -20,6 +20,23 @@
 </div>
 {%- endmacro -%}
 
+{#- PR-179 §30.4: a last-known-good graph must not read as current —
+    and "as of <date>" alone quietly ages into "silently ancient". The
+    banner therefore states BOTH the age of what is shown and the
+    consecutive failed attempts since, which the job history already
+    holds. Rendered only when the latest terminal discovery attempt
+    for the visible scope failed. -#}
+{%- macro stale_topology(freshness) -%}
+{%- if freshness -%}
+<div class="flash flash-warning" role="status" data-degraded="topology-freshness">
+  Showing the last successful topology, collected {{ freshness.observed }}.
+  The latest discovery attempt{% if freshness.profile %} for {{ freshness.profile }}{% endif %} failed —
+  {{ freshness.failed_attempts }} attempt(s) have failed since this topology was collected.
+  <a class="btn btn-sm" href="/discovery">Open Discovery</a>
+</div>
+{%- endif -%}
+{%- endmacro -%}
+
 {%- macro audit_lines_skipped(skipped) -%}
 {%- if skipped is none -%}
 <div class="flash flash-error" role="alert" data-degraded="audit">

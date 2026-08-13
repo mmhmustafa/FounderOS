@@ -4393,6 +4393,45 @@ def register_routes(app) -> None:
 
     # -- Topology / History / Changes --------------------------------------
 
+    def topology_freshness(scope_id, observed_at):
+        """The last-known-good freshness statement, or None (PR-179 §30.4).
+
+        A graph an operator can mistake for current is the failure:
+        after a failed run, Topology kept rendering yesterday's estate
+        with no marker at all (measured — Home said "as of", Topology
+        said nothing). The banner exists only when the LATEST terminal
+        discovery attempt for the visible scope failed, and it states
+        both the age of what is shown and how many attempts have failed
+        since — everything read from the job manager's in-memory record
+        and the snapshot timestamp already loaded; no extra store scan.
+        Interrupted and cancelled runs are neither successes nor
+        failures and do not count.
+        """
+
+        from .timefmt import format_with_relative
+
+        jobs = job_manager().list_recent()
+        if scope_id not in (GLOBAL_SCOPE_ID, DEFAULT_SCOPE_ID):
+            jobs = [j for j in jobs if j.get("profile_id") == scope_id]
+        terminal = [
+            j for j in jobs if j.get("status") in ("failed", "completed")
+        ]
+        if not terminal or terminal[0].get("status") != "failed":
+            return None
+        failed_attempts = 0
+        for job in terminal:
+            if job.get("status") != "failed":
+                break
+            failed_attempts += 1
+        return {
+            "observed": (
+                format_with_relative(observed_at, tz=display_timezone())
+                if observed_at else "an unrecorded time"
+            ),
+            "failed_attempts": failed_attempts,
+            "profile": str(terminal[0].get("profile_name") or ""),
+        }
+
     @app.route("/topology")
     def topology():
         context, scopes, scope_id = scoped_context("topology")
@@ -4479,6 +4518,11 @@ def register_routes(app) -> None:
                     site_filter=site_filter,
                     viewers=viewers,
                     has_topology=snapshot is not None,
+                    freshness=(
+                        topology_freshness(
+                            scope_id, snapshot.get("created_at")
+                        ) if snapshot is not None else None
+                    ),
                     supporting_loaded=supporting_loaded,
                     inventory_total=inventory_total,
                     inventory_page=inventory_page,
@@ -4507,6 +4551,9 @@ def register_routes(app) -> None:
                 inventory=inventory,
                 viewers=viewers,
                 has_topology=False,
+                # Legacy-only estate: no enterprise graph is presented
+                # as current, and jobs belong to profile scopes.
+                freshness=None,
                 supporting_loaded=supporting_loaded,
                 inventory_total=inventory_total,
                 inventory_page=inventory_page,
@@ -4516,6 +4563,10 @@ def register_routes(app) -> None:
         scope = scopes[scope_id]
         refresh_scope_topology_viewer(scope)
         exists = (scope.output_dir / "atlas_topology.html").is_file()
+        scope_facts = _topology_operational_facts(
+            scope.output_dir,
+            workspace_root=cfg("ATLAS_WORKSPACE_ROOT"),
+        )
         return render_template(
             "topology.html",
             global_view=False,
@@ -4524,9 +4575,12 @@ def register_routes(app) -> None:
             inventory_total=0,
             inventory_page=1,
             inventory_page_count=1,
-            facts=_topology_operational_facts(
-                scope.output_dir,
-                workspace_root=cfg("ATLAS_WORKSPACE_ROOT"),
+            facts=scope_facts,
+            freshness=(
+                topology_freshness(
+                    scope_id,
+                    scope_facts["observed_at"] if scope_facts else None,
+                ) if exists else None
             ),
             topology_src=_current_topology_viewer_url(
                 f"/artifacts/{artifact_prefix(scope)}atlas_topology.html",
