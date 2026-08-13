@@ -10323,6 +10323,9 @@ def make_pipeline_runner(app):
             "failed_devices": len(record.failures),
             "auth_failed_devices": stats.get("authentication_failures"),
             "addresses_without_device": stats.get("unused_addresses"),
+            # PR-179: the completion outcome names unsupported platforms
+            # separately — a device Atlas cannot drive is not a fault.
+            "unsupported_platforms": stats.get("unsupported_platforms"),
             "addresses_scanned": stats.get("addresses_scanned"),
             "discovery_completeness_percent": stats.get(
                 "discovery_completeness_percent"

@@ -140,7 +140,10 @@
       <li id="row-duration" {% if not (job and job.summary and job.summary.duration_seconds is not none) %}hidden{% endif %}><span>Duration</span><span id="summary-duration">{% if job and job.summary and job.summary.duration_seconds is not none %}{{ job.summary.duration_seconds }} seconds{% endif %}</span></li>
       <li id="summary-latency-row" {% if not (job and job.measure_latency) %}hidden{% endif %}><span>Link latency</span><span id="summary-latency">{% if job and job.measure_latency %}measuring after discovery — keep this page open{% else %}—{% endif %}</span></li>
     </ul>
-    <div class="flash flash-error" id="job-warning" {% if not (job and job.warning) %}hidden{% endif %}>{{ job.warning if job else '' }}</div>
+    {# PR-179 severity contract: a partial collection is a WARNING —
+       the run finished, most of it worked, and the copy says exactly
+       what did not. Red is reserved for failures. #}
+    <div class="flash flash-warning" id="job-warning" role="status" {% if not (job and job.warning) %}hidden{% endif %}>{{ job.warning if job else '' }}</div>
   </div>
   <details class="log" data-remember="workflow:discovery-events"><summary>Recent events</summary>
     <pre id="job-events">{% if job %}{% for line in job.events %}{{ line }}

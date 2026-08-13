@@ -398,10 +398,64 @@ class DiscoveryJobManager:
             # answer is to say nothing rather than guess.)
             refused = summary.get("auth_failed_devices")
             silent = summary.get("addresses_without_device")
+            unsupported = summary.get("unsupported_platforms")
+            collected = summary.get("devices")
             job.auth_failed_devices = int(refused or 0)
             job.addresses_without_device = int(silent or 0)
 
-            if refused:
+            # PR-179: the partial condition is ANSWERED-but-not-collected
+            # (§30.2 of the failure-paths review). `failed_devices` counts
+            # every per-address failure detail INCLUDING silent addresses,
+            # so it can never drive the rule directly — a /24 sweep that
+            # finds nine devices leaves 245 silent "failures" that are
+            # coverage, not a problem. Only a device that ANSWERED and
+            # could not be collected — refused our credentials, spoke an
+            # unsupported dialect, or (should a future classifier record
+            # it) was lost mid-collection — qualifies a run as partial.
+            # The `other` bucket is derived by subtraction and only when
+            # the silent count is actually present; on older summaries
+            # the honest answer is to say nothing rather than guess.
+            answered_failures = int(refused or 0) + int(unsupported or 0)
+            if silent is not None:
+                answered_failures += max(
+                    0,
+                    failed - int(silent) - int(refused or 0)
+                    - int(unsupported or 0),
+                )
+            if answered_failures > 0 and collected is not None:
+                attempted = int(collected) + answered_failures
+                parts = []
+                if refused:
+                    parts.append(f"{int(refused)} refused authentication")
+                if unsupported:
+                    parts.append(f"{int(unsupported)} unsupported platform(s)")
+                other = (answered_failures - int(refused or 0)
+                         - int(unsupported or 0))
+                if other > 0:
+                    parts.append(f"{other} could not be collected")
+                detail = " · ".join(parts) or (
+                    f"{answered_failures} could not be collected"
+                )
+                if int(collected) == 0:
+                    # A run that collected nothing is never called a
+                    # success — a failure in operator terms even though
+                    # the pipeline itself completed.
+                    job.message = "Discovery completed — nothing was collected"
+                    job.warning = (
+                        f"Collected nothing — all {attempted} device(s) that "
+                        f"answered could not be collected: {detail}. "
+                        "Previously stored results were preserved."
+                    )
+                else:
+                    job.message = "Discovery completed — partial collection"
+                    job.warning = (
+                        f"Collected {int(collected)} of {attempted} device(s) "
+                        f"that answered — {detail}. Successful results were "
+                        "preserved."
+                    )
+            elif refused:
+                # Older summaries may carry auth statistics without a
+                # failures count; keep the pre-PR-179 honest warning.
                 job.warning = (
                     f"{int(refused)} device(s) refused authentication; Atlas "
                     "reached them but could not sign in. Successful results "

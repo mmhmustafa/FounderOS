@@ -632,7 +632,10 @@ class SilentAddressesAreNotFailuresTests(unittest.TestCase):
         self.assertIsNotNone(job.warning)
         self.assertIn("refused authentication", job.warning)
         self.assertNotIn("verified management endpoint", job.warning)
-        self.assertEqual("Discovery completed with warnings", job.message)
+        # PR-179: the headline now names WHAT the run was — a partial
+        # collection — instead of the vague "with warnings".
+        self.assertEqual("Discovery completed — partial collection", job.message)
+        self.assertIn("Collected 9 of 12", job.warning)
 
     def test_the_two_kinds_are_counted_apart(self) -> None:
         job = self._job({
@@ -656,3 +659,119 @@ class SilentAddressesAreNotFailuresTests(unittest.TestCase):
         self.assertFalse(is_auth_failure("connection timed out"))
         self.assertFalse(is_auth_failure("no route to host"))
         self.assertFalse(is_auth_failure(None))
+
+
+class AnsweredButNotCollectedTests(unittest.TestCase):
+    """PR-179 §5: the partial-discovery contract.
+
+    A run is partial when devices that ANSWERED could not be collected.
+    Before this, `_finish_completed` warned only on refused credentials
+    (`if refused:`), so a run where devices answered and then failed for
+    any other classified reason — an unsupported platform, say —
+    announced itself "completed successfully". And a run that collected
+    NOTHING was still "completed", reading as success.
+
+    The other direction is guarded just as hard (§30.2): silent
+    addresses are coverage, never failures, so the answered count is
+    derived from the statistics split — never from raw `failed_devices`,
+    which includes every silent address in a sweep.
+    """
+
+    def _job(self, summary, on_success=None):
+        import threading
+
+        from founderos_atlas.web.jobs import DiscoveryJob, DiscoveryJobManager
+
+        job = DiscoveryJob(
+            job_id="j", profile_id="p", profile_name="lab",
+            site=None, management_ip="172.20.20.1",
+        )
+        manager = DiscoveryJobManager.__new__(DiscoveryJobManager)
+        manager._lock = threading.RLock()
+        manager._persist = lambda: None
+        manager._now = lambda: "2026-08-13T00:00:00+00:00"
+        manager._elapsed = lambda _job: 72.4
+        manager._on_success = on_success
+        manager._finish_completed(job, summary)
+        return job
+
+    def test_everything_collected_is_still_plain_success(self) -> None:
+        job = self._job({
+            "devices": 72, "failed_devices": 0,
+            "addresses_without_device": 0, "auth_failed_devices": 0,
+            "unsupported_platforms": 0,
+        })
+        self.assertIsNone(job.warning)
+        self.assertEqual("Discovery completed successfully", job.message)
+
+    def test_partial_copy_states_collected_of_attempted_with_the_split(self) -> None:
+        # The §5 flagship row: 72 collected, 8 refused, 2 unsupported,
+        # 3 answered-then-lost (derived by subtraction), 10 silent.
+        job = self._job({
+            "devices": 72, "failed_devices": 23,
+            "addresses_without_device": 10, "auth_failed_devices": 8,
+            "unsupported_platforms": 2,
+        })
+        self.assertEqual("Discovery completed — partial collection", job.message)
+        self.assertIn("Collected 72 of 85 device(s) that answered", job.warning)
+        self.assertIn("8 refused authentication", job.warning)
+        self.assertIn("2 unsupported platform(s)", job.warning)
+        self.assertIn("3 could not be collected", job.warning)
+        # The 10 silent addresses stay out of the warning entirely.
+        self.assertNotIn("10", job.warning)
+        self.assertIn("Successful results were preserved", job.warning)
+
+    def test_unsupported_platforms_alone_now_qualify_as_partial(self) -> None:
+        # The pre-PR-179 `if refused:` rule called exactly this run a
+        # full success.
+        job = self._job({
+            "devices": 7, "failed_devices": 2,
+            "addresses_without_device": 0, "auth_failed_devices": 0,
+            "unsupported_platforms": 2,
+        })
+        self.assertEqual("Discovery completed — partial collection", job.message)
+        self.assertIn("Collected 7 of 9", job.warning)
+        self.assertIn("2 unsupported platform(s)", job.warning)
+
+    def test_a_run_that_collected_nothing_is_never_called_a_success(self) -> None:
+        job = self._job({
+            "devices": 0, "failed_devices": 5,
+            "addresses_without_device": 0, "auth_failed_devices": 5,
+            "unsupported_platforms": 0,
+        })
+        self.assertEqual(
+            "Discovery completed — nothing was collected", job.message
+        )
+        self.assertNotIn("success", job.message.lower())
+        self.assertIn("Collected nothing", job.warning)
+        self.assertIn("5 refused authentication", job.warning)
+        self.assertIn("Previously stored results were preserved", job.warning)
+
+    def test_a_24_sweep_with_nine_devices_raises_no_false_partial(self) -> None:
+        # 254 probed, 9 collected, 245 silent: failed_devices carries all
+        # 245 silent details, and none of them may reach the rule.
+        job = self._job({
+            "devices": 9, "failed_devices": 245,
+            "addresses_without_device": 245, "auth_failed_devices": 0,
+            "unsupported_platforms": 0,
+        })
+        self.assertIsNone(job.warning)
+        self.assertEqual("Discovery completed successfully", job.message)
+
+    def test_the_readiness_hook_still_fires_on_partial_and_empty_runs(self) -> None:
+        # PR-177: the runner wrote the snapshot before the hook fires, so
+        # readiness/unlock semantics are about what is on disk — a partial
+        # or even empty completion must not strand the workspace locked.
+        seen = []
+        self._job(
+            {"devices": 7, "failed_devices": 2, "addresses_without_device": 0,
+             "auth_failed_devices": 0, "unsupported_platforms": 2},
+            on_success=seen.append,
+        )
+        self._job(
+            {"devices": 0, "failed_devices": 5, "addresses_without_device": 0,
+             "auth_failed_devices": 5, "unsupported_platforms": 0},
+            on_success=seen.append,
+        )
+        self.assertEqual(2, len(seen))
+        self.assertTrue(all(j.status == "completed" for j in seen))

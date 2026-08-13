@@ -93,8 +93,26 @@ class SummaryFieldPlumbingTests(unittest.TestCase):
             "addresses_scanned",
             "addresses_without_device",
             "auth_failed_devices",
+            # PR-179: the answered-but-not-collected rule names
+            # unsupported platforms separately in the completion copy.
+            "unsupported_platforms",
         ):
             self.assertIn(field, block, f"summary never carries {field}")
+
+
+class PartialOutcomeSeverityTests(unittest.TestCase):
+    """PR-179: a partial collection is a WARNING, not an error.
+
+    The completion warning box rendered `flash flash-error` — the same
+    red as a failed run — for a run that finished and preserved every
+    successful result. Red is reserved for failures.
+    """
+
+    def test_the_completion_warning_box_is_a_warning_not_an_error(self) -> None:
+        match = re.search(r'<div class="([^"]*)" id="job-warning"', TEMPLATE)
+        self.assertIsNotNone(match, "the #job-warning box left the template")
+        self.assertIn("flash-warning", match.group(1))
+        self.assertNotIn("flash-error", match.group(1))
 
 
 if __name__ == "__main__":
