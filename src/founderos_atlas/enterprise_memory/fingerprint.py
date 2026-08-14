@@ -26,8 +26,11 @@ from .models import content_sha256
 
 _HOSTNAME = re.compile(r"^\s*hostname\s+(\S+)", re.IGNORECASE | re.MULTILINE)
 # An interface stanza opener on IOS/IOS-XE ("interface Gi0/1") or FRR
-# ("interface eth1"). Loopbacks counted separately.
-_INTERFACE = re.compile(r"^\s*interface\s+(\S+)", re.IGNORECASE | re.MULTILINE)
+# ("interface eth1"). Loopbacks counted separately. Anchored to the whole
+# line (PR-181): a stanza opener is the interface name and nothing else,
+# which is what keeps the header row of `show ip interface brief`
+# ("Interface  IP-Address  OK? ...") from counting as structural evidence.
+_INTERFACE = re.compile(r"^\s*interface\s+(\S+)\s*$", re.IGNORECASE | re.MULTILINE)
 _LOOPBACK = re.compile(r"^\s*interface\s+lo\S*", re.IGNORECASE | re.MULTILINE)
 _BGP_NEIGHBOR = re.compile(r"^\s*neighbor\s+\S+\s+remote-as\b", re.IGNORECASE | re.MULTILINE)
 _OSPF_NETWORK = re.compile(r"^\s*network\s+\S+\s+area\b", re.IGNORECASE | re.MULTILINE)

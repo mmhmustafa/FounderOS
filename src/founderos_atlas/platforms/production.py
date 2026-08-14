@@ -102,6 +102,32 @@ class ProductionDriver(PlatformDriver):
             folded.startswith("% authorization failed")
         )
 
+    def is_configuration(self, output: str) -> bool:
+        """Can this driver positively confirm the reply IS a configuration?
+
+        PR-181: the acceptance test for configuration collection. The
+        absence of a recognised error is NOT proof — this must find real
+        configuration structure. The shared default is Cisco/FRR-shaped;
+        platforms whose configuration grammar differs (Junos, FortiOS,
+        PAN-OS, Cisco WLC) override it with their own recogniser.
+        """
+
+        from founderos_atlas.config.classify import (
+            shared_structural_is_configuration,
+        )
+
+        return shared_structural_is_configuration(output)
+
+    def configuration_commands(self) -> tuple[str, ...]:
+        """Every command form of this driver's CONFIGURATION capability."""
+
+        from . import capabilities as caps
+
+        for spec in self.command_plan():
+            if spec.capability == caps.CONFIGURATION:
+                return spec.commands
+        return ()
+
     # Legacy shim: the old interface derives from the new plan, so anything
     # still calling collection_plan() sees the primary commands.
     def collection_plan(self):

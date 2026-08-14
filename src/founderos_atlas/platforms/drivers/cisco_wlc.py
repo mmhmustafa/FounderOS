@@ -215,6 +215,21 @@ class CiscoWlcDriver(ProductionDriver):
             "invalid command" in folded[:120]
         )
 
+    def is_configuration(self, output: str) -> bool:
+        """WLC `show run-config commands` output is CLI command lines.
+
+        Every line reads as a WLC configuration command — `config …`,
+        `interface …`, `wlan …`, `802.11…`. The refusal grammar
+        ("Incorrect usage. …") matches none of these openers.
+        """
+
+        lines = [line.strip() for line in (output or "").splitlines() if line.strip()]
+        if not lines:
+            return False
+        openers = ("config ", "interface ", "wlan ", "802.11", "mgmtuser ", "sysname ")
+        matching = sum(1 for line in lines if line.startswith(openers))
+        return matching * 2 >= len(lines) and matching >= 1
+
     def annotate(self, discovery: DriverDiscovery) -> DriverDiscovery:
         raw = discovery.raw_outputs
         metadata = dict(discovery.result.device.metadata)

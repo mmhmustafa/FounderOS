@@ -393,6 +393,25 @@ class PanOsDriver(ProductionDriver):
             or "invalid syntax" in folded[:200]
         )
 
+    def is_configuration(self, output: str) -> bool:
+        """PAN-OS configuration in either shape this driver can receive.
+
+        With `set cli config-output-format set` in effect the config is one
+        `set` statement per line; without it, the brace-structured
+        hierarchy. A refusal ("Unknown command: … Invalid syntax.") is
+        neither.
+        """
+
+        lines = [line.strip() for line in (output or "").splitlines() if line.strip()]
+        if not lines:
+            return False
+        set_like = sum(1 for line in lines if line.startswith("set "))
+        if set_like and set_like * 2 >= len(lines):
+            return True
+        opens = sum(1 for line in lines if line.endswith("{"))
+        closes = sum(1 for line in lines if line == "}")
+        return opens >= 1 and closes >= 1
+
     def annotate(self, discovery: DriverDiscovery) -> DriverDiscovery:
         raw = discovery.raw_outputs
         metadata = dict(discovery.result.device.metadata)

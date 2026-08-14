@@ -274,6 +274,29 @@ class JunosDriver(ProductionDriver):
             or "error: unrecognized command" in folded[:200]
         )
 
+    def is_configuration(self, output: str) -> bool:
+        """Junos configuration in either shape this driver collects.
+
+        ``show configuration | display set`` is one ``set``/``deactivate``
+        statement per line; plain ``show configuration`` is the
+        brace-structured hierarchy. A refusal transcript has neither.
+        A three-line stub of real set-statements is a real configuration —
+        structure decides, never size.
+        """
+
+        lines = [line.strip() for line in (output or "").splitlines() if line.strip()]
+        if not lines:
+            return False
+        set_like = sum(
+            1 for line in lines
+            if line.startswith(("set ", "deactivate ", "delete "))
+        )
+        if set_like and set_like * 2 >= len(lines):
+            return True
+        opens = sum(1 for line in lines if line.endswith("{"))
+        closes = sum(1 for line in lines if line == "}")
+        return opens >= 1 and closes >= 1
+
     def command_plan(self) -> tuple[CommandSpec, ...]:
         return (
             CommandSpec(caps.IDENTITY, (SHOW_VERSION,), required=True, tier=TIER_FAST),

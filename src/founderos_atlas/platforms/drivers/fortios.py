@@ -294,6 +294,22 @@ class FortiOSDriver(ProductionDriver):
             or "command parse error" in folded[:80]
         )
 
+    def is_configuration(self, output: str) -> bool:
+        """FortiOS configuration is `config <scope> … end` blocks.
+
+        The shared structural default is Cisco-shaped and finds nothing in
+        a valid FortiOS configuration — this recogniser reads the grammar
+        FortiOS actually emits. A refusal ("Command fail. Return code -61")
+        has neither a `config` opener nor an `end` closer.
+        """
+
+        lines = [line.strip() for line in (output or "").splitlines() if line.strip()]
+        if not lines:
+            return False
+        has_block = any(line.startswith("config ") for line in lines)
+        has_end = any(line == "end" for line in lines)
+        return has_block and has_end
+
     def annotate(self, discovery: DriverDiscovery) -> DriverDiscovery:
         raw = discovery.raw_outputs
         metadata = dict(discovery.result.device.metadata)

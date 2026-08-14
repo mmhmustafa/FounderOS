@@ -169,7 +169,10 @@ _HOSTNAME = re.compile(r"^hostname\s+(\S+)", re.IGNORECASE)
 _ROUTER_ID = re.compile(r"^\s*(?:bgp\s+)?router-id\s+(\S+)", re.IGNORECASE)
 _ROUTER_BGP = re.compile(r"^router\s+bgp\s+(\S+)", re.IGNORECASE)
 _ROUTER_OSPF = re.compile(r"^router\s+ospf\s*(\S+)?", re.IGNORECASE)
-_INTERFACE = re.compile(r"^interface\s+(\S+)", re.IGNORECASE)
+# Anchored to the whole line (PR-181): a stanza opener is the interface
+# name and nothing else, so the header row of `show ip interface brief`
+# never reads as an interface fact.
+_INTERFACE = re.compile(r"^interface\s+(\S+)\s*$", re.IGNORECASE)
 _DESCRIPTION = re.compile(r"^\s*description\s+(.+)$", re.IGNORECASE)
 _IP_ADDRESS = re.compile(
     r"^\s*ip(?:v6)?\s+address\s+(\S+(?:\s+\S+)?)", re.IGNORECASE

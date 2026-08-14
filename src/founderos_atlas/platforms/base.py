@@ -120,6 +120,21 @@ class PlatformDriver(ABC):
 
         raise NotImplementedError
 
+    def configuration_commands(self) -> tuple[str, ...]:
+        """The command(s) that collect this platform's running configuration.
+
+        Primary first; empty when the driver declares none. The default
+        derives it from the collection plan, so a legacy driver that
+        declares a "configuration" capability (the AtlasLab firewall)
+        answers without further work. PR-181: this is the single source
+        the configuration collector consults — never a hardcoded command.
+        """
+
+        for spec in self.collection_plan():
+            if spec.name == "configuration":
+                return (spec.command,)
+        return ()
+
     def classify_output(self, spec: CapabilitySpec, output: str) -> CapabilityStatus:
         """Map one command's output onto a capability state.
 

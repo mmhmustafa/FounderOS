@@ -168,6 +168,38 @@ def _non_collected_artifact(status: str, **overrides) -> ConfigurationArtifact:
     return ConfigurationArtifact(**fields)
 
 
+class LiveEstateClassifierCorpusTests(unittest.TestCase):
+    """T16 (classifier form) — no real configuration fails the positive test.
+
+    Every running_config.txt the estate holds must classify COLLECTED under
+    the shared structural default — the fail-closed direction is a worse bug
+    than the one PR-181 fixes.
+    """
+
+    def test_every_live_configuration_classifies_collected(self) -> None:
+        from founderos_atlas.config.classify import classify_configuration_reply
+
+        corpus = _live_estate_configs()
+        if not corpus:
+            self.skipTest("no live estate on this machine")
+        rejected: list[str] = []
+        for path in corpus:
+            try:
+                text = path.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            if not text.strip():
+                continue
+            status, _detail = classify_configuration_reply(None, text)
+            if status != "collected":
+                rejected.append(f"{path} -> {status}")
+        self.assertEqual(
+            [], rejected,
+            f"{len(rejected)} of {len(corpus)} real configurations "
+            "fail the positive structural test",
+        )
+
+
 class HonestArtifactModelTests(unittest.TestCase):
     """PR-181 Step 2 — non-collected outcomes exist without pretending."""
 
