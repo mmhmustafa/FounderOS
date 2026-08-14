@@ -39,6 +39,14 @@ def write_configuration_artifacts(
 
     if not isinstance(artifact, ConfigurationArtifact):
         raise TypeError("artifact must be a ConfigurationArtifact")
+    if not artifact.collected:
+        # PR-181 Gate 4: only a positively confirmed configuration may
+        # become running_config.txt. A refusal on disk is a lie every
+        # filesystem consumer would believe.
+        raise ValueError(
+            "refusing to write artifacts for a non-collected outcome "
+            f"({artifact.status})"
+        )
     target = Path(directory)
     target.mkdir(parents=True, exist_ok=True)
 

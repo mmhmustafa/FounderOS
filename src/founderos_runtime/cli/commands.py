@@ -1675,10 +1675,14 @@ def _configuration_history(
 ) -> tuple[str, int, dict[str, Path]]:
     if config_collections is None:
         return CONFIG_NOT_REQUESTED, 0, {}
+    # PR-181 (T14): only a real collection has an artifact directory and
+    # counts as configured. unsupported / denied / unrecognised / empty /
+    # failed entries carry a reason in `detail`, not a path — treating them
+    # as directories is how a refusal used to count as a success.
     directories = {
         hostname: Path(detail)
         for hostname, status, detail in config_collections
-        if status != "failed"
+        if status in ("complete", "partial")
     }
     statuses = [status for _, status, _ in config_collections]
     if statuses and all(status == "complete" for status in statuses):

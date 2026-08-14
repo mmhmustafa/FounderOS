@@ -186,7 +186,10 @@ def render_atlas_discover(
         config_lines.append("No devices were available for collection.")
     else:
         for hostname, status, detail in config_collections:
-            separator = "-" if status == "failed" else "->"
+            # PR-181: only a real collection points at an artifact directory.
+            # Every other status — failed, unsupported, denied, unrecognised,
+            # empty — carries a reason, and is printed as one.
+            separator = "->" if status in ("complete", "partial") else "-"
             config_lines.append(f"[{status}] {hostname} {separator} {detail}")
     return "\n".join(
         (

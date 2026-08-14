@@ -20,7 +20,13 @@ from __future__ import annotations
 from pathlib import Path
 import unittest
 
-from founderos_atlas.config import collect_configuration
+from founderos_atlas.config import (
+    NON_COLLECTED_STATUSES,
+    STATUS_UNRECOGNISED,
+    ConfigurationArtifact,
+    collect_configuration,
+    write_configuration_artifacts,
+)
 from founderos_atlas.platforms import capabilities as caps
 from founderos_atlas.platforms.registry import default_registry
 
@@ -146,6 +152,103 @@ class LiveEstateCorpusTests(unittest.TestCase):
             f"{len(rejected)} of {len(corpus)} real collected configurations "
             "would no longer be accepted",
         )
+
+
+def _non_collected_artifact(status: str, **overrides) -> ConfigurationArtifact:
+    fields = dict(
+        device_id="junos:edge-1", hostname="edge-1", vendor="juniper",
+        platform="MX204", os_name="Junos", os_version="21.4R3",
+        management_ip="10.0.0.9", running_config="", status=status,
+        collected_at="2026-08-15T00:00:00Z",
+        command_used="show configuration | display set",
+        raw_reply="           ^\nunknown command.\n",
+        detail="the device rejected every configuration command form",
+    )
+    fields.update(overrides)
+    return ConfigurationArtifact(**fields)
+
+
+class HonestArtifactModelTests(unittest.TestCase):
+    """PR-181 Step 2 — non-collected outcomes exist without pretending."""
+
+    def test_every_non_collected_status_is_representable(self) -> None:
+        for status in sorted(NON_COLLECTED_STATUSES):
+            artifact = _non_collected_artifact(status)
+            self.assertEqual(status, artifact.status)
+            self.assertFalse(artifact.collected)
+            self.assertEqual("", artifact.running_config)
+
+    def test_unrecognised_is_a_distinct_honest_outcome(self) -> None:
+        self.assertIn(STATUS_UNRECOGNISED, NON_COLLECTED_STATUSES)
+        artifact = _non_collected_artifact(STATUS_UNRECOGNISED)
+        self.assertEqual("unrecognised", artifact.status)
+
+    def test_a_non_collected_artifact_rejects_configuration_content(self) -> None:
+        with self.assertRaises(ValueError):
+            _non_collected_artifact(
+                "unsupported", running_config="hostname sneaky\n"
+            )
+
+    def test_a_collected_artifact_still_requires_content(self) -> None:
+        with self.assertRaises(ValueError):
+            _non_collected_artifact("complete")  # empty running_config
+
+    def test_metadata_never_claims_content_it_does_not_hold(self) -> None:
+        metadata = _non_collected_artifact("unsupported").to_metadata_dict()
+        self.assertEqual("unsupported", metadata["collection_status"])
+        self.assertIsNone(metadata["running_config_sha256"])
+        self.assertEqual(0, metadata["running_config_lines"])
+        # The raw device reply is forensic material, never metadata.
+        self.assertNotIn("unknown command", str(metadata))
+
+    def test_storage_refuses_a_non_collected_artifact(self) -> None:
+        import tempfile
+
+        artifact = _non_collected_artifact("unsupported")
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(ValueError):
+                write_configuration_artifacts(artifact, Path(tmp) / "edge-1")
+            self.assertEqual([], list(Path(tmp).rglob("running_config.txt")))
+
+
+class HonestSummaryTests(unittest.TestCase):
+    """T14 — the collection summary never counts a non-collection."""
+
+    def test_configuration_history_counts_only_real_collections(self) -> None:
+        from founderos_runtime.cli.commands import _configuration_history
+
+        overall, configured, directories = _configuration_history((
+            ("r1", "complete", r"C:\out\r1"),
+            ("fw1", "partial", r"C:\out\fw1"),
+            ("jn1", "unsupported", "the device rejected every command form"),
+            ("jn2", "unrecognised", "reply could not be confirmed"),
+            ("jn3", "denied", "the account lacks privilege"),
+            ("jn4", "failed", "connection lost"),
+        ))
+        self.assertEqual(2, configured)
+        self.assertEqual({"r1", "fw1"}, set(directories))
+        self.assertEqual("partial", overall)
+
+    def test_all_non_collected_is_not_reported_as_collected(self) -> None:
+        from founderos_runtime.cli.commands import _configuration_history
+
+        overall, configured, directories = _configuration_history((
+            ("jn1", "unsupported", "refused"),
+            ("jn2", "unrecognised", "unconfirmed"),
+        ))
+        self.assertEqual(0, configured)
+        self.assertEqual({}, directories)
+        self.assertNotIn(overall, ("collected", "partial"))
+
+    def test_render_distinguishes_reasons_from_artifact_paths(self) -> None:
+        # A reason line must never render with the artifact arrow: only
+        # complete/partial entries point at a directory.
+        import inspect
+
+        from founderos_runtime.cli import render
+
+        source = inspect.getsource(render.render_atlas_discover)
+        self.assertIn('status in ("complete", "partial")', source)
 
 
 if __name__ == "__main__":  # pragma: no cover
