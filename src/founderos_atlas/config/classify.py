@@ -39,11 +39,17 @@ from .models import (
 )
 
 
+from functools import lru_cache
+
+
+@lru_cache(maxsize=1)
 def known_configuration_commands() -> frozenset[str]:
     """Every command any registered driver declares as its configuration
     command, plus the legacy spellings — derived at runtime from the
     drivers themselves, never hand-maintained (PR-181 retired the three
-    inconsistent literal lists this replaces)."""
+    inconsistent literal lists this replaces). Cached: the driver set is
+    code, fixed for the process lifetime, and Policy consults this per
+    device."""
 
     from founderos_atlas.platforms import default_registry
 
