@@ -511,6 +511,116 @@ class HonestArtifactModelTests(unittest.TestCase):
             self.assertEqual([], list(Path(tmp).rglob("running_config.txt")))
 
 
+class StorageHonestyTests(unittest.TestCase):
+    """PR-181 Step 6 — a snapshot exists only for verified configuration."""
+
+    def _sink(self, tmp):
+        from founderos_atlas.enterprise_memory.sink import EvidenceSink
+        from founderos_atlas.enterprise_memory.store import EnterpriseMemoryStore
+
+        store = EnterpriseMemoryStore(Path(tmp))
+        return store, EvidenceSink(store, discovery_session="sess-1")
+
+    def test_a_refusal_never_becomes_a_snapshot_but_stays_evidence(self) -> None:
+        import tempfile
+
+        from tests.platform_fixtures import junos as fx
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store, sink = self._sink(tmp)
+            driver = default_registry().driver_for("junos")
+            sink.capture(
+                device_id="junos:edge-1", hostname="edge-1",
+                raw_outputs={
+                    "show configuration | display set": fx.UNSUPPORTED,
+                },
+                platform="MX204", platform_driver="JunosDriver",
+                configuration_commands=tuple(driver.configuration_commands()),
+                configuration_check=driver.is_configuration,
+            )
+            self.assertEqual(0, sink.configurations_written)
+            self.assertEqual([], list(store.configuration_snapshots()))
+            # The forensic record survives, honestly labelled.
+            records = store.evidence_records(device_id="junos:edge-1")
+            self.assertEqual(1, len(records))
+            self.assertEqual("unavailable", records[0].collection_status)
+
+    def test_a_verified_configuration_snapshot_carries_provenance(self) -> None:
+        import tempfile
+
+        from tests.platform_fixtures import junos as fx
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store, sink = self._sink(tmp)
+            driver = default_registry().driver_for("junos")
+            sink.capture(
+                device_id="junos:edge-1", hostname="edge-1",
+                raw_outputs={
+                    "show configuration | display set": fx.SHOW_CONFIG_SET,
+                },
+                platform="MX204", platform_driver="JunosDriver",
+                configuration_commands=tuple(driver.configuration_commands()),
+                configuration_check=driver.is_configuration,
+            )
+            self.assertEqual(1, sink.configurations_written)
+            snapshot = store.configuration_snapshots()[0]
+            self.assertEqual("collected", snapshot.collection_status)
+            self.assertEqual(
+                "show configuration | display set", snapshot.command
+            )
+            self.assertIn("pr181:", snapshot.verified_by or "")
+
+    def test_driverless_capture_still_requires_positive_proof(self) -> None:
+        # Legacy callers get the fallback spelling set AND the shared
+        # structural check — never "non-empty means configuration".
+        import tempfile
+
+        from tests.platform_fixtures import junos as fx
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store, sink = self._sink(tmp)
+            sink.capture(
+                device_id="r1", hostname="r1",
+                raw_outputs={
+                    "show running-config": fx.UNSUPPORTED,  # refusal text
+                },
+            )
+            self.assertEqual(0, sink.configurations_written)
+            sink.capture(
+                device_id="r1", hostname="r1",
+                raw_outputs={"show running-config": FRR_RUNNING_CONFIG},
+            )
+            self.assertEqual(1, sink.configurations_written)
+
+    def test_failed_attempt_provenance_survives_restart(self) -> None:
+        # T15 — reopen the store from disk; the honest record is intact.
+        import tempfile
+
+        from tests.platform_fixtures import junos as fx
+
+        from founderos_atlas.enterprise_memory.store import EnterpriseMemoryStore
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store, sink = self._sink(tmp)
+            driver = default_registry().driver_for("junos")
+            sink.capture(
+                device_id="junos:edge-1", hostname="edge-1",
+                raw_outputs={
+                    "show configuration | display set": fx.UNSUPPORTED,
+                },
+                configuration_commands=tuple(driver.configuration_commands()),
+                configuration_check=driver.is_configuration,
+            )
+            reopened = EnterpriseMemoryStore(Path(tmp))
+            records = reopened.evidence_records(device_id="junos:edge-1")
+            self.assertEqual(1, len(records))
+            self.assertEqual("unavailable", records[0].collection_status)
+            self.assertEqual(
+                "show configuration | display set", records[0].command
+            )
+            self.assertEqual([], list(reopened.configuration_snapshots()))
+
+
 class HonestSummaryTests(unittest.TestCase):
     """T14 — the collection summary never counts a non-collection."""
 

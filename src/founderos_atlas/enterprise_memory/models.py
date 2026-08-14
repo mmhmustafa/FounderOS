@@ -313,6 +313,13 @@ class ConfigurationSnapshot:
     atlas_version: str = ATLAS_VERSION
     # A lightweight structural fingerprint (Part 6): counts, not parsing.
     fingerprint: dict[str, Any] | None = None
+    # PR-181 provenance: the command that actually produced this
+    # configuration, and which check verified the content IS one. Both
+    # None on snapshots recorded before PR-181 — history keeps its
+    # historical semantics, and the absence of verified_by is itself
+    # honest information ("recorded before verification existed").
+    command: str | None = None
+    verified_by: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -331,6 +338,8 @@ class ConfigurationSnapshot:
             "platform_driver": self.platform_driver,
             "atlas_version": self.atlas_version,
             "fingerprint": dict(self.fingerprint) if self.fingerprint else None,
+            "command": self.command,
+            "verified_by": self.verified_by,
         }
 
     @classmethod
@@ -351,6 +360,8 @@ class ConfigurationSnapshot:
             platform_driver=value.get("platform_driver"),
             atlas_version=str(value.get("atlas_version") or ATLAS_VERSION),
             fingerprint=(dict(value["fingerprint"]) if value.get("fingerprint") else None),
+            command=value.get("command"),
+            verified_by=value.get("verified_by"),
         )
 
 

@@ -383,6 +383,8 @@ class EnterpriseMemoryStore:
         credential_ref: str | None = None,
         discovery_policy: str | None = None,
         platform_driver: str | None = None,
+        command: str | None = None,
+        verified_by: str | None = None,
     ) -> ConfigurationSnapshot | None:
         """Record a configuration snapshot over its running-config blob.
 
@@ -413,6 +415,8 @@ class EnterpriseMemoryStore:
                 discovery_policy=discovery_policy,
                 platform_driver=platform_driver,
                 fingerprint=print_.to_dict() if print_ else None,
+                command=command,
+                verified_by=verified_by,
             )
             path = self._root / "snapshots.json"
             # Copy before mutating — the memoised object is shared (PR-176).

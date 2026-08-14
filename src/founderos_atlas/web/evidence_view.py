@@ -354,9 +354,14 @@ def device_rows(
 # ReasoningResult keeps the whole Evidence object in `evidence_used`. That
 # unbroken chain of content addresses -- not a guess, not a name match -- is
 # what lets this module say which findings rest on which bytes.
-_TRACEABLE_COMMANDS = frozenset({
-    "show running-config", "show running-config all", "show run",
-})
+# PR-181: derived from the drivers' own configuration declarations —
+# the third hand-maintained command list this module used to carry is
+# retired. A Junos or PAN-OS configuration record is exactly as
+# traceable as a Cisco one.
+def _traceable_commands() -> frozenset[str]:
+    from founderos_atlas.config.classify import known_configuration_commands
+
+    return known_configuration_commands()
 
 
 @dataclass(frozen=True)
@@ -418,7 +423,7 @@ def is_traceable(record: Mapping[str, Any]) -> bool:
     """
 
     command = str(record.get("command") or "").strip().casefold()
-    return command in _TRACEABLE_COMMANDS and bool(record.get("content_sha256"))
+    return command in _traceable_commands() and bool(record.get("content_sha256"))
 
 
 def used_by(

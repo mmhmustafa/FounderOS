@@ -39,6 +39,28 @@ from .models import (
 )
 
 
+def known_configuration_commands() -> frozenset[str]:
+    """Every command any registered driver declares as its configuration
+    command, plus the legacy spellings — derived at runtime from the
+    drivers themselves, never hand-maintained (PR-181 retired the three
+    inconsistent literal lists this replaces)."""
+
+    from founderos_atlas.platforms import default_registry
+
+    commands = {
+        "show running-config", "show running-config all", "show run",
+    }
+    try:
+        for driver_cls in default_registry().drivers():
+            try:
+                commands.update(driver_cls().configuration_commands())
+            except Exception:  # noqa: BLE001 - one driver never hides the rest
+                continue
+    except Exception:  # noqa: BLE001 - the legacy spellings still stand
+        pass
+    return frozenset(command.casefold() for command in commands if command)
+
+
 def probe_regions(reply: str) -> tuple[str, ...]:
     """The regions refusal grammar is probed against, most-anchored first.
 

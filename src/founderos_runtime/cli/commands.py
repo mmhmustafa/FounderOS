@@ -407,6 +407,27 @@ def atlas_discover_command(
         def memory_capture(result, raw_outputs):
             device = result.device
             driver_meta = (device.metadata or {}).get("platform_driver") or {}
+            # PR-181: the driver's own declaration decides which command IS
+            # the configuration, and its recogniser verifies the content
+            # before a snapshot may exist. Resolution failure degrades to
+            # the sink's fail-closed defaults — never to trust.
+            configuration_commands = None
+            configuration_check = None
+            try:
+                from founderos_atlas.config.collector import (
+                    resolve_configuration_driver,
+                )
+
+                sink_driver = resolve_configuration_driver(result)
+                if sink_driver is not None:
+                    configuration_commands = tuple(
+                        sink_driver.configuration_commands()
+                    )
+                    probe = getattr(sink_driver, "is_configuration", None)
+                    if callable(probe):
+                        configuration_check = probe
+            except Exception:  # noqa: BLE001 - memory must never break discovery
+                pass
             memory_sink.capture(
                 device_id=device.device_id,
                 hostname=device.hostname,
@@ -415,6 +436,8 @@ def atlas_discover_command(
                 software_version=device.os_version,
                 platform_driver=driver_meta.get("driver") if isinstance(driver_meta, dict) else None,
                 credential_ref=(inputs.credential_ref if profile is not None else None),
+                configuration_commands=configuration_commands,
+                configuration_check=configuration_check,
             )
     except Exception:  # noqa: BLE001 - memory must never break discovery
         memory_store = None
@@ -1918,8 +1941,29 @@ def _collect_configurations_if_requested(
             )
             if not artifact.collected:
                 # An honest non-collection: a reason travels instead of a
-                # path, and nothing is written anywhere.
+                # path, and no configuration is written anywhere. The raw
+                # reply IS preserved — as evidence with an honest status,
+                # so the forensic record survives a restart (PR-181 T15).
                 collections.append((hostname, artifact.status, artifact.detail))
+                if (
+                    enterprise_store is not None
+                    and artifact.command_used
+                    and (artifact.raw_reply or "").strip()
+                ):
+                    try:
+                        enterprise_store.store_evidence(
+                            device_id=result.device.device_id,
+                            hostname=hostname,
+                            command=artifact.command_used,
+                            output=artifact.raw_reply,
+                            collection_status="unavailable",
+                            detail=artifact.detail[:160],
+                            discovery_session=discovery_session,
+                            platform=result.device.platform,
+                            software_version=result.device.os_version,
+                        )
+                    except Exception:  # noqa: BLE001
+                        pass
                 continue
             paths = write_configuration_artifacts(
                 artifact,
@@ -1952,10 +1996,17 @@ def _collect_configurations_if_requested(
                 driver_name = (
                     driver_meta.get("driver") if isinstance(driver_meta, dict) else None
                 )
+                # PR-181: the command that ACTUALLY ran travels with the
+                # evidence and the snapshot — a Junos device is never
+                # again recorded as having answered a Cisco command. The
+                # snapshot carries explicit status and verification
+                # provenance; the classifier confirmed the content at
+                # collection time.
+                real_command = artifact.command_used or "show running-config"
                 try:
                     enterprise_store.store_evidence(
                         device_id=result.device.device_id, hostname=hostname,
-                        command="show running-config",
+                        command=real_command,
                         output=artifact.running_config,
                         discovery_session=discovery_session,
                         platform=result.device.platform,
@@ -1971,6 +2022,12 @@ def _collect_configurations_if_requested(
                         platform_driver=driver_name,
                         credential_ref=enterprise_credential_ref,
                         discovery_policy=enterprise_discovery_policy,
+                        collection_status="collected",
+                        command=real_command,
+                        verified_by=(
+                            "pr181:collector-classifier"
+                            + (f" driver={driver_name}" if driver_name else "")
+                        ),
                     )
                 except Exception:  # noqa: BLE001
                     pass
