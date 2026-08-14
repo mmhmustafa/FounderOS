@@ -95,6 +95,26 @@ def snapshot_id_for(digest: str) -> str:
     return f"atlas-snapshot:{digest}"
 
 
+def snapshot_order_key(snapshot: "ConfigurationSnapshot") -> tuple:
+    """THE ordering every configuration-snapshot selector uses (PR-181).
+
+    ``captured_at`` decides (microsecond precision on new writes); the
+    remaining fields only break legacy same-second ties, deterministically
+    and IDENTICALLY across every selector — before this helper existed,
+    _pick_snapshot took the first-written of a tied pair while
+    latest_configuration took the last, so Evidence and Policy could
+    disagree about which configuration was current. snapshot_id is a
+    content hash: acceptable as a deterministic tie-break, never as a
+    recency signal.
+    """
+
+    return (
+        snapshot.captured_at or "",
+        snapshot.discovery_session or "",
+        snapshot.snapshot_id or "",
+    )
+
+
 # -- discovery session -------------------------------------------------------
 
 
@@ -440,7 +460,17 @@ class DeviceMemory:
 
     @property
     def latest_configuration(self) -> ConfigurationSnapshot | None:
-        ordered = sorted(self.configuration_snapshots, key=lambda s: s.captured_at)
+        """The newest USABLE configuration (PR-181): explicitly non-OK
+        snapshots never present themselves as a device's configuration,
+        and the shared ordering keeps every selector in agreement."""
+
+        ordered = sorted(
+            (
+                snap for snap in self.configuration_snapshots
+                if snap.collection_status == COLLECTION_OK
+            ),
+            key=snapshot_order_key,
+        )
         return ordered[-1] if ordered else None
 
     @property

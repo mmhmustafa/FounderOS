@@ -73,7 +73,7 @@ class EnterpriseMemory:
         counts — enough to render a session detail page."""
 
         records = self._store.evidence_records(discovery_session=session_id)
-        snapshots = self._store.configuration_snapshots()
+        snapshots = self._store.collected_configuration_snapshots()
         by_device: dict[str, dict[str, Any]] = {}
         for record in records:
             entry = by_device.setdefault(
@@ -125,11 +125,50 @@ class EnterpriseMemory:
     def configuration_timeline(
         self, device_id: str, *, newest_first: bool = True
     ) -> tuple[ConfigurationSnapshot, ...]:
-        """This device's configuration snapshots, ordered by capture time."""
+        """This device's configuration snapshots, ordered by capture time.
+
+        The FULL forensic history, ordered by the shared selector key so
+        every surface agrees about sequence. For choosing a device's
+        usable configuration, use ``collected_configuration_timeline``.
+        """
+
+        from .models import snapshot_order_key
 
         snaps = list(self._store.configuration_snapshots(device_id=device_id))
-        snaps.sort(key=lambda s: s.captured_at, reverse=newest_first)
+        snaps.sort(key=snapshot_order_key, reverse=newest_first)
         return tuple(snaps)
+
+    def collected_configuration_timeline(
+        self, device_id: str, *, newest_first: bool = True
+    ) -> tuple[ConfigurationSnapshot, ...]:
+        """The snapshots eligible to BE this device's configuration (PR-181)."""
+
+        snaps = list(
+            self._store.collected_configuration_snapshots(device_id=device_id)
+        )
+        if newest_first:
+            snaps.reverse()
+        return tuple(snaps)
+
+    def collected_snapshot_for(
+        self, device_id: str, config_sha256: str
+    ) -> ConfigurationSnapshot | None:
+        """The eligible snapshot this device holds under this content hash.
+
+        The gate the download and view surfaces use (PR-181): a blob is
+        served AS a configuration only when an eligible snapshot for this
+        very device points at it — never merely because the blob exists.
+        """
+
+        digest = str(config_sha256 or "")
+        if not digest:
+            return None
+        for snap in self._store.collected_configuration_snapshots(
+            device_id=device_id
+        ):
+            if snap.config_sha256 == digest:
+                return snap
+        return None
 
     # -- raw text (download = raw; view = masked) --------------------------
 

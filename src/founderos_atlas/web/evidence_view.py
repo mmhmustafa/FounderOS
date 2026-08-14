@@ -328,15 +328,33 @@ def device_rows(
             row["configuration"] = dict(snap)
             row["has_configuration"] = True
 
+    # PR-181: the third configuration state. A device whose configuration
+    # command was ATTEMPTED and refused/unconfirmed is a different fact
+    # from one Atlas never asked — rendering both as "Not collected"
+    # would hide that Atlas tried and the device did not answer usefully.
+    traceable = _traceable_commands()
+    attempted_not_collected: set[str] = set()
+    for record in records:
+        command = str(record.get("command") or "").strip().casefold()
+        if command in traceable and not is_collected(
+            record.get("collection_status")
+        ):
+            device_id = record.get("device_id") or ""
+            if device_id:
+                attempted_not_collected.add(device_id)
+
     for row in by_device.values():
         row["completeness_percent"] = completeness_percent(
             row["commands_attempted"],
             row["failed_collections"],
             row["unsupported_commands"],
         )
-        row["configuration_status"] = (
-            "Collected" if row["has_configuration"] else "Not collected"
-        )
+        if row["has_configuration"]:
+            row["configuration_status"] = "Collected"
+        elif row["device_id"] in attempted_not_collected:
+            row["configuration_status"] = "Attempted, not collected"
+        else:
+            row["configuration_status"] = "Not collected"
 
     return tuple(
         sorted(by_device.values(), key=lambda r: str(r["hostname"]).casefold())

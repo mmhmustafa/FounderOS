@@ -621,6 +621,210 @@ class StorageHonestyTests(unittest.TestCase):
             self.assertEqual([], list(reopened.configuration_snapshots()))
 
 
+class SelectionSafetyTests(unittest.TestCase):
+    """PR-181 Step 7 — selection can never pick the unverified."""
+
+    def _store(self, tmp, clock=None):
+        from founderos_atlas.enterprise_memory.store import EnterpriseMemoryStore
+
+        return EnterpriseMemoryStore(Path(tmp), clock=clock)
+
+    def test_valid_snapshot_is_not_displaced_by_later_invalid(self) -> None:
+        # T11 — the displacement half of the beta blocker: a later non-OK
+        # record must never displace the verified configuration.
+        import tempfile
+
+        from datetime import datetime, timedelta, timezone
+
+        from founderos_atlas.enterprise_memory.retrieval import EnterpriseMemory
+        from founderos_atlas.reasoning.providers import MemoryEvidenceProvider
+
+        base = datetime(2026, 8, 15, 9, 0, tzinfo=timezone.utc)
+        ticks = iter(range(600))
+
+        def clock():
+            return base + timedelta(seconds=next(ticks))
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = self._store(tmp, clock=clock)
+            store.store_configuration(
+                device_id="junos:edge-1", hostname="edge-1",
+                discovery_session="s1",
+                running_config="set system host-name edge-1\n",
+                collection_status="collected",
+                command="show configuration | display set",
+                verified_by="pr181:test",
+            )
+            # A LATER attempt, explicitly not OK (defence in depth: the
+            # sink no longer writes these, but selection must still refuse
+            # one if it ever appears).
+            store.store_configuration(
+                device_id="junos:edge-1", hostname="edge-1",
+                discovery_session="s2",
+                running_config="           ^\nunknown command.\n",
+                collection_status="unavailable",
+            )
+            memory = EnterpriseMemory(store)
+            provider = MemoryEvidenceProvider(memory)
+            evidence = provider.gather(
+                "junos:edge-1", kinds=("running-config",)
+            )
+            self.assertEqual(1, len(evidence))
+            self.assertIn("set system host-name", evidence[0].text)
+            self.assertNotIn("unknown command", evidence[0].text)
+            # T12: what Policy receives is the verified text, and the
+            # device memory agrees.
+            latest = store.device_memory("junos:edge-1").latest_configuration
+            self.assertEqual("collected", latest.collection_status)
+
+    def test_policy_is_told_when_a_newer_attempt_failed(self) -> None:
+        # §9d — never silently stale: the superseded attempt reaches the
+        # Policy evidence summary and payload.
+        import tempfile
+
+        from datetime import datetime, timedelta, timezone
+
+        from founderos_atlas.enterprise_memory.retrieval import EnterpriseMemory
+        from founderos_atlas.reasoning.providers import MemoryEvidenceProvider
+
+        base = datetime(2026, 8, 15, 10, 0, tzinfo=timezone.utc)
+        ticks = iter(range(600))
+
+        def clock():
+            return base + timedelta(seconds=next(ticks))
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = self._store(tmp, clock=clock)
+            store.store_configuration(
+                device_id="junos:edge-1", hostname="edge-1",
+                discovery_session="s1",
+                running_config="set system host-name edge-1\n",
+                collection_status="collected",
+                command="show configuration | display set",
+                verified_by="pr181:test",
+            )
+            store.store_evidence(
+                device_id="junos:edge-1", hostname="edge-1",
+                command="show configuration | display set",
+                output="           ^\nunknown command.\n",
+                collection_status="unavailable",
+                discovery_session="s2",
+            )
+            provider = MemoryEvidenceProvider(EnterpriseMemory(store))
+            evidence = provider.gather(
+                "junos:edge-1", kinds=("running-config",)
+            )
+            self.assertEqual(1, len(evidence))
+            self.assertIn("newer collection attempt", evidence[0].summary)
+            self.assertIn("was not collected", evidence[0].summary)
+            superseded = evidence[0].payload.get("superseded_attempt")
+            self.assertIsNotNone(superseded)
+            self.assertEqual("unavailable", superseded["collection_status"])
+
+    def test_same_second_snapshots_order_identically_everywhere(self) -> None:
+        # T28 — microsecond captured_at removes new ties; for forced ties
+        # every selector must agree.
+        import tempfile
+
+        from datetime import datetime, timezone
+
+        from founderos_atlas.enterprise_memory.retrieval import EnterpriseMemory
+        from founderos_atlas.reasoning.providers import MemoryEvidenceProvider
+
+        fixed = datetime(2026, 8, 15, 11, 0, 0, tzinfo=timezone.utc)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = self._store(tmp, clock=lambda: fixed)
+            for session, text in (
+                ("s1", "hostname first\n"), ("s2", "hostname second\n"),
+            ):
+                store.store_configuration(
+                    device_id="r1", hostname="r1",
+                    discovery_session=session, running_config=text,
+                    collection_status="collected", verified_by="pr181:test",
+                )
+            memory = EnterpriseMemory(store)
+            provider = MemoryEvidenceProvider(memory)
+            picked = provider._pick_snapshot("r1", None)
+            latest = store.device_memory("r1").latest_configuration
+            timeline = memory.collected_configuration_timeline(
+                "r1", newest_first=True
+            )
+            self.assertEqual(picked.config_sha256, latest.config_sha256)
+            self.assertEqual(picked.config_sha256, timeline[0].config_sha256)
+
+    def test_new_writes_carry_microsecond_precision(self) -> None:
+        import re
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = self._store(tmp)
+            snap = store.store_configuration(
+                device_id="r1", hostname="r1", discovery_session="s1",
+                running_config="hostname r1\n",
+                collection_status="collected", verified_by="pr181:test",
+            )
+            self.assertRegex(
+                snap.captured_at, r"\d{2}:\d{2}:\d{2}\.\d{6}",
+                "captured_at must carry microsecond precision",
+            )
+
+    def test_no_selector_reads_the_unfiltered_accessor(self) -> None:
+        # T27 — the grep contract. The honest raw accessor exists for
+        # forensics; everything that CHOOSES a configuration goes through
+        # the collected accessor. This pins the complete caller list.
+        src = Path(__file__).resolve().parent.parent / "src"
+        allowed = {
+            # the store itself: the collected accessor's body, DeviceMemory
+            # construction (which filters inside latest_configuration), and
+            # the statistics counters
+            "founderos_atlas/enterprise_memory/store.py",
+            # the forensic surfaces: full history is their explicit purpose
+            "founderos_atlas/enterprise_memory/retrieval.py",
+        }
+        offenders = []
+        for path in src.rglob("*.py"):
+            text = path.read_text(encoding="utf-8", errors="replace")
+            if ".configuration_snapshots(" in text:
+                rel = path.relative_to(src).as_posix()
+                if rel not in allowed:
+                    offenders.append(rel)
+        self.assertEqual(
+            [], offenders,
+            "selectors must use collected_configuration_snapshots()",
+        )
+
+    def test_download_gate_refuses_ineligible_blobs(self) -> None:
+        # T26 — the sha must resolve to an eligible snapshot for the
+        # device; a blob existing is not enough.
+        import tempfile
+
+        from founderos_atlas.enterprise_memory.retrieval import EnterpriseMemory
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = self._store(tmp)
+            ok = store.store_configuration(
+                device_id="r1", hostname="r1", discovery_session="s1",
+                running_config="hostname r1\n",
+                collection_status="collected", verified_by="pr181:test",
+            )
+            bad = store.store_configuration(
+                device_id="r1", hostname="r1", discovery_session="s2",
+                running_config="           ^\nunknown command.\n",
+                collection_status="unavailable",
+            )
+            memory = EnterpriseMemory(store)
+            self.assertIsNotNone(
+                memory.collected_snapshot_for("r1", ok.config_sha256)
+            )
+            self.assertIsNone(
+                memory.collected_snapshot_for("r1", bad.config_sha256)
+            )
+            self.assertIsNone(
+                memory.collected_snapshot_for("other-device", ok.config_sha256)
+            )
+
+
 class HonestSummaryTests(unittest.TestCase):
     """T14 — the collection summary never counts a non-collection."""
 

@@ -96,13 +96,52 @@ class MemoryEvidenceProvider:
     def _pick_snapshot(
         self, subject: str, as_of: str | None
     ) -> ConfigurationSnapshot | None:
-        snaps = self._memory.configuration_timeline(subject, newest_first=True)
+        # PR-181: only snapshots eligible to BE a configuration are ever
+        # considered — a known-invalid record can no longer displace a
+        # valid one, whatever their timestamps say.
+        snaps = self._memory.collected_configuration_timeline(
+            subject, newest_first=True
+        )
         for snap in snaps:
             if not snap.config_sha256:
                 continue
             if as_of is None or (snap.captured_at and snap.captured_at <= as_of):
                 return snap
         return None
+
+    def _superseding_attempt(self, subject: str, snap: ConfigurationSnapshot):
+        """The newest LATER configuration-collection attempt that was not
+        collected, if one exists (PR-181 honesty requirement).
+
+        When Policy reasons over an older valid snapshot because a newer
+        attempt failed, was refused, or could not be confirmed, that fact
+        must travel with the evidence — an operator told "fresh
+        configuration" while the last attempt was a refusal is being
+        misled by omission.
+        """
+
+        try:
+            from founderos_atlas.config.classify import (
+                known_configuration_commands,
+            )
+
+            config_commands = known_configuration_commands()
+        except Exception:  # noqa: BLE001 - honesty degrades, never breaks
+            config_commands = frozenset()
+        if snap.command:
+            config_commands = config_commands | {snap.command.casefold()}
+        newest = None
+        for record in self._memory.evidence_timeline(subject, newest_first=True):
+            command = str(record.command or "").strip().casefold()
+            if command not in config_commands:
+                continue
+            if record.collection_status == "collected":
+                continue
+            if not record.collected_at or record.collected_at <= snap.captured_at:
+                continue
+            newest = record
+            break
+        return newest
 
     def _config_evidence(self, subject: str, as_of: str | None) -> Evidence | None:
         snap = self._pick_snapshot(subject, as_of)
@@ -111,6 +150,26 @@ class MemoryEvidenceProvider:
         masked, _masked_count = self._memory.view_configuration(snap.config_sha256)
         if masked is None:
             return None
+        summary = (
+            f"running configuration ({snap.byte_size} bytes, "
+            f"{snap.platform or 'unknown platform'})"
+        )
+        superseded = None
+        if as_of is None:
+            attempt = self._superseding_attempt(subject, snap)
+            if attempt is not None:
+                # PR-181: reasoning over an OLDER configuration because a
+                # NEWER attempt was not collected is stated, not silent.
+                superseded = {
+                    "attempted_at": attempt.collected_at,
+                    "command": attempt.command,
+                    "collection_status": attempt.collection_status,
+                }
+                summary += (
+                    f"; a newer collection attempt at {attempt.collected_at} "
+                    f"was not collected ({attempt.collection_status}) — this "
+                    "is the most recent VERIFIED configuration"
+                )
         return Evidence(
             id=f"config:{snap.config_sha256[:16]}",
             kind=KIND_RUNNING_CONFIG,
@@ -119,15 +178,15 @@ class MemoryEvidenceProvider:
             strength=STRENGTH_DIRECT,
             observed_at=snap.captured_at,
             recorded_at=snap.captured_at,
-            summary=(
-                f"running configuration ({snap.byte_size} bytes, "
-                f"{snap.platform or 'unknown platform'})"
-            ),
+            summary=summary,
             text=masked,
             provenance=EvidenceProvenance(
                 source="cli",
                 session_id=snap.discovery_session,
-                command="show running-config",
+                # PR-181: the command that ACTUALLY produced this snapshot.
+                # Pre-PR-181 rows carry no command; the legacy attribution
+                # stands only for them.
+                command=snap.command or "show running-config",
                 atlas_version=snap.atlas_version,
             ),
             payload={
@@ -136,6 +195,8 @@ class MemoryEvidenceProvider:
                 "config_sha256": snap.config_sha256,
                 "captured_at": snap.captured_at,
                 "fingerprint": dict(snap.fingerprint) if snap.fingerprint else None,
+                "verified_by": snap.verified_by,
+                "superseded_attempt": superseded,
             },
         )
 

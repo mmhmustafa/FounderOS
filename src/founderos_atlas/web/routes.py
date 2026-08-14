@@ -2445,8 +2445,11 @@ def register_routes(app) -> None:
             r.to_dict()
             for r in store.evidence_records(discovery_session=session["session_id"])
         ]
+        # PR-181: only VERIFIED snapshots present as configurations here;
+        # a refused attempt is visible through its evidence row and the
+        # "Attempted, not collected" state, never as a configuration.
         snapshots = [
-            s.to_dict() for s in store.configuration_snapshots()
+            s.to_dict() for s in store.collected_configuration_snapshots()
             if s.discovery_session == session["session_id"]
         ]
 
@@ -2853,13 +2856,21 @@ def register_routes(app) -> None:
 
     @app.route("/evidence/device/<path:device_id>/config/<sha>/download")
     def evidence_config_download(device_id: str, sha: str):
-        """Download one configuration snapshot — raw, for the local operator."""
+        """Download one configuration snapshot — raw, for the local operator.
+
+        PR-181: the sha must resolve to an ELIGIBLE snapshot for this very
+        device. A blob is never served as a configuration merely because
+        it exists — that was the bypass that would have handed a refusal
+        to an operator under a configuration filename.
+        """
 
         from flask import Response
 
         _context, scopes, scope_id = scoped_context("memory")
         service, _scope = _find_memory(scopes, scope_id, device_id=device_id)
         if service is None:
+            abort(404)
+        if service.collected_snapshot_for(device_id, sha) is None:
             abort(404)
         text = service.download_configuration(sha)
         if text is None:
@@ -2925,7 +2936,13 @@ def register_routes(app) -> None:
                 scope.output_dir / "enterprise-memory" / "configurations"
                 / "index.json"
             )
-            for path in (records, configs):
+            # PR-181: snapshot status/provenance is a Policy input — a
+            # change to it must invalidate the cached report, or a
+            # status correction would keep serving yesterday's verdicts.
+            snapshots = (
+                scope.output_dir / "enterprise-memory" / "snapshots.json"
+            )
+            for path in (records, configs, snapshots):
                 try:
                     stat = path.stat()
                     parts.append((str(path), stat.st_mtime_ns, stat.st_size))

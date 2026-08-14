@@ -616,9 +616,12 @@ def atlas_discover_command(
             session_evidence = len(
                 memory_store.evidence_records(discovery_session=memory_session_id)
             )
+            # PR-181: the session's configuration count means VERIFIED
+            # collections — a refusal that reached the store as evidence
+            # is not a configuration and is not counted as one.
             session_configs = len({
                 snap.config_sha256
-                for snap in memory_store.configuration_snapshots()
+                for snap in memory_store.collected_configuration_snapshots()
                 if snap.discovery_session == memory_session_id
             })
             memory_store.complete_session(

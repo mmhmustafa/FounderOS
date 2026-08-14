@@ -229,7 +229,11 @@
         <td data-col="commands">{{ d.commands_collected }} / {{ d.commands_attempted }}</td>
         {# PR-178: a measured zero is a measurement — never an em-dash. #}
         <td data-col="empty">{{ d.empty_responses if d.empty_responses is not none else '—' }}</td>
+        {# PR-181: three states. "Attempted, not collected" is a device that
+           answered its configuration command with something Atlas refused to
+           promote — a different fact from "never asked". #}
         <td data-col="configuration">{% if d.has_configuration %}<span class="badge">Collected</span>
+            {% elif d.configuration_status == 'Attempted, not collected' %}<span class="badge badge-muted">Attempted, not collected</span>
             {% else %}<span class="muted">Not collected</span>{% endif %}</td>
         <td data-col="last">{{ d.last_collected_at or '—' }}</td>
         <td data-col="actions" class="row-actions">

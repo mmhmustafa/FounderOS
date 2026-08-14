@@ -81,9 +81,10 @@ def register_evidence_resolution_routes(
                 discovery_session=session["session_id"]
             )
         )
+        # PR-181: presentation surfaces consume verified snapshots only.
         snapshots = tuple(
             item.to_dict()
-            for item in store.configuration_snapshots()
+            for item in store.collected_configuration_snapshots()
             if item.discovery_session == session["session_id"]
         )
         facts = topology_facts(

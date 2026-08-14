@@ -157,7 +157,10 @@ class EnterpriseMemoryStore:
             self._json_cache[str(path)] = (self._stat_signature(path), data)
 
     def _now(self) -> str:
-        return self._clock().isoformat(timespec="seconds")
+        # PR-181: microsecond precision. Second-resolution timestamps let
+        # two snapshots from one run tie, and a tie is where selectors
+        # used to disagree about which configuration is current.
+        return self._clock().isoformat(timespec="microseconds")
 
     # -- content-addressed blobs ------------------------------------------
 
@@ -461,11 +464,41 @@ class EnterpriseMemoryStore:
     def configuration_snapshots(
         self, *, device_id: str | None = None
     ) -> tuple[ConfigurationSnapshot, ...]:
+        """EVERY stored snapshot — the honest, unfiltered forensic record.
+
+        Selectors deciding a device's USABLE configuration must call
+        ``collected_configuration_snapshots`` instead (PR-181): the store
+        never lies about what it contains, and choosers never trust what
+        was not verified.
+        """
+
         with self._lock:
             self._snapshot_index()
             if device_id is not None:
                 return self._snapshots_by_device.get(device_id, ())
             return self._snapshots_cache
+
+    def collected_configuration_snapshots(
+        self, *, device_id: str | None = None
+    ) -> tuple[ConfigurationSnapshot, ...]:
+        """The snapshots eligible to BE a device's configuration (PR-181).
+
+        Filters out anything explicitly recorded as not-OK, and returns
+        the shared selector ordering. Historical rows (which back-fill to
+        collected and carry no verified_by) remain eligible — history
+        keeps its historical semantics; the UI states the distinction.
+        """
+
+        from .models import snapshot_order_key
+
+        return tuple(sorted(
+            (
+                snap
+                for snap in self.configuration_snapshots(device_id=device_id)
+                if snap.collection_status == COLLECTION_OK
+            ),
+            key=snapshot_order_key,
+        ))
 
     def configuration_text(self, digest: str) -> str | None:
         return self.blob_text(digest)
