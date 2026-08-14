@@ -129,14 +129,26 @@ class ConfigurationCollectorTests(unittest.TestCase):
         self.assertNotIn("show startup-config", artifact.additional_outputs)
         self.assertTrue(any("denied" in warning for warning in artifact.warnings))
 
-    def test_required_running_config_failure_raises(self) -> None:
+    def test_required_running_config_refusal_is_honest_not_raised(self) -> None:
+        # PR-181: a refusal is an honest non-collected artifact, never an
+        # exception — and never a stored configuration.
         _, transport, result = make_collection(
             config_outputs(**{"show running-config": UNSUPPORTED})
         )
-        with self.assertRaises(ConfigurationCollectionError) as caught:
-            collect_configuration(transport, result)
-        self.assertIn("running configuration", str(caught.exception))
-        self.assertIn("R1", str(caught.exception))
+        artifact = collect_configuration(transport, result)
+        self.assertEqual("unsupported", artifact.status)
+        self.assertFalse(artifact.collected)
+        self.assertEqual("", artifact.running_config)
+        self.assertTrue(artifact.detail)
+
+    def test_empty_running_config_is_honest_not_raised(self) -> None:
+        _, transport, result = make_collection(
+            config_outputs(**{"show running-config": ""})
+        )
+        artifact = collect_configuration(transport, result)
+        self.assertEqual("empty", artifact.status)
+        self.assertFalse(artifact.collected)
+        self.assertEqual("", artifact.running_config)
 
     def test_optional_commands_can_be_disabled(self) -> None:
         connection, transport, result = make_collection(config_outputs())
@@ -304,8 +316,11 @@ class DiscoverCliConfigCollectionTests(unittest.TestCase):
             )
             self.assertEqual(0, code, error)
             self.assertIn("[complete] R1 ->", output)
-            self.assertIn("[failed] SW1 - ", output)
-            self.assertIn("running configuration", output)
+            # PR-181: a device that rejected the command is reported as
+            # exactly that — not as a generic failure. Same guarantees
+            # otherwise: the run continues, and nothing is written for it.
+            self.assertIn("[unsupported] SW1 - ", output)
+            self.assertIn("rejected every configuration command form", output)
             self.assertTrue((workdir / "configs" / "R1" / "running_config.txt").exists())
             self.assertFalse((workdir / "configs" / "SW1").exists())
 

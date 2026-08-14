@@ -188,6 +188,240 @@ class LiveEstateCorpusTests(unittest.TestCase):
         )
 
 
+class _ScriptedTransport:
+    """A driver-aware scripted device: answers what it knows, refuses the
+    rest in its own platform's words. Satisfies DeviceTransport."""
+
+    def __init__(self, outputs: dict, refusal: str) -> None:
+        self.outputs = dict(outputs)
+        self.refusal = refusal
+        self.sent: list[str] = []
+        self.disconnected = False
+
+    def connect(self) -> None:  # pragma: no cover - trivial
+        return None
+
+    def disconnect(self) -> None:
+        self.disconnected = True
+
+    def execute(self, command: str) -> str:
+        self.sent.append(command)
+        return self.outputs.get(command, self.refusal)
+
+    def execute_many(self, commands):
+        return {command: self.execute(command) for command in commands}
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.disconnect()
+        return False
+
+
+def _registered_transport(outputs: dict, refusal: str) -> _ScriptedTransport:
+    from founderos_atlas.transport import DeviceTransport
+
+    if not issubclass(_ScriptedTransport, DeviceTransport):
+        DeviceTransport.register(_ScriptedTransport)
+    return _ScriptedTransport(outputs, refusal)
+
+
+class DriverAwareCollectionTests(unittest.TestCase):
+    """T3–T9 + the §2 beta-blocker checkpoint: driver-owned collection."""
+
+    def _discover(self, fixture_module):
+        registry = default_registry()
+        outputs = fixture_module.normal()
+        transport = _registered_transport(
+            outputs, getattr(fixture_module, "UNSUPPORTED", "unknown command.")
+        )
+        probe = None
+        driver = None
+        for probe_command in registry.probe_commands():
+            probe = outputs.get(probe_command)
+            if probe is None:
+                continue
+            driver = registry.detect(probe)
+            if driver is not None:
+                break
+        assert driver is not None
+        discovery = driver.discover(
+            transport, management_ip_hint="10.0.0.99", probe_output=probe
+        )
+        return discovery.result
+
+    def test_junos_refusal_never_becomes_a_configuration(self) -> None:
+        # T4 — the exact External Beta Readiness blocker, re-run: a Junos
+        # device answers every Cisco-shaped command with its own refusal.
+        from tests.platform_fixtures import junos as fx
+
+        from founderos_atlas.config import collect_configuration
+
+        result = self._discover(fx)
+        transport = _registered_transport({}, fx.UNSUPPORTED)
+        artifact = collect_configuration(transport, result)
+        self.assertFalse(artifact.collected)
+        self.assertEqual("unsupported", artifact.status)
+        self.assertEqual("", artifact.running_config)
+        self.assertNotIn("unknown command", artifact.running_config)
+        # The driver's own command was what Atlas asked, not Cisco's.
+        self.assertIn("show configuration | display set", transport.sent)
+        self.assertNotIn("show running-config", transport.sent)
+        # And storage refuses it outright.
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(ValueError):
+                write_configuration_artifacts(artifact, Path(tmp) / "j")
+
+    def test_junos_valid_configuration_uses_the_driver_command(self) -> None:
+        # T3 — the happy path collects via the driver's declared command.
+        from tests.platform_fixtures import junos as fx
+
+        from founderos_atlas.config import collect_configuration
+
+        result = self._discover(fx)
+        transport = _registered_transport(
+            {"show configuration | display set": fx.SHOW_CONFIG_SET},
+            fx.UNSUPPORTED,
+        )
+        artifact = collect_configuration(transport, result)
+        self.assertTrue(artifact.collected)
+        self.assertEqual(
+            "show configuration | display set", artifact.command_used
+        )
+        self.assertIn("set system host-name", artifact.running_config)
+        # Junos session preparation ran; Cisco enrichment noise did not.
+        self.assertIn("set cli screen-length 0", transport.sent)
+        self.assertNotIn("show startup-config", transport.sent)
+
+    def test_panos_refusal_never_becomes_a_configuration(self) -> None:
+        # T5 — PAN-OS: TIER_DEEP is escalated, session_setup runs, and the
+        # refusal stays a refusal.
+        from tests.platform_fixtures import panos as fx
+
+        from founderos_atlas.config import collect_configuration
+
+        result = self._discover(fx)
+        transport = _registered_transport({}, fx.UNKNOWN)
+        artifact = collect_configuration(transport, result)
+        self.assertFalse(artifact.collected)
+        self.assertEqual("", artifact.running_config)
+        self.assertIn("show config running", transport.sent)
+        self.assertIn("set cli pager off", transport.sent)
+
+    def test_panos_valid_configuration_collects(self) -> None:
+        from tests.platform_fixtures import panos as fx
+
+        from founderos_atlas.config import collect_configuration
+
+        result = self._discover(fx)
+        transport = _registered_transport(
+            {"show config running": fx.SHOW_CONFIG_RUNNING}, fx.UNKNOWN
+        )
+        artifact = collect_configuration(transport, result)
+        self.assertTrue(artifact.collected)
+        self.assertEqual("show config running", artifact.command_used)
+
+    def test_wlc_refusal_never_becomes_a_configuration(self) -> None:
+        # T9 — Cisco WLC.
+        from tests.platform_fixtures import cisco_wlc as fx
+
+        from founderos_atlas.config import collect_configuration
+
+        result = self._discover(fx)
+        transport = _registered_transport({}, fx.UNKNOWN)
+        artifact = collect_configuration(transport, result)
+        self.assertFalse(artifact.collected)
+        self.assertIn("show run-config commands", transport.sent)
+
+    def test_fortios_is_contained_no_command_sent(self) -> None:
+        # T6 — FortiOS: no permitted pager-off path exists, so collection
+        # is not attempted, and the artifact says exactly that.
+        from tests.platform_fixtures import fortios as fx
+
+        from founderos_atlas.config import collect_configuration
+
+        result = self._discover(fx)
+        transport = _registered_transport({}, fx.UNKNOWN)
+        artifact = collect_configuration(transport, result)
+        self.assertFalse(artifact.collected)
+        self.assertEqual("unsupported", artifact.status)
+        self.assertIn("pagination", artifact.detail)
+        self.assertEqual([], transport.sent)
+
+    def test_aruba_cx_is_contained_no_command_sent(self) -> None:
+        from tests.platform_fixtures import aruba_cx as fx
+
+        from founderos_atlas.config import collect_configuration
+
+        result = self._discover(fx)
+        transport = _registered_transport({}, fx.UNKNOWN)
+        artifact = collect_configuration(transport, result)
+        self.assertFalse(artifact.collected)
+        self.assertIn("pagination", artifact.detail)
+        self.assertEqual([], transport.sent)
+
+    def test_f5_declares_no_configuration_command(self) -> None:
+        # T7 — unsupported by declaration; nothing is sent, and the
+        # precollection decision needs no transport at all.
+        from founderos_atlas.config.collector import precollection_outcome
+
+        driver = default_registry().driver_for("f5-bigip")
+        from tests.test_multihop_discovery import device_outputs  # noqa: F401
+
+        class _Device:
+            device_id = "f5:lb-1"
+            hostname = "lb-1"
+            vendor = "f5"
+            platform = "BIG-IP"
+            os_name = "TMOS"
+            os_version = "17.1"
+            management_ip = "10.0.0.50"
+
+        artifact = precollection_outcome(driver, _Device())
+        self.assertIsNotNone(artifact)
+        self.assertEqual("unsupported", artifact.status)
+        self.assertIn("declares no configuration collection command",
+                      artifact.detail)
+
+    def test_citrix_and_a10_declare_no_configuration_command(self) -> None:
+        # T8 — same declaration semantics for the other ADC drivers.
+        from founderos_atlas.config.collector import precollection_outcome
+
+        class _Device:
+            device_id = "adc:lb-2"
+            hostname = "lb-2"
+            vendor = "citrix"
+            platform = "ADC"
+            os_name = "NS"
+            os_version = "14.1"
+            management_ip = "10.0.0.51"
+
+        for platform_id in ("citrix-adc", "a10-acos"):
+            with self.subTest(platform=platform_id):
+                driver = default_registry().driver_for(platform_id)
+                artifact = precollection_outcome(driver, _Device())
+                self.assertIsNotNone(artifact)
+                self.assertEqual("unsupported", artifact.status)
+
+    def test_unrecognised_reply_fails_closed_end_to_end(self) -> None:
+        # T18 at the collector: a device that answers something that is
+        # neither a config nor a recognised refusal.
+        from tests.platform_fixtures import junos as fx
+
+        from founderos_atlas.config import collect_configuration
+
+        result = self._discover(fx)
+        transport = _registered_transport({}, "SYSTEM READY\nOK\nDONE\n")
+        artifact = collect_configuration(transport, result)
+        self.assertFalse(artifact.collected)
+        self.assertEqual("unrecognised", artifact.status)
+        self.assertEqual("", artifact.running_config)
+        self.assertIn("SYSTEM READY", artifact.raw_reply)
+
+
 def _non_collected_artifact(status: str, **overrides) -> ConfigurationArtifact:
     fields = dict(
         device_id="junos:edge-1", hostname="edge-1", vendor="juniper",

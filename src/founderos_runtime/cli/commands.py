@@ -1882,14 +1882,45 @@ def _collect_configurations_if_requested(
     store = ConfigMemoryStore(memory_root) if memory_root is not None else None
     collections: list[tuple[str, str, str]] = []
     outcomes: list[RecordOutcome] = []
+    # PR-181: one registry for the whole run — driver resolution is per
+    # device, registry construction is not.
+    from founderos_atlas.config.collector import (
+        precollection_outcome,
+        resolve_configuration_driver,
+    )
+
+    try:
+        from founderos_atlas.platforms import default_registry
+
+        registry = default_registry()
+    except Exception:  # noqa: BLE001 - resolution degrades, never breaks
+        registry = None
     for visit, result in zip(report.connected, report.results):
         hostname = result.device.hostname
         try:
+            # PR-181: the driver is resolved BEFORE any transport exists.
+            # A device Atlas already knows it will collect nothing from is
+            # never authenticated to a second time — and the web job never
+            # announces a collection that will not happen.
+            driver = resolve_configuration_driver(result, registry=registry)
+            early = precollection_outcome(
+                driver, result.device, collected_at=collected_at
+            )
+            if early is not None:
+                collections.append((hostname, early.status, early.detail))
+                continue
             if host_factory is not None:
                 transport = host_factory(visit.host)
             else:
                 transport = build_transport(replace(credentials, host=visit.host))
-            artifact = collect_configuration(transport, result)
+            artifact = collect_configuration(
+                transport, result, collected_at=collected_at, driver=driver,
+            )
+            if not artifact.collected:
+                # An honest non-collection: a reason travels instead of a
+                # path, and nothing is written anywhere.
+                collections.append((hostname, artifact.status, artifact.detail))
+                continue
             paths = write_configuration_artifacts(
                 artifact,
                 Path(config_output_dir) / safe_artifact_name(hostname),
