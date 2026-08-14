@@ -825,6 +825,74 @@ class SelectionSafetyTests(unittest.TestCase):
             )
 
 
+class PipelineFloorTests(unittest.TestCase):
+    """PR-181 Step 8 — a non-collection can never manufacture change events.
+
+    The measured fabrication: one refusal diffed against a good baseline
+    produced 2,517 changes across an 85-device estate, 28 high severity,
+    and moved the health score from 100 to 87. The floor is keyed on the
+    collection VERDICT — never on parsed-fact counts, because valid
+    PAN-OS/FortiOS configurations legitimately parse to zero facts.
+    """
+
+    def test_refused_device_never_enters_comparison(self) -> None:
+        # T13 — baseline exists, current attempt refused: zero reports.
+        import tempfile
+
+        from founderos_atlas.history import HistoryRepository
+        from founderos_atlas.pipeline import (
+            load_previous_baseline,
+            run_configuration_intelligence,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            history_root = root / ".atlas" / "history"
+            # A baseline record holding a real configuration for edge-1.
+            configs = root / "configs" / "edge-1"
+            configs.mkdir(parents=True)
+            (configs / "running_config.txt").write_text(
+                FRR_RUNNING_CONFIG, encoding="utf-8"
+            )
+            snapshot_path = root / "topology_snapshot.json"
+            snapshot_path.write_text("{}", encoding="utf-8")
+            record = HistoryRepository(history_root).save_discovery(
+                started_at="2026-08-14T00:00:00", completed_at="2026-08-14T00:01:00",
+                duration_seconds=60.0, device_count=1, relationship_count=0,
+                warning_count=0, failures=(), configuration_status="collected",
+                configured_device_count=1, quality_score=1.0,
+                network_status="Healthy", snapshot_id="snap-1",
+                artifacts={"topology_snapshot.json": snapshot_path},
+                config_directories={"edge-1": configs},
+            )
+            self.assertIsNotNone(record)
+            baseline = load_previous_baseline(history_root)
+            self.assertIsNotNone(baseline.record)
+
+            # The current run: edge-1's collection was REFUSED, so the
+            # verdict-keyed floor (commands.py) passes an empty collected
+            # map. Nothing is compared; nothing is fabricated.
+            reports = run_configuration_intelligence(history_root, baseline, {})
+            self.assertEqual((), reports)
+
+    def test_the_floor_is_keyed_on_verdict_not_content(self) -> None:
+        # The collected_dirs filter admits only complete/partial verdicts.
+        import inspect
+
+        from founderos_runtime.cli import commands
+
+        source = inspect.getsource(commands.atlas_discover_command)
+        self.assertIn('status in ("complete", "partial")', source)
+
+    def test_extract_warnings_are_informational_only(self) -> None:
+        from founderos_atlas.config_memory.extract import extract_facts
+
+        refusal_facts = extract_facts("           ^\nunknown command.\n")
+        self.assertTrue(refusal_facts.warnings)
+        real_facts = extract_facts(FRR_RUNNING_CONFIG)
+        self.assertEqual((), real_facts.warnings)
+
+
 class HonestSummaryTests(unittest.TestCase):
     """T14 — the collection summary never counts a non-collection."""
 

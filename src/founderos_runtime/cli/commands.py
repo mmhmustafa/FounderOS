@@ -668,10 +668,17 @@ def atlas_discover_command(
             f"{state_report.change_count} operational event(s))",
         )
 
+    # PR-181 (Step 8, the pipeline floor): only a VERIFIED collection may
+    # enter configuration comparison. The guard is keyed on the collection
+    # verdict — an unsupported / denied / unrecognised / empty / failed
+    # device is skipped, never diffed, so a refusal can never manufacture
+    # a change storm against a good baseline. (One refusal used to
+    # fabricate 2,517 changes across an 85-device estate and move the
+    # health score from 100 to 87.)
     collected_dirs = {
         hostname: detail
         for hostname, status, detail in (config_collections or ())
-        if status != "failed"
+        if status in ("complete", "partial")
     }
     config_reports = run_configuration_intelligence(
         history_root, baseline, collected_dirs

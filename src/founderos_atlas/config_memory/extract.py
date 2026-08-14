@@ -419,6 +419,21 @@ def extract_facts(running_config: str) -> ConfigFacts:
 
     flush_interface()
 
+    # PR-181: a declared-but-never-populated field becomes the honest
+    # channel it was meant to be. INFORMATION ONLY — never a truth gate:
+    # valid PAN-OS and FortiOS configurations legitimately parse to zero
+    # facts here, so nothing may suppress or reject on this warning.
+    warnings: tuple[str, ...] = ()
+    if not any((
+        hostname, router_id, bgp_as, neighbors, ospf_areas, ospf_processes,
+        ospf_interfaces, vlans, vrfs, acls, interfaces, hsrp, ntp, snmp,
+        logging_hosts, aaa, static_routes, route_maps,
+    )):
+        warnings = (
+            "no recognisable configuration facts were extracted from this "
+            "text (the extractor reads Cisco/FRR-style configuration)",
+        )
+
     return ConfigFacts(
         hostname=hostname,
         router_id=router_id,
@@ -448,4 +463,5 @@ def extract_facts(running_config: str) -> ConfigFacts:
         aaa_configured=aaa,
         static_routes=tuple(static_routes),
         route_maps=tuple(route_maps),
+        warnings=warnings,
     )

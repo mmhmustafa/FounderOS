@@ -100,9 +100,13 @@ def run_configuration_intelligence(
 ) -> tuple[ConfigChangeReport, ...]:
     """Automatic per-device config intelligence against the baseline record.
 
-    ``collected`` maps hostname -> this run's artifact directory. Devices
-    without a baseline configuration are skipped: no previous evidence means
-    no comparison, never an invented one.
+    ``collected`` maps hostname -> this run's artifact directory, and the
+    caller passes only devices whose CURRENT collection was verified
+    (PR-181: the floor is keyed on the collection verdict — a device whose
+    attempt was refused, denied, unrecognised, empty or failed never
+    enters comparison, so non-configuration text cannot manufacture change
+    events). Devices without a baseline configuration are skipped: no
+    previous evidence means no comparison, never an invented one.
     """
 
     if baseline.record is None:
