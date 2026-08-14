@@ -266,6 +266,18 @@ class AtlasLabSwitchDriver(PlatformDriver):
             CapabilitySpec("lldp-neighbors", SHOW_LLDP),
         )
 
+    def configuration_commands(self) -> tuple[str, ...]:
+        """Declared so this platform's outcome is explicit, not accidental.
+
+        The lab switch may well answer this with its shell's refusal; the
+        classifier then reports an honest UNSUPPORTED. What PR-181 forbids
+        is the third path — silently falling through to a default nobody
+        chose. (No estate device of this platform has ever produced a
+        stored configuration, so there is nothing to regress.)
+        """
+
+        return ("show running-config",)
+
     def classify_output(self, spec: CapabilitySpec, output: str) -> CapabilityStatus:
         stripped = (output or "").strip()
         folded = stripped.casefold()

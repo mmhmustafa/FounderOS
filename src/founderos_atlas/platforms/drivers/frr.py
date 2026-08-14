@@ -316,6 +316,18 @@ class FRRoutingDriver(PlatformDriver):
             CapabilitySpec("lldp-neighbors", SHOW_LLDP),
         )
 
+    def configuration_commands(self) -> tuple[str, ...]:
+        """vtysh answers ``show running-config``; declare it (PR-181).
+
+        The declaration lives HERE rather than in the collection plan so
+        discovery keeps its exact cost and evidence shape — the collector
+        is the consumer of this fact, not the discovery crawl. FRRouting
+        is 86 of the measured live estate's 109 configured devices; an
+        undeclared configuration command would have silenced all of them.
+        """
+
+        return (SHOW_RUNNING,)
+
     def annotate(self, discovery: DriverDiscovery) -> DriverDiscovery:
         """Summarize route and BGP evidence into canonical metadata.
 

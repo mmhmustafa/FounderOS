@@ -98,6 +98,40 @@ class ConfigurationCommandSpecContractTests(unittest.TestCase):
         )
 
 
+class ConfigurationDeclarationMatrixTests(unittest.TestCase):
+    """T17 (declarations) — every advertised platform's configuration
+    command source is explicit. No platform silently falls through."""
+
+    EXPECTED = {
+        "cisco-ios-xe": ("show running-config",),
+        "cisco-ios": ("show running-config",),
+        "cisco-nxos": ("show running-config",),
+        "arista-eos": ("show running-config",),
+        "junos": ("show configuration | display set", "show configuration"),
+        "fortinet-fortios": ("show",),
+        "paloalto-panos": ("show config running",),
+        "aruba-cx": ("show running-config",),
+        "cisco-wlc": ("show run-config commands",),
+        # Deliberate declarations of NO configuration command: these
+        # ProductionDrivers author a command plan and omit CONFIGURATION.
+        "f5-bigip": (),
+        "citrix-adc": (),
+        "a10-acos": (),
+        # PR-181 Step 4: the legacy platforms that used to depend on the
+        # collector's hardcoded Cisco command now declare theirs.
+        "frr": ("show running-config",),
+        "atlaslab-firewall": ("show running-config",),
+        "atlaslab-switch": ("show running-config",),
+    }
+
+    def test_every_registered_driver_declares_its_position(self) -> None:
+        seen = {}
+        for driver_cls in default_registry().drivers():
+            driver = driver_cls()
+            seen[driver.platform_id] = tuple(driver.configuration_commands())
+        self.assertEqual(self.EXPECTED, seen)
+
+
 class CollectionRegressionGuardTests(unittest.TestCase):
     """T19 — what collects today must still collect after the repair."""
 

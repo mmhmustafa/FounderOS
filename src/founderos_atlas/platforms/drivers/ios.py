@@ -70,6 +70,17 @@ class CiscoIOSDriver(PlatformDriver):
             CapabilitySpec("policy-route-maps", SHOW_ROUTE_MAP),
         )
 
+    def configuration_commands(self) -> tuple[str, ...]:
+        """Classic IOS answers ``show running-config``; declare it (PR-181).
+
+        Declared here, not in the collection plan, so discovery keeps its
+        exact cost and evidence shape. Every non-XE Cisco device resolves
+        to this driver — leaving it undeclared would have turned working
+        collection off for all of them.
+        """
+
+        return ("show running-config",)
+
     def annotate(self, discovery: DriverDiscovery) -> DriverDiscovery:
         route_text = discovery.raw_outputs.get(SHOW_ROUTES, "")
         routing_table = route_table_dicts(route_text)
