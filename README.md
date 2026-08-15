@@ -111,7 +111,16 @@ deployment guidance.
 
 ## License
 
-The repository's `LICENSE` file is intentionally unresolved. Product
-ownership and distribution terms require an owner/legal decision; no license
-has been invented by engineering. Until that decision is recorded, do not
-assume permission to redistribute the product.
+Atlas is not yet licensed for use or distribution. The repository's `LICENSE`
+file remains deliberately unresolved: the Atlas-owned ownership and
+controlled-beta evaluation terms are an owner/legal decision (Stage A2b) that
+engineering has not pre-empted. Until that decision is recorded, do not assume
+any permission to use, copy, or redistribute the product. External beta
+distribution is not authorized by the repository licence.
+
+The third-party compliance surface (Stage A2a) is established:
+`THIRD-PARTY-NOTICES.txt` is generated deterministically from
+`compliance/runtime-manifest.json` and `compliance/license-policy.json`,
+canonical licence texts live under `compliance/licenses/`, and exact
+corresponding source for the LGPL/MPL components is stored under
+`compliance/third-party-source/`. CI regenerates and diff-checks all of it.

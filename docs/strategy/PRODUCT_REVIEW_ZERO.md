@@ -630,6 +630,13 @@ for eventually earning the write path.
 
 ### Licensing
 
+> **Historical / non-authoritative (marked 2026-08-15, PR-A2a).** This section
+> is a strategy-era exploration, not the licensing decision. The owner's
+> recorded direction is proprietary, closed source, with a free controlled
+> beta — see `LICENSE` (Atlas-owned terms pending Stage A2b) and
+> `docs/reviews/PR-A2_PROPRIETARY_BETA_LICENSING_ARCHITECTURE_REVIEW.md`.
+> Nothing in this section authorizes an open-core or Apache-2.0 release.
+
 Open-core. Permissive (Apache-2.0) for the community core to maximise adoption;
 commercial licence for Policy packs, Memory retention, multi-user, and
 integrations. **Do not open-source the drivers** — that is the moat. Self-hosted
