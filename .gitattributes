@@ -1,0 +1,18 @@
+# PR-A0: deterministic compliance artifacts.
+#
+# These files' BYTES are the product: generators write them, CI regenerates
+# them and fails on any diff, and later licensing work (THIRD-PARTY-NOTICES,
+# vendored licence texts) will extend the same guarantee. Line-ending
+# translation on checkout would make the working tree disagree with both the
+# repository and a fresh clone — the exact non-determinism the architecture
+# review measured (693 of 977 tracked files differing under autocrlf).
+#
+# Deliberately narrow: only the compliance surface is pinned. This is not a
+# repository-wide normalization; a giant line-ending diff is churn, not
+# determinism.
+
+LICENSE                  text eol=lf
+THIRD-PARTY-NOTICES.txt  text eol=lf
+compliance/**            text eol=lf
+sbom.cdx.json            text eol=lf
+MANIFEST.in              text eol=lf
