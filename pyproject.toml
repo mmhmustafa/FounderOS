@@ -11,6 +11,17 @@ dynamic = ["version"]
 description = "Minimal contract-enforcing runtime foundation for FounderOS"
 readme = "README.md"
 requires-python = ">=3.11"
+# PR-A2b: Atlas is proprietary. PEP 639 has no standard SPDX identifier for a
+# custom proprietary licence, and a bare "Proprietary" string is rejected as an
+# invalid expression, so the LicenseRef namespace carries it. The identifier
+# matches the SPDX-License-Identifier line in LICENSE itself. Deliberately no
+# OSI classifier: this licence is not OSI-approved and claiming otherwise would
+# be false. Nothing is published to PyPI.
+license = "LicenseRef-FounderOS-Atlas-Beta"
+license-files = ["LICENSE", "THIRD-PARTY-NOTICES.txt"]
+authors = [
+  { name = "Mohammed Mustafa Hussain", email = "mmhmustafa@gmail.com" },
+]
 dependencies = [
   # PR-A1: format-nongpl is jsonschema's own extra for exactly this — it
   # substitutes the GPL-3.0-or-later rfc3987 with MIT rfc3986-validator +

@@ -1,10 +1,303 @@
-LICENSE NOT YET SELECTED
+FounderOS Atlas — Proprietary Controlled Beta Licence
 
-FounderOS Atlas product ownership and distribution terms require an explicit
-owner/legal decision. Engineering has deliberately not invented an
-open-source or proprietary license. No permission to copy, modify,
-redistribute, sublicense, or sell this software should be inferred from the
-presence of this repository.
+Copyright (c) 2026 Mohammed Mustafa Hussain. All rights reserved.
 
-Replace this notice only after the authorized owner records the selected
-license and its effective date.
+SPDX-License-Identifier: LicenseRef-FounderOS-Atlas-Beta
+Effective date: 15 August 2026
+
+
+1. WHAT THIS LICENCE IS
+
+Atlas is proprietary, closed-source software owned by Mohammed Mustafa
+Hussain ("the Licensor"). It is not open-source software and it is not
+publicly distributed.
+
+This licence gives a specifically invited tester permission to use Atlas free
+of charge during a controlled beta, for evaluation and testing. It gives no
+other permission.
+
+If the Licensor did not invite you, you have no licence to the Atlas-Owned
+Material. If you do not accept these terms, do not install or use Atlas.
+
+
+2. DEFINITIONS
+
+"Atlas" means the FounderOS Atlas software the Licensor provides to you.
+
+"You" means a person the Licensor has specifically invited to the controlled
+beta, and the organisation you represent.
+
+"The controlled beta" means the evaluation period that begins when the
+Licensor gives you access to Atlas and ends when the Licensor tells you it
+has ended, or when this licence ends under section 15, whichever happens
+first.
+
+"Atlas-Owned Material" means the parts of Atlas the Licensor owns: its source
+code, compiled code, templates, documentation and design. It does not include
+Third-Party Components.
+
+"Third-Party Components" means software included with or used by Atlas that
+others own and license under their own terms. THIRD-PARTY-NOTICES.txt
+identifies them.
+
+"Your Data" means information you give Atlas, or that Atlas collects from
+systems you run it against — including network configurations, device
+information, credentials, and any customer information you import.
+
+"Your Outputs" means what Atlas produces from Your Data: reports, topology
+diagrams, exports, findings, analyses, compliance results,
+configuration-derived reports and diagnostics — whether they describe your own
+environment or a network you run Atlas against for someone else, and even
+where Atlas builds its own templates or viewer code into them.
+
+
+3. THIRD-PARTY COMPONENTS COME FIRST
+
+Atlas includes Third-Party Components. Each one stays under its own licence.
+
+Nothing in this licence removes, reduces or overrides any right those licences
+give you — including any right to copy or redistribute a component, to modify
+it, to reverse engineer it, or to receive its source code.
+
+Where those licences and this licence disagree about a Third-Party Component,
+those licences win.
+
+THIRD-PARTY-NOTICES.txt accompanies Atlas. It identifies the third-party
+components, states the licence for each one for which licence evidence is
+held, and reproduces the licence texts. Some components are licensed under the
+GNU Lesser General Public License version 2.1 or the Mozilla Public License
+2.0, which entitle you to their source code; that source is supplied with
+Atlas, and where it is not, the Licensor will give it to you on request at no
+more than the cost of supplying it. Read THIRD-PARTY-NOTICES.txt alongside
+this licence.
+
+
+4. YOUR BETA LICENCE
+
+The Licensor grants you a personal, non-exclusive, non-transferable, revocable
+licence to install Atlas, to copy it for your own use, and to use it during
+the controlled beta for evaluation and testing.
+
+This licence is free of charge. It creates no subscription and no commercial
+licence, and it puts the Licensor under no obligation to continue the beta, to
+provide support, or to release any future version.
+
+People within your organisation may use your installation of Atlas for your
+evaluation and testing, and you are responsible for their use of it. You may
+not transfer this licence, and you may not give access to the Atlas-Owned
+Material to anyone outside your organisation whom the Licensor has not
+invited.
+
+
+5. BETA STATUS AND EVALUATION USE
+
+Atlas is pre-release beta software. This licence permits evaluation and
+testing. It is not a production-use licence, and the Licensor does not
+authorise you to rely on Atlas as the basis for critical operational
+decisions.
+
+That is a limit on the permission you are given, not a technical restriction.
+Atlas contains no expiry timer, no kill switch, no licence key, no activation,
+no machine binding and no phone-home mechanism, and this licence introduces
+none.
+
+
+6. WHAT YOU MAY NOT DO WITH ATLAS-OWNED MATERIAL
+
+Except as sections 3, 7 and 9 expressly permit, you may not:
+
+  (a) redistribute Atlas-Owned Material, or give a copy of it to anyone
+      outside your organisation whom the Licensor has not invited;
+  (b) sell, rent, lease or sublicense Atlas-Owned Material;
+  (c) host Atlas-Owned Material as a service for third parties, or operate it
+      as a service bureau. Running Atlas yourself during an engagement and
+      giving that client Your Outputs is not hosting Atlas as a service;
+  (d) modify Atlas-Owned Material;
+  (e) remove or alter copyright, licence or attribution notices in the
+      Atlas-Owned Material, or the notice files supplied with Atlas.
+
+These restrictions apply to Atlas-Owned Material only. They do not apply to
+Third-Party Components, to Your Data, or to Your Outputs.
+
+
+7. PERMISSIONS REQUIRED BY THIRD-PARTY LICENCES
+
+Some Third-Party Components supplied with Atlas are licensed under the GNU
+Lesser General Public License version 2.1, which THIRD-PARTY-NOTICES.txt
+identifies and reproduces. That licence allows Atlas to reach you under the
+Licensor's own terms only if those terms permit you to modify the combined
+work for your own use and to reverse engineer it in order to debug those
+modifications.
+
+Accordingly, and despite sections 6(d), 6(e) and 8, you may:
+
+  (a) modify Atlas — including the Atlas-Owned Material — for your own use;
+      and
+  (b) reverse engineer Atlas so far as necessary to debug modifications you
+      make under (a),
+
+to the extent the licence of any Third-Party Component supplied with Atlas
+requires that you be permitted to do so. When you do, keep the third-party
+copyright and licence notices intact.
+
+This permission is for your own use. It does not permit you to publish,
+redistribute, sublicense or sell the Atlas-Owned Material, modified or not,
+and section 6 continues to apply to those activities.
+
+This permission is not revocable for a copy of Atlas already supplied to you.
+If this licence ends, you may keep and continue to modify for your own use a
+copy you had already modified under this section.
+
+Modifying Atlas may stop it working correctly, and the Licensor has no
+obligation to support a modified copy.
+
+
+8. REVERSE ENGINEERING
+
+Except as section 3 preserves, as section 7 permits, and as applicable law
+allows despite an agreement to the contrary, you may not reverse engineer,
+decompile or disassemble the Atlas-Owned Material.
+
+
+9. YOUR DATA AND YOUR OUTPUTS
+
+Your Data is yours, or the relevant rights-holder's. The Licensor does not own
+it and acquires no right to it. Running Atlas over information transfers no
+right in that information to the Licensor.
+
+Your Outputs are yours. The Licensor does not own them, acquires no right in
+them, and gains no ownership by Atlas having produced them.
+
+You may use, copy, keep, export, publish and share Your Outputs, inside or
+outside your organisation, including with clients — subject only to rights you
+or others already hold in the underlying information, such as a vendor's
+rights in text reproduced from a device.
+
+Where Your Outputs contain Atlas templates, styling or viewer code that Atlas
+itself put there, you may share them anyway: the Licensor permits you to
+reproduce and share that material as part of Your Outputs.
+
+For the avoidance of doubt, the restrictions in section 6 do not apply to Your
+Outputs. Sharing a report Atlas produced about a network you were authorised
+to run it against is not redistribution of Atlas.
+
+Atlas runs on your own systems. It does not send Your Data to the Licensor,
+and this licence gives the Licensor no permission to collect, receive or
+access Your Data, your credentials, or your usage.
+
+
+10. NETWORKS YOU ARE RESPONSIBLE FOR
+
+You are responsible for having authorisation to access, discover, scan,
+collect from and manage every network, device and system you point Atlas at.
+
+This licence lets you use Atlas. It gives you no authority over anyone else's
+network, and the Licensor grants none.
+
+
+11. THIRD-PARTY SERVICES YOU CHOOSE TO CONNECT
+
+Atlas can optionally be configured to send information to an external AI or
+cloud service that you choose and configure. This is off by default and
+happens only if you turn it on.
+
+If you turn it on, your use of that service is between you and its provider,
+under their terms. The Licensor is not a party to it, provides no such
+service, and receives nothing through it.
+
+
+12. FEEDBACK
+
+You keep ownership of everything you create.
+
+If you send the Licensor feedback, suggestions, bug reports or ideas about
+Atlas, the Licensor may use them to improve Atlas without payment or
+obligation to you.
+
+This applies only to feedback about Atlas. It gives the Licensor no right to
+your work, your inventions, Your Data or Your Outputs. Remove Your Data from
+anything you send; if something you choose to send does contain Your Data,
+sending it gives the Licensor no right to that data and section 9 continues to
+apply to it.
+
+
+13. NAMES AND BRANDING
+
+This licence gives you no rights in the names "FounderOS" or "Atlas", or in
+any logo or branding used with them, beyond referring to the software by its
+name.
+
+Third-party names appearing in Atlas belong to their respective owners and are
+used only to identify their products.
+
+
+14. NO CONFIDENTIALITY OBLIGATION
+
+This licence imposes no confidentiality or non-disclosure obligation on you.
+"Proprietary" here describes who owns Atlas; it does not mean you have agreed
+to keep anything secret. You may discuss Atlas, including your criticisms of
+it, and you may show it to people within your organisation.
+
+Any separate confidentiality agreement would be a different document. This is
+not one.
+
+
+15. ENDING THIS LICENCE
+
+The Licensor may end this beta licence at any time, and it ends automatically
+if you breach it. If the controlled beta ends, this licence ends with it.
+
+When it ends, stop using Atlas and delete or return the copies of the
+Atlas-Owned Material you hold — except a modified copy you keep under section
+7.
+
+Ending this licence does not require you to delete or stop using Your Data or
+Your Outputs. It does not require you to delete any Third-Party Component you
+are entitled to keep under its own licence, and it does not affect any right
+you have under a Third-Party Component's licence: those rights come from their
+licensors, not from this licence.
+
+Sections 3, 7, 9, 12, 13, 16, 17 and 18 survive the end of this licence.
+
+
+16. BETA SOFTWARE — NO WARRANTY
+
+Atlas is pre-release software provided as is. To the extent permitted by
+applicable law, the Licensor gives no warranty of any kind. Atlas may contain
+defects; its availability, accuracy and completeness are not guaranteed; and
+it may report a network incorrectly or incompletely.
+
+Verify anything important independently before acting on it, and do not use
+Atlas as your only basis for a critical operational decision.
+
+
+17. LIMITATION OF LIABILITY
+
+To the extent permitted by applicable law, the Licensor is not liable for any
+indirect, incidental, special or consequential loss, or for lost profits, lost
+data or business interruption, arising from your use of Atlas.
+
+Because Atlas is supplied free of charge for beta evaluation, the Licensor's
+total liability arising out of or relating to this licence is limited to the
+amount you paid for Atlas, which is nothing — except for liability that cannot
+lawfully be limited or excluded.
+
+
+18. RIGHTS THAT CANNOT BE EXCLUDED
+
+Nothing in this licence limits any right you have that cannot lawfully be
+limited or excluded, and nothing in it limits any right a Third-Party
+Component's licence gives you.
+
+If any part of this licence is unenforceable, the rest continues to apply.
+
+
+19. EFFECTIVE DATE AND CONTACT
+
+This licence is effective from 15 August 2026.
+
+Licensor: Mohammed Mustafa Hussain
+Contact: mmhmustafa@gmail.com
+
+Use this address for feedback under section 12, to request third-party source
+under section 3, and to ask for any permission beyond this licence.

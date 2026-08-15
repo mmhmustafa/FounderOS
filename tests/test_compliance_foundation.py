@@ -294,9 +294,15 @@ class SbomConvergenceTests(unittest.TestCase):
 class FoundationScopeGuards(unittest.TestCase):
     """A0 changes the foundation and nothing else."""
 
-    def test_license_content_unchanged(self) -> None:
+    def test_license_is_the_proprietary_beta_licence(self) -> None:
+        # PR-A2b: the deliberate flip of A0's scope guard. A0 pinned the
+        # placeholder so the foundation work could not smuggle in a licence
+        # decision; A2b records the owner's decision, so the guard now pins
+        # the decision itself.
         text = (ROOT / "LICENSE").read_text(encoding="utf-8")
-        self.assertTrue(text.startswith("LICENSE NOT YET SELECTED"))
+        self.assertFalse(text.startswith("LICENSE NOT YET SELECTED"))
+        self.assertIn("SPDX-License-Identifier: LicenseRef-FounderOS-Atlas-Beta",
+                      text)
 
     def test_jsonschema_uses_the_nongpl_extra(self) -> None:
         # PR-A1: the deliberate flip of A0's scope guard. The format extra

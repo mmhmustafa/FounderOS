@@ -718,26 +718,52 @@ class SdistComplianceTests(unittest.TestCase):
                 self.assertFalse(name.startswith(banned), name)
 
 
-class A2bNonPrejudgmentTests(unittest.TestCase):
-    """A2a did not implement A2b. Hard gate."""
+class A2bLandedTests(unittest.TestCase):
+    """PR-A2b: the deliberate flip of A2a's non-prejudgment gate.
 
-    def test_license_file_unchanged(self) -> None:
+    A2a asserted these were ABSENT so the licence decision could not arrive
+    by accident. A2b makes them the positive state. The flip is planned
+    (PR-A2b review section 31), not a weakening: every assertion below is
+    strictly stronger than the absence it replaces.
+    """
+
+    def test_license_is_the_proprietary_beta_licence(self) -> None:
         text = (ROOT / "LICENSE").read_text(encoding="utf-8")
-        self.assertTrue(text.startswith("LICENSE NOT YET SELECTED"))
-        self.assertNotIn("Effective date", text)
-        self.assertNotIn("Mohammed Mustafa Hussain", text)
+        self.assertFalse(text.startswith("LICENSE NOT YET SELECTED"))
+        self.assertTrue(
+            text.startswith(
+                "FounderOS Atlas — Proprietary Controlled Beta Licence"
+            )
+        )
+        self.assertIn("Effective date: 15 August 2026", text)
+        self.assertIn(
+            "Copyright (c) 2026 Mohammed Mustafa Hussain. All rights reserved.",
+            text,
+        )
 
-    def test_no_proprietary_pep639_metadata(self) -> None:
+    def test_proprietary_pep639_metadata_present(self) -> None:
         project = tomllib.loads(
             (ROOT / "pyproject.toml").read_text(encoding="utf-8")
         )["project"]
-        self.assertNotIn("license", project)
-        self.assertNotIn("license-files", project)
-        self.assertNotIn("authors", project)
+        self.assertEqual("LicenseRef-FounderOS-Atlas-Beta", project["license"])
+        self.assertEqual(
+            ["LICENSE", "THIRD-PARTY-NOTICES.txt"], project["license-files"]
+        )
+        self.assertEqual(
+            [{"name": "Mohammed Mustafa Hussain",
+              "email": "mmhmustafa@gmail.com"}],
+            project["authors"],
+        )
 
-    def test_no_licenseref_anywhere_in_metadata(self) -> None:
+    def test_licenseref_is_the_only_licence_expression(self) -> None:
         pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
-        self.assertNotIn("LicenseRef-", pyproject)
+        self.assertIn("LicenseRef-FounderOS-Atlas-Beta", pyproject)
+        # A LicenseRef is not, and must never be swapped for, a standard
+        # SPDX identifier — nor for the invalid bare "Proprietary" string.
+        project = tomllib.loads(pyproject)["project"]
+        self.assertTrue(project["license"].startswith("LicenseRef-"))
+        for classifier in project.get("classifiers", []):
+            self.assertNotIn("OSI Approved", classifier)
 
     def test_compliance_surface_grants_no_atlas_rights(self) -> None:
         notices = NOTICES_PATH.read_text(encoding="utf-8")
@@ -772,12 +798,24 @@ class A2bNonPrejudgmentTests(unittest.TestCase):
                     f"{label}: {pattern}",
                 )
 
-    def test_policy_records_a2b_as_outstanding(self) -> None:
+    def test_policy_records_a2b_as_implemented(self) -> None:
         policy = _policy()
         requirements = policy["a2b_requirements"]
-        self.assertIn("NOT IMPLEMENTED", requirements["status"])
+        self.assertIn("IMPLEMENTED", requirements["status"])
+        self.assertNotIn("NOT IMPLEMENTED", requirements["status"])
+        self.assertEqual("2026-08-15", requirements["effective_date"])
+        self.assertEqual("LICENSE", requirements["licence_document"])
+        self.assertEqual(
+            "LicenseRef-FounderOS-Atlas-Beta",
+            requirements["licence_expression"],
+        )
         ids = {r["id"] for r in requirements["requirements"]}
-        self.assertIn("A2B-REQ-1", ids)
+        self.assertEqual({"A2B-REQ-1", "A2B-REQ-2", "A2B-REQ-3"}, ids)
+        for item in requirements["requirements"]:
+            self.assertEqual("SATISFIED", item["status"], item["id"])
+            # Each discharge must name the licence section that carries it,
+            # so a future edit to LICENSE cannot silently orphan the record.
+            self.assertIn("section", item["discharged_by"], item["id"])
         text = json.dumps(requirements)
         self.assertIn("reverse engineering", text)
         self.assertIn("modification", text)
@@ -800,12 +838,21 @@ class A2bNonPrejudgmentTests(unittest.TestCase):
 class RepositoryConsistencyTests(unittest.TestCase):
     """README/strategy statements agree with the A2a truth."""
 
-    def test_readme_states_a2a_truth_without_overclaiming(self) -> None:
+    def test_readme_states_a2b_truth_without_overclaiming(self) -> None:
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        # A2a's compliance paragraph remains true and must survive.
         self.assertIn("THIRD-PARTY-NOTICES.txt", readme)
-        self.assertIn("not authorized", readme)
+        # A2b's truth: proprietary, invited controlled beta, under LICENSE.
+        self.assertIn("proprietary", readme)
+        self.assertIn("controlled beta", readme)
+        self.assertIn("`LICENSE`", readme)
+        # The pre-A2b claim must be gone.
+        self.assertNotIn("not yet licensed", readme)
+        self.assertNotIn(
+            "External beta distribution is not authorized", readme
+        )
         for overclaim in ("commercially released", "production ready",
-                          "generally available"):
+                          "generally available", "publicly distributable"):
             self.assertNotIn(overclaim, readme)
 
     def test_strategy_doc_marked_non_authoritative(self) -> None:

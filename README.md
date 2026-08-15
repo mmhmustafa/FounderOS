@@ -111,12 +111,13 @@ deployment guidance.
 
 ## License
 
-Atlas is not yet licensed for use or distribution. The repository's `LICENSE`
-file remains deliberately unresolved: the Atlas-owned ownership and
-controlled-beta evaluation terms are an owner/legal decision (Stage A2b) that
-engineering has not pre-empted. Until that decision is recorded, do not assume
-any permission to use, copy, or redistribute the product. External beta
-distribution is not authorized by the repository licence.
+Atlas is proprietary, closed-source software owned by Mohammed Mustafa Hussain.
+It is not open-source software and it is not publicly distributed. The
+repository's `LICENSE` file carries the complete terms: a specifically invited
+tester is authorized to install and use Atlas free of charge during a
+controlled beta, for evaluation and testing only. Nobody else has a licence to
+use it. Third-party components remain governed by their own licences, which the
+Atlas terms do not override.
 
 The third-party compliance surface (Stage A2a) is established:
 `THIRD-PARTY-NOTICES.txt` is generated deterministically from

@@ -1,20 +1,29 @@
 {
   "a2b_requirements": {
+    "effective_date": "2026-08-15",
+    "licence_document": "LICENSE",
+    "licence_expression": "LicenseRef-FounderOS-Atlas-Beta",
     "requirements": [
       {
+        "discharged_by": "SATISFIED by LICENSE section 7 (Permissions required by third-party licences), which permits modification of the combined work for the tester's own use and reverse engineering to debug those modifications, to the extent a third-party licence requires it; section 7 overrides sections 6(d), 6(e) and 8, and is not revocable for a copy already supplied.",
         "id": "A2B-REQ-1",
-        "requirement": "the Atlas licence text must affirmatively permit, to the extent required by applicable third-party licence terms: (a) modification of the work for the customer's/tester's own use, and (b) reverse engineering for debugging such modifications (LGPL-2.1 section 6 condition)."
+        "requirement": "the Atlas licence text must affirmatively permit, to the extent required by applicable third-party licence terms: (a) modification of the work for the customer's/tester's own use, and (b) reverse engineering for debugging such modifications (LGPL-2.1 section 6 condition).",
+        "status": "SATISFIED"
       },
       {
+        "discharged_by": "SATISFIED by LICENSE sections 2, 3, 6, 8 and 15: every Atlas-owned restriction is textually scoped to the Atlas-Owned Material (which excludes Third-Party Components by definition), section 3 states that a third-party licence wins where the two disagree, and section 15's deletion duty expressly does not reach Third-Party Components or any right their own licences give.",
         "id": "A2B-REQ-2",
-        "requirement": "every Atlas-owned restriction must be textually scoped to Atlas-owned material and must not limit rights granted by third-party licences (LGPL-2.1 section 10; MPL-2.0 section 3.2(b))."
+        "requirement": "every Atlas-owned restriction must be textually scoped to Atlas-owned material and must not limit rights granted by third-party licences (LGPL-2.1 section 10; MPL-2.0 section 3.2(b)).",
+        "status": "SATISFIED"
       },
       {
+        "discharged_by": "SATISFIED by LICENSE: effective date 15 August 2026, stated in the header and in section 19. No placeholder remains.",
         "id": "A2B-REQ-3",
-        "requirement": "an effective date supplied by the owner; no placeholder may ship."
+        "requirement": "an effective date supplied by the owner; no placeholder may ship.",
+        "status": "SATISFIED"
       }
     ],
-    "status": "A2b NOT IMPLEMENTED - external beta distribution is not authorized by the repository licence while these remain open."
+    "status": "A2b IMPLEMENTED - the Atlas proprietary controlled-beta licence is recorded in LICENSE, effective 15 August 2026. Invited controlled-beta evaluation is authorized by the repository licence; general distribution is not."
   },
   "canonical_texts": {
     "Apache-2.0": "compliance/licenses/Apache-2.0.txt",
