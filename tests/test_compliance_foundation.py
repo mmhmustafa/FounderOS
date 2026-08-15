@@ -298,13 +298,20 @@ class FoundationScopeGuards(unittest.TestCase):
         text = (ROOT / "LICENSE").read_text(encoding="utf-8")
         self.assertTrue(text.startswith("LICENSE NOT YET SELECTED"))
 
-    def test_jsonschema_extra_still_format(self) -> None:
+    def test_jsonschema_uses_the_nongpl_extra(self) -> None:
+        # PR-A1: the deliberate flip of A0's scope guard. The format extra
+        # pulled GPL-3.0-or-later rfc3987; format-nongpl is jsonschema's
+        # own substitution and must never regress.
         pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
-        self.assertIn('"jsonschema[format]>=4.23,<5"', pyproject)
+        self.assertIn('"jsonschema[format-nongpl]>=4.23,<5"', pyproject)
+        self.assertNotIn('jsonschema[format]', pyproject)
 
-    def test_rfc3987_still_pinned(self) -> None:
+    def test_gpl_package_left_the_lock(self) -> None:
         lock = (ROOT / "constraints.txt").read_text(encoding="utf-8")
-        self.assertIn("rfc3987==1.3.8", lock)
+        self.assertNotIn("rfc3987==", lock)
+        self.assertIn("rfc3986-validator==0.1.1", lock)
+        self.assertIn("rfc3987-syntax==1.1.0", lock)
+        self.assertIn("lark==1.3.1", lock)
 
     def test_setuptools_floor_is_77(self) -> None:
         pyproject = tomllib.loads(
@@ -312,6 +319,122 @@ class FoundationScopeGuards(unittest.TestCase):
         )
         requires = pyproject["build-system"]["requires"]
         self.assertIn("setuptools>=77", requires)
+
+
+class GplRemedyTests(unittest.TestCase):
+    """PR-A1 — the RED dependency is gone and stays gone."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.core = _core()
+        cls.manifest = json.loads(
+            (ROOT / "compliance" / "runtime-manifest.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        cls.runtime = {e["normalized"]: e for e in cls.manifest["runtime"]}
+        cls.sbom = json.loads(
+            (ROOT / "sbom.cdx.json").read_text(encoding="utf-8")
+        )
+
+    def test_rfc3987_absent_from_runtime_manifest(self) -> None:
+        self.assertNotIn("rfc3987", self.runtime)
+        # And not anywhere in the manifest at all — not as a dev package,
+        # not as a leaf, not in provenance.
+        raw = (ROOT / "compliance" / "runtime-manifest.json").read_text(
+            encoding="utf-8"
+        )
+        self.assertNotIn('"rfc3987"', raw)
+
+    def test_rfc3987_absent_from_sbom(self) -> None:
+        names = {c["name"] for c in self.sbom["components"]}
+        self.assertNotIn("rfc3987", names)
+
+    def test_replacements_are_runtime_members(self) -> None:
+        for name in ("rfc3986-validator", "rfc3987-syntax", "lark"):
+            self.assertIn(name, self.runtime, name)
+            self.assertEqual("runtime", self.runtime[name]["scope"])
+
+    def test_no_gpl_or_agpl_in_the_runtime_closure(self) -> None:
+        # Every declared-licence surface of every runtime member: the
+        # expression, the licence field, and the classifiers. LGPL is a
+        # distinct family (AMBER, allowlist-bound in Stage A2) and is
+        # masked before the GPL test.
+        offenders = []
+        for name, entry in self.runtime.items():
+            evidence = entry.get("license_evidence") or {}
+            blob = " ".join(
+                [
+                    evidence.get("declared_expression") or "",
+                    evidence.get("declared_license") or "",
+                ]
+                + (evidence.get("declared_classifiers") or [])
+            ).upper()
+            masked = blob.replace("LGPL", "").replace(
+                "LESSER GENERAL PUBLIC", ""
+            ).replace("LIBRARY OR LESSER", "")
+            if "AGPL" in masked or "GPL" in masked:
+                offenders.append((name, blob))
+        self.assertEqual([], offenders)
+
+    def test_replacement_licences_match_verified_evidence(self) -> None:
+        # From installed metadata — the same evidence base the PR-A review
+        # verified. rfc3987-syntax's known metadata/classifier discrepancy
+        # (field MIT, classifier Apache) is recorded, not hidden: both are
+        # permissive; A2's gate owns the final policy treatment.
+        expected = {
+            "rfc3986-validator": "MIT license",
+            "rfc3987-syntax": "MIT",
+            "lark": "MIT",
+        }
+        for name, declared in expected.items():
+            evidence = self.runtime[name]["license_evidence"]
+            self.assertEqual(
+                declared,
+                evidence["declared_expression"]
+                or evidence["declared_license"],
+                name,
+            )
+
+    def test_schema_formats_still_only_datetime_and_ip(self) -> None:
+        # The equivalence argument rests on this: Atlas uses no format
+        # rfc3987 ever backed (uri/iri/idn-hostname).
+        import re as _re
+
+        found: set[str] = set()
+        count = 0
+        # The tracked schema roots — not the whole working tree, which
+        # carries untracked lab data and old deliverable copies.
+        for root in ("apps", "examples", "runtime"):
+            for path in (ROOT / root).rglob("*.schema.json"):
+                count += 1
+                for match in _re.finditer(
+                    r'"format"\s*:\s*"([a-zA-Z0-9-]+)"',
+                    path.read_text(encoding="utf-8"),
+                ):
+                    found.add(match.group(1))
+        self.assertEqual(33, count)
+        self.assertEqual({"date-time", "ip"}, found)
+
+    def test_format_checker_behaviour_for_atlas_formats(self) -> None:
+        # The live half of the fingerprint: date-time validates correctly
+        # under the non-GPL set, and the nonstandard "ip" keyword remains
+        # unregistered (observed outside scope in the PR-A review — A1
+        # must not "fix" it).
+        from jsonschema import FormatChecker
+
+        checker = FormatChecker()
+        self.assertIn("date-time", checker.checkers)
+        self.assertNotIn("ip", checker.checkers)
+        self.assertTrue(checker.conforms("2026-08-15T12:00:00Z", "date-time"))
+        self.assertFalse(checker.conforms("not-a-date", "date-time"))
+
+    def test_gpl_package_not_importable(self) -> None:
+        # The environment matches the lock: the GPL package is not merely
+        # unreferenced, it is gone.
+        import importlib.util as _util
+
+        self.assertIsNone(_util.find_spec("rfc3987"))
 
 
 class SdistCompositionTests(unittest.TestCase):

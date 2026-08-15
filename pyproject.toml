@@ -12,7 +12,12 @@ description = "Minimal contract-enforcing runtime foundation for FounderOS"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-  "jsonschema[format]>=4.23,<5",
+  # PR-A1: format-nongpl is jsonschema's own extra for exactly this — it
+  # substitutes the GPL-3.0-or-later rfc3987 with MIT rfc3986-validator +
+  # rfc3987-syntax. Atlas's 33 schemas use only the date-time and ip
+  # formats, neither of which rfc3987 backed, so validation behaviour is
+  # unchanged (fingerprint-proven in tests/test_compliance_foundation.py).
+  "jsonschema[format-nongpl]>=4.23,<5",
   "PyYAML>=6,<7",
 ]
 

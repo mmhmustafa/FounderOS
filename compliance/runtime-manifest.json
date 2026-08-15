@@ -6,11 +6,11 @@
   "counts": {
     "development_only": 26,
     "runtime_by_platform": {
-      "darwin": 54,
-      "linux": 56,
-      "win32": 56
+      "darwin": 56,
+      "linux": 58,
+      "win32": 58
     },
-    "runtime_total": 58,
+    "runtime_total": 60,
     "unassigned_pins": 1
   },
   "development_only": [
@@ -1663,6 +1663,37 @@
           "OSI Approved :: MIT License"
         ],
         "declared_expression": "",
+        "declared_license": "MIT",
+        "evidence_files": [
+          "lark-1.3.1.dist-info/licenses/LICENSE"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "lark",
+      "normalized": "lark",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "rfc3987-syntax"
+      ],
+      "scope": "runtime",
+      "version": "1.3.1"
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [
+          "OSI Approved :: MIT License"
+        ],
+        "declared_expression": "",
         "declared_license": "",
         "evidence_files": [
           "markdown_it_py-4.2.0.dist-info/licenses/LICENSE",
@@ -2168,19 +2199,20 @@
       "license_evidence": {
         "component_sboms": [],
         "declared_classifiers": [
-          "OSI Approved :: GNU General Public License v3 or later (GPLv3+)"
+          "OSI Approved :: MIT License"
         ],
         "declared_expression": "",
-        "declared_license": "GNU GPLv3+",
-        "evidence_files": [],
-        "nested_evidence_files": [],
-        "observations": [
-          "no-license-file-shipped"
+        "declared_license": "MIT license",
+        "evidence_files": [
+          "rfc3986_validator-0.1.1.dist-info/AUTHORS.rst",
+          "rfc3986_validator-0.1.1.dist-info/LICENSE"
         ],
+        "nested_evidence_files": [],
+        "observations": [],
         "rejected_root_paths": []
       },
-      "name": "rfc3987",
-      "normalized": "rfc3987",
+      "name": "rfc3986-validator",
+      "normalized": "rfc3986-validator",
       "pinned": true,
       "platforms": [
         "darwin",
@@ -2191,7 +2223,38 @@
         "jsonschema"
       ],
       "scope": "runtime",
-      "version": "1.3.8"
+      "version": "0.1.1"
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [
+          "OSI Approved :: Apache Software License"
+        ],
+        "declared_expression": "MIT",
+        "declared_license": "",
+        "evidence_files": [
+          "rfc3987_syntax-1.1.0.dist-info/licenses/LICENSE"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "rfc3987-syntax",
+      "normalized": "rfc3987-syntax",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "jsonschema"
+      ],
+      "scope": "runtime",
+      "version": "1.1.0"
     },
     {
       "direct": false,
