@@ -16,3 +16,9 @@ THIRD-PARTY-NOTICES.txt  text eol=lf
 compliance/**            text eol=lf
 sbom.cdx.json            text eol=lf
 MANIFEST.in              text eol=lf
+
+# PR-A2a: corresponding-source archives are BINARY bytes. Without this
+# override the compliance/** rule above would let git treat the .tar.gz
+# files as text and normalize byte sequences that merely look like line
+# endings — corrupting the archives and their recorded hashes.
+compliance/third-party-source/*.tar.gz  binary

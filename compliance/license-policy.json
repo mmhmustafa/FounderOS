@@ -1,0 +1,1033 @@
+{
+  "a2b_requirements": {
+    "requirements": [
+      {
+        "id": "A2B-REQ-1",
+        "requirement": "the Atlas licence text must affirmatively permit, to the extent required by applicable third-party licence terms: (a) modification of the work for the customer's/tester's own use, and (b) reverse engineering for debugging such modifications (LGPL-2.1 section 6 condition)."
+      },
+      {
+        "id": "A2B-REQ-2",
+        "requirement": "every Atlas-owned restriction must be textually scoped to Atlas-owned material and must not limit rights granted by third-party licences (LGPL-2.1 section 10; MPL-2.0 section 3.2(b))."
+      },
+      {
+        "id": "A2B-REQ-3",
+        "requirement": "an effective date supplied by the owner; no placeholder may ship."
+      }
+    ],
+    "status": "A2b NOT IMPLEMENTED - external beta distribution is not authorized by the repository licence while these remain open."
+  },
+  "canonical_texts": {
+    "Apache-2.0": "compliance/licenses/Apache-2.0.txt",
+    "BSD-3-Clause": "compliance/licenses/BSD-3-Clause.txt",
+    "LGPL-2.1": "compliance/licenses/LGPL-2.1.txt",
+    "LLVM-exception": "compliance/licenses/LLVM-exception.txt",
+    "MIT": "compliance/licenses/MIT.txt",
+    "MPL-2.0": "compliance/licenses/MPL-2.0.txt",
+    "Unicode-3.0": "compliance/licenses/Unicode-3.0.txt"
+  },
+  "components": {
+    "arrow": {
+      "basis": [
+        "classifier",
+        "bundled-text"
+      ],
+      "concluded": "Apache-2.0"
+    },
+    "attrs": {
+      "basis": [
+        "declared-expression",
+        "bundled-text"
+      ],
+      "concluded": "MIT"
+    },
+    "backports-tarfile": {
+      "basis": [
+        "not-locked"
+      ],
+      "concluded": null,
+      "note": "not-locked leaf: recorded by the A0 partition as reachable but unpinned in constraints.txt; not installed here, so no licence evidence exists. Not part of any verified distribution set. Must be pinned and reviewed before any distribution that would ship it."
+    },
+    "bcrypt": {
+      "basis": [
+        "declared-license",
+        "classifier",
+        "bundled-text"
+      ],
+      "concluded": "Apache-2.0"
+    },
+    "blinker": {
+      "basis": [
+        "classifier",
+        "bundled-text"
+      ],
+      "concluded": "MIT"
+    },
+    "cffi": {
+      "basis": [
+        "declared-expression",
+        "bundled-text"
+      ],
+      "concluded": "MIT-0"
+    },
+    "click": {
+      "basis": [
+        "declared-expression",
+        "bundled-text"
+      ],
+      "concluded": "BSD-3-Clause"
+    },
+    "colorama": {
+      "basis": [
+        "classifier",
+        "bundled-text"
+      ],
+      "concluded": "BSD-3-Clause",
+      "note": "classifier names no variant; bundled text is the 3-clause form"
+    },
+    "cryptography": {
+      "basis": [
+        "declared-expression",
+        "bundled-text"
+      ],
+      "concluded": "Apache-2.0 OR BSD-3-Clause",
+      "note": "disjunction - see election ELECT-CRYPTOGRAPHY"
+    },
+    "flask": {
+      "basis": [
+        "declared-expression",
+        "bundled-text"
+      ],
+      "concluded": "BSD-3-Clause"
+    },
+    "flask-sock": {
+      "basis": [
+        "classifier",
+        "bundled-text"
+      ],
+      "concluded": "MIT"
+    },
+    "fqdn": {
+      "basis": [
+        "declared-license",
+        "classifier",
+        "bundled-text"
+      ],
+      "concluded": "MPL-2.0",
+      "note": "reviewed weak-copyleft - see reviewed_components"
+    },
+    "h11": {
+      "basis": [
+        "declared-license",
+        "classifier",
+        "bundled-text"
+      ],
+      "concluded": "MIT"
+    },
+    "idna": {
+      "basis": [
+        "declared-expression",
+        "bundled-text"
+      ],
+      "concluded": "BSD-3-Clause"
+    },
+    "importlib-metadata": {
+      "basis": [
+        "not-locked"
+      ],
+      "concluded": null,
+      "note": "not-locked leaf: recorded by the A0 partition as reachable but unpinned in constraints.txt; not installed here, so no licence evidence exists. Not part of any verified distribution set. Must be pinned and reviewed before any distribution that would ship it."
+    },
+    "invoke": {
+      "basis": [
+        "declared-expression",
+        "bundled-text"
+      ],
+      "concluded": "BSD-2-Clause"
+    },
+    "isoduration": {
+      "basis": [
+        "bundled-text",
+        "classifier"
+      ],
+      "concluded": "ISC",
+      "note": "metadata field is literal UNKNOWN - see exception EXC-ISODURATION"
+    },
+    "itsdangerous": {
+      "basis": [
+        "classifier",
+        "bundled-text"
+      ],
+      "concluded": "BSD-3-Clause"
+    },
+    "jaraco-classes": {
+      "basis": [
+        "classifier",
+        "bundled-text"
+      ],
+      "concluded": "MIT"
+    },
+    "jaraco-context": {
+      "basis": [
+        "declared-expression",
+        "bundled-text"
+      ],
+      "concluded": "MIT"
+    },
+    "jaraco-functools": {
+      "basis": [
+        "declared-expression",
+        "bundled-text"
+      ],
+      "concluded": "MIT"
+    },
+    "jeepney": {
+      "basis": [
+        "not-locked"
+      ],
+      "concluded": null,
+      "note": "not-locked leaf: recorded by the A0 partition as reachable but unpinned in constraints.txt; not installed here, so no licence evidence exists. Not part of any verified distribution set. Must be pinned and reviewed before any distribution that would ship it."
+    },
+    "jinja2": {
+      "basis": [
+        "classifier",
+        "bundled-text"
+      ],
+      "concluded": "BSD-3-Clause"
+    },
+    "jsonpointer": {
+      "basis": [
+        "declared-license",
+        "bundled-text"
+      ],
+      "concluded": "BSD-3-Clause",
+      "note": "declared 'Modified BSD License'; bundled text is the 3-clause form"
+    },
+    "jsonschema": {
+      "basis": [
+        "declared-expression",
+        "bundled-text"
+      ],
+      "concluded": "MIT"
+    },
+    "jsonschema-specifications": {
+      "basis": [
+        "declared-expression",
+        "bundled-text"
+      ],
+      "concluded": "MIT"
+    },
+    "keyring": {
+      "basis": [
+        "declared-expression",
+        "bundled-text"
+      ],
+      "concluded": "MIT"
+    },
+    "lark": {
+      "basis": [
+        "declared-license",
+        "classifier",
+        "bundled-text"
+      ],
+      "concluded": "MIT"
+    },
+    "markdown-it-py": {
+      "basis": [
+        "classifier",
+        "bundled-text"
+      ],
+      "concluded": "MIT",
+      "note": "second bundled text covers the ported markdown-it (JS), also MIT"
+    },
+    "markupsafe": {
+      "basis": [
+        "declared-expression",
+        "bundled-text"
+      ],
+      "concluded": "BSD-3-Clause"
+    },
+    "mdurl": {
+      "basis": [
+        "classifier",
+        "bundled-text"
+      ],
+      "concluded": "MIT"
+    },
+    "more-itertools": {
+      "basis": [
+        "declared-expression",
+        "bundled-text"
+      ],
+      "concluded": "MIT"
+    },
+    "netmiko": {
+      "basis": [
+        "declared-license",
+        "classifier",
+        "bundled-text"
+      ],
+      "concluded": "MIT",
+      "note": "vendored _telnetlib is PSF-2.0 - see nested_resolutions"
+    },
+    "ntc-templates": {
+      "basis": [
+        "declared-license",
+        "classifier"
+      ],
+      "concluded": "Apache-2.0",
+      "note": "distribution ships a 601-byte header only - full canonical text supplied"
+    },
+    "paramiko": {
+      "basis": [
+        "declared-expression",
+        "bundled-text"
+      ],
+      "concluded": "LGPL-2.1-only",
+      "note": "declared in the deprecated bare form 'LGPL-2.1'; the shipped text is the complete LGPL-2.1; treatment complies with v2.1 exactly"
+    },
+    "pycparser": {
+      "basis": [
+        "declared-expression",
+        "bundled-text"
+      ],
+      "concluded": "BSD-3-Clause"
+    },
+    "pygments": {
+      "basis": [
+        "declared-expression",
+        "bundled-text"
+      ],
+      "concluded": "BSD-2-Clause"
+    },
+    "pynacl": {
+      "basis": [
+        "declared-license",
+        "classifier",
+        "bundled-text"
+      ],
+      "concluded": "Apache-2.0",
+      "note": "bundled libsodium is ISC - see nested_resolutions"
+    },
+    "pyserial": {
+      "basis": [
+        "declared-license",
+        "classifier",
+        "in-package-spdx-headers"
+      ],
+      "concluded": "BSD-3-Clause",
+      "note": "no licence file shipped - see exception EXC-PYSERIAL"
+    },
+    "python-dateutil": {
+      "basis": [
+        "declared-license",
+        "bundled-text"
+      ],
+      "concluded": "Apache-2.0 AND BSD-3-Clause",
+      "note": "portions conjunction, not recipient's choice - see CONJ-DATEUTIL"
+    },
+    "pywin32-ctypes": {
+      "basis": [
+        "declared-license",
+        "bundled-text"
+      ],
+      "concluded": "BSD-3-Clause"
+    },
+    "pyyaml": {
+      "basis": [
+        "declared-license",
+        "classifier",
+        "bundled-text"
+      ],
+      "concluded": "MIT"
+    },
+    "referencing": {
+      "basis": [
+        "declared-expression",
+        "bundled-text"
+      ],
+      "concluded": "MIT"
+    },
+    "rfc3339-validator": {
+      "basis": [
+        "declared-license",
+        "classifier",
+        "bundled-text"
+      ],
+      "concluded": "MIT"
+    },
+    "rfc3986-validator": {
+      "basis": [
+        "declared-license",
+        "classifier",
+        "bundled-text"
+      ],
+      "concluded": "MIT"
+    },
+    "rfc3987-syntax": {
+      "basis": [
+        "declared-expression",
+        "bundled-text"
+      ],
+      "concluded": "MIT",
+      "note": "stale Apache classifier - see exception EXC-RFC3987-SYNTAX"
+    },
+    "rich": {
+      "basis": [
+        "declared-license",
+        "classifier",
+        "bundled-text"
+      ],
+      "concluded": "MIT"
+    },
+    "rpds-py": {
+      "basis": [
+        "declared-expression",
+        "bundled-text"
+      ],
+      "concluded": "MIT",
+      "note": "bundled Rust-crate SBOM - see elections/conjunctions"
+    },
+    "ruamel-yaml": {
+      "basis": [
+        "declared-license",
+        "classifier",
+        "bundled-text"
+      ],
+      "concluded": "MIT"
+    },
+    "scp": {
+      "basis": [
+        "declared-license",
+        "classifier"
+      ],
+      "concluded": "LGPL-2.1-or-later",
+      "note": "distribution ships only the 727-byte short notice - full canonical text supplied; see reviewed_components"
+    },
+    "secretstorage": {
+      "basis": [
+        "not-locked"
+      ],
+      "concluded": null,
+      "note": "not-locked leaf: recorded by the A0 partition as reachable but unpinned in constraints.txt; not installed here, so no licence evidence exists. Not part of any verified distribution set. Must be pinned and reviewed before any distribution that would ship it."
+    },
+    "simple-websocket": {
+      "basis": [
+        "classifier",
+        "bundled-text"
+      ],
+      "concluded": "MIT"
+    },
+    "six": {
+      "basis": [
+        "declared-license",
+        "classifier",
+        "bundled-text"
+      ],
+      "concluded": "MIT"
+    },
+    "textfsm": {
+      "basis": [
+        "declared-license",
+        "classifier",
+        "bundled-text"
+      ],
+      "concluded": "Apache-2.0"
+    },
+    "typing-extensions": {
+      "basis": [
+        "not-locked"
+      ],
+      "concluded": null,
+      "note": "not-locked leaf: recorded by the A0 partition as reachable but unpinned in constraints.txt; not installed here, so no licence evidence exists. Not part of any verified distribution set. Must be pinned and reviewed before any distribution that would ship it."
+    },
+    "tzdata": {
+      "basis": [
+        "declared-license",
+        "bundled-text"
+      ],
+      "concluded": "Apache-2.0",
+      "note": "wraps the IANA time-zone database (public-domain data); the wrapper is Apache-2.0 and both bundled texts ship"
+    },
+    "uri-template": {
+      "basis": [
+        "declared-license",
+        "classifier",
+        "bundled-text"
+      ],
+      "concluded": "MIT"
+    },
+    "webcolors": {
+      "basis": [
+        "declared-license",
+        "classifier",
+        "bundled-text"
+      ],
+      "concluded": "BSD-3-Clause"
+    },
+    "werkzeug": {
+      "basis": [
+        "declared-expression",
+        "bundled-text"
+      ],
+      "concluded": "BSD-3-Clause",
+      "note": "bundled Silk icon set is CC-BY - see nested_resolutions"
+    },
+    "wsproto": {
+      "basis": [
+        "declared-expression",
+        "bundled-text"
+      ],
+      "concluded": "MIT"
+    }
+  },
+  "conjunctions": [
+    {
+      "component": "python-dateutil",
+      "expression": "Apache-2.0 AND BSD-3-Clause",
+      "id": "CONJ-DATEUTIL",
+      "obligations": [
+        "Apache-2.0",
+        "BSD-3-Clause"
+      ],
+      "rationale": "portions conjunction, not a recipient's choice: contributions after 2017-12-01 are Apache-2.0, earlier contributions are BSD-3-Clause; the bundled LICENSE carries both texts and both obligations stand.",
+      "version": "2.9.0.post0"
+    },
+    {
+      "component": "unicode-ident",
+      "expression": "(MIT OR Apache-2.0) AND Unicode-3.0",
+      "id": "CONJ-UNICODE-IDENT",
+      "obligations": [
+        "MIT (elected arm)",
+        "Unicode-3.0"
+      ],
+      "rationale": "the Unicode-3.0 arm is conjunctive and cannot be dropped by electing MIT; the canonical Unicode-3.0 text is carried in the notices.",
+      "version": "1.0.24 (within cryptography) / 1.0.22 (within rpds-py)"
+    },
+    {
+      "component": "target-lexicon",
+      "expression": "Apache-2.0 WITH LLVM-exception",
+      "id": "CONJ-LLVM-EXCEPTION",
+      "obligations": [
+        "Apache-2.0",
+        "LLVM-exception (carried, never stripped)"
+      ],
+      "rationale": "WITH carries the exception through to the notices verbatim.",
+      "version": "0.13.5 (within cryptography) / 0.13.3 (within rpds-py)"
+    }
+  ],
+  "description": "Machine-readable licence policy for the Atlas runtime closure. Consumed by scripts/check_licenses.py and scripts/generate_third_party_notices.py. The runtime closure is defined solely by compliance/runtime-manifest.json (the A0 partition rule); this file records the reviewed conclusion for every member and every nested/static/native component, with SPDX semantics: OR requires a recorded election, AND preserves every obligation, WITH carries the exception. Nothing here grants, limits, or interprets any right in Atlas itself - Atlas-owned terms are out of scope for this file (Stage A2b).",
+  "elections": [
+    {
+      "components": [
+        {
+          "name": "cryptography",
+          "version": "49.0.0",
+          "within": null
+        }
+      ],
+      "elected": "Apache-2.0",
+      "expression": "Apache-2.0 OR BSD-3-Clause",
+      "id": "ELECT-CRYPTOGRAPHY",
+      "rationale": "cryptography's own dual licence; the Apache-2.0 arm is elected and its full text ships in the distribution (LICENSE.APACHE)."
+    },
+    {
+      "components": [
+        {
+          "name": "base64",
+          "version": "0.22.1",
+          "within": "cryptography"
+        },
+        {
+          "name": "bitflags",
+          "version": "2.13.0",
+          "within": "cryptography"
+        },
+        {
+          "name": "cc",
+          "version": "1.2.64",
+          "within": "cryptography"
+        },
+        {
+          "name": "cfg-if",
+          "version": "1.0.4",
+          "within": "cryptography"
+        },
+        {
+          "name": "find-msvc-tools",
+          "version": "0.1.9",
+          "within": "cryptography"
+        },
+        {
+          "name": "foreign-types",
+          "version": "0.3.2",
+          "within": "cryptography"
+        },
+        {
+          "name": "foreign-types-shared",
+          "version": "0.1.1",
+          "within": "cryptography"
+        },
+        {
+          "name": "heck",
+          "version": "0.5.0",
+          "within": "cryptography"
+        },
+        {
+          "name": "heck",
+          "version": "0.5.0",
+          "within": "rpds-py"
+        },
+        {
+          "name": "itoa",
+          "version": "1.0.18",
+          "within": "cryptography"
+        },
+        {
+          "name": "libc",
+          "version": "0.2.186",
+          "within": "cryptography"
+        },
+        {
+          "name": "libc",
+          "version": "0.2.177",
+          "within": "rpds-py"
+        },
+        {
+          "name": "once_cell",
+          "version": "1.21.4",
+          "within": "cryptography"
+        },
+        {
+          "name": "once_cell",
+          "version": "1.21.3",
+          "within": "rpds-py"
+        },
+        {
+          "name": "openssl-macros",
+          "version": "0.1.1",
+          "within": "cryptography"
+        },
+        {
+          "name": "pkg-config",
+          "version": "0.3.33",
+          "within": "cryptography"
+        },
+        {
+          "name": "proc-macro2",
+          "version": "1.0.106",
+          "within": "cryptography"
+        },
+        {
+          "name": "proc-macro2",
+          "version": "1.0.103",
+          "within": "rpds-py"
+        },
+        {
+          "name": "pyo3",
+          "version": "0.29.0",
+          "within": "cryptography"
+        },
+        {
+          "name": "pyo3",
+          "version": "0.29.0",
+          "within": "rpds-py"
+        },
+        {
+          "name": "pyo3-build-config",
+          "version": "0.29.0",
+          "within": "cryptography"
+        },
+        {
+          "name": "pyo3-build-config",
+          "version": "0.29.0",
+          "within": "rpds-py"
+        },
+        {
+          "name": "pyo3-ffi",
+          "version": "0.29.0",
+          "within": "cryptography"
+        },
+        {
+          "name": "pyo3-ffi",
+          "version": "0.29.0",
+          "within": "rpds-py"
+        },
+        {
+          "name": "pyo3-macros",
+          "version": "0.29.0",
+          "within": "cryptography"
+        },
+        {
+          "name": "pyo3-macros",
+          "version": "0.29.0",
+          "within": "rpds-py"
+        },
+        {
+          "name": "pyo3-macros-backend",
+          "version": "0.29.0",
+          "within": "cryptography"
+        },
+        {
+          "name": "pyo3-macros-backend",
+          "version": "0.29.0",
+          "within": "rpds-py"
+        },
+        {
+          "name": "quote",
+          "version": "1.0.45",
+          "within": "cryptography"
+        },
+        {
+          "name": "quote",
+          "version": "1.0.42",
+          "within": "rpds-py"
+        },
+        {
+          "name": "shlex",
+          "version": "2.0.1",
+          "within": "cryptography"
+        },
+        {
+          "name": "smallvec",
+          "version": "1.15.1",
+          "within": "rpds-py"
+        },
+        {
+          "name": "syn",
+          "version": "2.0.117",
+          "within": "cryptography"
+        },
+        {
+          "name": "syn",
+          "version": "2.0.111",
+          "within": "rpds-py"
+        },
+        {
+          "name": "triomphe",
+          "version": "0.1.15",
+          "within": "rpds-py"
+        },
+        {
+          "name": "vcpkg",
+          "version": "0.2.15",
+          "within": "cryptography"
+        }
+      ],
+      "elected": "MIT",
+      "expression": "MIT OR Apache-2.0",
+      "id": "ELECT-CRATES-MIT-OR-APACHE",
+      "rationale": "Rust crates offering MIT or Apache-2.0; the MIT arm is elected; canonical MIT text supplied, attribution by crate name and version."
+    },
+    {
+      "components": [
+        {
+          "name": "portable-atomic",
+          "version": "1.13.1",
+          "within": "cryptography"
+        }
+      ],
+      "elected": "MIT",
+      "expression": "Apache-2.0 OR MIT",
+      "id": "ELECT-CRATES-APACHE-OR-MIT",
+      "rationale": "same disjunction written in the opposite order; the MIT arm is elected."
+    },
+    {
+      "components": [
+        {
+          "name": "cryptography-cffi",
+          "version": "0.49.0",
+          "within": "cryptography"
+        },
+        {
+          "name": "cryptography-crypto",
+          "version": "0.49.0",
+          "within": "cryptography"
+        },
+        {
+          "name": "cryptography-keepalive",
+          "version": "0.49.0",
+          "within": "cryptography"
+        },
+        {
+          "name": "cryptography-key-parsing",
+          "version": "0.49.0",
+          "within": "cryptography"
+        },
+        {
+          "name": "cryptography-openssl",
+          "version": "0.49.0",
+          "within": "cryptography"
+        },
+        {
+          "name": "cryptography-x509",
+          "version": "0.49.0",
+          "within": "cryptography"
+        },
+        {
+          "name": "cryptography-x509-verification",
+          "version": "0.49.0",
+          "within": "cryptography"
+        }
+      ],
+      "elected": "Apache-2.0",
+      "expression": "Apache-2.0 OR BSD-3-Clause",
+      "id": "ELECT-CRATES-APACHE-OR-BSD",
+      "rationale": "cryptography's own Rust crates carry the parent's dual licence; the same Apache-2.0 arm is elected for consistency."
+    },
+    {
+      "components": [
+        {
+          "name": "self_cell",
+          "version": "1.2.2",
+          "within": "cryptography"
+        }
+      ],
+      "elected": "Apache-2.0",
+      "expression": "Apache-2.0 OR GPL-2.0-only",
+      "id": "ELECT-SELF-CELL",
+      "rationale": "the disjunction offers a permissive arm; Apache-2.0 is elected and the GPL arm is never exercised. The original expression is preserved here and in the notices; the GPL text is not removed from the evidence."
+    },
+    {
+      "components": [
+        {
+          "name": "unicode-ident",
+          "version": "1.0.24",
+          "within": "cryptography"
+        },
+        {
+          "name": "unicode-ident",
+          "version": "1.0.22",
+          "within": "rpds-py"
+        }
+      ],
+      "elected": "MIT AND Unicode-3.0",
+      "expression": "(MIT OR Apache-2.0) AND Unicode-3.0",
+      "id": "ELECT-UNICODE-IDENT-INNER",
+      "rationale": "the parenthesised disjunction elects MIT; the conjunctive Unicode-3.0 obligation is preserved - see CONJ-UNICODE-IDENT."
+    },
+    {
+      "components": [
+        {
+          "name": "Silk icon set 1.3",
+          "version": "1.3",
+          "within": "werkzeug"
+        }
+      ],
+      "elected": "CC-BY-3.0",
+      "expression": "CC-BY-2.5 OR CC-BY-3.0",
+      "id": "ELECT-SILK-ICONS",
+      "rationale": "werkzeug's bundled Silk icon set is offered under either CC-BY version; CC-BY-3.0 is elected; the attribution obligation is satisfied by the notices entry naming Mark James and the icon set."
+    }
+  ],
+  "evidence_exceptions": [
+    {
+      "attribution": "Copyright (c) 2001-2020 Chris Liechti <cliechti@gmx.net>",
+      "authority": "metadata declares 'BSD' (no variant); 25 in-package source files carry 'SPDX-License-Identifier: BSD-3-Clause' headers; the canonical BSD-3-Clause text is supplied from compliance/licenses/ and the notices state that the distribution ships no licence file.",
+      "component": "pyserial",
+      "id": "EXC-PYSERIAL",
+      "legal_review": "authoritative upstream text to be read at sign-off (PR-A section 25 item 8).",
+      "observation": "no-license-file-shipped",
+      "resolution": "concluded BSD-3-Clause",
+      "version": "3.5"
+    },
+    {
+      "authority": "the bundled licence text (dist-info/LICENSE) is the ISC licence and is authoritative over the literal 'UNKNOWN' metadata field; the ISC classifier agrees.",
+      "component": "isoduration",
+      "id": "EXC-ISODURATION",
+      "observation": "metadata-license-unknown + bundled-license-text-present",
+      "resolution": "concluded ISC",
+      "version": "20.11.0"
+    },
+    {
+      "authority": "License-Expression is MIT and the bundled text is MIT; the 'Apache Software License' classifier is stale metadata. Two agreeing evidence surfaces outweigh one disagreeing classifier; both candidates are permissive, so the discrepancy is recorded, not fatal.",
+      "component": "rfc3987-syntax",
+      "id": "EXC-RFC3987-SYNTAX",
+      "observation": "classifier-disagrees-with-expression-and-text",
+      "resolution": "concluded MIT",
+      "version": "1.1.0"
+    },
+    {
+      "authority": "fqdn-1.5.1.dist-info/LICENSE (complete 373-line MPL-2.0).",
+      "component": "fqdn",
+      "id": "EXC-FQDN-SDIST-NO-LICENCE-FILE",
+      "observation": "upstream sdist contains no licence file",
+      "resolution": "MPL-2.0 text carried from the installed wheel evidence and compliance/licenses/MPL-2.0.txt; the stored sdist is kept as the exact upstream Source Code Form.",
+      "version": "1.5.1"
+    }
+  ],
+  "nested_resolutions": [
+    {
+      "authority": "the bundled SBOM entry carries no licence field; upstream openssl/openssl tag openssl-4.0.1 LICENSE.txt verified as the Apache License 2.0 during PR-A2a; canonical Apache-2.0 text supplied.",
+      "component": "openssl",
+      "evidence": "cryptography-49.0.0.dist-info/sboms/sbom.json (pkg:generic/openssl@4.0.1, sha256 recorded, build flags include no-shared); linkage confirmed live: backend.openssl_version_text() == 'OpenSSL 4.0.1 9 Jun 2026'.",
+      "id": "NEST-OPENSSL",
+      "kind": "statically-linked native library",
+      "licence_text": "compliance/licenses/Apache-2.0.txt",
+      "resolution": "Apache-2.0",
+      "version": "4.0.1",
+      "within": "cryptography"
+    },
+    {
+      "authority": "the nested file is the complete Python licence stack; inlined into the notices from the in-package evidence path.",
+      "component": "_telnetlib (vendored CPython telnetlib)",
+      "evidence": "netmiko/_telnetlib/LICENSE ('This license applies to the included telnetlib.py code (and not any other part of Netmiko)').",
+      "id": "NEST-TELNETLIB",
+      "kind": "nested in-package source",
+      "resolution": "PSF-2.0",
+      "version": "vendored at netmiko 4.7.0",
+      "within": "netmiko"
+    },
+    {
+      "authority": "the bundled text is the ISC licence with the libsodium copyright.",
+      "component": "libsodium",
+      "evidence": "pynacl-1.6.2.dist-info/licenses/licenses/LICENSE.libsodium.txt (doubly-nested path preserved, never flattened to basename).",
+      "id": "NEST-LIBSODIUM",
+      "kind": "statically-linked native library",
+      "resolution": "ISC",
+      "version": "bundled with PyNaCl 1.6.2",
+      "within": "pynacl"
+    },
+    {
+      "authority": "attribution satisfied by the notices entry naming the author and set.",
+      "component": "Silk icon set 1.3",
+      "evidence": "werkzeug/debug/shared/ICON_LICENSE.md (Mark James, famfamfam.com; CC-BY-2.5 or CC-BY-3.0).",
+      "id": "NEST-SILK-ICONS",
+      "kind": "bundled image assets (debugger UI)",
+      "resolution": "CC-BY-3.0 (see ELECT-SILK-ICONS)",
+      "version": "1.3",
+      "within": "werkzeug"
+    },
+    {
+      "authority": "bundled text (Vitaly Puzrin, Alex Kocharin).",
+      "component": "markdown-it (ported JavaScript parser)",
+      "evidence": "markdown_it_py-4.2.0.dist-info/licenses/LICENSE.markdown-it",
+      "id": "NEST-MARKDOWN-IT",
+      "kind": "second bundled licence text",
+      "resolution": "MIT",
+      "version": "ported design; text bundled",
+      "within": "markdown-it-py"
+    }
+  ],
+  "not_locked_leaves": {
+    "backports-tarfile": "not-locked leaf: recorded by the A0 partition as reachable but unpinned in constraints.txt; not installed here, so no licence evidence exists. Not part of any verified distribution set. Must be pinned and reviewed before any distribution that would ship it.",
+    "importlib-metadata": "not-locked leaf: recorded by the A0 partition as reachable but unpinned in constraints.txt; not installed here, so no licence evidence exists. Not part of any verified distribution set. Must be pinned and reviewed before any distribution that would ship it.",
+    "jeepney": "not-locked leaf: recorded by the A0 partition as reachable but unpinned in constraints.txt; not installed here, so no licence evidence exists. Not part of any verified distribution set. Must be pinned and reviewed before any distribution that would ship it.",
+    "secretstorage": "not-locked leaf: recorded by the A0 partition as reachable but unpinned in constraints.txt; not installed here, so no licence evidence exists. Not part of any verified distribution set. Must be pinned and reviewed before any distribution that would ship it.",
+    "typing-extensions": "not-locked leaf: recorded by the A0 partition as reachable but unpinned in constraints.txt; not installed here, so no licence evidence exists. Not part of any verified distribution set. Must be pinned and reviewed before any distribution that would ship it."
+  },
+  "prb_distribution_contract": {
+    "requirements": [
+      {
+        "id": "PRB-REQ-1",
+        "requirement": "paramiko and scp must remain separately identifiable, importable, replaceable pure-Python components in the distributed layout (PyInstaller one-folder: collected as plain .py files on sys.path, not frozen into the archive).",
+        "verification": "install the built distribution; replace paramiko/ (or scp.py) with a modified copy; the application must import and use the modified copy. A one-file/frozen layout that defeats replacement is a compliance failure."
+      },
+      {
+        "id": "PRB-REQ-2",
+        "requirement": "compliance/third-party-source/*.tar.gz and THIRD-PARTY-NOTICES.txt must be copied into the distribution beside the application."
+      },
+      {
+        "id": "PRB-REQ-3",
+        "requirement": "fqdn must ship in Source Code Form (unfrozen .py), or equivalent MPL-2.0 section 3.2(a) source availability must be provided."
+      },
+      {
+        "id": "PRB-REQ-4",
+        "requirement": "CPython/PSF and PyInstaller bootloader licence material must be added to the notices at packaging time (see the placeholder section in THIRD-PARTY-NOTICES.txt)."
+      }
+    ],
+    "status": "PR-B NOT STARTED - these are requirements on the future packaging stage, not statements about the present."
+  },
+  "reviewed_components": [
+    {
+      "atlas_modifies": false,
+      "attribution": "Author: Jeff Forcier <jeff@bitprophet.org> (distribution metadata)",
+      "declared": "LGPL-2.1 (deprecated bare form in License-Expression)",
+      "evidence": [
+        "paramiko-4.0.0.dist-info/licenses/LICENSE"
+      ],
+      "family": "LGPL",
+      "licence": "LGPL-2.1-only",
+      "licence_text": "compliance/licenses/LGPL-2.1.txt",
+      "mechanism": "LGPL-2.1 section 6(a): complete corresponding source is stored in this repository and ships beside any distribution; the same materials are published at the distribution location (also satisfying 6(d)); the component remains a separately identifiable, replaceable pure-Python package. Election recorded here; wording of the licence-side affirmative permission is an A2b/legal item (A2B-REQ-1).",
+      "name": "paramiko",
+      "security_interlock": "security/vulnerability-exceptions.json pins paramiko==4.0.0 (PYSEC-2026-2858, expires 2026-10-18); a paramiko upgrade must update BOTH files or both gates fail.",
+      "source_archive": "compliance/third-party-source/paramiko-4.0.0.tar.gz",
+      "source_provenance": "https://pypi.org/project/paramiko/4.0.0/ (sdist, pip download --no-deps --no-binary :all:)",
+      "source_sha256": "6a25f07b380cc9c9a88d2b920ad37167ac4667f8d9886ccebd8f90f654b5d69f",
+      "upstream": "https://github.com/paramiko/paramiko",
+      "version": "4.0.0"
+    },
+    {
+      "atlas_modifies": false,
+      "attribution": "Copyright (C) 2008 James Bardin <j.bardin@gmail.com> (scp.py header)",
+      "declared": "LGPL-2.1-or-later",
+      "evidence": [
+        "scp-0.15.0.dist-info/LICENSE.txt"
+      ],
+      "family": "LGPL",
+      "licence": "LGPL-2.1-or-later",
+      "licence_text": "compliance/licenses/LGPL-2.1.txt",
+      "mechanism": "identical to paramiko (LGPL-2.1 section 6(a) + 6(d)); additionally the distribution ships only a 727-byte short notice, so the notices generator supplies the canonical full LGPL-2.1 text and records that it did so. Required at import time by netmiko (netmiko/__init__.py -> scp_handler -> import scp); not removable.",
+      "name": "scp",
+      "source_archive": "compliance/third-party-source/scp-0.15.0.tar.gz",
+      "source_provenance": "https://pypi.org/project/scp/0.15.0/ (sdist, pip download --no-deps --no-binary :all:)",
+      "source_sha256": "f1b22e9932123ccf17eebf19e0953c6e9148f589f93d91b872941a696305c83f",
+      "upstream": "https://github.com/jbardin/scp.py",
+      "version": "0.15.0"
+    },
+    {
+      "atlas_modifies": false,
+      "attribution": "Author: ypcrts (distribution metadata)",
+      "declared": "MPL 2.0",
+      "evidence": [
+        "fqdn-1.5.1.dist-info/LICENSE"
+      ],
+      "family": "MPL",
+      "licence": "MPL-2.0",
+      "licence_text": "compliance/licenses/MPL-2.0.txt",
+      "mechanism": "MPL-2.0 sections 3.1/3.2(a): the Covered Software's Source Code Form is stored in this repository and ships beside any distribution; because fqdn is pure Python distributed as source, an unfrozen layout carries the Source Code Form by construction. Atlas modifies no MPL-covered file, so exact upstream source satisfies the obligation and no Atlas-owned file becomes Covered Software.",
+      "name": "fqdn",
+      "note": "the upstream sdist itself ships no licence file (a packaging gap in fqdn 1.5.1); the MPL-2.0 text is evidenced by the installed wheel's dist-info and carried canonically at compliance/licenses/MPL-2.0.txt.",
+      "source_archive": "compliance/third-party-source/fqdn-1.5.1.tar.gz",
+      "source_provenance": "https://pypi.org/project/fqdn/1.5.1/ (sdist, pip download --no-deps --no-binary :all:)",
+      "source_sha256": "105ed3677e767fb5ca086a0c1f4bb66ebc3c100be518f0e0d755d9eae164d89f",
+      "upstream": "https://github.com/ypcrts/fqdn",
+      "version": "1.5.1"
+    }
+  ],
+  "schema_version": "1.0",
+  "spdx": {
+    "allowed_exceptions": [
+      "LLVM-exception"
+    ],
+    "allowed_families": [
+      "Apache-2.0",
+      "BSD-2-Clause",
+      "BSD-3-Clause",
+      "CC-BY-3.0",
+      "ISC",
+      "MIT",
+      "MIT-0",
+      "PSF-2.0",
+      "Unicode-3.0"
+    ],
+    "forbidden_runtime_families": [
+      "AGPL-1.0-only",
+      "AGPL-1.0-or-later",
+      "AGPL-3.0-only",
+      "AGPL-3.0-or-later",
+      "GPL-1.0-only",
+      "GPL-1.0-or-later",
+      "GPL-2.0-only",
+      "GPL-2.0-or-later",
+      "GPL-3.0-only",
+      "GPL-3.0-or-later"
+    ],
+    "notes": "families are matched as parsed SPDX symbols, never substrings. A forbidden symbol appearing as one arm of a disjunction whose other arm is elected and allowed does NOT make the component forbidden; the original expression is preserved and the election is recorded.",
+    "reviewed_weak_copyleft": [
+      "LGPL-2.1-only",
+      "LGPL-2.1-or-later",
+      "MPL-2.0"
+    ]
+  }
+}

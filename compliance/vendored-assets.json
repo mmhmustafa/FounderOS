@@ -1,0 +1,58 @@
+{
+  "schema_version": "1.0",
+  "description": "Licence evidence for vendored (non-pip) third-party assets that ship inside the Atlas packages. Consumed by scripts/check_licenses.py and scripts/generate_third_party_notices.py so the notices are generated from recorded evidence rather than remembered. Every distributed file under a listed directory must be either a component entry here or an evidence file referenced by one; a new vendored file with no entry fails the gate.",
+  "directories": [
+    "src/founderos_atlas/web/static/vendor"
+  ],
+  "components": [
+    {
+      "name": "Cytoscape.js",
+      "version": "3.29.2",
+      "version_evidence": "src/founderos_atlas/visualization/renderer.py CYTOSCAPE_VERSION = \"3.29.2\"; the bundle contains the version string; the embedded /** banner survives minification and travels inside every exported topology artifact.",
+      "files": [
+        "src/founderos_atlas/web/static/vendor/cytoscape.min.js"
+      ],
+      "licence": "MIT",
+      "licence_evidence": [
+        "src/founderos_atlas/web/static/vendor/cytoscape.LICENSE"
+      ],
+      "attribution": "Copyright (c) 2016-2024, The Cytoscape Consortium.",
+      "upstream": "https://js.cytoscape.org/"
+    },
+    {
+      "name": "xterm.js",
+      "version": null,
+      "version_evidence": "no version is recoverable: the bundle is comment-stripped and ships no package.json. The notice states this rather than inventing one.",
+      "files": [
+        "src/founderos_atlas/web/static/vendor/xterm.js",
+        "src/founderos_atlas/web/static/vendor/xterm.css"
+      ],
+      "licence": "MIT",
+      "licence_evidence": [
+        "src/founderos_atlas/web/static/vendor/xterm.LICENSE"
+      ],
+      "attribution": "Copyright (c) 2017-2019, The xterm.js authors; Copyright (c) 2014-2016, SourceLair Private Company; Copyright (c) 2012-2013, Christopher Jeffrey.",
+      "upstream": "https://github.com/xtermjs/xterm.js"
+    },
+    {
+      "name": "xterm-addon-fit",
+      "version": null,
+      "version_evidence": "no version is recoverable: the bundle is comment-stripped with no adjacent licence file of its own.",
+      "files": [
+        "src/founderos_atlas/web/static/vendor/xterm-addon-fit.js"
+      ],
+      "licence": "MIT",
+      "licence_evidence": [
+        "src/founderos_atlas/web/static/vendor/xterm.LICENSE"
+      ],
+      "evidence_note": "the fit addon is developed in the same xtermjs/xterm.js monorepo and is covered by the same MIT licence text; recorded here explicitly because the file itself carries no notice.",
+      "attribution": "Copyright (c) 2017-2019, The xterm.js authors.",
+      "upstream": "https://github.com/xtermjs/xterm.js (addons/addon-fit)"
+    }
+  ],
+  "evidence_files": [
+    "src/founderos_atlas/web/static/vendor/cytoscape.LICENSE",
+    "src/founderos_atlas/web/static/vendor/xterm.LICENSE"
+  ],
+  "notes": "no font files ship anywhere under the packaged static assets and no CSS @font-face rule exists; measured during the PR-A2 review and re-checkable at any time."
+}
