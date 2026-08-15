@@ -1,0 +1,2616 @@
+{
+  "application": {
+    "name": "founderos-runtime",
+    "version": "0.3.0a1"
+  },
+  "counts": {
+    "development_only": 26,
+    "runtime_by_platform": {
+      "darwin": 54,
+      "linux": 56,
+      "win32": 56
+    },
+    "runtime_total": 58,
+    "unassigned_pins": 1
+  },
+  "development_only": [
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [],
+        "declared_expression": "",
+        "declared_license": "BSD-2-Clause",
+        "evidence_files": [
+          "boolean_py-5.0.dist-info/licenses/LICENSE.txt"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "boolean.py",
+      "normalized": "boolean-py",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "license-expression"
+      ],
+      "scope": "development",
+      "version": "5.0"
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [],
+        "declared_expression": "Apache-2.0",
+        "declared_license": "",
+        "evidence_files": [
+          "cachecontrol-0.14.4.dist-info/licenses/LICENSE.txt"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "CacheControl",
+      "normalized": "cachecontrol",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "pip-audit"
+      ],
+      "scope": "development",
+      "version": "0.14.4"
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [
+          "OSI Approved :: Mozilla Public License 2.0 (MPL 2.0)"
+        ],
+        "declared_expression": "",
+        "declared_license": "MPL-2.0",
+        "evidence_files": [
+          "certifi-2026.6.17.dist-info/licenses/LICENSE"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "certifi",
+      "normalized": "certifi",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "requests"
+      ],
+      "scope": "development",
+      "version": "2026.6.17"
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [],
+        "declared_expression": "",
+        "declared_license": "MIT",
+        "evidence_files": [
+          "charset_normalizer-3.4.9.dist-info/licenses/LICENSE"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "charset-normalizer",
+      "normalized": "charset-normalizer",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "requests"
+      ],
+      "scope": "development",
+      "version": "3.4.9"
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [
+          "OSI Approved :: Apache Software License"
+        ],
+        "declared_expression": "",
+        "declared_license": "Apache-2.0",
+        "evidence_files": [
+          "cyclonedx_python_lib-11.11.0.dist-info/licenses/LICENSE",
+          "cyclonedx_python_lib-11.11.0.dist-info/licenses/NOTICE"
+        ],
+        "nested_evidence_files": [
+          "cyclonedx/factory/__pycache__/license.cpython-314.pyc",
+          "cyclonedx/factory/license.py",
+          "cyclonedx/model/__pycache__/license.cpython-314.pyc",
+          "cyclonedx/model/license.py"
+        ],
+        "observations": [
+          "nested-license-evidence"
+        ],
+        "rejected_root_paths": []
+      },
+      "name": "cyclonedx-python-lib",
+      "normalized": "cyclonedx-python-lib",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "pip-audit"
+      ],
+      "scope": "development",
+      "version": "11.11.0"
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [
+          "OSI Approved :: Python Software Foundation License"
+        ],
+        "declared_expression": "",
+        "declared_license": "PSFL",
+        "evidence_files": [
+          "defusedxml-0.7.1.dist-info/LICENSE"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "defusedxml",
+      "normalized": "defusedxml",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "py-serializable"
+      ],
+      "scope": "development",
+      "version": "0.7.1"
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [
+          "OSI Approved :: MIT License"
+        ],
+        "declared_expression": "MIT",
+        "declared_license": "",
+        "evidence_files": [
+          "filelock-3.30.3.dist-info/licenses/LICENSE"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "filelock",
+      "normalized": "filelock",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "cachecontrol"
+      ],
+      "scope": "development",
+      "version": "3.30.3"
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [],
+        "declared_expression": "MIT",
+        "declared_license": "",
+        "evidence_files": [
+          "iniconfig-2.3.0.dist-info/licenses/LICENSE"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "iniconfig",
+      "normalized": "iniconfig",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "pytest"
+      ],
+      "scope": "development",
+      "version": "2.3.0"
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [],
+        "declared_expression": "",
+        "declared_license": "Apache-2.0",
+        "evidence_files": [
+          "license_expression-30.4.4.dist-info/licenses/AUTHORS.rst",
+          "license_expression-30.4.4.dist-info/licenses/NOTICE",
+          "license_expression-30.4.4.dist-info/licenses/apache-2.0.LICENSE"
+        ],
+        "nested_evidence_files": [
+          "license_expression/data/cc-by-4.0.LICENSE",
+          "license_expression/data/license_key_index.json.ABOUT",
+          "license_expression/data/scancode-licensedb-index.json"
+        ],
+        "observations": [
+          "nested-license-evidence"
+        ],
+        "rejected_root_paths": []
+      },
+      "name": "license-expression",
+      "normalized": "license-expression",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "cyclonedx-python-lib"
+      ],
+      "scope": "development",
+      "version": "30.4.4"
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [],
+        "declared_expression": "Apache-2.0",
+        "declared_license": "",
+        "evidence_files": [
+          "msgpack-1.2.1.dist-info/licenses/COPYING"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "msgpack",
+      "normalized": "msgpack",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "cachecontrol"
+      ],
+      "scope": "development",
+      "version": "1.2.1"
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [
+          "OSI Approved :: MIT License"
+        ],
+        "declared_expression": "",
+        "declared_license": "MIT",
+        "evidence_files": [],
+        "nested_evidence_files": [],
+        "observations": [
+          "no-license-file-shipped"
+        ],
+        "rejected_root_paths": []
+      },
+      "name": "packageurl-python",
+      "normalized": "packageurl-python",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "cyclonedx-python-lib"
+      ],
+      "scope": "development",
+      "version": "0.17.6"
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [],
+        "declared_expression": "Apache-2.0 OR BSD-2-Clause",
+        "declared_license": "",
+        "evidence_files": [
+          "packaging-26.2.dist-info/licenses/LICENSE",
+          "packaging-26.2.dist-info/licenses/LICENSE.APACHE",
+          "packaging-26.2.dist-info/licenses/LICENSE.BSD"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "packaging",
+      "normalized": "packaging",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "pip-audit",
+        "pip-requirements-parser",
+        "pytest"
+      ],
+      "scope": "development",
+      "version": "26.2"
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [],
+        "declared_expression": "MIT",
+        "declared_license": "",
+        "evidence_files": [
+          "pip-26.1.2.dist-info/licenses/AUTHORS.txt",
+          "pip-26.1.2.dist-info/licenses/LICENSE.txt",
+          "pip-26.1.2.dist-info/licenses/src/pip/_vendor/cachecontrol/LICENSE.txt",
+          "pip-26.1.2.dist-info/licenses/src/pip/_vendor/certifi/LICENSE",
+          "pip-26.1.2.dist-info/licenses/src/pip/_vendor/distlib/LICENSE.txt",
+          "pip-26.1.2.dist-info/licenses/src/pip/_vendor/distro/LICENSE",
+          "pip-26.1.2.dist-info/licenses/src/pip/_vendor/idna/LICENSE.md",
+          "pip-26.1.2.dist-info/licenses/src/pip/_vendor/msgpack/COPYING",
+          "pip-26.1.2.dist-info/licenses/src/pip/_vendor/packaging/LICENSE",
+          "pip-26.1.2.dist-info/licenses/src/pip/_vendor/packaging/LICENSE.APACHE",
+          "pip-26.1.2.dist-info/licenses/src/pip/_vendor/packaging/LICENSE.BSD",
+          "pip-26.1.2.dist-info/licenses/src/pip/_vendor/pkg_resources/LICENSE",
+          "pip-26.1.2.dist-info/licenses/src/pip/_vendor/platformdirs/LICENSE",
+          "pip-26.1.2.dist-info/licenses/src/pip/_vendor/pygments/LICENSE",
+          "pip-26.1.2.dist-info/licenses/src/pip/_vendor/pyproject_hooks/LICENSE",
+          "pip-26.1.2.dist-info/licenses/src/pip/_vendor/requests/LICENSE",
+          "pip-26.1.2.dist-info/licenses/src/pip/_vendor/resolvelib/LICENSE",
+          "pip-26.1.2.dist-info/licenses/src/pip/_vendor/rich/LICENSE",
+          "pip-26.1.2.dist-info/licenses/src/pip/_vendor/tomli/LICENSE",
+          "pip-26.1.2.dist-info/licenses/src/pip/_vendor/tomli_w/LICENSE",
+          "pip-26.1.2.dist-info/licenses/src/pip/_vendor/truststore/LICENSE",
+          "pip-26.1.2.dist-info/licenses/src/pip/_vendor/urllib3/LICENSE.txt"
+        ],
+        "nested_evidence_files": [
+          "pip/_vendor/cachecontrol/LICENSE.txt",
+          "pip/_vendor/certifi/LICENSE",
+          "pip/_vendor/distlib/LICENSE.txt",
+          "pip/_vendor/distro/LICENSE",
+          "pip/_vendor/idna/LICENSE.md",
+          "pip/_vendor/msgpack/COPYING",
+          "pip/_vendor/packaging/LICENSE",
+          "pip/_vendor/packaging/LICENSE.APACHE",
+          "pip/_vendor/packaging/LICENSE.BSD",
+          "pip/_vendor/pkg_resources/LICENSE",
+          "pip/_vendor/platformdirs/LICENSE",
+          "pip/_vendor/pygments/LICENSE",
+          "pip/_vendor/pyproject_hooks/LICENSE",
+          "pip/_vendor/requests/LICENSE",
+          "pip/_vendor/resolvelib/LICENSE",
+          "pip/_vendor/rich/LICENSE",
+          "pip/_vendor/tomli/LICENSE",
+          "pip/_vendor/tomli_w/LICENSE",
+          "pip/_vendor/truststore/LICENSE",
+          "pip/_vendor/urllib3/LICENSE.txt"
+        ],
+        "observations": [
+          "nested-license-evidence"
+        ],
+        "rejected_root_paths": []
+      },
+      "name": "pip",
+      "normalized": "pip",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "pip-api"
+      ],
+      "scope": "development",
+      "version": "26.1.2"
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [
+          "OSI Approved :: Apache Software License"
+        ],
+        "declared_expression": "",
+        "declared_license": "",
+        "evidence_files": [
+          "pip_api-0.0.34.dist-info/LICENSE"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "pip-api",
+      "normalized": "pip-api",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "pip-audit"
+      ],
+      "scope": "development",
+      "version": "0.0.34"
+    },
+    {
+      "direct": true,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [
+          "OSI Approved :: Apache Software License"
+        ],
+        "declared_expression": "",
+        "declared_license": "",
+        "evidence_files": [
+          "pip_audit-2.10.1.dist-info/licenses/LICENSE"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "pip-audit",
+      "normalized": "pip-audit",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [],
+      "scope": "development",
+      "version": "2.10.1"
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [],
+        "declared_expression": "",
+        "declared_license": "MIT",
+        "evidence_files": [
+          "pip_requirements_parser-32.0.1.dist-info/AUTHORS.rst",
+          "pip_requirements_parser-32.0.1.dist-info/mit.LICENSE"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "pip-requirements-parser",
+      "normalized": "pip-requirements-parser",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "pip-audit"
+      ],
+      "scope": "development",
+      "version": "32.0.1"
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [
+          "OSI Approved :: MIT License"
+        ],
+        "declared_expression": "MIT",
+        "declared_license": "",
+        "evidence_files": [
+          "platformdirs-4.10.0.dist-info/licenses/LICENSE"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "platformdirs",
+      "normalized": "platformdirs",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "pip-audit"
+      ],
+      "scope": "development",
+      "version": "4.10.0"
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [
+          "OSI Approved :: MIT License"
+        ],
+        "declared_expression": "",
+        "declared_license": "MIT",
+        "evidence_files": [
+          "pluggy-1.6.0.dist-info/licenses/LICENSE"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "pluggy",
+      "normalized": "pluggy",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "pytest"
+      ],
+      "scope": "development",
+      "version": "1.6.0"
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [
+          "OSI Approved :: Apache Software License"
+        ],
+        "declared_expression": "",
+        "declared_license": "Apache-2.0",
+        "evidence_files": [
+          "py_serializable-2.1.0.dist-info/LICENSE"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "py-serializable",
+      "normalized": "py-serializable",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "cyclonedx-python-lib"
+      ],
+      "scope": "development",
+      "version": "2.1.0"
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [],
+        "declared_expression": "MIT",
+        "declared_license": "",
+        "evidence_files": [
+          "pyparsing-3.3.2.dist-info/licenses/LICENSE"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "pyparsing",
+      "normalized": "pyparsing",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "pip-requirements-parser"
+      ],
+      "scope": "development",
+      "version": "3.3.2"
+    },
+    {
+      "direct": true,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [],
+        "declared_expression": "MIT",
+        "declared_license": "",
+        "evidence_files": [
+          "pytest-9.1.1.dist-info/licenses/LICENSE"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "pytest",
+      "normalized": "pytest",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [],
+      "scope": "development",
+      "version": "9.1.1"
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [
+          "OSI Approved :: Apache Software License"
+        ],
+        "declared_expression": "",
+        "declared_license": "Apache-2.0",
+        "evidence_files": [
+          "requests-2.34.2.dist-info/licenses/LICENSE",
+          "requests-2.34.2.dist-info/licenses/NOTICE"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "requests",
+      "normalized": "requests",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "cachecontrol",
+        "pip-audit"
+      ],
+      "scope": "development",
+      "version": "2.34.2"
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [
+          "OSI Approved :: Apache Software License"
+        ],
+        "declared_expression": "",
+        "declared_license": "Apache 2.0",
+        "evidence_files": [
+          "sortedcontainers-2.4.0.dist-info/LICENSE"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "sortedcontainers",
+      "normalized": "sortedcontainers",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "cyclonedx-python-lib"
+      ],
+      "scope": "development",
+      "version": "2.4.0"
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [],
+        "declared_expression": "MIT",
+        "declared_license": "",
+        "evidence_files": [
+          "tomli-2.4.1.dist-info/licenses/LICENSE"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "tomli",
+      "normalized": "tomli",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "pip-audit"
+      ],
+      "scope": "development",
+      "version": "2.4.1"
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [
+          "OSI Approved :: MIT License"
+        ],
+        "declared_expression": "",
+        "declared_license": "",
+        "evidence_files": [
+          "tomli_w-1.2.0.dist-info/LICENSE"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "tomli_w",
+      "normalized": "tomli-w",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "pip-audit"
+      ],
+      "scope": "development",
+      "version": "1.2.0"
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [],
+        "declared_expression": "MIT",
+        "declared_license": "",
+        "evidence_files": [
+          "urllib3-2.7.0.dist-info/licenses/LICENSE.txt"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "urllib3",
+      "normalized": "urllib3",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "requests"
+      ],
+      "scope": "development",
+      "version": "2.7.0"
+    }
+  ],
+  "generated_by": "scripts/runtime_manifest.py",
+  "partition_rule": {
+    "description": "runtime = [project.dependencies] + runtime extras; dev = dev extras; expansion is locked-only (constraints.txt); markers evaluated per target platform at the python floor",
+    "dev_extras": [
+      "dev"
+    ],
+    "python_version_floor": "3.11",
+    "runtime_extras": [
+      "credentials",
+      "ssh",
+      "web"
+    ],
+    "target_platforms": [
+      "darwin",
+      "linux",
+      "win32"
+    ]
+  },
+  "runtime": [
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [
+          "OSI Approved :: Apache Software License"
+        ],
+        "declared_expression": "",
+        "declared_license": "",
+        "evidence_files": [
+          "arrow-1.4.0.dist-info/licenses/LICENSE"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "arrow",
+      "normalized": "arrow",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "isoduration"
+      ],
+      "scope": "runtime",
+      "version": "1.4.0"
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [],
+        "declared_expression": "MIT",
+        "declared_license": "",
+        "evidence_files": [
+          "attrs-26.1.0.dist-info/licenses/LICENSE"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "attrs",
+      "normalized": "attrs",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "jsonschema",
+        "referencing"
+      ],
+      "scope": "runtime",
+      "version": "26.1.0"
+    },
+    {
+      "direct": false,
+      "expansion": "not-locked",
+      "license_evidence": null,
+      "name": "backports.tarfile",
+      "normalized": "backports-tarfile",
+      "pinned": false,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "jaraco-context"
+      ],
+      "scope": "runtime",
+      "version": null
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [
+          "OSI Approved :: Apache Software License"
+        ],
+        "declared_expression": "",
+        "declared_license": "Apache-2.0",
+        "evidence_files": [
+          "bcrypt-5.0.0.dist-info/LICENSE"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "bcrypt",
+      "normalized": "bcrypt",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "paramiko"
+      ],
+      "scope": "runtime",
+      "version": "5.0.0"
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [
+          "OSI Approved :: MIT License"
+        ],
+        "declared_expression": "",
+        "declared_license": "",
+        "evidence_files": [
+          "blinker-1.9.0.dist-info/LICENSE.txt"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "blinker",
+      "normalized": "blinker",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "flask"
+      ],
+      "scope": "runtime",
+      "version": "1.9.0"
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [],
+        "declared_expression": "MIT-0",
+        "declared_license": "",
+        "evidence_files": [
+          "cffi-2.1.0.dist-info/licenses/LICENSE"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "cffi",
+      "normalized": "cffi",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "cryptography",
+        "pynacl"
+      ],
+      "scope": "runtime",
+      "version": "2.1.0"
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [],
+        "declared_expression": "BSD-3-Clause",
+        "declared_license": "",
+        "evidence_files": [
+          "click-8.4.2.dist-info/licenses/LICENSE.txt"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "click",
+      "normalized": "click",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "flask"
+      ],
+      "scope": "runtime",
+      "version": "8.4.2"
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [
+          "OSI Approved :: BSD License"
+        ],
+        "declared_expression": "",
+        "declared_license": "",
+        "evidence_files": [
+          "colorama-0.4.6.dist-info/licenses/LICENSE.txt"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "colorama",
+      "normalized": "colorama",
+      "pinned": true,
+      "platforms": [
+        "win32"
+      ],
+      "required_by": [
+        "click"
+      ],
+      "scope": "runtime",
+      "version": "0.4.6"
+    },
+    {
+      "direct": true,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [
+          "cryptography-49.0.0.dist-info/sboms/cryptography-rust.cyclonedx.json",
+          "cryptography-49.0.0.dist-info/sboms/sbom.json"
+        ],
+        "declared_classifiers": [],
+        "declared_expression": "Apache-2.0 OR BSD-3-Clause",
+        "declared_license": "",
+        "evidence_files": [
+          "cryptography-49.0.0.dist-info/licenses/LICENSE",
+          "cryptography-49.0.0.dist-info/licenses/LICENSE.APACHE",
+          "cryptography-49.0.0.dist-info/licenses/LICENSE.BSD"
+        ],
+        "nested_evidence_files": [],
+        "observations": [
+          "bundled-component-sbom"
+        ],
+        "rejected_root_paths": []
+      },
+      "name": "cryptography",
+      "normalized": "cryptography",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "paramiko"
+      ],
+      "scope": "runtime",
+      "version": "49.0.0"
+    },
+    {
+      "direct": true,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [],
+        "declared_expression": "BSD-3-Clause",
+        "declared_license": "",
+        "evidence_files": [
+          "flask-3.1.3.dist-info/licenses/LICENSE.txt"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "Flask",
+      "normalized": "flask",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "flask-sock"
+      ],
+      "scope": "runtime",
+      "version": "3.1.3"
+    },
+    {
+      "direct": true,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [
+          "OSI Approved :: MIT License"
+        ],
+        "declared_expression": "",
+        "declared_license": "",
+        "evidence_files": [
+          "flask_sock-0.7.0.dist-info/LICENSE"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "flask-sock",
+      "normalized": "flask-sock",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [],
+      "scope": "runtime",
+      "version": "0.7.0"
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [
+          "OSI Approved :: Mozilla Public License 2.0 (MPL 2.0)"
+        ],
+        "declared_expression": "",
+        "declared_license": "MPL 2.0",
+        "evidence_files": [
+          "fqdn-1.5.1.dist-info/LICENSE"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "fqdn",
+      "normalized": "fqdn",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "jsonschema"
+      ],
+      "scope": "runtime",
+      "version": "1.5.1"
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [
+          "OSI Approved :: MIT License"
+        ],
+        "declared_expression": "",
+        "declared_license": "MIT",
+        "evidence_files": [
+          "h11-0.16.0.dist-info/licenses/LICENSE.txt"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "h11",
+      "normalized": "h11",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "wsproto"
+      ],
+      "scope": "runtime",
+      "version": "0.16.0"
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [],
+        "declared_expression": "BSD-3-Clause",
+        "declared_license": "",
+        "evidence_files": [
+          "idna-3.18.dist-info/licenses/LICENSE.md"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "idna",
+      "normalized": "idna",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "jsonschema"
+      ],
+      "scope": "runtime",
+      "version": "3.18"
+    },
+    {
+      "direct": false,
+      "expansion": "not-locked",
+      "license_evidence": null,
+      "name": "importlib_metadata",
+      "normalized": "importlib-metadata",
+      "pinned": false,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "keyring"
+      ],
+      "scope": "runtime",
+      "version": null
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [],
+        "declared_expression": "BSD-2-Clause",
+        "declared_license": "",
+        "evidence_files": [
+          "invoke-3.0.3.dist-info/licenses/LICENSE"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "invoke",
+      "normalized": "invoke",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "paramiko"
+      ],
+      "scope": "runtime",
+      "version": "3.0.3"
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [
+          "OSI Approved :: ISC License (ISCL)"
+        ],
+        "declared_expression": "",
+        "declared_license": "UNKNOWN",
+        "evidence_files": [
+          "isoduration-20.11.0.dist-info/LICENSE"
+        ],
+        "nested_evidence_files": [],
+        "observations": [
+          "bundled-license-text-present",
+          "metadata-license-unknown"
+        ],
+        "rejected_root_paths": []
+      },
+      "name": "isoduration",
+      "normalized": "isoduration",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "jsonschema"
+      ],
+      "scope": "runtime",
+      "version": "20.11.0"
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [
+          "OSI Approved :: BSD License"
+        ],
+        "declared_expression": "",
+        "declared_license": "",
+        "evidence_files": [
+          "itsdangerous-2.2.0.dist-info/LICENSE.txt"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "itsdangerous",
+      "normalized": "itsdangerous",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "flask"
+      ],
+      "scope": "runtime",
+      "version": "2.2.0"
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [
+          "OSI Approved :: MIT License"
+        ],
+        "declared_expression": "",
+        "declared_license": "",
+        "evidence_files": [
+          "jaraco.classes-3.4.0.dist-info/LICENSE"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "jaraco.classes",
+      "normalized": "jaraco-classes",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "keyring"
+      ],
+      "scope": "runtime",
+      "version": "3.4.0"
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [],
+        "declared_expression": "MIT",
+        "declared_license": "",
+        "evidence_files": [
+          "jaraco_context-6.1.2.dist-info/licenses/LICENSE"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "jaraco.context",
+      "normalized": "jaraco-context",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "keyring"
+      ],
+      "scope": "runtime",
+      "version": "6.1.2"
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [],
+        "declared_expression": "MIT",
+        "declared_license": "",
+        "evidence_files": [
+          "jaraco_functools-4.5.0.dist-info/licenses/LICENSE"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "jaraco.functools",
+      "normalized": "jaraco-functools",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "keyring"
+      ],
+      "scope": "runtime",
+      "version": "4.5.0"
+    },
+    {
+      "direct": false,
+      "expansion": "not-locked",
+      "license_evidence": null,
+      "name": "jeepney",
+      "normalized": "jeepney",
+      "pinned": false,
+      "platforms": [
+        "linux"
+      ],
+      "required_by": [
+        "keyring"
+      ],
+      "scope": "runtime",
+      "version": null
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [
+          "OSI Approved :: BSD License"
+        ],
+        "declared_expression": "",
+        "declared_license": "",
+        "evidence_files": [
+          "jinja2-3.1.6.dist-info/licenses/LICENSE.txt"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "Jinja2",
+      "normalized": "jinja2",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "flask"
+      ],
+      "scope": "runtime",
+      "version": "3.1.6"
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [
+          "OSI Approved :: BSD License"
+        ],
+        "declared_expression": "",
+        "declared_license": "Modified BSD License",
+        "evidence_files": [
+          "jsonpointer-3.1.1.dist-info/licenses/AUTHORS",
+          "jsonpointer-3.1.1.dist-info/licenses/LICENSE.txt"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "jsonpointer",
+      "normalized": "jsonpointer",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "jsonschema"
+      ],
+      "scope": "runtime",
+      "version": "3.1.1"
+    },
+    {
+      "direct": true,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [],
+        "declared_expression": "MIT",
+        "declared_license": "",
+        "evidence_files": [
+          "jsonschema-4.26.0.dist-info/licenses/COPYING"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "jsonschema",
+      "normalized": "jsonschema",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [],
+      "scope": "runtime",
+      "version": "4.26.0"
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [],
+        "declared_expression": "MIT",
+        "declared_license": "",
+        "evidence_files": [
+          "jsonschema_specifications-2025.9.1.dist-info/licenses/COPYING"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "jsonschema-specifications",
+      "normalized": "jsonschema-specifications",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "jsonschema"
+      ],
+      "scope": "runtime",
+      "version": "2025.9.1"
+    },
+    {
+      "direct": true,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [],
+        "declared_expression": "MIT",
+        "declared_license": "",
+        "evidence_files": [
+          "keyring-25.7.0.dist-info/licenses/LICENSE"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "keyring",
+      "normalized": "keyring",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [],
+      "scope": "runtime",
+      "version": "25.7.0"
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [
+          "OSI Approved :: MIT License"
+        ],
+        "declared_expression": "",
+        "declared_license": "",
+        "evidence_files": [
+          "markdown_it_py-4.2.0.dist-info/licenses/LICENSE",
+          "markdown_it_py-4.2.0.dist-info/licenses/LICENSE.markdown-it"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "markdown-it-py",
+      "normalized": "markdown-it-py",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "rich"
+      ],
+      "scope": "runtime",
+      "version": "4.2.0"
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [],
+        "declared_expression": "BSD-3-Clause",
+        "declared_license": "",
+        "evidence_files": [
+          "markupsafe-3.0.3.dist-info/licenses/LICENSE.txt"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "MarkupSafe",
+      "normalized": "markupsafe",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "flask",
+        "jinja2",
+        "werkzeug"
+      ],
+      "scope": "runtime",
+      "version": "3.0.3"
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [
+          "OSI Approved :: MIT License"
+        ],
+        "declared_expression": "",
+        "declared_license": "",
+        "evidence_files": [
+          "mdurl-0.1.2.dist-info/LICENSE"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "mdurl",
+      "normalized": "mdurl",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "markdown-it-py"
+      ],
+      "scope": "runtime",
+      "version": "0.1.2"
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [],
+        "declared_expression": "MIT",
+        "declared_license": "",
+        "evidence_files": [
+          "more_itertools-11.1.0.dist-info/licenses/LICENSE"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "more-itertools",
+      "normalized": "more-itertools",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "jaraco-classes",
+        "jaraco-functools"
+      ],
+      "scope": "runtime",
+      "version": "11.1.0"
+    },
+    {
+      "direct": true,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [
+          "OSI Approved :: MIT License"
+        ],
+        "declared_expression": "",
+        "declared_license": "MIT",
+        "evidence_files": [
+          "netmiko-4.7.0.dist-info/LICENSE"
+        ],
+        "nested_evidence_files": [
+          "netmiko/_telnetlib/LICENSE"
+        ],
+        "observations": [
+          "nested-license-evidence",
+          "root-level-evidence-ignored"
+        ],
+        "rejected_root_paths": [
+          "LICENSE"
+        ]
+      },
+      "name": "netmiko",
+      "normalized": "netmiko",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [],
+      "scope": "runtime",
+      "version": "4.7.0"
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [
+          "OSI Approved :: Apache Software License"
+        ],
+        "declared_expression": "",
+        "declared_license": "Apache-2.0",
+        "evidence_files": [
+          "ntc_templates-9.1.0.dist-info/LICENSE"
+        ],
+        "nested_evidence_files": [
+          "ntc_templates/templates/cisco_asa_show_license_all.textfsm",
+          "ntc_templates/templates/cisco_ios_show_license.textfsm",
+          "ntc_templates/templates/cisco_ios_show_license_status.textfsm",
+          "ntc_templates/templates/cisco_nxos_show_license_usage.textfsm",
+          "ntc_templates/templates/huawei_vrp_display_license_verbose.textfsm",
+          "ntc_templates/templates/huawei_vrp_display_sn_license.textfsm",
+          "ntc_templates/templates/paloalto_panos_request_license_info.textfsm"
+        ],
+        "observations": [
+          "nested-license-evidence",
+          "root-level-evidence-ignored"
+        ],
+        "rejected_root_paths": [
+          "LICENSE"
+        ]
+      },
+      "name": "ntc_templates",
+      "normalized": "ntc-templates",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "netmiko"
+      ],
+      "scope": "runtime",
+      "version": "9.1.0"
+    },
+    {
+      "direct": true,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [],
+        "declared_expression": "LGPL-2.1",
+        "declared_license": "",
+        "evidence_files": [
+          "paramiko-4.0.0.dist-info/licenses/LICENSE"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "paramiko",
+      "normalized": "paramiko",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "netmiko",
+        "scp"
+      ],
+      "scope": "runtime",
+      "version": "4.0.0"
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [],
+        "declared_expression": "BSD-3-Clause",
+        "declared_license": "",
+        "evidence_files": [
+          "pycparser-3.0.dist-info/licenses/LICENSE"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "pycparser",
+      "normalized": "pycparser",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "cffi"
+      ],
+      "scope": "runtime",
+      "version": "3.0"
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [],
+        "declared_expression": "BSD-2-Clause",
+        "declared_license": "",
+        "evidence_files": [
+          "pygments-2.20.0.dist-info/licenses/AUTHORS",
+          "pygments-2.20.0.dist-info/licenses/LICENSE"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "Pygments",
+      "normalized": "pygments",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "rich"
+      ],
+      "scope": "runtime",
+      "version": "2.20.0"
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [
+          "OSI Approved :: Apache Software License"
+        ],
+        "declared_expression": "",
+        "declared_license": "Apache-2.0",
+        "evidence_files": [
+          "pynacl-1.6.2.dist-info/licenses/LICENSE",
+          "pynacl-1.6.2.dist-info/licenses/licenses/LICENSE.libsodium.txt"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "PyNaCl",
+      "normalized": "pynacl",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "paramiko"
+      ],
+      "scope": "runtime",
+      "version": "1.6.2"
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [
+          "OSI Approved :: BSD License"
+        ],
+        "declared_expression": "",
+        "declared_license": "BSD",
+        "evidence_files": [],
+        "nested_evidence_files": [],
+        "observations": [
+          "no-license-file-shipped"
+        ],
+        "rejected_root_paths": []
+      },
+      "name": "pyserial",
+      "normalized": "pyserial",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "netmiko"
+      ],
+      "scope": "runtime",
+      "version": "3.5"
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [
+          "OSI Approved :: Apache Software License",
+          "OSI Approved :: BSD License"
+        ],
+        "declared_expression": "",
+        "declared_license": "Dual License",
+        "evidence_files": [
+          "python_dateutil-2.9.0.post0.dist-info/LICENSE"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "python-dateutil",
+      "normalized": "python-dateutil",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "arrow"
+      ],
+      "scope": "runtime",
+      "version": "2.9.0.post0"
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [],
+        "declared_expression": "",
+        "declared_license": "BSD-3-Clause",
+        "evidence_files": [
+          "pywin32_ctypes-0.2.3.dist-info/LICENSE.txt"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "pywin32-ctypes",
+      "normalized": "pywin32-ctypes",
+      "pinned": true,
+      "platforms": [
+        "win32"
+      ],
+      "required_by": [
+        "keyring"
+      ],
+      "scope": "runtime",
+      "version": "0.2.3"
+    },
+    {
+      "direct": true,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [
+          "OSI Approved :: MIT License"
+        ],
+        "declared_expression": "",
+        "declared_license": "MIT",
+        "evidence_files": [
+          "pyyaml-6.0.3.dist-info/licenses/LICENSE"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "PyYAML",
+      "normalized": "pyyaml",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "netmiko"
+      ],
+      "scope": "runtime",
+      "version": "6.0.3"
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [],
+        "declared_expression": "MIT",
+        "declared_license": "",
+        "evidence_files": [
+          "referencing-0.37.0.dist-info/licenses/COPYING"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "referencing",
+      "normalized": "referencing",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "jsonschema",
+        "jsonschema-specifications"
+      ],
+      "scope": "runtime",
+      "version": "0.37.0"
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [
+          "OSI Approved :: MIT License"
+        ],
+        "declared_expression": "",
+        "declared_license": "MIT license",
+        "evidence_files": [
+          "rfc3339_validator-0.1.4.dist-info/AUTHORS.rst",
+          "rfc3339_validator-0.1.4.dist-info/LICENSE"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "rfc3339-validator",
+      "normalized": "rfc3339-validator",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "jsonschema"
+      ],
+      "scope": "runtime",
+      "version": "0.1.4"
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [
+          "OSI Approved :: GNU General Public License v3 or later (GPLv3+)"
+        ],
+        "declared_expression": "",
+        "declared_license": "GNU GPLv3+",
+        "evidence_files": [],
+        "nested_evidence_files": [],
+        "observations": [
+          "no-license-file-shipped"
+        ],
+        "rejected_root_paths": []
+      },
+      "name": "rfc3987",
+      "normalized": "rfc3987",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "jsonschema"
+      ],
+      "scope": "runtime",
+      "version": "1.3.8"
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [
+          "OSI Approved :: MIT License"
+        ],
+        "declared_expression": "",
+        "declared_license": "MIT",
+        "evidence_files": [
+          "rich-15.0.0.dist-info/licenses/LICENSE"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "rich",
+      "normalized": "rich",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "netmiko"
+      ],
+      "scope": "runtime",
+      "version": "15.0.0"
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [
+          "rpds_py-2026.6.3.dist-info/sboms/rpds-py.cyclonedx.json"
+        ],
+        "declared_classifiers": [],
+        "declared_expression": "MIT",
+        "declared_license": "",
+        "evidence_files": [
+          "rpds_py-2026.6.3.dist-info/licenses/LICENSE"
+        ],
+        "nested_evidence_files": [],
+        "observations": [
+          "bundled-component-sbom"
+        ],
+        "rejected_root_paths": []
+      },
+      "name": "rpds-py",
+      "normalized": "rpds-py",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "jsonschema",
+        "referencing"
+      ],
+      "scope": "runtime",
+      "version": "2026.6.3"
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [
+          "OSI Approved :: MIT License"
+        ],
+        "declared_expression": "",
+        "declared_license": "MIT",
+        "evidence_files": [
+          "ruamel_yaml-0.19.1.dist-info/licenses/LICENSE"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "ruamel.yaml",
+      "normalized": "ruamel-yaml",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "netmiko"
+      ],
+      "scope": "runtime",
+      "version": "0.19.1"
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [
+          "OSI Approved :: GNU Library or Lesser General Public License (LGPL)"
+        ],
+        "declared_expression": "",
+        "declared_license": "LGPL-2.1-or-later",
+        "evidence_files": [
+          "scp-0.15.0.dist-info/LICENSE.txt"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "scp",
+      "normalized": "scp",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "netmiko"
+      ],
+      "scope": "runtime",
+      "version": "0.15.0"
+    },
+    {
+      "direct": false,
+      "expansion": "not-locked",
+      "license_evidence": null,
+      "name": "SecretStorage",
+      "normalized": "secretstorage",
+      "pinned": false,
+      "platforms": [
+        "linux"
+      ],
+      "required_by": [
+        "keyring"
+      ],
+      "scope": "runtime",
+      "version": null
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [
+          "OSI Approved :: MIT License"
+        ],
+        "declared_expression": "",
+        "declared_license": "",
+        "evidence_files": [
+          "simple_websocket-1.1.0.dist-info/LICENSE"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "simple-websocket",
+      "normalized": "simple-websocket",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "flask-sock"
+      ],
+      "scope": "runtime",
+      "version": "1.1.0"
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [
+          "OSI Approved :: MIT License"
+        ],
+        "declared_expression": "",
+        "declared_license": "MIT",
+        "evidence_files": [
+          "six-1.17.0.dist-info/LICENSE"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "six",
+      "normalized": "six",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "python-dateutil",
+        "rfc3339-validator"
+      ],
+      "scope": "runtime",
+      "version": "1.17.0"
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [
+          "OSI Approved :: Apache Software License"
+        ],
+        "declared_expression": "",
+        "declared_license": "Apache License, Version 2.0",
+        "evidence_files": [
+          "textfsm-2.1.0.dist-info/licenses/COPYING",
+          "textfsm-2.1.0.dist-info/licenses/LICENSE.txt"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "textfsm",
+      "normalized": "textfsm",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "netmiko",
+        "ntc-templates"
+      ],
+      "scope": "runtime",
+      "version": "2.1.0"
+    },
+    {
+      "direct": false,
+      "expansion": "not-locked",
+      "license_evidence": null,
+      "name": "typing-extensions",
+      "normalized": "typing-extensions",
+      "pinned": false,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "referencing"
+      ],
+      "scope": "runtime",
+      "version": null
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [],
+        "declared_expression": "",
+        "declared_license": "Apache-2.0",
+        "evidence_files": [
+          "tzdata-2026.2.dist-info/licenses/LICENSE",
+          "tzdata-2026.2.dist-info/licenses/licenses/LICENSE_APACHE"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "tzdata",
+      "normalized": "tzdata",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "arrow"
+      ],
+      "scope": "runtime",
+      "version": "2026.2"
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [
+          "OSI Approved :: MIT License"
+        ],
+        "declared_expression": "",
+        "declared_license": "MIT License",
+        "evidence_files": [
+          "uri_template-1.3.0.dist-info/LICENSE"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "uri-template",
+      "normalized": "uri-template",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "jsonschema"
+      ],
+      "scope": "runtime",
+      "version": "1.3.0"
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [
+          "OSI Approved :: BSD License"
+        ],
+        "declared_expression": "",
+        "declared_license": "BSD-3-Clause",
+        "evidence_files": [
+          "webcolors-25.10.0.dist-info/licenses/LICENSE"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "webcolors",
+      "normalized": "webcolors",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "jsonschema"
+      ],
+      "scope": "runtime",
+      "version": "25.10.0"
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [],
+        "declared_expression": "BSD-3-Clause",
+        "declared_license": "",
+        "evidence_files": [
+          "werkzeug-3.1.8.dist-info/licenses/LICENSE.txt"
+        ],
+        "nested_evidence_files": [
+          "werkzeug/debug/shared/ICON_LICENSE.md"
+        ],
+        "observations": [
+          "nested-license-evidence"
+        ],
+        "rejected_root_paths": []
+      },
+      "name": "Werkzeug",
+      "normalized": "werkzeug",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "flask"
+      ],
+      "scope": "runtime",
+      "version": "3.1.8"
+    },
+    {
+      "direct": false,
+      "expansion": "locked",
+      "license_evidence": {
+        "component_sboms": [],
+        "declared_classifiers": [],
+        "declared_expression": "MIT",
+        "declared_license": "",
+        "evidence_files": [
+          "wsproto-1.3.2.dist-info/licenses/LICENSE"
+        ],
+        "nested_evidence_files": [],
+        "observations": [],
+        "rejected_root_paths": []
+      },
+      "name": "wsproto",
+      "normalized": "wsproto",
+      "pinned": true,
+      "platforms": [
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "required_by": [
+        "simple-websocket"
+      ],
+      "scope": "runtime",
+      "version": "1.3.2"
+    }
+  ],
+  "schema_version": "1.0",
+  "unassigned_pins": [
+    {
+      "name": "setuptools",
+      "normalized": "setuptools",
+      "version": "83.0.0"
+    }
+  ]
+}
