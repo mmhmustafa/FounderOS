@@ -25,6 +25,10 @@ dependencies = [
 dev = [
   "pytest>=8,<10",
   "pip-audit>=2.10,<3",
+  # PR-A2a: the licence gate parses real SPDX expressions. Declared
+  # explicitly so the tooling does not ride on pip-audit's transitive
+  # dependency by accident.
+  "license-expression>=30,<31",
 ]
 ssh = [
   "netmiko>=4.3,<5",

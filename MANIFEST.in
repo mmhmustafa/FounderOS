@@ -5,11 +5,14 @@
 # device banner). A source distribution is a DISTRIBUTION — its contents
 # are an allow-list decision, not an accident.
 #
-# compliance/ travels with the sdist so the runtime manifest (and, in
-# Stage A2, the vendored licence texts behind THIRD-PARTY-NOTICES) ship
-# beside the code they describe.
+# compliance/ travels with the sdist so the runtime manifest, the licence
+# policy, the canonical licence texts and the LGPL/MPL corresponding-source
+# archives ship beside the code they describe. THIRD-PARTY-NOTICES.txt is
+# included explicitly: A2a does not set [project] license-files (that is
+# A2b), so nothing else would carry it into the sdist.
 
 graft compliance
+include THIRD-PARTY-NOTICES.txt
 
 prune tests
 prune docs

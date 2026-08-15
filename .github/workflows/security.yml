@@ -23,8 +23,14 @@ jobs:
       - run: python scripts/audit_dependencies.py
       - run: python scripts/generate_sbom.py
       - run: python scripts/runtime_manifest.py
-      # PR-A0: both generated compliance artifacts are regenerated and
-      # diff-checked — a stale manifest fails exactly like a stale SBOM.
-      - run: git diff --exit-code -- sbom.cdx.json compliance/runtime-manifest.json
+      # PR-A2a: the licence gate runs against the tracked manifest and
+      # policy BEFORE the notices regenerate, so a policy violation is
+      # reported as itself rather than as a mysterious notices diff.
+      - run: python scripts/check_licenses.py
+      - run: python scripts/generate_third_party_notices.py
+      # PR-A0/A2a: every generated compliance artifact is regenerated and
+      # diff-checked — stale notices fail exactly like a stale SBOM or a
+      # stale manifest.
+      - run: git diff --exit-code -- sbom.cdx.json compliance/runtime-manifest.json THIRD-PARTY-NOTICES.txt
       - run: python scripts/check_docs.py
       - run: python -m pytest -q

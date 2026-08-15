@@ -263,7 +263,7 @@
       "version": "2.3.0"
     },
     {
-      "direct": false,
+      "direct": true,
       "expansion": "locked",
       "license_evidence": {
         "component_sboms": [],
