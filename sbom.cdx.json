@@ -2,482 +2,1922 @@
   "bomFormat": "CycloneDX",
   "components": [
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "OSI Approved :: Apache Software License"
+          }
+        }
+      ],
       "name": "arrow",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "runtime"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/arrow@1.4.0",
+      "scope": "required",
       "type": "library",
       "version": "1.4.0"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "MIT"
+          }
+        }
+      ],
       "name": "attrs",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "runtime"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/attrs@26.1.0",
+      "scope": "required",
       "type": "library",
       "version": "26.1.0"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "Apache-2.0"
+          }
+        }
+      ],
       "name": "bcrypt",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "runtime"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/bcrypt@5.0.0",
+      "scope": "required",
       "type": "library",
       "version": "5.0.0"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "OSI Approved :: MIT License"
+          }
+        }
+      ],
       "name": "blinker",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "runtime"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/blinker@1.9.0",
+      "scope": "required",
       "type": "library",
       "version": "1.9.0"
     },
     {
-      "name": "boolean.py",
-      "purl": "pkg:pypi/boolean.py@5.0",
+      "licenses": [
+        {
+          "license": {
+            "name": "BSD-2-Clause"
+          }
+        }
+      ],
+      "name": "boolean-py",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "development"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
+      "purl": "pkg:pypi/boolean-py@5.0",
+      "scope": "excluded",
       "type": "library",
       "version": "5.0"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "Apache-2.0"
+          }
+        }
+      ],
       "name": "cachecontrol",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "development"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/cachecontrol@0.14.4",
+      "scope": "excluded",
       "type": "library",
       "version": "0.14.4"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "MPL-2.0"
+          }
+        }
+      ],
       "name": "certifi",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "development"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/certifi@2026.6.17",
+      "scope": "excluded",
       "type": "library",
       "version": "2026.6.17"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "MIT-0"
+          }
+        }
+      ],
       "name": "cffi",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "runtime"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/cffi@2.1.0",
+      "scope": "required",
       "type": "library",
       "version": "2.1.0"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "MIT"
+          }
+        }
+      ],
       "name": "charset-normalizer",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "development"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/charset-normalizer@3.4.9",
+      "scope": "excluded",
       "type": "library",
       "version": "3.4.9"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "BSD-3-Clause"
+          }
+        }
+      ],
       "name": "click",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "runtime"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/click@8.4.2",
+      "scope": "required",
       "type": "library",
       "version": "8.4.2"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "OSI Approved :: BSD License"
+          }
+        }
+      ],
       "name": "colorama",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "runtime"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "win32"
+        }
+      ],
       "purl": "pkg:pypi/colorama@0.4.6",
+      "scope": "required",
       "type": "library",
       "version": "0.4.6"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "Apache-2.0 OR BSD-3-Clause"
+          }
+        }
+      ],
       "name": "cryptography",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "runtime"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/cryptography@49.0.0",
+      "scope": "required",
       "type": "library",
       "version": "49.0.0"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "Apache-2.0"
+          }
+        }
+      ],
       "name": "cyclonedx-python-lib",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "development"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/cyclonedx-python-lib@11.11.0",
+      "scope": "excluded",
       "type": "library",
       "version": "11.11.0"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "PSFL"
+          }
+        }
+      ],
       "name": "defusedxml",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "development"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/defusedxml@0.7.1",
+      "scope": "excluded",
       "type": "library",
       "version": "0.7.1"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "MIT"
+          }
+        }
+      ],
       "name": "filelock",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "development"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/filelock@3.30.3",
+      "scope": "excluded",
       "type": "library",
       "version": "3.30.3"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "BSD-3-Clause"
+          }
+        }
+      ],
       "name": "flask",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "runtime"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/flask@3.1.3",
+      "scope": "required",
       "type": "library",
       "version": "3.1.3"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "OSI Approved :: MIT License"
+          }
+        }
+      ],
       "name": "flask-sock",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "runtime"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/flask-sock@0.7.0",
+      "scope": "required",
       "type": "library",
       "version": "0.7.0"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "MPL 2.0"
+          }
+        }
+      ],
       "name": "fqdn",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "runtime"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/fqdn@1.5.1",
+      "scope": "required",
       "type": "library",
       "version": "1.5.1"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "MIT"
+          }
+        }
+      ],
       "name": "h11",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "runtime"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/h11@0.16.0",
+      "scope": "required",
       "type": "library",
       "version": "0.16.0"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "BSD-3-Clause"
+          }
+        }
+      ],
       "name": "idna",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "runtime"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/idna@3.18",
+      "scope": "required",
       "type": "library",
       "version": "3.18"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "MIT"
+          }
+        }
+      ],
       "name": "iniconfig",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "development"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/iniconfig@2.3.0",
+      "scope": "excluded",
       "type": "library",
       "version": "2.3.0"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "BSD-2-Clause"
+          }
+        }
+      ],
       "name": "invoke",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "runtime"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/invoke@3.0.3",
+      "scope": "required",
       "type": "library",
       "version": "3.0.3"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "UNKNOWN"
+          }
+        }
+      ],
       "name": "isoduration",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "runtime"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/isoduration@20.11.0",
+      "scope": "required",
       "type": "library",
       "version": "20.11.0"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "OSI Approved :: BSD License"
+          }
+        }
+      ],
       "name": "itsdangerous",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "runtime"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/itsdangerous@2.2.0",
+      "scope": "required",
       "type": "library",
       "version": "2.2.0"
     },
     {
-      "name": "jaraco.classes",
-      "purl": "pkg:pypi/jaraco.classes@3.4.0",
+      "licenses": [
+        {
+          "license": {
+            "name": "OSI Approved :: MIT License"
+          }
+        }
+      ],
+      "name": "jaraco-classes",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "runtime"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
+      "purl": "pkg:pypi/jaraco-classes@3.4.0",
+      "scope": "required",
       "type": "library",
       "version": "3.4.0"
     },
     {
-      "name": "jaraco.context",
-      "purl": "pkg:pypi/jaraco.context@6.1.2",
+      "licenses": [
+        {
+          "license": {
+            "name": "MIT"
+          }
+        }
+      ],
+      "name": "jaraco-context",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "runtime"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
+      "purl": "pkg:pypi/jaraco-context@6.1.2",
+      "scope": "required",
       "type": "library",
       "version": "6.1.2"
     },
     {
-      "name": "jaraco.functools",
-      "purl": "pkg:pypi/jaraco.functools@4.5.0",
+      "licenses": [
+        {
+          "license": {
+            "name": "MIT"
+          }
+        }
+      ],
+      "name": "jaraco-functools",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "runtime"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
+      "purl": "pkg:pypi/jaraco-functools@4.5.0",
+      "scope": "required",
       "type": "library",
       "version": "4.5.0"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "OSI Approved :: BSD License"
+          }
+        }
+      ],
       "name": "jinja2",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "runtime"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/jinja2@3.1.6",
+      "scope": "required",
       "type": "library",
       "version": "3.1.6"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "Modified BSD License"
+          }
+        }
+      ],
       "name": "jsonpointer",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "runtime"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/jsonpointer@3.1.1",
+      "scope": "required",
       "type": "library",
       "version": "3.1.1"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "MIT"
+          }
+        }
+      ],
       "name": "jsonschema",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "runtime"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/jsonschema@4.26.0",
+      "scope": "required",
       "type": "library",
       "version": "4.26.0"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "MIT"
+          }
+        }
+      ],
       "name": "jsonschema-specifications",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "runtime"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/jsonschema-specifications@2025.9.1",
+      "scope": "required",
       "type": "library",
       "version": "2025.9.1"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "MIT"
+          }
+        }
+      ],
       "name": "keyring",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "runtime"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/keyring@25.7.0",
+      "scope": "required",
       "type": "library",
       "version": "25.7.0"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "Apache-2.0"
+          }
+        }
+      ],
       "name": "license-expression",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "development"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/license-expression@30.4.4",
+      "scope": "excluded",
       "type": "library",
       "version": "30.4.4"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "OSI Approved :: MIT License"
+          }
+        }
+      ],
       "name": "markdown-it-py",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "runtime"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/markdown-it-py@4.2.0",
+      "scope": "required",
       "type": "library",
       "version": "4.2.0"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "BSD-3-Clause"
+          }
+        }
+      ],
       "name": "markupsafe",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "runtime"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/markupsafe@3.0.3",
+      "scope": "required",
       "type": "library",
       "version": "3.0.3"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "OSI Approved :: MIT License"
+          }
+        }
+      ],
       "name": "mdurl",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "runtime"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/mdurl@0.1.2",
+      "scope": "required",
       "type": "library",
       "version": "0.1.2"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "MIT"
+          }
+        }
+      ],
       "name": "more-itertools",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "runtime"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/more-itertools@11.1.0",
+      "scope": "required",
       "type": "library",
       "version": "11.1.0"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "Apache-2.0"
+          }
+        }
+      ],
       "name": "msgpack",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "development"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/msgpack@1.2.1",
+      "scope": "excluded",
       "type": "library",
       "version": "1.2.1"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "MIT"
+          }
+        }
+      ],
       "name": "netmiko",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "runtime"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/netmiko@4.7.0",
+      "scope": "required",
       "type": "library",
       "version": "4.7.0"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "Apache-2.0"
+          }
+        }
+      ],
       "name": "ntc-templates",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "runtime"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/ntc-templates@9.1.0",
+      "scope": "required",
       "type": "library",
       "version": "9.1.0"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "MIT"
+          }
+        }
+      ],
       "name": "packageurl-python",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "development"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/packageurl-python@0.17.6",
+      "scope": "excluded",
       "type": "library",
       "version": "0.17.6"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "Apache-2.0 OR BSD-2-Clause"
+          }
+        }
+      ],
       "name": "packaging",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "development"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/packaging@26.2",
+      "scope": "excluded",
       "type": "library",
       "version": "26.2"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "LGPL-2.1"
+          }
+        }
+      ],
       "name": "paramiko",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "runtime"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/paramiko@4.0.0",
+      "scope": "required",
       "type": "library",
       "version": "4.0.0"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "MIT"
+          }
+        }
+      ],
       "name": "pip",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "development"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/pip@26.1.2",
+      "scope": "excluded",
       "type": "library",
       "version": "26.1.2"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "OSI Approved :: Apache Software License"
+          }
+        }
+      ],
       "name": "pip-api",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "development"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/pip-api@0.0.34",
+      "scope": "excluded",
       "type": "library",
       "version": "0.0.34"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "OSI Approved :: Apache Software License"
+          }
+        }
+      ],
       "name": "pip-audit",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "development"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/pip-audit@2.10.1",
+      "scope": "excluded",
       "type": "library",
       "version": "2.10.1"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "MIT"
+          }
+        }
+      ],
       "name": "pip-requirements-parser",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "development"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/pip-requirements-parser@32.0.1",
+      "scope": "excluded",
       "type": "library",
       "version": "32.0.1"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "MIT"
+          }
+        }
+      ],
       "name": "platformdirs",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "development"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/platformdirs@4.10.0",
+      "scope": "excluded",
       "type": "library",
       "version": "4.10.0"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "MIT"
+          }
+        }
+      ],
       "name": "pluggy",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "development"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/pluggy@1.6.0",
+      "scope": "excluded",
       "type": "library",
       "version": "1.6.0"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "Apache-2.0"
+          }
+        }
+      ],
       "name": "py-serializable",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "development"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/py-serializable@2.1.0",
+      "scope": "excluded",
       "type": "library",
       "version": "2.1.0"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "BSD-3-Clause"
+          }
+        }
+      ],
       "name": "pycparser",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "runtime"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/pycparser@3.0",
+      "scope": "required",
       "type": "library",
       "version": "3.0"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "BSD-2-Clause"
+          }
+        }
+      ],
       "name": "pygments",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "runtime"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/pygments@2.20.0",
+      "scope": "required",
       "type": "library",
       "version": "2.20.0"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "Apache-2.0"
+          }
+        }
+      ],
       "name": "pynacl",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "runtime"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/pynacl@1.6.2",
+      "scope": "required",
       "type": "library",
       "version": "1.6.2"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "MIT"
+          }
+        }
+      ],
       "name": "pyparsing",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "development"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/pyparsing@3.3.2",
+      "scope": "excluded",
       "type": "library",
       "version": "3.3.2"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "BSD"
+          }
+        }
+      ],
       "name": "pyserial",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "runtime"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/pyserial@3.5",
+      "scope": "required",
       "type": "library",
       "version": "3.5"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "MIT"
+          }
+        }
+      ],
       "name": "pytest",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "development"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/pytest@9.1.1",
+      "scope": "excluded",
       "type": "library",
       "version": "9.1.1"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "Dual License"
+          }
+        }
+      ],
       "name": "python-dateutil",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "runtime"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/python-dateutil@2.9.0.post0",
+      "scope": "required",
       "type": "library",
       "version": "2.9.0.post0"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "BSD-3-Clause"
+          }
+        }
+      ],
       "name": "pywin32-ctypes",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "runtime"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "win32"
+        }
+      ],
       "purl": "pkg:pypi/pywin32-ctypes@0.2.3",
+      "scope": "required",
       "type": "library",
       "version": "0.2.3"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "MIT"
+          }
+        }
+      ],
       "name": "pyyaml",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "runtime"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/pyyaml@6.0.3",
+      "scope": "required",
       "type": "library",
       "version": "6.0.3"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "MIT"
+          }
+        }
+      ],
       "name": "referencing",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "runtime"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/referencing@0.37.0",
+      "scope": "required",
       "type": "library",
       "version": "0.37.0"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "Apache-2.0"
+          }
+        }
+      ],
       "name": "requests",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "development"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/requests@2.34.2",
+      "scope": "excluded",
       "type": "library",
       "version": "2.34.2"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "MIT license"
+          }
+        }
+      ],
       "name": "rfc3339-validator",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "runtime"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/rfc3339-validator@0.1.4",
+      "scope": "required",
       "type": "library",
       "version": "0.1.4"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "GNU GPLv3+"
+          }
+        }
+      ],
       "name": "rfc3987",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "runtime"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/rfc3987@1.3.8",
+      "scope": "required",
       "type": "library",
       "version": "1.3.8"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "MIT"
+          }
+        }
+      ],
       "name": "rich",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "runtime"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/rich@15.0.0",
+      "scope": "required",
       "type": "library",
       "version": "15.0.0"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "MIT"
+          }
+        }
+      ],
       "name": "rpds-py",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "runtime"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/rpds-py@2026.6.3",
+      "scope": "required",
       "type": "library",
       "version": "2026.6.3"
     },
     {
-      "name": "ruamel.yaml",
-      "purl": "pkg:pypi/ruamel.yaml@0.19.1",
+      "licenses": [
+        {
+          "license": {
+            "name": "MIT"
+          }
+        }
+      ],
+      "name": "ruamel-yaml",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "runtime"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
+      "purl": "pkg:pypi/ruamel-yaml@0.19.1",
+      "scope": "required",
       "type": "library",
       "version": "0.19.1"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "LGPL-2.1-or-later"
+          }
+        }
+      ],
       "name": "scp",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "runtime"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/scp@0.15.0",
+      "scope": "required",
       "type": "library",
       "version": "0.15.0"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "MIT"
+          }
+        }
+      ],
       "name": "setuptools",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "unassigned"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": ""
+        }
+      ],
       "purl": "pkg:pypi/setuptools@83.0.0",
+      "scope": "excluded",
       "type": "library",
       "version": "83.0.0"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "OSI Approved :: MIT License"
+          }
+        }
+      ],
       "name": "simple-websocket",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "runtime"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/simple-websocket@1.1.0",
+      "scope": "required",
       "type": "library",
       "version": "1.1.0"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "MIT"
+          }
+        }
+      ],
       "name": "six",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "runtime"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/six@1.17.0",
+      "scope": "required",
       "type": "library",
       "version": "1.17.0"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "Apache 2.0"
+          }
+        }
+      ],
       "name": "sortedcontainers",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "development"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/sortedcontainers@2.4.0",
+      "scope": "excluded",
       "type": "library",
       "version": "2.4.0"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "Apache License, Version 2.0"
+          }
+        }
+      ],
       "name": "textfsm",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "runtime"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/textfsm@2.1.0",
+      "scope": "required",
       "type": "library",
       "version": "2.1.0"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "MIT"
+          }
+        }
+      ],
       "name": "tomli",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "development"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/tomli@2.4.1",
+      "scope": "excluded",
       "type": "library",
       "version": "2.4.1"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "OSI Approved :: MIT License"
+          }
+        }
+      ],
       "name": "tomli-w",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "development"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/tomli-w@1.2.0",
+      "scope": "excluded",
       "type": "library",
       "version": "1.2.0"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "Apache-2.0"
+          }
+        }
+      ],
       "name": "tzdata",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "runtime"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/tzdata@2026.2",
+      "scope": "required",
       "type": "library",
       "version": "2026.2"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "MIT License"
+          }
+        }
+      ],
       "name": "uri-template",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "runtime"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/uri-template@1.3.0",
+      "scope": "required",
       "type": "library",
       "version": "1.3.0"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "MIT"
+          }
+        }
+      ],
       "name": "urllib3",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "development"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/urllib3@2.7.0",
+      "scope": "excluded",
       "type": "library",
       "version": "2.7.0"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "BSD-3-Clause"
+          }
+        }
+      ],
       "name": "webcolors",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "runtime"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/webcolors@25.10.0",
+      "scope": "required",
       "type": "library",
       "version": "25.10.0"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "BSD-3-Clause"
+          }
+        }
+      ],
       "name": "werkzeug",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "runtime"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/werkzeug@3.1.8",
+      "scope": "required",
       "type": "library",
       "version": "3.1.8"
     },
     {
+      "licenses": [
+        {
+          "license": {
+            "name": "MIT"
+          }
+        }
+      ],
       "name": "wsproto",
+      "properties": [
+        {
+          "name": "founderos:scope",
+          "value": "runtime"
+        },
+        {
+          "name": "founderos:platforms",
+          "value": "darwin,linux,win32"
+        }
+      ],
       "purl": "pkg:pypi/wsproto@1.3.2",
+      "scope": "required",
       "type": "library",
       "version": "1.3.2"
     }

@@ -1,4 +1,12 @@
-"""Fail on every unapproved or expired dependency vulnerability."""
+"""Fail on every unapproved or expired dependency vulnerability.
+
+Scope note (PR-A0): this audit DELIBERATELY covers the whole
+constraints.txt environment lock — runtime and development alike — because
+a vulnerable dev tool still runs on the development machine. The
+runtime/development partition itself lives in scripts/compliance_core.py
+and is consumed by the runtime manifest and the SBOM; narrowing THIS gate
+to the runtime closure would reduce security coverage, so it is not done.
+"""
 
 from __future__ import annotations
 
