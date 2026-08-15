@@ -1,0 +1,28 @@
+# PR-A0: deterministic sdist composition.
+#
+# Before this file existed the sdist was unenumerated: 693 files including
+# the entire tests/ tree (174 files, one carrying a verbatim third-party
+# device banner). A source distribution is a DISTRIBUTION — its contents
+# are an allow-list decision, not an accident.
+#
+# compliance/ travels with the sdist so the runtime manifest (and, in
+# Stage A2, the vendored licence texts behind THIRD-PARTY-NOTICES) ship
+# beside the code they describe.
+
+graft compliance
+
+prune tests
+prune docs
+
+# Local operational data must never enter any distribution. These
+# directories are untracked and gitignored; the prunes make the guarantee
+# hold even for an sdist built from a working tree that contains them.
+prune .atlas
+prune configs
+prune enterprise-memory
+prune deliverables
+prune _zip
+
+# Tracked source-tree snapshots (pending removal in Stage A2) and any
+# future archive must not ride along.
+global-exclude *.zip

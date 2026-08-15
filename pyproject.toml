@@ -1,5 +1,8 @@
 [build-system]
-requires = ["setuptools>=75"]
+# PR-A0: floor raised to 77 — the first setuptools with PEP 639 licence
+# metadata support. Stage A2 adds the licence expression itself; a floor
+# below 77 would let a build succeed on a setuptools that hard-rejects it.
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]

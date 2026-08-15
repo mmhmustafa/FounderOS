@@ -22,6 +22,9 @@ jobs:
       - run: python -m pip check
       - run: python scripts/audit_dependencies.py
       - run: python scripts/generate_sbom.py
-      - run: git diff --exit-code -- sbom.cdx.json
+      - run: python scripts/runtime_manifest.py
+      # PR-A0: both generated compliance artifacts are regenerated and
+      # diff-checked — a stale manifest fails exactly like a stale SBOM.
+      - run: git diff --exit-code -- sbom.cdx.json compliance/runtime-manifest.json
       - run: python scripts/check_docs.py
       - run: python -m pytest -q
